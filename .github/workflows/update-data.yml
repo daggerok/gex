@@ -1,0 +1,88 @@
+# =============================================================================
+# Options Desk — SMART build-time data cache (GitHub Action)
+# -----------------------------------------------------------------------------
+# INFRASTRUCTURE (not part of the 3-file app source). Implements the
+# "GitHub Actions build-time caching" strategy:
+#   1. Runs scripts/options-data.py (yfinance) on a schedule.
+#   2. The script SELF-DISCOVERS a market-cap-ranked US universe, then (v4) works
+#      COVERAGE-FIRST: it fetches every MISSING ticker down the cap-ranked list
+#      (resuming where the last run stopped), and only once nothing is missing
+#      does it ROTATE-REFRESH the OLDEST cached files first. It skips files still
+#      fresh today and stops at its budget or when the source rate-limits it.
+#      Each run does NEW work; the next run resumes — so we cache ALL tickers
+#      before re-looping, and never re-loop only the top-cap names.
+#   3. Commits the fresh data/options/*.json back to the repo.
+# The site (GitHub Pages) then reads its OWN data/options/*.json via the app's
+# "Static cache" provider — zero CORS issues, zero exposed keys.
+#
+# SETUP:
+#   - Commit this repo with Pages enabled (Settings → Pages).
+#   - No ticker list to maintain — tune the env vars in the job below.
+#   - Ensure Actions has write permission: Settings → Actions → General →
+#     Workflow permissions → "Read and write permissions".
+#
+# CADENCE: runs several times on weekdays so the cache keeps growing (the
+# resumable design means each run only does NEW work). Adjust the cron as needed.
+# =============================================================================
+name: Update options data
+
+on:
+  # schedule:
+  #   # # The script is resumable, so more runs simply grow the cache faster.
+  #   # - cron: "0 0-3 * * 0-6"
+  #   # - cron: "1 4-7 * * 0-6"
+  #   # - cron: "2 8-11 * * 0-6"
+  #   # - cron: "3 12-15 * * 0-6"
+  #   # - cron: "5 16-19 * * 0-6"
+  #   # - cron: "8 20-23 * * 0-6"
+  #   # - cron: "13 * * * 0-6"
+  #   # - cron: "21 * * * 0-6"
+  #   # - cron: "34 * * * 0-6"
+  #   # - cron: "45 * * * 0-6"
+  #   # - cron: "55 * * * 0-6"
+  #   - cron: "30 13 * * 0-6"
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+permissions:
+  contents: write # needed to commit the refreshed JSON
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      # SMART, self-driving universe — no hand-maintained ticker list.
+      # The script discovers US symbols sorted DESC by market cap (NASDAQ
+      # screener), skips files already refreshed today, and fetches top-down
+      # until the per-run budget is hit or the source rate-limits us. Each run
+      # APPENDS to the cache and the next run resumes where this one stopped.
+      MAX_FETCHES: "500"          # NEW (non-skipped) fetches per run (chunk size)
+      UNIVERSE_SIZE: "5000"       # consider the FULL market-cap-ranked US universe
+      MIN_MARKET_CAP: "9000000"   # Microcap floor ($10M); drops nano-caps
+      MAX_EXPIRATIONS: "50"       # expirations stored per ticker (keeps JSON small)
+      REQUEST_SLEEP: "0.5"        # politeness delay between fetches (seconds)
+      PYTHONUNBUFFERED: "1"       # stream Python progress logs to Actions immediately
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2          # The refresh only needs the current tree and a minimal history for its push.
+
+      - uses: ./.github/actions/uv
+
+      - name: Fetch option chains
+        run: TICKERS=$(cat data/All.txt) uv run --with yfinance --with requests python scripts/options-data.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name  "Maksim Kostromin"
+          git config user.email "daggerok@gmail.com"
+          # Stage the refreshed chains + data/options/index.json (which also holds the
+          # no-options skiplist under the `no_options` key since options-data.py v9).
+          git add data/ || true
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No data changes — nothing to commit."
+          else
+            git commit -m "chore(data): refresh option chains [skip ci]"
+            git push || echo "Push failed (may be up-to-date or race condition)"
+          fi

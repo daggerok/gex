@@ -1,0 +1,566 @@
+/* index.css */
+/**
+ * ============================================================================
+ * AGENTIC AI ENFORCED SPECIFICATION & GUIDELINES (CRITICAL)
+ * ============================================================================
+ * 1. KEEP DOCUMENTATION USEFUL: Preserve accurate design docs and type
+ *    descriptors, but correct or remove stale comments instead of carrying
+ *    misleading history forward.
+ * 2. AGENT READ-WRITE RULE: If a future deployment or agent updates the code,
+ *    this header section and related documentation blocks MUST be kept accurate
+ *    and synchronized with feature upgrades.
+ * 3. CSS CONTINUITY: Keep app-wide styling and CSS architecture documented in
+ *    this file; cross-reference main.tsx when behavior is implemented in React.
+ * ============================================================================
+ *
+ * ============================================================================
+ * AGENTIC AI DOCUMENTATION & SYSTEM ARCHITECTURE  (index.css)
+ * ============================================================================
+ *
+ * PROJECT: Options Desk
+ * ENVIRONMENT: TailwindCSS v4 (CSS-first theme/configuration)
+ *
+ * ---------------------------------------------------------------------------
+ * CHANGELOG (append newest at top; keep history accurate):
+ * ---------------------------------------------------------------------------
+ * v0.9.40 - Strike column containment: `.od-strike-cell` now forces the value to
+ *          stay inside its grid track (`min-width: 0`, `overflow: hidden`,
+ *          `text-overflow: ellipsis`, `white-space: nowrap`, `box-sizing:
+ *          border-box`) so high strikes like `1,480.00` never spill into Put Bid.
+ *          Paired with a wider Strike track in main.tsx (`minmax(5.75rem, 1.15fr)`).
+ * v0.9.39 - Options chain column spacing: added `--od-cgap: 0.25rem` token and
+ *          `column-gap: var(--od-cgap)` (scalable `rem` token) to `.od-drow` and
+ *          `.od-sub` grid rows so Strike ($) and Put Bid (plus all desk columns)
+ *          have scalable horizontal separation and never clash across devices.
+ * v0.9.29 - Dynamic desk columns: strike-column guide now uses `.od-strike-cell`
+ *          instead of a fixed nth-child selector because the Strike column moves
+ *          when users hide/show OI/Vol/IV/Greeks.
+ * v0.9.28 - No CSS structural changes for static-cache greeks metadata
+ *          (main.tsx/scripts/data schema change only). Entry recorded to keep
+ *          this agentic CSS header synchronized.
+ * v0.9.27 - No CSS structural changes for local-index company names in ticker
+ *          suggestions (main.tsx/data/index.json/scripts change only). Entry
+ *          recorded to keep this agentic CSS header synchronized.
+ * v0.9.26 - No CSS structural changes for the provider-aware ticker suggestion
+ *          combobox; it uses Tailwind utilities in main.tsx. Entry recorded to
+ *          keep this agentic CSS header synchronized.
+ * v0.9.17 - .od-sec set to `display: contents` — the sticky-bar PILE fix. As a
+ *          block wrapper it was the containing block of its sticky .od-bar and
+ *          CLIPPED it to the section, so a bar scrolled AWAY with its section
+ *          instead of accumulating at the top (leaving a "hole" where the prior
+ *          section's rows showed through, and stacking multiple date bars failed).
+ *          With `display: contents` the wrapper makes no box: every bar/sub-header/
+ *          row becomes a direct child of .od-desk, so each bar's containing block
+ *          is the whole desk and the bars pile up correctly while scrolling.
+ * v0.9.15 - Desk moved from <table> to DIV/CSS-GRID (fixes see-through sticky
+ *          headers on scroll for good). New rules: .od-desk / .od-sec / .od-bar
+ *          (sticky, accumulates via inline top=index*--od-bar) / .od-sub (sticky
+ *          when .od-active) / .od-drow (13-col grid via --od-grid). Opaque header
+ *          surfaces, Calls/Puts tints, zebra + ATM row bg, center Strike guide.
+ *          Removed all `.table-container table/th/tr.od-*` table rules.
+ * v0.9.13 - Real fix for see-through sticky sub-headers on scroll:
+ *          - ROOT CAUSE: the table used `border-collapse: collapse`. In
+ *            WebKit/Blink, collapsed-border tables paint cell backgrounds at the
+ *            TABLE level, so position:sticky <th> backgrounds render TRANSPARENT
+ *            *while scrolling* (fine when static) — the group (Calls|Strike|Puts)
+ *            and column-label rows let body text clash through.
+ *          - FIX: `.table-container table` now uses `border-collapse: separate;
+ *            border-spacing: 0` (and removed the `border-collapse` class in
+ *            main.tsx). Each sticky header cell keeps its own opaque background,
+ *            so pinned sub-headers stay solid over the rows during scroll.
+ * v0.9.12 - Fix body rows painting OVER sticky headers while scrolling:
+ *          - ROOT CAUSE: the row open/close animations (row-in/row-out) and the
+ *            `expand` keyframe used `transform: translateY(...)` with fill-mode
+ *            `both`. A lingering (even zero) transform creates a STACKING CONTEXT
+ *            on each row, which made body rows paint ABOVE the position:sticky
+ *            headers -> text clashed through the pinned header on scroll.
+ *          - FIX: made these animations OPACITY-ONLY (no transform), so rows no
+ *            longer form their own stacking context and the sticky headers stay
+ *            on top. (Button press / chip hover transforms are unaffected — they
+ *            aren't on table rows.)
+ * v0.9.11 - Fix transparent sticky sub-headers:
+ *          - BUG: the center Strike-column guide set `background-color: rgba(..)`
+ *            on the sticky column-label row's Strike cell, which REPLACED its
+ *            opaque base color -> body text clashed through the pinned header.
+ *            Switched the guide tint to a flat `background-image` gradient so it
+ *            LAYERS over the opaque base instead of replacing it (headers stay
+ *            fully opaque; body cells keep the subtle guide).
+ * v0.9.10 - Center Strike column guide:
+ *          - Subtle indigo vertical tint on the 7th (Strike) column of body rows
+ *            and its label header, so the middle axis is easy to track down a
+ *            long chain. (Expiration/group bars keep their opaque backgrounds.)
+ * v0.9.9 - Even, comfortable columns:
+ *          - `.table-container table` now uses table-layout:fixed + a min-width
+ *            floor; combined with an explicit <colgroup> in main.tsx the 13
+ *            columns share width equally (stretch on wide screens) and stay
+ *            comfortable (horizontal scroll) on narrow screens.
+ * v0.9.8 - No CSS structural changes (main.tsx v0.9.8: full-width desk +
+ *          adaptive dvh height + controls placement are Tailwind utility tweaks).
+ * v0.9.7 - Symmetric collapse animation:
+ *          - Added `row-out` keyframe + `.od-row-out` (fade + slight lift) used
+ *            when a section collapses, mirroring `.od-row-in` on expand. Removed
+ *            the now-unused `flash-bar`/`.od-flash` rule (the click-date-to-jump
+ *            feature was superseded by a whole-header toggle in main.tsx v0.9.7).
+ * v0.9.6 - Arrival flash keyframe (jump-to feedback):
+ *          - Added `flash-bar` keyframe + `.od-flash` for the ~1.1s highlight
+ *            pulse on the expiration bar you jumped to. (Wide-screen full-width
+ *            layout is handled with Tailwind lg:/2xl: utilities in main.tsx; the
+ *            centered single-cell header fix is also markup-side.)
+ * v0.9.5 - Active-section highlight for the sticky expiration pile:
+ *          - Added `.od-exp-row.od-current` styling (brighter indigo tint + an
+ *            inset left accent bar, both themes) so the in-view expiration is
+ *            obvious among the accumulated headers. The expand-on-date-click
+ *            animation reuses the existing `.od-row-in` on the group/label rows.
+ * v0.9.4 - No CSS structural changes for clickable pile headers (main.tsx
+ *          v0.9.4). The expiration bar's chevron (collapse) and date (scroll-to)
+ *          are two buttons reusing existing styles; scroll-to is handled in JS.
+ * v0.9.3 - Staggered rows + STACKING sticky expiration headers:
+ *          - Added `row-in` keyframe + `.od-row-in` for the capped staggered
+ *            option-row fade-in.
+ *          - Reworked the sticky header for a SINGLE shared table (one tbody per
+ *            expiration): expiration bars are sticky and accumulate into a pile
+ *            at the top (offset by CSS var --i * --od-bar, higher z per later
+ *            section); the in-view section's `.od-active` group + column-label
+ *            rows pin just below the pile. All header cells fully OPAQUE.
+ * v0.9.2 - Motion polish + accordion animation:
+ *          - Added an `expand` keyframe + `--animate-expand` token and the
+ *            `.od-section-body` class used when an expiration section opens.
+ *          - App-wide quick transitions on button/select/input/a (+ `.od-anim`),
+ *            a subtle active-press transform, and a prefers-reduced-motion guard
+ *            that neutralizes animations/transitions for users who opt out.
+ * v0.9.1 - Sticky-header opacity fix + centered expiration:
+ *          - Made ALL sticky header backgrounds fully OPAQUE (removed the
+ *            semi-transparent dark-mode rgba tints that let body rows bleed
+ *            through): neutral header, Calls/Puts group tints, and the
+ *            Expiration row now use solid colors in both themes.
+ *          - The Expiration row is now centered (markup change in main.tsx;
+ *            the .od-exp cell hosts a full-width centered toggle button used by
+ *            the new per-section collapse feature).
+ * v0.9.0 - No CSS structural changes required by the main.tsx v0.9.0 upgrade
+ *          (Settings → Cache stats + clear actions). The new panel reuses the
+ *          existing themed-scroll popover and Tailwind utilities; no new styles.
+ *          Entry recorded to keep the changelog synchronized with main.tsx per
+ *          the AGENT READ-WRITE RULE.
+ * v0.8.0 - Sticky multi-row option-chain header (bug fix + multi-expiration):
+ *          - Reworked the `.table-container thead` sticky rules into THREE
+ *            stacked, non-overlapping sticky rows via a fixed row height
+ *            (--od-hrow) and per-row `top` offsets (.od-hrow-1/2/3). This fixes
+ *            the previous clash where the group row and the column-label row
+ *            both used top:0 and overlapped while scrolling.
+ *          - Added the full-width Expiration header row (.od-exp) that sits above
+ *            Calls|Strike|Puts, and opaque per-cell backgrounds (incl. the
+ *            emerald/rose group tints via .od-calls/.od-puts) so scrolled body
+ *            rows never bleed through the pinned header. Supports several
+ *            stacked expiration tables in one scroll area.
+ * v0.7.0 - No CSS structural changes required by the main.tsx v0.7.0 upgrade
+ *          (removed Tradier/Alpaca/Polygon/Alpha Vantage; fixed DoltHub; added
+ *          a CBOE local-proxy path). Purely provider-layer + infra changes;
+ *          existing utilities/tokens cover the UI. Entry recorded to keep the
+ *          changelog synchronized with main.tsx per the AGENT READ-WRITE RULE.
+ * v0.6.0 - No CSS structural changes required by the main.tsx v0.6.0 upgrade
+ *          (added Polygon/Massive + DoltHub providers). Both reuse the existing
+ *          provider UI (dropdown, badges, onboarding, expiration selector);
+ *          no new styles needed. Entry recorded to keep the changelog
+ *          synchronized with main.tsx per the AGENT READ-WRITE RULE.
+ * v0.5.0 - No CSS structural changes required by the main.tsx v0.5.0 upgrade
+ *          (Alpaca KEY+SECRET provider). The extra secret input in Settings and
+ *          the onboarding card reuse existing Tailwind utilities; the Settings
+ *          popover already scrolls via `.themed-scroll`. Entry recorded to keep
+ *          the changelog synchronized with main.tsx per the AGENT READ-WRITE RULE.
+ * v0.4.0 - No CSS structural changes required by the main.tsx v0.4.0 upgrade
+ *          (works-first defaults, deferred two-step loading, Cancel button, and
+ *          the new "Static cache" + "Yahoo (via proxy)" providers). The Settings
+ *          popover now scrolls via the existing `.themed-scroll` utility; the
+ *          Cancel button, notice banner, and ticker dropdown reuse existing
+ *          Tailwind utilities + the fade-in / shake / pulse-soft tokens. Entry
+ *          recorded to keep the changelog synchronized with main.tsx per the
+ *          AGENT READ-WRITE RULE.
+ * v0.3.0 - No CSS structural changes required by the main.tsx provider overhaul
+ *          (v0.3.0: Tradier Sandbox default + bulk/lazy provider modes). The
+ *          new expiration-loading spinner, provider badges, and onboarding
+ *          preview all reuse existing utilities + the fade-in / shake /
+ *          pulse-soft tokens and the themed-scroll surfaces already declared
+ *          here. Entry recorded to keep the changelog synchronized with
+ *          main.tsx per the AGENT READ-WRITE RULE.
+ * v0.2.0 - No CSS structural changes required by the main.tsx provider overhaul
+ *          (v0.2.0). The onboarding card, setup badges, and retry banner all
+ *          reuse existing Tailwind utilities + the `fade-in` / `shake` /
+ *          `pulse-soft` animation tokens and the themed-scroll surfaces already
+ *          declared here. Entry recorded to keep the changelog synchronized
+ *          with main.tsx per the AGENT READ-WRITE RULE.
+ * v0.1.0 - Initial CSS baseline:
+ *          - Tailwind v4 engine import.
+ *          - `@custom-variant dark` scoped dark-mode strategy (class based).
+ *          - Animation tokens: `shake`, `fade-in`, `pulse-soft`.
+ *          - Themed scrollbars for `.table-container` and `.themed-scroll`.
+ *          - Base surface / typography resets bound to CSS variables.
+ * ---------------------------------------------------------------------------
+ *
+ * MODULES & FEATURES:
+ * 1. [Tailwind Engine & Variants]
+ *    - Imports the tailwind base engine via `@import "tailwindcss"`.
+ *    - `@custom-variant dark`: Enforces a strict scoped dark mode strategy
+ *      using `&:where(.dark, .dark *)` so that the `.dark` class placed on the
+ *      <html>/<body> element (see main.tsx theme controller) reliably overrides
+ *      standard Tailwind light defaults with correct selector specificity.
+ *
+ * 2. [Animation System]
+ *    - `@theme`: Defines the design tokens (custom animations) for the app.
+ *    - `shake`     : Feedback animation for invalid inputs (e.g. bad ticker).
+ *    - `fade-in`   : Entry transition for modal windows and popover elements
+ *                    (settings panel, dropdowns).
+ *    - `pulse-soft`: Subtle looping pulse used on the "live/loading" indicator.
+ *
+ * 3. [Scrollbar Theming]
+ *    - Shared themed scrollbars across all scrollable surfaces in the app.
+ *    - Applies to two utility classes:
+ *        - `.table-container` -> main option-chain desk scroll area
+ *        - `.themed-scroll`   -> any other scrollable surface (e.g. tabs strip,
+ *                                the expiration selector strip)
+ *    - Firefox: uses `scrollbar-width` and `scrollbar-color`.
+ *    - WebKit (Chrome / Safari / Edge): styled via `::-webkit-scrollbar`.
+ *    - Colors are sourced from the Tailwind `slate` palette to stay consistent
+ *      with the application's neutral surface theme:
+ *        - Light theme thumb: slate-300 (#cbd5e1), hover slate-400 (#94a3b8)
+ *        - Dark  theme thumb: slate-700 (#334155), hover slate-600 (#475569)
+ *
+ * DESIGN PATTERNS:
+ * - Utility-First: Avoid over-nesting CSS; use Tailwind classes where possible.
+ * - Theme Consistency: All colors must derive from the Tailwind theme or from
+ *   the explicit CSS variables declared in the `:root` / `.dark` blocks below.
+ * ============================================================================
+ */
+
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+ * [Tailwind Engine & Variants]
+ * Class-based dark mode. main.tsx toggles `.dark` on <html>. Any element under
+ * a `.dark` ancestor (or the `.dark` element itself) receives dark styling.
+ * ------------------------------------------------------------------------- */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+ * [Animation System] Design tokens registered on the Tailwind theme so that
+ * the utilities `animate-shake`, `animate-fade-in`, `animate-pulse-soft`
+ * become available application-wide.
+ * ------------------------------------------------------------------------- */
+@theme {
+    --animate-shake: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    --animate-fade-in: fade-in 0.18s ease-out both;
+    --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
+    /* Accordion body reveal for an expiration section expanding open. */
+    --animate-expand: expand 0.22s ease-out both;
+}
+
+/* Keyframes must live outside @theme (they are standard CSS at-rules). */
+@keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+}
+
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+}
+
+/* Smooth "grow open" used when an expiration section is expanded. Animating
+ * max-height (to a generous cap) + opacity gives a lightweight accordion feel
+ * without needing to measure the content height. */
+@keyframes expand {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Per-row entrance used for a subtle STAGGERED fade-in of the option rows when
+ * a chain loads. Only the first N rows get an incremental delay (set inline);
+ * the rest simply appear, so huge chains (e.g. SPY ~13k contracts) never look
+ * like they're "flickering" row-by-row for seconds. */
+@keyframes row-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+.od-row-in { animation: row-in 0.28s ease-out both; }
+
+/* Mirror of row-in used when a section COLLAPSES, so closing is animated the
+ * same way opening is, before the rows unmount.
+ * NOTE: these animations are OPACITY-ONLY (no transform). A lingering transform
+ * (even translateY(0) under fill-mode:both) creates a stacking context on each
+ * row, which would make body rows paint ON TOP of the sticky headers while
+ * scrolling. Fading only keeps the pinned headers above the rows. */
+@keyframes row-out {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+}
+.od-row-out { animation: row-out 0.16s ease-in both; }
+
+/* ---------------------------------------------------------------------------
+ * MODERN MOTION POLISH — small, quick transitions applied app-wide so buttons,
+ * chips, inputs and the theme switch feel smooth (never sluggish). Respects
+ * users who prefer reduced motion.
+ * ------------------------------------------------------------------------- */
+button, select, input, a, .od-anim {
+    transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease,
+        box-shadow 0.15s ease,
+        transform 0.12s ease,
+        opacity 0.15s ease;
+}
+/* Subtle press feedback on interactive controls. */
+button:not(:disabled):active { transform: translateY(0.5px) scale(0.985); }
+/* Expiration section body animates in when expanded. */
+.od-section-body { animation: var(--animate-expand); }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * Theme surface variables. These feed the base body colors and give a single
+ * source of truth referenced by the scrollbar rules and any custom surfaces.
+ * ------------------------------------------------------------------------- */
+:root {
+    --od-bg: #f8fafc;          /* slate-50  : app background (light)          */
+    --od-fg: #0f172a;          /* slate-900 : primary text  (light)          */
+    --od-scroll-thumb: #cbd5e1;      /* slate-300 */
+    --od-scroll-thumb-hover: #94a3b8;/* slate-400 */
+    --od-scroll-track: transparent;
+}
+
+.dark {
+    --od-bg: #0f172a;          /* slate-900 : app background (dark)           */
+    --od-fg: #e2e8f0;          /* slate-200 : primary text  (dark)           */
+    --od-scroll-thumb: #334155;      /* slate-700 */
+    --od-scroll-thumb-hover: #475569;/* slate-600 */
+    --od-scroll-track: transparent;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * Shared color palettes (merge-ready with fundamentals)
+ * html[data-palette] is set by useThemeController:
+ *   - options-desk  (default): indigo accents, slate-900 dark surface
+ *   - fundamentals:            emerald accents, slate-950 dark surface
+ * ------------------------------------------------------------------------- */
+
+html[data-palette='fundamentals'] {
+    --od-accent: #059669;          /* emerald-600 */
+    --od-accent-soft: #10b981;     /* emerald-500 */
+    --od-accent-fg: #047857;       /* emerald-700 */
+}
+
+html[data-palette='options-desk'],
+:root {
+    --od-accent: #4f46e5;          /* indigo-600 */
+    --od-accent-soft: #6366f1;     /* indigo-500 */
+    --od-accent-fg: #4338ca;       /* indigo-700 */
+}
+
+/* When Emerald Ledger is selected, retint the desk chrome that is hard-coded
+ * indigo in index.css so both product skins stay consistent. */
+html[data-palette='fundamentals'] .od-bar {
+    background-color: #d1fae5; /* emerald-100 */
+    color: #047857;            /* emerald-700 */
+}
+html[data-palette='fundamentals'].dark .od-bar {
+    background-color: #022c22; /* emerald-950-ish */
+    color: #6ee7b7;            /* emerald-300 */
+}
+html[data-palette='fundamentals'] .od-bar.od-current {
+    background-color: #a7f3d0; /* emerald-200 */
+    color: #065f46;            /* emerald-800 */
+    box-shadow: inset 3px 0 0 0 #10b981; /* emerald-500 */
+}
+html[data-palette='fundamentals'].dark .od-bar.od-current {
+    background-color: #064e3b; /* emerald-900 */
+    color: #a7f3d0;
+    box-shadow: inset 3px 0 0 0 #34d399; /* emerald-400 */
+}
+html[data-palette='fundamentals'] .od-drow.od-atm {
+    background-color: #ecfdf5; /* emerald-50 */
+}
+html[data-palette='fundamentals'].dark .od-drow.od-atm {
+    background-color: rgba(6, 78, 59, 0.4);
+}
+html[data-palette='fundamentals'] .od-strike-cell {
+    background-image: linear-gradient(rgba(16, 185, 129, 0.06), rgba(16, 185, 129, 0.06));
+}
+html[data-palette='fundamentals'].dark .od-strike-cell {
+    background-image: linear-gradient(rgba(52, 211, 153, 0.10), rgba(52, 211, 153, 0.10));
+}
+html[data-palette='fundamentals'].dark {
+    --od-bg: #020617; /* slate-950 — matches fundamentals dark surface */
+    --od-fg: #f1f5f9;
+}
+
+/* Base body binding. Uses the CSS variables above so the whole page reacts to
+ * the `.dark` class instantly with a soft transition. */
+html, body {
+    height: 100%;
+}
+body {
+    background-color: var(--od-bg);
+    color: var(--od-fg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+ * [Scrollbar Theming]
+ * Firefox (standards) block.
+ * ------------------------------------------------------------------------- */
+.table-container,
+.themed-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--od-scroll-thumb) var(--od-scroll-track);
+}
+
+/* WebKit (Chrome / Safari / Edge) block. */
+.table-container::-webkit-scrollbar,
+.themed-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.table-container::-webkit-scrollbar-track,
+.themed-scroll::-webkit-scrollbar-track {
+    background: var(--od-scroll-track);
+}
+.table-container::-webkit-scrollbar-thumb,
+.themed-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--od-scroll-thumb);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+.table-container::-webkit-scrollbar-thumb:hover,
+.themed-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: var(--od-scroll-thumb-hover);
+}
+
+/* ---------------------------------------------------------------------------
+ * Option-chain desk — DIV/GRID layout with STACKING sticky expiration bars.
+ *
+ * We DELIBERATELY do NOT use a <table>. Native tables have a well-known bug:
+ * `position: sticky` <th> backgrounds render TRANSPARENT while scrolling in
+ * WebKit/Blink (they look fine only when static), so body rows clash through the
+ * pinned header. Plain block/grid elements have no such issue. (The sibling
+ * daggerok/csv project uses the same div-grid sticky approach for this reason.)
+ *
+ * Layout: the desk (.od-desk) is a column of sections (.od-sec). Each section
+ * has an always-sticky Expiration bar (.od-bar) that PILES UP at the top as you
+ * scroll (top offset is set inline per index), plus — only when the section is
+ * active/in-view — a sticky group row + column-label row (.od-sub) just below
+ * the pile. Every strike row (.od-drow) uses a dynamic CSS grid; the sub-header
+ * rows share the exact same grid template (--od-grid) so columns line up.
+ * All header surfaces are fully OPAQUE so nothing shows through while scrolling.
+ * ------------------------------------------------------------------------- */
+.table-container {
+    --od-bar: 1.9rem;   /* height of an expiration bar (accumulating)         */
+    --od-hrow: 1.75rem; /* height of the group / column-label rows           */
+    --od-cgap: 0.25rem; /* horizontal gap between desk grid columns (rem-scalable) */
+}
+
+/* Every grid row (data + sub-headers) shares the dynamic template. */
+.od-drow,
+.od-sub {
+    display: grid;
+    grid-template-columns: var(--od-grid);
+    column-gap: var(--od-cgap);
+    align-items: center;
+}
+
+/* Section wrapper: `display: contents` is ESSENTIAL. Without it the wrapper is a
+ * block box that becomes the CONTAINING BLOCK of its sticky expiration bar, which
+ * CLIPS the bar to the section's own bounds — so when the section scrolls off the
+ * top the bar leaves with it (instead of piling at the top), leaving a "hole"
+ * where the previous section's last rows show through above the current bar. With
+ * `display: contents` the wrapper generates NO box: the bar, sub-headers and rows
+ * become direct children of .od-desk, so every bar's containing block is the whole
+ * desk and the bars correctly ACCUMULATE at the top as you scroll. */
+.od-sec {
+    display: contents;
+}
+
+/* Expiration bar — ALWAYS sticky, accumulates into a pile at the top. `top` and
+ * z-index are set inline per section (top = index * --od-bar; later sections get
+ * higher z so an arriving bar cleanly covers the previous section's sub-headers).
+ * OPAQUE indigo background. */
+.od-bar {
+    min-height: var(--od-bar);
+    background-color: #e0e7ff; /* indigo-100 (opaque) */
+    color: #4338ca;            /* indigo-700 */
+    cursor: pointer;
+}
+.dark .od-bar {
+    background-color: #1e1b4b; /* indigo-950 (opaque) */
+    color: #a5b4fc;
+}
+.od-bar:hover { filter: brightness(0.98); }
+/* ACTIVE section highlight — brighter tint + left accent so it's obvious where
+ * you are in the accumulated pile. */
+.od-bar.od-current {
+    background-color: #c7d2fe; /* indigo-200 */
+    color: #3730a3;            /* indigo-800 */
+    box-shadow: inset 3px 0 0 0 #6366f1; /* indigo-500 accent */
+}
+.dark .od-bar.od-current {
+    background-color: #312e81; /* indigo-900 */
+    color: #c7d2fe;
+    box-shadow: inset 3px 0 0 0 #818cf8; /* indigo-400 accent */
+}
+
+/* Sub-header rows (group + labels): OPAQUE base so scrolled rows never show. */
+.od-sub {
+    min-height: var(--od-hrow);
+    background-color: #f1f5f9; /* slate-100 */
+}
+.dark .od-sub {
+    background-color: #1e293b; /* slate-800 */
+}
+/* Opaque Calls/Puts group tints (their span is set inline from visible columns). */
+.od-sub .od-calls { background-color: #ecfdf5; } /* emerald-50 */
+.od-sub .od-puts  { background-color: #fff1f2; } /* rose-50 */
+.dark .od-sub .od-calls { background-color: #052e26; }
+.dark .od-sub .od-puts  { background-color: #4c0519; }
+
+/* Zebra striping + ATM highlight for data rows. */
+.od-drow:nth-child(odd)  { background-color: #ffffff; }
+.od-drow:nth-child(even) { background-color: rgba(248, 250, 252, 0.6); } /* slate-50/60 */
+.dark .od-drow:nth-child(odd)  { background-color: #0f172a; }            /* slate-900 */
+.dark .od-drow:nth-child(even) { background-color: rgba(15, 23, 42, 0.4); }
+.od-drow.od-atm  { background-color: #eef2ff; } /* indigo-50 */
+.dark .od-drow.od-atm { background-color: rgba(30, 27, 75, 0.4); }
+
+/* Center "Strike" column guide — a subtle vertical tint on the explicitly
+ * marked strike cell (column index changes when users hide/show desk columns).
+ * CONTAINMENT (v0.9.40): grid items default to min-width:auto, so long strike
+ * strings (e.g. "1,480.00") would expand past the track and paint over Put Bid.
+ * Force the cell to respect its track width and clip/ellipsis if needed. */
+.od-strike-cell {
+    box-sizing: border-box;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background-image: linear-gradient(rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0.06));
+}
+.dark .od-strike-cell {
+    background-image: linear-gradient(rgba(129, 140, 248, 0.10), rgba(129, 140, 248, 0.10));
+}
+
+/* TODO: future surfaces (charts, greeks heatmap) should reuse these tokens. */

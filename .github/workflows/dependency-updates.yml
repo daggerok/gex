@@ -1,0 +1,106 @@
+name: Dependency Updates
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Branch to update
+        required: true
+        default: master
+      commit_message:
+        description: Commit message
+        required: true
+        default: "chore(deps): update dependencies"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: dependency-updates-${{ inputs.target_branch }}
+  cancel-in-progress: false
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.target_branch }}
+          # Dependency updates only need a shallow history to commit and push.
+          fetch-depth: 2
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Update dependency versions
+        run: bunx npm-check-updates -u
+
+      - name: Install updated dependencies
+        run: bun install -E
+
+      - name: Validate unit tests
+        run: bun run test
+
+      - name: Validate data script syntax
+        run: |
+          python3 -m py_compile scripts/options-data.py
+          node --check scripts/options-cloudflare-proxy.js
+
+      - name: Validate application build
+        run: bun run build
+
+      - name: Validate GitHub Pages build
+        run: bun run build-github-pages
+
+      - name: Detect repository changes
+        id: changes
+        run: |
+          if git diff --quiet --exit-code; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push dependency updates
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          COMMIT_MESSAGE: ${{ inputs.commit_message }}
+        run: |
+          git config user.name "Maksim Kostromin"
+          git config user.email "daggerok@gmail.com"
+          git add package.json bun.lock
+          if git diff --staged --quiet; then
+            echo "No staged dependency changes — nothing to commit."
+          else
+            git commit -m "$COMMIT_MESSAGE"
+            git push origin "HEAD:${TARGET_BRANCH}" || echo "Push failed (may be up-to-date or race condition)"
+          fi
+
+      - name: Trigger GitHub Pages deploy for updated branch
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/github-pages.yml/dispatches \
+            -d "{\"ref\":\"${TARGET_BRANCH}\"}"
+
+      - name: No dependency updates found
+        if: steps.changes.outputs.changed != 'true'
+        run: echo "No dependency updates were found. Nothing to commit."

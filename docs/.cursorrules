@@ -1,0 +1,17 @@
+# Cursor Rules for Options Desk
+
+See the main agentic contract in [AGENT.md](../AGENT.md).
+
+## Language
+- Respond in **Russian**.
+
+## Key Rules
+- Follow **Spec → Verifier → Environment** methodology.
+- Stack: React + TypeScript + Tailwind v4 + Parcel/Bun + uv/Python.
+- Single source of truth for model greeks: `src/main.tsx` (never in `options-data.py`).
+- Provider order is fixed: `CACHE, CBOE, NASDAQ, YAHOO`.
+
+## Verification
+- Run `bun run build`.
+- Run `uv run python -m py_compile scripts/options-data.py`.
+- Run `node --check scripts/options-cloudflare-proxy.js`.
