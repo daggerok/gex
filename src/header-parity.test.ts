@@ -6,7 +6,7 @@ const main = readFileSync(join(import.meta.dir, 'main.tsx'), 'utf8');
 const ci = readFileSync(join(import.meta.dir, '../.github/workflows/ci.yaml'), 'utf8');
 const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8'));
 
-describe('header parity + CACHE-muted proxies (options-desk)', () => {
+describe('header parity + CACHE-muted proxies (gex)', () => {
   test('uses fundamentals surface tokens on sticky header', () => {
     expect(main).toContain('bg-slate-950/95 text-slate-100');
     expect(main).toContain('bg-white/95 text-slate-900');

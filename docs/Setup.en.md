@@ -76,7 +76,7 @@ Goal: fix the rules for working with files and the environment.
 
 For Options Desk:
 
-- start each task from a fresh `origin/master`;
+- start each task from a fresh `origin/main`;
 - work in a feature branch;
 - push a PR;
 - do not commit `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`;

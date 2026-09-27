@@ -2,7 +2,7 @@
 
 > **Bilingual / Двуязычно:** extended guides are in [`./docs`](./docs) (`*.en.md` / `*.ru.md`). The root [`AGENT.md`](./AGENT.md) is the canonical RU contract; EN companions: [`AGENT.en.md`](./AGENT.en.md) (this file), [`docs/README.en.md`](./docs/README.en.md), [`docs/DEVELOPMENT.en.md`](./docs/DEVELOPMENT.en.md), [`docs/ARENA.en.md`](./docs/ARENA.en.md).
 
-This file is the main contract for AI agents working with the `options-desk` repository.
+This file is the main contract for AI agents working with the `gex` repository.
 
 ## Communication Language
 
@@ -111,7 +111,7 @@ git diff --check
 
 ### 3. Environment
 
-- New tasks start from the latest `origin/master` via a feature branch + PR.
+- New tasks start from the latest `origin/main` via a feature branch + PR.
 - Primary toolchain: **Bun** (JS/TS) and **uv** (Python).
 - Do not mix mass data-refreshes with UI/docs changes unless requested.
 - Do not commit `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`.

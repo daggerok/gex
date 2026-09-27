@@ -58,8 +58,8 @@ We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** A
 This project uses **Bun** for installs/scripts and **Parcel** for the React/TypeScript build.
 
 ```bash
-git clone https://github.com/daggerok/options-desk.git
-cd options-desk
+git clone https://github.com/daggerok/gex.git
+cd gex
 bun install -E
 bun run serve
 ```
@@ -72,7 +72,7 @@ Production build:
 bun run build
 ```
 
-GitHub Pages build, with the correct `/options-desk/` public URL:
+GitHub Pages build, with the correct `/gex/` public URL:
 
 ```bash
 bun run build-github-pages
@@ -128,7 +128,7 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 1. Enable Pages in repo **Settings → Pages**.
 2. Allow Actions to commit: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-3. The scheduled **Update options data** workflow runs `scripts/options-data.py`, self-discovers an optionable universe, refreshes/grows `data/options/*.json`, updates `data/options/index.json`, and commits changes back to `master`.
+3. The scheduled **Update options data** workflow runs `scripts/options-data.py`, self-discovers an optionable universe, refreshes/grows `data/options/*.json`, updates `data/options/index.json`, and commits changes back to `main`.
 4. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`.
 
 You do **not** need to maintain a ticker list. For a one-off/manual data run, set `TICKERS="AAPL MSFT SPY"` when running `scripts/options-data.py`; the default scheduled workflow uses self-discovery.
@@ -139,7 +139,7 @@ You do **not** need to maintain a ticker list. For a one-off/manual data run, se
 
 ### How it works
 
-1. Your browser loads the app from GitHub Pages (e.g., `https://daggerok.github.io/options-desk/`)
+1. Your browser loads the app from GitHub Pages (e.g., `https://daggerok.github.io/gex/`)
 2. When you select a proxy-backed provider, the app sends requests to the **Proxy base URL** (default: `http://localhost:8787`)
 3. The proxy (running on your local machine) forwards requests to Yahoo/NASDAQ/CBOE and returns the response
 4. This works because your browser can access `localhost` even when the page is served from GitHub Pages
@@ -148,8 +148,8 @@ You do **not** need to maintain a ticker list. For a one-off/manual data run, se
 
 ```bash
 # Clone the repo (if not already done)
-git clone https://github.com/daggerok/options-desk.git
-cd options-desk
+git clone https://github.com/daggerok/gex.git
+cd gex
 
 # Install dependencies
 bun install -E

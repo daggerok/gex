@@ -2,7 +2,7 @@
 
 > **Двуязычно / Bilingual:** расширенные руководства в [`./docs`](./docs) (`*.en.md` / `*.ru.md`). Этот файл — канонический контракт (RU); EN-компаньоны: [`AGENT.en.md`](./AGENT.en.md), [`docs/README.en.md`](./docs/README.en.md), [`docs/DEVELOPMENT.en.md`](./docs/DEVELOPMENT.en.md), [`docs/ARENA.en.md`](./docs/ARENA.en.md).
 
-Этот файл — основной контракт для AI-агентов, которые работают с репозиторием `options-desk`.
+Этот файл — основной контракт для AI-агентов, которые работают с репозиторием `gex`.
 
 ## Язык общения
 
@@ -111,7 +111,7 @@ git diff --check
 
 ### 3. Environment
 
-- Новые задачи — от актуального `origin/master`, feature branch + PR.
+- Новые задачи — от актуального `origin/main`, feature branch + PR.
 - Основные инструменты: **Bun** (JS/TS) и **uv** (Python).
 - Не смешивать mass data-refresh с UI/docs, если не просили.
 - Не коммитить `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`.

@@ -8,7 +8,7 @@ Compatibility stub: агенты, которые ищут `AGENTS.md`, долж�
 
 1. Отвечать пользователю **по-русски**.
 2. Spec → Verifier → Environment (детали в `AGENT.md`).
-3. Новые задачи — от актуального `origin/master`, работа через PR.
+3. Новые задачи — от актуального `origin/main`, работа через PR.
 4. Провайдеры **только** `CACHE, CBOE, NASDAQ, YAHOO` (порядок фиксирован).
 5. Default selection: localhost → **CBOE**, GitHub Pages → **CACHE** (порядок списка не менять).
 6. **Model / higher-order greeks — только UI** (`src/main.tsx`). `options-data.py` = Cboe 1st-order only. Не дублировать BS в Python.

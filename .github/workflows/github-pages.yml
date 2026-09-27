@@ -2,12 +2,12 @@ name: GitHub Pages
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
   workflow_run:
     workflows: ["Update options data"]
     types: [completed]
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: read
@@ -35,7 +35,7 @@ jobs:
           # SHA, then commits refreshed data during the run. Checking out the
           # branch ensures Pages builds the newly pushed data commit, not the
           # upstream run's original SHA.
-          ref: master
+          ref: main
           # Keep only the latest two default-branch commits; the build needs no deeper history.
           fetch-depth: 2
       - uses: oven-sh/setup-bun@v2

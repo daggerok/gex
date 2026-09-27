@@ -76,7 +76,7 @@ TICKERS=XSW MAX_FETCHES=1 REQUEST_SLEEP=0 uv run python scripts/options-data.py
 
 Для Options Desk:
 
-- начинать новую задачу от свежего `origin/master`;
+- начинать новую задачу от свежего `origin/main`;
 - работать в feature branch;
 - пушить PR;
 - не коммитить `dist/`, `node_modules/`, `.parcel-cache`, `package-lock.json`, `.venv`, `__pycache__`;

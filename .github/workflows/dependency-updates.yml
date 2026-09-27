@@ -6,7 +6,7 @@ on:
       target_branch:
         description: Branch to update
         required: true
-        default: master
+        default: main
       commit_message:
         description: Commit message
         required: true

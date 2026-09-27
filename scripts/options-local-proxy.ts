@@ -345,7 +345,7 @@ Bun.serve({
             catch (e) { return json({ error: String(e) }, 502); }
         }
         if (url.pathname === "/" || url.pathname === "/health") {
-            return json({ ok: true, service: "options-desk-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"] });
+            return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"] });
         }
         return json({ error: "not found" }, 404);
     },

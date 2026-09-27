@@ -351,8 +351,8 @@ button:not(:disabled):active { transform: translateY(0.5px) scale(0.985); }
 /* ---------------------------------------------------------------------------
  * Shared color palettes (merge-ready with fundamentals)
  * html[data-palette] is set by useThemeController:
- *   - options-desk  (default): indigo accents, slate-900 dark surface
- *   - fundamentals:            emerald accents, slate-950 dark surface
+ *   - gex (default): indigo accents, slate-900 dark surface
+ *   - fundamentals:  emerald accents, slate-950 dark surface
  * ------------------------------------------------------------------------- */
 
 html[data-palette='fundamentals'] {
@@ -361,7 +361,7 @@ html[data-palette='fundamentals'] {
     --od-accent-fg: #047857;       /* emerald-700 */
 }
 
-html[data-palette='options-desk'],
+html[data-palette='gex'],
 :root {
     --od-accent: #4f46e5;          /* indigo-600 */
     --od-accent-soft: #6366f1;     /* indigo-500 */

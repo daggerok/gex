@@ -58,8 +58,8 @@
 Проект использует **Bun** для установки/скриптов и **Parcel** для сборки React/TypeScript.
 
 ```bash
-git clone https://github.com/daggerok/options-desk.git
-cd options-desk
+git clone https://github.com/daggerok/gex.git
+cd gex
 bun install -E
 bun run serve
 ```
@@ -72,7 +72,7 @@ bun run serve
 bun run build
 ```
 
-Сборка для GitHub Pages с правильным public URL `/options-desk/`:
+Сборка для GitHub Pages с правильным public URL `/gex/`:
 
 ```bash
 bun run build-github-pages
@@ -128,7 +128,7 @@ bun run build-github-pages
 
 1. Включи Pages: **Settings → Pages**.
 2. Разреши Actions коммитить: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-3. Workflow **Update options data** запускает `scripts/options-data.py`, сам находит universe тикеров, обновляет/расширяет `data/options/*.json`, обновляет `data/options/index.json` и коммитит изменения в `master`.
+3. Workflow **Update options data** запускает `scripts/options-data.py`, сам находит universe тикеров, обновляет/расширяет `data/options/*.json`, обновляет `data/options/index.json` и коммитит изменения в `main`.
 4. Workflow **GitHub Pages** собирает приложение через `bun run build-github-pages` и деплоит `dist/`.
 
 Ручной список тикеров поддерживается только для разовых запусков: `TICKERS="AAPL MSFT SPY" python scripts/options-data.py`. Плановый workflow использует самообнаружение.
@@ -139,7 +139,7 @@ bun run build-github-pages
 
 ### Как это работает
 
-1. Браузер загружает приложение с GitHub Pages (например, `https://daggerok.github.io/options-desk/`)
+1. Браузер загружает приложение с GitHub Pages (например, `https://daggerok.github.io/gex/`)
 2. Когда выбираешь провайдера с прокси, приложение отправляет запросы на **Proxy base URL** (по умолчанию: `http://localhost:8787`)
 3. Прокси (запущенный на твоей локальной машине) перенаправляет запросы на Yahoo/NASDAQ/CBOE и возвращает ответ
 4. Это работает, потому что браузер может обращаться к `localhost` даже когда страница загружена с GitHub Pages
@@ -148,8 +148,8 @@ bun run build-github-pages
 
 ```bash
 # Клонируй репозиторий (если ещё не сделал)
-git clone https://github.com/daggerok/options-desk.git
-cd options-desk
+git clone https://github.com/daggerok/gex.git
+cd gex
 
 # Установи зависимости
 bun install -E

@@ -43,7 +43,7 @@
  *            in-file `updated`, so no-op fetch runs no longer rewrite the index.
  * v0.9.42 - Shared color palettes (merge-ready with fundamentals):
  *          - Settings gain a Color palette control with two product skins:
- *            Emerald Ledger (`fundamentals`) and Indigo Desk (`options-desk`).
+ *            Emerald Ledger (`fundamentals`) and Indigo Desk (`gex`).
  *          - Default remains Indigo Desk (this app's native look). Emerald is
  *            the native fundamentals palette so a future merge already has both
  *            UIs prepared and consistent. Persisted as `settings.colorTheme`.
@@ -460,7 +460,7 @@
  *              * Clear data     -> removes only queried-data cache (keeps settings)
  *              * Clear settings -> removes only persisted settings (keeps data),
  *                                  and resets in-memory settings to defaults
- *              * Clear everything -> wipes all "options-desk.*" localStorage keys
+ *              * Clear everything -> wipes all "gex.*" localStorage keys
  *            Implemented via cacheStats(), clearCacheData(), clearSettingsStore(),
  *            clearAll(); also clears the in-memory bulkCache where relevant.
  *          - Synced user infra edits: proxy startup log columns aligned to
@@ -676,7 +676,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.colorTheme': 'Color palette',
         'settings.colorThemeHint': 'Shared with Fundamentals for a consistent merge-ready UI.',
         'colorTheme.fundamentals': 'Emerald Ledger',
-        'colorTheme.options-desk': 'Indigo Desk',
+        'colorTheme.gex': 'Indigo Desk',
         'settings.language': 'Language',
         'settings.languageHint': 'Also available in the heading for quick access.',
         'settings.apiKey': 'API key',
@@ -817,7 +817,7 @@ const translations: Record<Language, Record<string, string>> = {
         'error.providerLazy': 'Provider misconfigured (lazy without fetchMeta).',
         'error.friendly.networkProxy':
             'Could not reach the proxy. To fix this:\n\n' +
-            '1. Clone the repo: git clone https://github.com/daggerok/options-desk.git\n' +
+            '1. Clone the repo: git clone https://github.com/daggerok/gex.git\n' +
             '2. Install dependencies: bun install -E\n' +
             '3. Run the proxy: bun ./scripts/options-local-proxy.ts\n' +
             '4. Set Proxy base URL in Settings to http://localhost:8787\n\n' +
@@ -868,7 +868,7 @@ const translations: Record<Language, Record<string, string>> = {
         'settings.colorTheme': 'Цветовая палитра',
         'settings.colorThemeHint': 'Общая с Fundamentals — единый UI при будущем слиянии.',
         'colorTheme.fundamentals': 'Изумрудный Ledger',
-        'colorTheme.options-desk': 'Индиго Desk',
+        'colorTheme.gex': 'Индиго Desk',
         'settings.language': 'Язык',
         'settings.languageHint': 'Также доступен в шапке для быстрого доступа.',
         'settings.apiKey': 'API ключ',
@@ -1009,7 +1009,7 @@ const translations: Record<Language, Record<string, string>> = {
         'error.providerLazy': 'Провайдер настроен неверно (lazy без fetchMeta).',
         'error.friendly.networkProxy':
             'Не удалось достучаться до прокси. Чтобы исправить:\n\n' +
-            '1. Клонируй репозиторий: git clone https://github.com/daggerok/options-desk.git\n' +
+            '1. Клонируй репозиторий: git clone https://github.com/daggerok/gex.git\n' +
             '2. Установи зависимости: bun install -E\n' +
             '3. Запусти прокси: bun ./scripts/options-local-proxy.ts\n' +
             '4. Укажи Proxy base URL в настройках: http://localhost:8787\n\n' +
@@ -2329,8 +2329,8 @@ const PROXY_PRESETS: { label: string; template: string }[] = [
  * is empty. (Per the requirement: when storage would be exceeded, drop the
  * oldest records first, then store.)
  */
-const CACHE_PREFIX = 'options-desk.cache.'; // one localStorage key per entry
-const CACHE_INDEX_KEY = 'options-desk.cache.index.v1'; // {key: {ts,size}} map
+const CACHE_PREFIX = 'gex.cache.'; // one localStorage key per entry
+const CACHE_INDEX_KEY = 'gex.cache.index.v1'; // {key: {ts,size}} map
 const CACHE_MAX_BYTES = 4_000_000; // stay well under the ~5 MB localStorage cap
 
 /**
@@ -2498,7 +2498,7 @@ function clearAll(): void {
     try {
         for (let i = localStorage.length - 1; i >= 0; i--) {
             const k = localStorage.key(i);
-            if (k && k.startsWith('options-desk.')) localStorage.removeItem(k);
+            if (k && k.startsWith('gex.')) localStorage.removeItem(k);
         }
     } catch { /* ignore */ }
     bulkCache.clear();
@@ -2618,15 +2618,15 @@ async function loadExpiration(provider: DataProvider, symbol: string, expiration
 type ThemeMode = 'light' | 'dark' | 'system';
 
 /**
- * Shared color palettes across daggerok apps (fundamentals + options-desk).
+ * Shared color palettes across daggerok apps (fundamentals + gex).
  * Each product keeps its native default; the other palette is selectable so a
  * future merge ships with both UIs already consistent.
- *  - options-desk  → Indigo Desk     (indigo accents, slate-900 dark surface)  [default here]
- *  - fundamentals  → Emerald Ledger (emerald accents, slate-950 dark surface)
+ *  - gex          → Indigo Desk    (indigo accents, slate-900 dark surface)  [default here]
+ *  - fundamentals → Emerald Ledger (emerald accents, slate-950 dark surface)
  */
-type ColorThemeId = 'fundamentals' | 'options-desk';
-const COLOR_THEME_IDS: ColorThemeId[] = ['fundamentals', 'options-desk'];
-const DEFAULT_COLOR_THEME: ColorThemeId = 'options-desk';
+type ColorThemeId = 'fundamentals' | 'gex';
+const COLOR_THEME_IDS: ColorThemeId[] = ['fundamentals', 'gex'];
+const DEFAULT_COLOR_THEME: ColorThemeId = 'gex';
 
 function normalizeColorTheme(v: unknown): ColorThemeId {
     return v === 'fundamentals' ? 'fundamentals' : DEFAULT_COLOR_THEME;
@@ -2676,7 +2676,7 @@ interface Settings {
     lastTicker: string;
 }
 
-const SETTINGS_KEY = 'options-desk.settings.v5';
+const SETTINGS_KEY = 'gex.settings.v5';
 
 const DEFAULT_SETTINGS: Settings = {
     // Host-aware default selection; dropdown order stays CACHE, CBOE, NASDAQ, YAHOO.
@@ -2997,7 +2997,7 @@ const ColorThemeSwitch: React.FC<{ value: ColorThemeId; onChange: (c: ColorTheme
     const { t } = useI18n();
     const ax = accentOf(value);
     const options: { id: ColorThemeId; swatch: string; title: string }[] = [
-        { id: 'options-desk', swatch: 'bg-indigo-500', title: t('colorTheme.options-desk') },
+        { id: 'gex', swatch: 'bg-indigo-500', title: t('colorTheme.gex') },
         { id: 'fundamentals', swatch: 'bg-emerald-500', title: t('colorTheme.fundamentals') },
     ];
     const [open, setOpen] = useState(false);
@@ -3854,7 +3854,7 @@ const TopBar: React.FC<{
                                     <Pill
                                         value={settings.colorTheme}
                                         options={[
-                                            { k: 'options-desk', l: '📘' },
+                                            { k: 'gex', l: '📘' },
                                             { k: 'fundamentals', l: '📗' },
                                         ]}
                                         onChange={(k) => onChange({ colorTheme: normalizeColorTheme(k) })}
