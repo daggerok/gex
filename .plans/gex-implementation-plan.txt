@@ -1,0 +1,784 @@
+GEX APP — IMPLEMENTATION PLAN (for agentic developers)
+Repo: github.com/daggerok/gex (forked from daggerok/options-desk, agentic
+docs wiped, app source currently identical to options-desk)
+Author of this plan: Claude, acting as architect/analyst — NOT the
+implementer. This document is meant to be sufficient on its own: an
+agent reading only this file (+ the attached images) should not need
+to ask the human clarifying questions for anything covered here. Where
+something genuinely could not be verified, it is called out explicitly
+in section 17 — that section is the ONLY place you should expect
+open questions.
+Format: plain text. Date prepared: 2026-09-27.
+
+====================================================================
+0. HOW TO USE THIS DOCUMENT
+====================================================================
+Read top to bottom once before writing code. Section 4 (target file
+layout) and section 7 (GEX math spec) are the two sections you will
+refer back to most. Section 13 is the literal task breakdown — treat
+each phase as one PR. Section 17 lists everything that still needs
+verification and is not a decision for you to make silently — if you
+hit one of those points, stop and either do the stated research step
+or ask the human, do not guess.
+
+Two image files are attached alongside this plan:
+  - gex-implementation-plan-wireframe-tab2-gex.svg   — authoritative layout spec for Tab 2 (GEX)
+  - gex-implementation-plan-wireframe-tab3-chart.svg — authoritative layout spec for Tab 3 (Chart)
+Two more images MAY be attached (optional, supplementary only):
+  - gex-implementation-plan-reference-source-screenshot-1.png / -2.png — real screenshots of a
+    third-party competing product ("Max Power") that inspired this
+    feature. These have Russian marketing text baked into the image
+    and one unlabeled toggle ("AG") whose meaning was never confirmed
+    — IGNORE that toggle and the marketing text. Treat the two
+    wireframe SVGs as the actual spec; the screenshots are only
+    "vibe" reference for the general visual idea (colored zones,
+    sidebar-plus-chart layout), not a pixel spec.
+
+====================================================================
+1. VERIFIED CURRENT STATE OF THE REPO (facts, checked directly)
+====================================================================
+  - github.com/daggerok/gex is public; cloned successfully with no
+    credentials.
+  - src/main.tsx: 5,065 lines, byte-for-byte the same options-chain
+    viewer app as options-desk (only package.json name/description
+    and some doc files differ). No GEX code exists yet. No tabs exist
+    yet — App renders exactly one view (the chain table).
+  - Agentic docs present: README.md (short, doc-index only), CLAUDE.md
+    (short, ~2.3 KB — the "cleaned" version), docs/README.{en,ru}.md,
+    docs/DEVELOPMENT.{en,ru}.md, docs/LICENSE. AGENT.md, ARENA.*.md,
+    Setup.*.md, docs/.cursorrules, SCRATCHPAD.md are all GONE (this is
+    the "cleaned agentic setup" referenced by the human).
+  - package.json: name "gex", deps unchanged from options-desk —
+    react 19.2.7, react-dom 19.2.7, recharts 3.9.2 (present, UNUSED
+    anywhere in current code — confirmed via full-repo grep), lucide-
+    react, clsx, tailwind-merge, tailwindcss 4.3.3. NO charting-library
+    dependency for candlesticks yet (lightweight-charts not present).
+  - scripts/options-local-proxy.ts and scripts/options-cloudflare-
+    proxy.js exist, identical logic to options-desk: relay endpoints
+    for /api/options (Yahoo, needs crumb+cookie session), /api/cboe
+    (CBOE, no auth), /api/nasdaq (NASDAQ, no auth), /api/search
+    (ticker suggestions, all three providers). No /api/chart route
+    (OHLC) exists yet.
+  - data/options/*.json: ~330 cached tickers, each shaped as
+    { symbol, updated, underlyingPrice, greeks: {...summary...},
+      expirations: string[], quotes: OptionQuote[] }. No SPY.json or
+    SPX.json currently cached (SPY-family ETFs like SPYD/SPYG/SPYI/
+    SPYM are cached, plain "SPY" is not, as of this check).
+  - .github/workflows/: ci.yaml, dependency-updates.yml, github-
+    pages.yml, update-data.yml — NOT individually inspected line-by-
+    line in this session; see section 17 item 7.
+  - CLAUDE.md (current, short version) already states the core
+    non-negotiables that this plan also relies on: fixed provider
+    order (CACHE, CBOE, NASDAQ, YAHOO), Black-Scholes / all model
+    greeks math lives ONLY in src/main.tsx (never duplicated into
+    scripts/options-data.py), CACHE default on GitHub Pages / CBOE
+    default on localhost.
+
+====================================================================
+2. PRODUCT SCOPE — WHAT WE ARE BUILDING (decided, not up for debate)
+====================================================================
+The app becomes a 3-tab single-page app. TopBar (ticker input,
+provider dropdown CACHE/CBOE/NASDAQ/YAHOO, theme switch, language
+switch, settings gear) stays exactly as it is today, rendered ONCE,
+outside/above the tabs, unchanged in behavior. Only the content area
+below TopBar becomes tab-switchable:
+
+  Tab 1 "Desk"  — the CURRENT app, unchanged: Calls | Strike | Puts
+                  chain table, expiration multi-select, Load button.
+  Tab 2 "GEX"   — NEW: sidebar (OI Volume / GEX Analysis / Key Levels
+                  / P/C Ratio) + bar chart of Net GEX (or a selected
+                  alternate metric) by strike. See wireframe-tab2-
+                  gex.svg and section 8.1.
+  Tab 3 "Chart" — NEW: candlestick price chart of the underlying with
+                  the SAME computed levels (gamma flip, call/put
+                  walls, max pain) drawn as horizontal price lines.
+                  See gex-implementation-plan-wireframe-tab3-chart.svg and section 8.2.
+
+All three tabs render from the SAME already-loaded data in App state
+(meta, expData, selectedExps) — switching tabs never triggers a new
+options-chain fetch. Tab 3 additionally needs OHLC price history,
+which is a genuinely new fetch (see section 6.3).
+
+====================================================================
+3. NON-NEGOTIABLE ARCHITECTURE RULES
+====================================================================
+These carry forward from options-desk's old AGENT.md/CLAUDE.md and
+apply here too, restated explicitly since the old docs are gone:
+
+  R1. Single source of truth for ALL derived math (Black-Scholes
+      greeks AND the new GEX math) lives in the frontend TypeScript
+      source (post-refactor: greeks.ts and gex.ts — see section 4),
+      never duplicated in scripts/options-data.py or in either proxy
+      script. scripts/options-data.py stays limited to: yfinance
+      fetch + CBOE 1st-order greeks overlay (delta/gamma/theta/vega/
+      rho only, as-is from CBOE) + writing data/options/*.json. It
+      must never compute GEX, gamma flip, walls, or max pain.
+  R2. Exactly 4 chain data providers, fixed dropdown order CACHE,
+      CBOE, NASDAQ, YAHOO. Do not add a 5th. Do not reorder. GEX/Chart
+      tabs consume the SAME provider output already in state — they
+      are not a 5th provider.
+  R3. Do not change the schema of data/options/*.json without
+      stopping and asking the human first (this is a breaking change
+      to ~330 committed files and the workflow that regenerates them).
+  R4. Do not touch .github/workflows/*.yml without stopping and
+      asking the human first.
+  R5. Never commit dist/, node_modules/, .parcel-cache/, .venv/,
+      __pycache__/, package-lock.json.
+  R6. Every PR must pass, before merge:
+        bun run build
+        uv run python -m py_compile scripts/options-data.py
+        node --check scripts/options-cloudflare-proxy.js
+        git diff --check
+        bun test
+  R7. NEW rule for this project specifically (decided in section 4):
+      Phase 0 (the file-layout refactor) must be its own PR, with
+      ZERO behavior change and zero new features mixed in. Every
+      later phase builds on top of the refactored layout, not on the
+      original monolithic main.tsx.
+
+====================================================================
+4. TARGET FILE LAYOUT (decided — this is a deliberate departure from
+   options-desk's single-main.tsx convention, see rationale below)
+====================================================================
+RATIONALE: options-desk kept everything in one src/main.tsx (5,065
+lines) as a deliberate simplicity choice for a single-feature app. gex
+is adding two more substantial features (GEX math + a whole second
+charting library) and will likely be worked on by more than one agent
+in parallel ("one or more agentic developers" per the human's brief).
+A single ~7,000+ line file is a needless merge-conflict and review-
+burden risk at that point. Splitting now, before new feature code
+exists, is strictly easier than splitting later. This is an explicit
+architectural decision for Phase 0 — do it first, as pure mechanical
+extraction (move code, adjust imports, no logic changes), verify with
+`bun run build` + `bun test` before writing ANY new feature code.
+
+Target layout:
+
+  src/
+    index.html                  (unchanged)
+    index.css                   (unchanged)
+    main.tsx                    — App shell ONLY: state (settings,
+                                   meta, expData, selectedExps,
+                                   activeTab), effects, renders
+                                   <TopBar/> + tab switcher + the
+                                   active view. Target: under ~600
+                                   lines after extraction.
+    types.ts                    — OptionQuote, ChainMeta, ChainResult,
+                                   ProviderContext, DataProvider,
+                                   ProviderMode, SetupKind, Settings,
+                                   GreeksSource, GreeksSummary, and the
+                                   NEW GexPoint / GexLevels (section 5).
+    i18n.ts                     — translate(), the en/ru dictionaries,
+                                   I18nProvider, useI18n(). Add new
+                                   GEX/Chart tab strings here (both
+                                   languages, see section 10).
+    settings-store.ts           — loadSettings/saveSettings/
+                                   freshDefaultSettings/patchSettings
+                                   helpers, localStorage cache helpers
+                                   (cacheGet/cacheSet/cacheLoadIndex/
+                                   cacheEvictToFit/clearCacheData/etc.)
+    greeks.ts                   — blackScholesGreeks, normPdf, erf,
+                                   normCdf, yearsToExpiration,
+                                   hasFirstOrderGreeks,
+                                   hasHigherOrderGreeks,
+                                   enrichQuoteWithModelGreeks,
+                                   resolveEnrichmentSpot,
+                                   enrichQuotesWithModelGreeks,
+                                   enrichChainResult.
+                                   MOVE VERBATIM — do not change any
+                                   math while relocating.
+    gex.ts                      — NEW. computeGexProfile,
+                                   findGammaFlip, findCallPutWalls,
+                                   computeMaxPain, computePCRatio,
+                                   computeGexLevels (convenience
+                                   wrapper), and the named constants
+                                   from section 7. Pure functions,
+                                   zero React/DOM dependencies, fully
+                                   unit-testable in isolation.
+    providers/
+      index.ts                  — PROVIDERS array (fixed order),
+                                   LIVE_PROVIDERS, defaultProviderId(),
+                                   isLocalHost(), ctxFor().
+      cache.ts                  — the "static"/CACHE provider.
+      cboe.ts                   — the "cboe" provider (fetchAll +
+                                   suggestTickers), incl. the exact
+                                   CBOE parsing from section 6.1.
+      nasdaq.ts                 — the "nasdaq" provider.
+      yahoo.ts                  — the "yahoo" provider (crumb/cookie
+                                   handling stays proxy-side; this
+                                   file just calls /api/options).
+      chart.ts                  — NEW. Client-side fetch wrapper for
+                                   the new /api/chart proxy route
+                                   (section 6.3). Returns normalized
+                                   OHLC candle arrays.
+    views/
+      DeskView.tsx               — Tab 1. Wraps the EXISTING STEP1/
+                                    STEP2 controls + <ChainTable/>
+                                    exactly as they render today — a
+                                    pure move, not a rewrite.
+      GexView.tsx                 — NEW. Tab 2, see section 8.1.
+      ChartView.tsx                — NEW. Tab 3, see section 8.2.
+    components/
+      TopBar.tsx, ChainTable.tsx, ThemeSwitch.tsx,
+      ColorThemeSwitch.tsx, LanguageSwitch.tsx, SetupBadge.tsx
+                                   — moved verbatim from main.tsx.
+    *.test.ts                    — existing 4 test files stay where
+                                    they are (cloudflare-proxy-naming,
+                                    data-paths, header-parity, scripts-
+                                    naming) unless their content
+                                    literally requires updating for a
+                                    moved path; ADD gex.test.ts next
+                                    to gex.ts.
+
+Phase 0 acceptance criteria: `bun run build` succeeds, `bun test`
+passes (existing 4 suites unchanged in behavior), the app looks and
+behaves pixel-identical to before the refactor (single Desk view,
+no tabs yet — the tab switcher is Phase 2, not Phase 0).
+
+====================================================================
+5. SHARED TYPES (exact — add to types.ts)
+====================================================================
+The existing OptionQuote / ChainMeta / ChainResult / DataProvider /
+ProviderContext interfaces are UNCHANGED — copy them verbatim from
+current main.tsx (they already have exactly the fields GEX math
+needs: strike, side, openInterest, gamma, delta). Add these NEW types:
+
+  interface GexPoint {
+    strike: number;
+    callGex: number;
+    putGex: number;      // negative number
+    netGex: number;      // callGex + putGex
+    callOi: number;
+    putOi: number;
+    callVolume: number;
+    putVolume: number;
+  }
+
+  interface GexLevels {
+    spot: number;
+    gammaFlip: number | null;
+    callWall: number | null;
+    putWall: number | null;
+    callWall2: number | null;   // "Resistance 2" — null if none qualifies
+    putWall2: number | null;    // "Support 2" — null if none qualifies
+    maxPain: number | null;
+    pcRatioOi: number | null;
+    pcRatioVolume: number | null;
+    totalNetGex: number;
+  }
+
+  interface OhlcBar {              // for Tab 3 / chart.ts
+    time: number;    // unix seconds (UTC midnight for daily bars)
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number | null;
+  }
+
+====================================================================
+6. DATA SOURCES — EXACT, VERIFIED (not guessed)
+====================================================================
+
+6.1 CBOE delayed options JSON — VERIFIED FROM YOUR OWN EXISTING CODE
+--------------------------------------------------------------
+  Upstream: https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json
+  Symbol rule: equities/ETFs as-is (SPY, AAPL); cash indices get a
+  leading underscore (_SPX, _VIX, _NDX, _RUT, _DJX, _XSP, _OEX, _VXN
+  — this exact set is already in your cboe.ts INDEX_SET).
+  Raw response shape (confirmed by reading options-local-proxy.ts,
+  the "cboe" DataProvider.fetchAll in main.tsx, and options-data.py's
+  _fetch_cboe_greeks — three independent places in your own repo all
+  agree):
+    {
+      "data": {
+        "current_price": <number>,   // spot; "close" is the fallback
+        "options": [
+          {
+            "option": "AAPL260916C00255000",   // OCC symbol
+            "bid": <num>, "ask": <num>, "last_trade_price": <num>,
+            "volume": <num>, "open_interest": <num>, "iv": <num>,
+            "delta": <num>, "gamma": <num>, "theta": <num>,
+            "vega": <num>, "rho": <num>
+          }, ...
+        ]
+      }
+    }
+  This is already fully wired end-to-end in the current app for the
+  live "cboe" provider AND (1st-order only) for the CACHE files via
+  options-data.py. GEX math (section 7) consumes OptionQuote objects
+  that ALREADY have openInterest and gamma populated from this — no
+  new fetch needed for Tab 2.
+
+6.2 CACHE files (data/options/*.json) — no changes needed for Tab 1/2
+--------------------------------------------------------------
+  Already contain openInterest + gamma (from the CBOE 1st-order
+  overlay) for every cached ticker. GEX math works identically
+  whether the active provider is CACHE or live CBOE — it only reads
+  OptionQuote[], it does not care which provider produced them.
+
+6.3 NEW: OHLC price history for Tab 3 — Yahoo chart endpoint
+--------------------------------------------------------------
+  Upstream: https://query1.finance.yahoo.com/v8/finance/chart/{symbol}
+            ?interval=1d&range=6mo
+  Confirmed via two independent secondary sources (a public API-
+  reference skill document and a Rust connector's README, both
+  describing this exact endpoint) that it works WITHOUT the crumb/
+  cookie session your existing Yahoo OPTIONS handler needs — a plain
+  GET with a normal browser User-Agent header is enough. This was NOT
+  independently re-verified with a live request in this session — see
+  section 17 item 1 for the one manual check to do before relying on
+  it.
+  Expected response shape (standard, widely used by yfinance and
+  others):
+    {
+      "chart": {
+        "result": [{
+          "timestamp": [<unix seconds>, ...],
+          "indicators": {
+            "quote": [{
+              "open": [...], "high": [...], "low": [...],
+              "close": [...], "volume": [...]
+            }]
+          }
+        }],
+        "error": null
+      }
+    }
+  Parsing rule: zip timestamp[i] with quote[0].open[i]/high[i]/low[i]/
+  close[i]/volume[i] into OhlcBar[]; SKIP any index where close is
+  null (Yahoo pads non-trading periods with nulls).
+
+  NEW proxy route (add to BOTH scripts/options-local-proxy.ts and
+  scripts/options-cloudflare-proxy.js, same pattern as the existing
+  handleCboe — plain relay, no session needed):
+
+    GET {proxyBase}/api/chart?symbol=SPY&range=6mo&interval=1d
+      -> relay to https://query1.finance.yahoo.com/v8/finance/chart/
+         {symbol}?interval={interval}&range={range}
+      -> return upstream JSON as-is with permissive CORS headers,
+         same as handleCboe's response handling.
+
+  Client side (src/providers/chart.ts): fetch this route, parse into
+  OhlcBar[], no crumb logic needed (unlike yahoo.ts).
+
+  On GitHub Pages without a running proxy: Tab 3 requests fail with
+  the SAME "needs proxy" messaging pattern the app already uses for
+  CBOE/NASDAQ/YAHOO on hosted static deploys — this is consistent
+  with existing UX, not a new failure mode to design. See section 14
+  for the explicitly-deferred CACHE-embedded-OHLC alternative.
+
+====================================================================
+7. GEX MATH SPECIFICATION (exact formulas + decisive tie-break rules)
+====================================================================
+Convention used: the "SpotGamma-style" public convention (gamma
+positive-contribution for calls, negative for puts, using raw open
+interest — NOT a customer-buy/sell-classified position). This is the
+most common convention across public GEX write-ups and open-source
+implementations found during research (spotgamma.com's own
+explanation, the open-source repo FlashAlpha-lab/gex-explained, and
+an independent calculator at flashalpha.com all describe the same
+convention). It is a MODEL APPROXIMATION, not a measured fact — see
+section 17 item 3 for the honest caveat on this.
+
+Constants (define as named exports in gex.ts, do not inline magic
+numbers):
+  const CONTRACT_MULTIPLIER = 100;
+  const SECOND_WALL_MIN_DISTANCE_PCT = 0.02;   // see 7.4
+
+7.1 GEX per contract
+--------------------------------------------------------------
+  gexCall(gamma, openInterest, spot) =
+      gamma * openInterest * CONTRACT_MULTIPLIER * spot * spot * 0.01
+  gexPut(gamma, openInterest, spot) = -gexCall(...)   // same formula, negated
+
+  If gamma is null for a quote: exclude that contract from the sum
+  entirely (do not treat null as 0 silently without this being a
+  documented choice — it IS the documented choice). This will
+  naturally happen for providers without greeks (e.g. NASDAQ) unless
+  enrichQuoteWithModelGreeks has already filled it via Black-Scholes.
+
+7.2 computeGexProfile(quotes, spot) -> GexPoint[]
+--------------------------------------------------------------
+  Group the given OptionQuote[] by strike (across whatever
+  expirations were passed in — caller decides which expirations to
+  include, see section 8.1 on the expiration selector). For each
+  strike group:
+    callGex = sum of gexCall(...) over side === 'call' quotes
+    putGex  = sum of gexPut(...) over side === 'put' quotes
+    netGex  = callGex + putGex
+    callOi/putOi/callVolume/putVolume = straightforward sums
+  Return array sorted ascending by strike.
+
+7.3 findGammaFlip(profile) -> number | null
+--------------------------------------------------------------
+  Exact algorithm (v1 — the "cumulative sum crosses zero" approach;
+  the more expensive hypothetical-spot-recompute approach is
+  explicitly OUT OF SCOPE for v1, see section 14):
+    1. profile already sorted ascending by strike (from 7.2).
+    2. Build cumulative[i] = sum(profile[0..i].netGex) for i = 0..n-1.
+    3. Find the first i where cumulative[i] and cumulative[i+1] have
+       opposite sign (or cumulative[i] === 0 exactly -> flip =
+       profile[i].strike, done).
+    4. If found: linearly interpolate between profile[i].strike and
+       profile[i+1].strike:
+         flip = strike[i] + (strike[i+1] - strike[i]) *
+                (0 - cumulative[i]) / (cumulative[i+1] - cumulative[i])
+    5. If cumulative never changes sign across the whole range
+       (all-positive or all-negative gamma exposure in this chain
+       slice): return null. Do NOT extrapolate outside the available
+       strike range.
+
+7.4 findCallPutWalls(profile) -> { callWall, putWall, callWall2, putWall2 }
+--------------------------------------------------------------
+  callWall = the strike with the MAXIMUM netGex among strikes where
+             netGex > 0. null if no strike has positive netGex.
+  putWall  = the strike with the MINIMUM (most negative) netGex among
+             strikes where netGex < 0. null if none.
+  callWall2 ("Resistance 2") = among strikes with netGex > 0 AND
+             |strike - callWall| >= SECOND_WALL_MIN_DISTANCE_PCT * spot,
+             the one with the next-highest netGex. null if none qualify.
+  putWall2 ("Support 2") = symmetric rule for the put side.
+  NOTE: this 2%-of-spot distance rule for "wall 2" is an ORIGINAL,
+  UNSOURCED heuristic (no public standard exists for a "second wall")
+  — flagged explicitly in section 17 item 6, treat the constant as
+  tunable, not sacred.
+
+7.5 computeMaxPain(quotes) -> number | null
+--------------------------------------------------------------
+  Standard, uncontested formula. For every distinct strike S present
+  in the given quotes:
+    payout(S) = sum over calls: callOi(K) * max(0, S - K)
+              + sum over puts:  putOi(K)  * max(0, K - S)
+  maxPain = the strike S (from the same set of distinct strikes) that
+  minimizes payout(S). null only if quotes is empty.
+
+7.6 computePCRatio(quotes) -> { byOi, byVolume }
+--------------------------------------------------------------
+  byOi     = sum(putOi) / sum(callOi)      — null if sum(callOi) === 0
+  byVolume = sum(putVolume) / sum(callVolume) — null if denominator 0
+
+7.7 computeGexLevels(quotes, spot) -> GexLevels
+--------------------------------------------------------------
+  Convenience wrapper: calls computeGexProfile then all of 7.3-7.6,
+  assembles the GexLevels object (section 5), plus totalNetGex = sum
+  of profile.netGex. THIS is the single function both GexView and
+  ChartView call — neither view recomputes anything itself.
+
+7.8 Explicitly NOT implemented in v1
+--------------------------------------------------------------
+  - HVL / Vol Trigger: proprietary, unsourced heuristics from
+    third-party tools with no public formula. Do not implement a
+    guessed version. Not in the sidebar, not in Key Levels.
+  - The "AG" toggle seen in the reference screenshots: meaning was
+    never confirmed from any source. Dropped entirely, not a metric
+    toggle option in Tab 2.
+  - Gamma Flip approach B (recomputing gamma at a grid of hypothetical
+    spot prices via the existing blackScholesGreeks function instead
+    of using gamma "as reported at current spot"): a valid future
+    enhancement, NOT v1. The function signature findGammaFlip(profile)
+    should stay stable so this can be swapped in later without
+    touching callers.
+
+====================================================================
+8. UI SPECIFICATION PER TAB
+====================================================================
+
+8.1 Tab 2 — GexView (see gex-implementation-plan-wireframe-tab2-gex.svg for exact layout)
+--------------------------------------------------------------
+  Left sidebar (fixed width, matches wireframe proportions — sidebar
+  ~300px on desktop widths, stacks above the chart on narrow/mobile
+  widths consistent with the app's existing responsive breakpoints):
+    - "OI Volume" card: Total Call OI, Total Put OI (plain sums).
+    - "GEX Analysis" card: Total Net GEX (formatted, e.g. "+2.14B
+      $/1%"), and a plain-language "Regime" label: "Positive gamma"
+      if totalNetGex > 0, "Negative gamma" if < 0, "Neutral" if
+      exactly 0 or spot/quotes missing.
+    - "Key Levels" card: Call Wall (R1), Resistance 2 (only if not
+      null), Gamma Flip, Put Wall (S1), Support 2 (only if not null),
+      Max Pain — each as a labeled price row, using the SAME color
+      per level as Tab 3 uses for its price lines (see 8.2) so the
+      two tabs are visually consistent: Call Wall/Resistance = green
+      family, Put Wall/Support = red family, Gamma Flip = purple,
+      Max Pain = amber/yellow.
+    - "P/C Ratio" card: By OI, By Volume.
+  Above the chart, reusing the EXISTING expiration-chip UI pattern
+  from Tab 1 (same component/styling, not reinvented): multi-select
+  expiration chips + "All"/"None" toggle. DEFAULT SELECTION for Tab 2
+  specifically: nearest single expiration selected by default (not
+  "All") — GEX concentrates heavily in near-dated options and an
+  "All expirations combined" default view is visually noisy and less
+  useful; the user can still pick "All" or other dates manually.
+  Also above the chart: metric toggle buttons — Net GEX (default),
+  Call OI, Put OI, Call Volume, Put Volume. Selecting one changes
+  which GexPoint field the bars plot; Net GEX is signed (calls up/
+  green, puts down/red from the zero axis, matching the wireframe);
+  the OI/Volume metrics are unsigned (calls and puts as two same-
+  direction series, or side-by-side bars — implementer's call on
+  exact rendering as long as it's clearly calls-vs-puts).
+  Main chart: recharts <BarChart> (already a dependency, do not add a
+  new library for this). X axis = strike. A <ReferenceLine> at the
+  current spot price (dashed, amber, labeled). <ReferenceLine>s (or
+  shaded <ReferenceArea>s) at Call Wall / Put Wall strikes in their
+  respective colors, per the wireframe.
+
+8.2 Tab 3 — ChartView (see gex-implementation-plan-wireframe-tab3-chart.svg for exact layout)
+--------------------------------------------------------------
+  Range selector: 1M / 3M / 6M (default) / 1Y — maps directly to the
+  Yahoo chart endpoint's `range` param (section 6.3); interval fixed
+  at "1d" for v1 (no intraday in scope, see section 14).
+  Chart: lightweight-charts (NEW dependency — `bun add lightweight-
+  charts`; Apache-2.0 license, confirmed via the library's own GitHub
+  repo and a real usage example in a GitHub issue on that repo — not
+  a guess). `chart.addCandlestickSeries()` fed with the OhlcBar[]
+  from providers/chart.ts (mapped to lightweight-charts' expected
+  {time, open, high, low, close} shape — time as a UNIX seconds
+  number or 'YYYY-MM-DD' string, either is accepted by the library
+  for daily bars; pick ONE consistently).
+  Levels: call `series.createPriceLine({ price, color, title })` once
+  per non-null value in the GexLevels object computed by
+  computeGexLevels() (section 7.7) — the SAME object GexView renders
+  from, computed ONCE in a shared place (App or a small hook) and
+  passed down as a prop to both views, not recomputed inside
+  ChartView. Colors match 8.1's Key Levels card exactly. Store the
+  returned price-line handles in a ref and call .remove() on them
+  before creating new ones whenever the ticker or levels change
+  (otherwise stale lines accumulate on re-render).
+  Attribution (Apache-2.0 license requirement, not optional): add a
+  short line with a link to https://www.tradingview.com/, e.g.
+  "Charts powered by TradingView Lightweight Charts". DECISION: put
+  this in a small app-wide footer component rendered on every tab
+  (simplest way to satisfy "available to your users" from the
+  license), not only inside Tab 3. See section 17 item 5 for the one
+  thing to double check about the exact required wording.
+
+====================================================================
+9. CHARTING LIBRARIES — SUMMARY OF WHICH DOES WHAT AND WHY
+====================================================================
+  recharts (existing dependency, Tab 2 only): categorical bar chart
+  of GEX by strike. No license obligations beyond its own permissive
+  license (already in the project, already accepted).
+  lightweight-charts (NEW dependency, Tab 3 only): candlestick time-
+  series + horizontal price-line annotations. Apache-2.0, REQUIRES
+  attribution (section 8.2).
+  This is deliberate use of two libraries for two different jobs, not
+  redundant — recharts is not built for candlesticks/time-series
+  price-line annotation, lightweight-charts is not idiomatic for a
+  categorical strike-axis bar chart.
+
+====================================================================
+10. i18n REQUIREMENTS
+====================================================================
+  The app is bilingual (en/ru) via a translate()/dictionary system
+  already in main.tsx (moving to i18n.ts per section 4). EVERY new
+  UI string introduced by Tabs/GexView/ChartView must get BOTH an en
+  and a ru entry, following the exact existing key-naming convention
+  (e.g. current keys look like 'settings.deskColumns.openInterest').
+  Suggested new key namespace: 'tabs.desk' / 'tabs.gex' / 'tabs.chart',
+  'gex.sidebar.oiVolume' / 'gex.sidebar.gexAnalysis' / etc., 'gex.
+  metric.netGex' / 'gex.metric.callOi' / etc., 'chart.range.1m' / etc.
+  Do not hardcode any user-facing English string directly in
+  GexView.tsx or ChartView.tsx.
+
+====================================================================
+11. TESTING REQUIREMENTS
+====================================================================
+  gex.test.ts (new, next to gex.ts): unit tests for every function in
+  section 7, using a small hand-built OptionQuote[] fixture (NOT the
+  full data/options/AAPL.json — build a minimal 5-10 strike synthetic
+  fixture where you can hand-verify the expected gamma flip / walls /
+  max pain by arithmetic, so the test actually proves correctness
+  rather than just "doesn't crash"). Cover: normal case, all-quotes-
+  same-sign-gamma (gammaFlip -> null), single-expiration vs multi-
+  expiration aggregation, a quote with null gamma (must be excluded,
+  not treated as 0).
+  Existing 4 test files must still pass after the Phase 0 file-layout
+  refactor with no behavior changes.
+  Manual smoke test script for Phase 4/5 (OHLC + chart tab): start
+  the local proxy + dev server (bun run start), open Tab 3 for SPY,
+  confirm candles render and the 6 possible level lines (or fewer,
+  where null) appear at plausible prices near the visible candle
+  range — not off-screen, not NaN.
+
+====================================================================
+12. BUILD / VERIFY CHECKLIST (run before every PR, same as R6)
+====================================================================
+  bun run build
+  uv run python -m py_compile scripts/options-data.py
+  node --check scripts/options-cloudflare-proxy.js
+  git diff --check
+  bun test
+
+====================================================================
+13. PHASED DELIVERY PLAN (one PR per phase, in this order)
+====================================================================
+  Phase 0 — File-layout refactor (section 4). Zero behavior change.
+            No feature code. Verify: app looks/behaves identical to
+            before, build + full test suite green.
+  Phase 1 — gex.ts + gex.test.ts (section 7 + 11). Pure functions
+            only, no UI wiring yet. Verify: bun test green, functions
+            exported and typed per section 5.
+  Phase 2 — Tabs shell: activeTab state in main.tsx, tab switcher UI
+            under TopBar, DeskView wraps the existing Tab-1 content
+            with zero behavior change. Verify: Tab 1 looks/behaves
+            identical to pre-tabs app; Tab 2/3 can be stub placeholders
+            in this phase.
+  Phase 3 — GexView (Tab 2) fully implemented per section 8.1, wired
+            to computeGexLevels() from Phase 1 using meta/expData/
+            selectedExps already in App state. Verify: manual check
+            on a cached ticker (CACHE provider) and, if a proxy is
+            running, on live CBOE for SPY/AAPL — levels are plausible
+            (not NaN, not wildly outside the visible strike range).
+  Phase 4 — /api/chart proxy route (section 6.3) in BOTH
+            options-local-proxy.ts and options-cloudflare-proxy.js,
+            plus providers/chart.ts client wrapper. Verify: manual
+            curl/fetch against the local proxy returns real OHLC JSON
+            for SPY.
+  Phase 5 — ChartView (Tab 3) fully implemented per section 8.2:
+            `bun add lightweight-charts`, candlesticks, price lines
+            from the SAME GexLevels used in Phase 3, attribution
+            footer. Verify: manual smoke test per section 11.
+  Phase 6 (deferred, ask-first — see section 14) — NOT scheduled;
+            do not start without explicit human sign-off.
+
+====================================================================
+14. EXPLICITLY OUT OF SCOPE FOR v1 (do not build these unasked)
+====================================================================
+  - HVL / Vol Trigger levels (section 7.8).
+  - The undecoded "AG" toggle (section 7.8).
+  - Gamma Flip "approach B" (hypothetical-spot recompute, section 7.3
+    note) — current findGammaFlip signature is designed to allow this
+    later without breaking callers.
+  - Historical tracking of how levels changed over time / any change
+    to data/options/*.json schema to store OHLC or level history —
+    requires explicit human sign-off first (R3).
+  - Intraday OHLC / any interval other than daily on Tab 3.
+  - Making Tab 3 work on hosted GitHub Pages WITHOUT a running proxy
+    (i.e., a CACHE-equivalent for OHLC data) — would require the same
+    R3 data-schema sign-off; today Tab 3 simply requires the proxy,
+    same as CBOE/NASDAQ/YAHOO already do on hosted Desk.
+  - Multi-ticker watchlists, alerts/notifications, any 5th data
+    provider.
+
+====================================================================
+15. LICENSING / ATTRIBUTION REQUIREMENTS
+====================================================================
+  lightweight-charts is Apache License 2.0. This requires an
+  attribution notice plus a link to https://www.tradingview.com/ on
+  any page of the app available to users. Implement as an app-wide
+  footer (section 8.2). Before shipping Phase 5, pull the literal
+  NOTICE file text from the tradingview/lightweight-charts GitHub
+  repository and use it verbatim if it differs from the suggested
+  wording here (section 17 item 5 — this was not independently
+  re-verified in this session).
+
+====================================================================
+16. ATTACHED REFERENCE IMAGES
+====================================================================
+  gex-implementation-plan-wireframe-tab2-gex.svg    — Tab 2 authoritative layout (section 8.1).
+  gex-implementation-plan-wireframe-tab3-chart.svg  — Tab 3 authoritative layout (section 8.2).
+  Both are plain SVG (open in any browser or vector viewer); numbers
+  shown in them are illustrative placeholders, not real computed
+  values — do not hardcode any figure from the wireframes into code.
+
+  gex-implementation-plan-reference-source-screenshot-1.png / -2.png (OPTIONAL, supplementary
+  only) — the original third-party screenshots that inspired this
+  feature. Contain Russian marketing text and the undecoded "AG"
+  toggle — both explicitly out of scope (sections 7.8, 14). Use only
+  for general visual vibe (colored zone bands, sidebar+chart layout
+  idea), never as a literal spec — the two wireframe SVGs above
+  supersede them for anything specific.
+
+====================================================================
+17. LIMITATIONS AND ADDITIONAL RESEARCH REQUIRED (read this — honest)
+====================================================================
+This section lists everything in this plan that is NOT independently,
+directly verified, so implementing agents know exactly where to be
+careful and what to double-check rather than trusting blindly.
+
+  1. Yahoo chart endpoint (section 6.3): the exact upstream URL,
+     "no crumb needed", and response JSON shape are corroborated by
+     TWO independent secondary sources found during research, but
+     were NOT confirmed with a live HTTP request in this session
+     (this environment's fetch tool could not reach query1.finance.
+     yahoo.com directly). BEFORE writing providers/chart.ts, do one
+     manual request (curl or browser) to
+     https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1mo
+     and confirm the field names match section 6.3 exactly, and
+     handle the case where `chart.error` is non-null (invalid symbol,
+     rate limited, etc. — no error-shape example was captured).
+
+  2. CBOE schema (section 6.1) is HIGH confidence — it was read
+     directly out of your own already-working code in three separate
+     places (proxy, live provider, Python fetcher), not guessed. The
+     only unverified edge case: whether CBOE ever omits gamma/delta
+     entirely for very illiquid/far-OTM contracts in a way your
+     existing null-handling doesn't already cover. Given the existing
+     code already wraps every field in a nullable num() parser, this
+     is low risk, but worth a glance at real output for a thin name
+     (e.g. a small-cap ticker) if time allows.
+
+  3. The GEX formula convention (section 7, intro) is the most common
+     PUBLIC convention, cross-checked across 3 independent sources,
+     but it is a MODELING CHOICE, not a verified fact about real
+     dealer positioning (the actual buy/sell side of every option
+     trade is not public data). It was also NOT reverse-engineered
+     against the specific third-party "Max Power" product's actual
+     numbers — there was no way to do that (closed product, no API
+     access). Do not expect this implementation's numbers to match
+     Max Power's exactly; expect them to be in the same ballpark and
+     directionally consistent with other public GEX tools.
+
+  4. findGammaFlip's cumulative-sum-crossing-zero algorithm (section
+     7.3) is a concrete, defensible, commonly-used definition, but it
+     was NOT validated end-to-end against a real live SPY/SPX chain
+     compared to a third-party's published gamma-flip number for the
+     same moment. Do this sanity check manually once Phase 3 is
+     working (fetch a real chain via the live CBOE provider, compute
+     levels, eyeball them against any free public GEX site for the
+     same ticker/day) — expect "same neighborhood", not an exact
+     match, per point 3 above.
+
+  5. The exact required attribution wording for lightweight-charts
+     (section 15) is a reasonable paraphrase, not a copy of the
+     literal NOTICE file from tradingview/lightweight-charts — that
+     file was not fetched in this session. Pull it before Phase 5
+     ships.
+
+  6. The "second wall" 2%-of-spot distance rule (section 7.4) has NO
+     public source — it does not exist as a standard concept anywhere
+     researched. It is this plan's own invented tie-break rule so the
+     behavior is at least deterministic and documented. Treat
+     SECOND_WALL_MIN_DISTANCE_PCT as a tunable constant to revisit
+     once you can see it behave on real strike spacing for the
+     tickers you actually care about (SPY's $1 spacing vs. a small-
+     cap's $2.50/$5 spacing will behave very differently at a fixed
+     2% threshold).
+
+  7. .github/workflows/*.yml in the gex repo were confirmed to exist
+     by filename only (ci.yaml, dependency-updates.yml, github-
+     pages.yml, update-data.yml) — their actual contents were NOT
+     read in this session. Before Phase 0's file-layout refactor
+     lands, read ci.yaml specifically to confirm it doesn't hardcode
+     any path that the refactor would move (e.g. a lint/build command
+     that globs src/main.tsx specifically rather than src/**).
+
+  8. The old options-desk AGENT.md had an explicit "ask the human
+     before changing data/options/*.json schema or touching
+     workflows" rule (restated here as R3/R4). That file is gone in
+     gex and was never replaced with an equivalent for this repo. This
+     plan assumes the same caution still applies (the human's own
+     message frames this as "starting from scratch" on the AGENTIC
+     SETUP specifically, not as license to relax data-safety rules)
+     — but this is an assumption, not something the human confirmed
+     explicitly for the new repo. If a future task in this repo seems
+     to require touching data/options/*.json schema or a workflow
+     file, stop and confirm with the human rather than relying on
+     this plan's restated rule as authorization.
+
+  9. A CBOE historical daily-bars endpoint was mentioned in earlier
+     research as a possible fallback if the Yahoo chart endpoint ever
+     breaks, but was never verified with a real URL — it remains an
+     unverified hypothesis, not a fallback you can implement today.
+     Only chase this down if/when the Yahoo endpoint actually stops
+     working.
