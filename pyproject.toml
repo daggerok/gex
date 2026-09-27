@@ -1,7 +1,7 @@
 [project]
 name = "gex"
 version = "0.1.0"
-description = "Options Desk"
+description = "GEX"
 readme = "README.md"
 authors = [
     { name = "Maksim Kostromin", email = "daggerok@gmail.com" }

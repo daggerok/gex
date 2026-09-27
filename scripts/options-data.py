@@ -10,7 +10,7 @@
 #    is NOT part of the 3-file app source (index.html / index.css / main.tsx).
 # =============================================================================
 #
-# PROJECT: Options Desk — SMART build-time data fetcher
+# PROJECT: GEX — SMART build-time data fetcher
 #
 # CHANGELOG (append newest at top; keep history accurate):
 #   v13 - Index manifest without timestamp churn:
@@ -527,7 +527,7 @@ def _live_cboe_universe():
         return []
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; OptionsDeskBot/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; GexBot/1.0)",
         "Accept": "text/csv,*/*",
     }
     try:
@@ -571,7 +571,7 @@ def _live_nasdaq_marketcap_universe():
     url = ("https://api.nasdaq.com/api/screener/stocks"
            "?tableonly=true&limit=25000&download=true")
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; OptionsDeskBot/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; GexBot/1.0)",
         "Accept": "application/json,text/plain,*/*",
         "Accept-Language": "en-US,en;q=0.9",
         "Origin": "https://www.nasdaq.com",
@@ -748,7 +748,7 @@ def _fetch_cboe_greeks(symbol, matched_symbol=None):
     if not CBOE_GREEKS or requests is None:
         return {}
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; OptionsDeskBot/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; GexBot/1.0)",
         "Accept": "application/json,*/*",
     }
     for cand in _cboe_symbol_candidates(symbol, matched_symbol):

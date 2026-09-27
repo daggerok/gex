@@ -1,4 +1,4 @@
-# Options Desk — English Documentation
+# GEX — English Documentation
 
 > **Languages:** English (current) · [Русский](README.ru.md) · root [`README.md`](../README.md)
 
@@ -6,20 +6,8 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 
 ---
 
-*Agentic developer note: This is an Agentic AI-developed project. Agents must always start by reading [AGENT.md](../AGENT.md) as the main entry point and contract. Keep these READMEs synchronized with `src/main.tsx`, `src/index.css`, `scripts/*`, and `.github/workflows/*`. Prefer correcting/removing stale comments over preserving inaccurate ones.*
-
----
-
-## Agentic Setup
-
-This repository is optimized for AI-agentic development. Core agent files stay in the repository root; extended guides live in [`../docs`](../docs).
-
-- [AGENT.md](../AGENT.md): Main agent contract and rules (EN: [AGENT.en.md](../AGENT.en.md)).
-- [CLAUDE.md](../CLAUDE.md): Adapter for Claude Code.
-- [.cursorrules](./.cursorrules): Rules for Cursor AI.
-- Arena.ai adapter: [English](./ARENA.en.md) or [Russian](./ARENA.ru.md).
-- Agentic-setup tutorial: [English](./Setup.en.md) or [Russian](./Setup.ru.md).
 - Developer guide: [English](./DEVELOPMENT.en.md) or [Russian](./DEVELOPMENT.ru.md).
+- [CLAUDE.md](../CLAUDE.md): project rules for Claude Code.
 
 We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** Always use `bun` instead of `npm`.
 
@@ -218,11 +206,7 @@ README.md                     # TOC pointing to docs/README.en.md and docs/READM
 docs/
   README.en.md                # English documentation (this file)
   README.ru.md                # Russian documentation
-  Setup.en.md / Setup.ru.md   # Agentic setup tutorial
   DEVELOPMENT.en.md / .ru.md  # Developer guide
-  AGENTS.en.md / .ru.md       # Compatibility checklist
-  ARENA.en.md / .ru.md        # Arena.ai adapter
-  .cursorrules                # Cursor AI rules
 ```
 
 ## Privacy & keys

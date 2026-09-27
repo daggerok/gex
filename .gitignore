@@ -38,3 +38,8 @@ dist
 workspace-*
 SCRATCHPAD.md
 package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/

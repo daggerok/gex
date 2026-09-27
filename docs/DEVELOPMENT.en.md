@@ -1,4 +1,4 @@
-# Development Guide — Options Desk
+# Development Guide — GEX
 
 > **Languages:** English (current) · [Русский](DEVELOPMENT.ru.md)
 

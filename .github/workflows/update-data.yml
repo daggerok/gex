@@ -1,5 +1,5 @@
 # =============================================================================
-# Options Desk — SMART build-time data cache (GitHub Action)
+# GEX — SMART build-time data cache (GitHub Action)
 # -----------------------------------------------------------------------------
 # INFRASTRUCTURE (not part of the 3-file app source). Implements the
 # "GitHub Actions build-time caching" strategy:

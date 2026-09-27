@@ -1,15 +1,11 @@
-# CLAUDE.md — adapter для Claude Code / Claude-совместимых агентов
-
-> **Двуязычно / Bilingual:** [`docs/`](./docs) содержит `*.en.md` / `*.ru.md` руководства.
-> **Главный контракт:** [`AGENT.md`](./AGENT.md). Этот файл — короткий adapter; при конфликте побеждает `AGENT.md`.
+# CLAUDE.md — правила для Claude Code в этом репозитории
 
 ## Обязательное поведение
 
 - Отвечай пользователю **по-русски**.
-- Неоднозначные задачи: **Spec → Verifier → Environment** (см. `AGENT.md`).
+- Неоднозначные задачи: сначала уточни требования, затем предложи план развилок перед реализацией.
 - Не кодить «вслепую» без бизнес-контекста; крупные развилки — вопросы + checkpoint.
-- После изменений — проверки и перечисление их в PR.
-- Стартуя задачу: при критичных правилах явно опирайся на `AGENT.md` (Arena/другие runners могут не auto-load этот файл).
+- После изменений — проверки (см. ниже) и перечисление их в PR.
 
 ## Проект (факты)
 
@@ -34,8 +30,6 @@
 - **CACHE** static JSON vs browser query cache (`localStorage`).
 - `greeksSource: "cboe"` (provider) vs `"black-scholes"` (UI model).
 
-Удалены из registry: marketdata, DoltHub (и старше).
-
 ## Проверки
 
 ```bash
@@ -51,5 +45,5 @@ Fetcher smoke (без mass commit): `TICKERS=AAPL MAX_FETCHES=1 REQUEST_SLEEP=0 
 
 - UI / providers / BS: `src/main.tsx`
 - Styles: `src/index.css`
-- Agent docs: `AGENT.md`, `CLAUDE.md`, `docs/AGENTS.ru.md`/`docs/AGENTS.en.md`, `docs/Setup.ru.md`/`docs/Setup.en.md`
+- Docs: `docs/README.en.md`/`docs/README.ru.md`, `docs/DEVELOPMENT.en.md`/`docs/DEVELOPMENT.ru.md`
 - Не коммитить: `dist/`, `node_modules/`, `.parcel-cache`, `.venv`, `__pycache__`, `package-lock.json`

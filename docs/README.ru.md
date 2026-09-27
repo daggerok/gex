@@ -1,4 +1,4 @@
-# Options Desk — Русская документация
+# GEX — Русская документация
 
 > **Языки:** [English](README.en.md) · Русский (текущий) · корневой [`README.md`](../README.md)
 
@@ -6,20 +6,8 @@
 
 ---
 
-*Примечание для агентов: Это проект, разрабатываемый с помощью Agentic AI. Агенты должны всегда начинать с чтения [AGENT.md](../AGENT.md) как основной точки входа и контракта. Держите эти README в синхронизации с `src/main.tsx`, `src/index.css`, `scripts/*` и `.github/workflows/*`. Исправляйте устаревшие комментарии.*
-
----
-
-## Agentic Setup (Агентная разработка)
-
-Репозиторий оптимизирован для работы с AI-агентами. Основные agent-файлы остаются в корне проекта; расширенные гайды — в [`../docs`](../docs).
-
-- [AGENT.md](../AGENT.md): Основной контракт и правила (EN: [AGENT.en.md](../AGENT.en.md)).
-- [CLAUDE.md](../CLAUDE.md): Адаптер для Claude Code.
-- [.cursorrules](./.cursorrules): Правила для Cursor AI.
-- Адаптер Arena.ai: [русский](./ARENA.ru.md) или [английский](./ARENA.en.md).
-- Инструкция по настройке агентной среды: [русский](./Setup.ru.md) или [английский](./Setup.en.md).
 - Гид разработчика: [русский](./DEVELOPMENT.ru.md) или [английский](./DEVELOPMENT.en.md).
+- [CLAUDE.md](../CLAUDE.md): правила проекта для Claude Code.
 
 Для работы используются **Bun** (JS/TS) и **uv** (Python). **Важно:** всегда используйте `bun` вместо `npm`.
 
@@ -216,11 +204,7 @@ README.md                     # TOC со ссылками на docs/README.en.md
 docs/
   README.en.md                # Английская документация
   README.ru.md                # Русская документация (этот файл)
-  Setup.en.md / Setup.ru.md   # Учебник по agentic setup
   DEVELOPMENT.en.md / .ru.md  # Гайд разработчика
-  AGENTS.en.md / .ru.md       # Compatibility checklist
-  ARENA.en.md / .ru.md        # Адаптер Arena.ai
-  .cursorrules                # Правила Cursor AI
 ```
 
 ## Приватность и ключи

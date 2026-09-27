@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * =============================================================================
- * Options Desk — LOCAL DEV data proxy (Bun): Yahoo + NASDAQ + CBOE + search
+ * GEX — LOCAL DEV data proxy (Bun): Yahoo + NASDAQ + CBOE + search
  * -----------------------------------------------------------------------------
  * INFRASTRUCTURE (not part of the 3-file app source).
  *
@@ -17,7 +17,7 @@
  * RUN:  bun run scripts/options-local-proxy.ts        (defaults to port 8787)
  *       PORT=9000 bun run scripts/options-local-proxy.ts
  *
- * USE FROM THE APP (Option Desk → Settings → Proxy base URL = http://localhost:8787):
+ * USE FROM THE APP (GEX → Settings → Proxy base URL = http://localhost:8787):
  *   - Provider "Yahoo (via proxy)" calls:
  *       GET {base}/api/options?symbol=AAPL[&date=YYYY-MM-DD]   (Yahoo optionChain)
  *   - Provider "CBOE" calls:
@@ -351,7 +351,7 @@ Bun.serve({
     },
 });
 
-console.log(`\n🚀 Options Desk proxy running at http://localhost:${PORT}`);
+console.log(`\n🚀 GEX proxy running at http://localhost:${PORT}`);
 console.log(`   Yahoo  | http://localhost:${PORT}/api/options?symbol=AAPL`);
 console.log(`   CBOE   | http://localhost:${PORT}/api/cboe?symbol=AAPL   (indices: _SPX, _VIX)`);
 console.log(`   NASDAQ | http://localhost:${PORT}/api/nasdaq?symbol=AAPL`);

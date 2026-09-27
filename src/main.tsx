@@ -18,7 +18,7 @@
  * AGENTIC AI DOCUMENTATION & SYSTEM ARCHITECTURE  (main.tsx)
  * ============================================================================
  *
- * PROJECT: Options Desk
+ * PROJECT: GEX
  * ENVIRONMENT: Bun scripts, Parcel build, React, TypeScript, TailwindCSS v4
  *
  * ---------------------------------------------------------------------------
@@ -646,8 +646,8 @@ const LANG_FLAGS: Record<Language, string> = { en: '🇺🇸', ru: '🇷🇺' };
 
 const translations: Record<Language, Record<string, string>> = {
     en: {
-        'app.brand': 'Option Desk',
-        'app.title': 'Options Desk',
+        'app.brand': 'GEX',
+        'app.title': 'GEX',
 
         'topBar.api': 'API',
         'topBar.settings': 'Settings',
@@ -838,8 +838,8 @@ const translations: Record<Language, Record<string, string>> = {
         'validTickerFromIndex': 'Valid ticker from local index',
     },
     ru: {
-        'app.brand': 'Option Desk',
-        'app.title': 'Options Desk',
+        'app.brand': 'GEX',
+        'app.title': 'GEX',
 
         'topBar.api': 'API',
         'topBar.settings': 'Настройки',
@@ -3432,7 +3432,7 @@ const SettingsPanel: React.FC<{
 
 /**
  * Top navigation bar. Layout per product spec:
- *   [ left: brand "Option Desk" ] ................ [ API dropdown | theme | gear ]
+ *   [ left: brand "GEX" ] ................ [ API dropdown | theme | gear ]
  */
 
 /** Segmented control — same visual language as fundamentals header pills. */

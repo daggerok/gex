@@ -1,7 +1,7 @@
 {
   "name": "gex",
   "version": "1.0.0",
-  "description": "Options Desk",
+  "description": "GEX",
   "source": "src/index.html",
   "scripts": {
     "clean": "rimraf -rf dist",

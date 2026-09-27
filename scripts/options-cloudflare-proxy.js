@@ -1,6 +1,6 @@
 /**
  * =============================================================================
- * Options Desk — Cloudflare Worker proxy (deploy for public GitHub Pages)
+ * GEX — Cloudflare Worker proxy (deploy for public GitHub Pages)
  * -----------------------------------------------------------------------------
  * INFRASTRUCTURE (not part of the 3-file app source).
  *
@@ -13,7 +13,7 @@
  *   2. Paste this file, Deploy. You get https://<name>.<you>.workers.dev
  *   3. (Recommended) lock ALLOW_ORIGIN below to your Pages origin.
  *
- * USE FROM THE APP (Option Desk → Settings → Proxy base URL = your Worker URL):
+ * USE FROM THE APP (GEX → Settings → Proxy base URL = your Worker URL):
  *   - Provider "Yahoo (via proxy)" calls {base}/api/options?symbol=AAPL[&date=...]
  *   - Provider "NASDAQ"           calls {base}/api/nasdaq?symbol=AAPL
  *   - Provider "CBOE"             calls {base}/api/cboe?symbol=AAPL (or _SPX)
