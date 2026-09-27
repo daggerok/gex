@@ -1,0 +1,67 @@
+{
+  "name": "gex",
+  "version": "1.0.0",
+  "description": "Options Desk",
+  "source": "src/index.html",
+  "scripts": {
+    "clean": "rimraf -rf dist",
+    "ncp": "ncp data dist/data",
+    "build-github-pages": "npm run build -- --public-url=/gex/",
+    "preserve": "npm run ncp",
+    "serve": "parcel --no-cache --no-source-maps",
+    "build": "parcel build --no-cache --no-source-maps",
+    "postbuild": "npm run ncp",
+    "all:proxy": "bun ./scripts/options-local-proxy.ts",
+    "all:serve": "npm run serve",
+    "all": "npm-run-all --parallel all:*",
+    "start": "pm2 start 'npm run all' --name app",
+    "restart": "pm2 restart app",
+    "ps": "pm2 ps",
+    "logs": "pm2 logs",
+    "stop": "pm2 kill",
+    "test": "bun test"
+  },
+  "keywords": [
+    "npm-run-all",
+    "tailwind",
+    "parcel",
+    "rimraf",
+    "react",
+    "html",
+    "pm2",
+    "css",
+    "ncp",
+    "bun"
+  ],
+  "author": "Maksim Kostromin / GitHub: daggerok",
+  "license": "MIT",
+  "dependencies": {
+    "clsx": "2.1.1",
+    "lucide-react": "1.24.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "recharts": "3.9.2",
+    "tailwind-merge": "3.6.0",
+    "tailwindcss": "4.3.3"
+  },
+  "devDependencies": {
+    "@parcel/resolver-default": "2.16.4",
+    "@parcel/transformer-sass": "2.16.4",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.1.1",
+    "@types/papaparse": "5.5.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "ncp": "2.0.0",
+    "npm-run-all": "4.1.5",
+    "papaparse": "5.5.4",
+    "parcel": "2.16.4",
+    "pm2": "7.0.3",
+    "rimraf": "6.1.3"
+  },
+  "postcss": {
+    "plugins": {
+      "@tailwindcss/postcss": {}
+    }
+  }
+}

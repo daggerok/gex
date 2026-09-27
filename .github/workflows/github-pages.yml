@@ -1,0 +1,53 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Update options data"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # A push/manual run should deploy normally. A workflow_run deployment should
+    # happen only when the data workflow succeeded, not after a failed refresh.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout latest default branch
+        uses: actions/checkout@v7
+        with:
+          # Important for workflow_run: the upstream workflow starts on an older
+          # SHA, then commits refreshed data during the run. Checking out the
+          # branch ensures Pages builds the newly pushed data commit, not the
+          # upstream run's original SHA.
+          ref: main
+          # Keep only the latest two default-branch commits; the build needs no deeper history.
+          fetch-depth: 2
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install -E
+      # Используем скрипт из вашего package.json
+      - run: time bun run build-github-pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: './dist' # Убедитесь, что parcel кладет файлы именно сюда
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
