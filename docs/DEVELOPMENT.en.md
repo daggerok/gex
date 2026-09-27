@@ -15,7 +15,7 @@ This document describes the development, build, and test process for the project
 
 1. **Install dependencies:**
    ```bash
-   bun install -E
+   bun i -E
    ```
 
 2. **Run in development mode:**
