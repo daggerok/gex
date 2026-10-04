@@ -41,8 +41,12 @@ export interface GexViewProps {
     quotes: OptionQuote[];
     /** Shared GexLevels computed ONCE in App (also drawn by the Chart tab). */
     levels: GexLevels | null;
-    /** True when `symbol` is a futures-priced volatility index (VIX, VXN):
-     *  this tab shows a "not supported" message instead of GEX numbers. */
+    /** True when `symbol` is a futures-priced volatility index (VIX, VXN).
+     *  This tab shows a "not supported" message instead of GEX numbers ONLY
+     *  when `levels` is also null (toggle off, or Black-76 pricing failed for
+     *  every selected quote) - see useGexLevels' doc comment. When real
+     *  per-quote-forward levels ARE available, this only adds a small note
+     *  clarifying they're futures-terms-based, not spot-based. */
     isFuturesPriced: boolean;
     /** Expirations selectable on this tab (keys of quotesByExp, ascending). */
     expirations: string[];
@@ -160,13 +164,17 @@ export const GexView: React.FC<GexViewProps> = ({
         );
     }
 
-    // Futures-priced volatility index (VIX, VXN): this app's GEX math assumes
-    // spot pricing (src/gex.ts scales by spot^2), which is simply the wrong
-    // model here - short-circuit to an honest message instead of computing
-    // and showing numbers from that model. The Desk tab (plain chain table)
-    // is unaffected: it still shows the real chain and Cboe's own 1st-order
-    // greeks for these symbols.
-    if (isFuturesPriced) {
+    // Futures-priced volatility index (VIX, VXN) with no real levels: either
+    // settings.vixFuturesPricing is off, or it's on but Black-76 pricing
+    // failed for every selected quote (no `forward` resolved) - App's
+    // useGexLevels already decided `levels` is null for exactly these cases
+    // (see its doc comment), so this is the only gate needed here. When
+    // `levels` IS present (pricing succeeded), fall through to the normal
+    // rendering path below - same computeGexProfile/computeGexLevels output
+    // as every other symbol, just built from each quote's own forward
+    // (src/gex.ts section 9) instead of one shared spot. The Desk tab (plain
+    // chain table) was always unaffected either way.
+    if (isFuturesPriced && !levels) {
         return (
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
                 <div className={emptyBox}>{tr('gex.empty.futuresPriced', { symbol })}</div>
@@ -222,6 +230,15 @@ export const GexView: React.FC<GexViewProps> = ({
             {provider.mode === 'lazy' && (
                 <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
                     {tr('gex.lazyHint')}
+                </div>
+            )}
+
+            {/* Futures-priced symbol WITH real levels (toggle on, pricing
+                succeeded): the Key Levels below are computed per-expiration-
+                forward, not spot (section 9) - say so, briefly. */}
+            {isFuturesPriced && levels && (
+                <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                    {tr('gex.futuresPricedHint', { symbol })}
                 </div>
             )}
 

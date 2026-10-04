@@ -54,10 +54,13 @@ export interface ChartViewProps {
     symbol: string;
     /** Shared GexLevels computed ONCE in App (same object the GEX tab renders). */
     levels: GexLevels | null;
-    /** True when `symbol` is a futures-priced volatility index (VIX, VXN):
-     *  the level legend shows a "not supported" message instead of "none"
-     *  (the candlestick price chart itself is unaffected - real price data,
-     *  not GEX-model output). */
+    /** True when `symbol` is a futures-priced volatility index (VIX, VXN).
+     *  When `levels` is also null, the legend shows a "not supported" message
+     *  instead of "none" (toggle off, or Black-76 pricing failed for every
+     *  selected quote). When `levels` is present (pricing succeeded), the
+     *  legend instead adds a small note that the lines are futures-terms-
+     *  based. The candlestick price chart itself is unaffected either way -
+     *  real spot price data, not GEX-model output. */
     isFuturesPriced: boolean;
     /** Number of expirations the levels were computed from (GEX tab selection). */
     levelExpCount: number;
@@ -252,10 +255,15 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             {/* ---- Level legend (same labels/colors as the GEX tab's Key Levels) ---- */}
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                 <span className="text-slate-400">{tr('chart.levels.source', { count: levelExpCount })}</span>
-                {entries.length === 0 && (
+                {entries.length === 0 ? (
                     <span className="text-slate-400">
                         {isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}
                     </span>
+                ) : isFuturesPriced && (
+                    // Real levels for a futures-priced symbol (toggle on,
+                    // pricing succeeded): a brief note that these lines are
+                    // futures-terms-based (section 9), not spot-based.
+                    <span className="text-slate-400">{tr('chart.levels.futuresPricedHint')}</span>
                 )}
                 {entries.map((l) => (
                     <span key={l.key} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
