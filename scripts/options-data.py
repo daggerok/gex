@@ -639,7 +639,8 @@ def load_universe():
     override = os.environ.get("TICKERS") or os.environ.get("TICKER")
     if override:
         syms = _dedupe([_canonical(t) for t in override.replace(",", " ").split() if t.strip()])
-        _log(f"universe/override: using {len(syms)} symbols from TICKERS/TICKER env: {', '.join(syms[:20])}")
+        preview = ', '.join(syms[:20]) + (f", ... (+{len(syms) - 20} more)" if len(syms) > 20 else "")
+        _log(f"universe/override: using {len(syms)} symbols from TICKERS/TICKER env: {preview}")
         return syms
 
     if requests is None:
