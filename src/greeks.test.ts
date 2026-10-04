@@ -9,11 +9,14 @@ import {
   SPX_DIVIDEND_YIELD,
   blackScholesGreeks,
   dividendYieldForSymbol,
+  enrichChainResult,
   enrichQuoteWithModelGreeks,
   enrichQuotesWithModelGreeks,
   isFuturesPricedSymbol,
+  yearsToExpiration,
 } from './greeks';
-import type { OptionQuote } from './types';
+import type { ChainResult, OptionQuote } from './types';
+import { black76Price } from './vix-pricing';
 
 const root = join(import.meta.dir, '..');
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -206,5 +209,215 @@ describe('futures-priced symbols (VIX, VXN)', () => {
     expect(spxOut.greeksSource).toBe('black-scholes');
     expect(spxOut.lambda).not.toBeNull();
     expect(spxOut.greeksMissingReason ?? null).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PHASE 2: wiring settings.vixFuturesPricing into enrichQuotesWithModelGreeks
+// / enrichChainResult. The toggle's OWN default (false) must reproduce
+// exactly what shipped in Phase 1 — see .plans/gex-vix-futures-pricing-
+// research.txt sections 7-9 and src/vix-pricing.ts for the per-expiration
+// Black-76 math this dispatches to when the toggle is on.
+// ---------------------------------------------------------------------------
+describe('vixFuturesPricing toggle wiring (Phase 2)', () => {
+  function cboeVixQuote(overrides: Partial<OptionQuote> = {}): OptionQuote {
+    return {
+      symbol: 'VIX261015C00020000',
+      expiration: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+      side: 'call',
+      strike: 20,
+      bid: 0.5, ask: 0.6, mid: 0.55, last: 0.55,
+      volume: 10, openInterest: 100,
+      iv: 0.9,
+      delta: 0.4, gamma: 0.05, theta: -0.01, vega: 0.02, rho: 0.001,
+      ...overrides,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // REGRESSION: toggle OFF (explicit, and the parameter's own default) must
+  // be byte-for-byte identical to the pre-Phase-2 suppressed behavior — the
+  // exact fixture and assertions from the "futures-priced symbols" describe
+  // block above, just with the 4th argument spelled out explicitly so a
+  // reviewer can see this is testing the toggle, not relying on an implicit
+  // default.
+  // -------------------------------------------------------------------------
+  test('toggle OFF (explicit false): VIX quote is suppressed exactly as before this PR; non-VIX (SPX) unaffected', () => {
+    const exp = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const vix = cboeVixQuote({ expiration: exp });
+    const spx: OptionQuote = {
+      symbol: 'SPX261015C06000000',
+      expiration: exp,
+      side: 'call',
+      strike: 6000,
+      bid: 50, ask: 51, mid: 50.5, last: 50.5,
+      volume: 10, openInterest: 100,
+      iv: 0.15, delta: 0.5, gamma: 0.001, theta: -0.3, vega: 1.2, rho: null,
+    };
+
+    const [vixOff] = enrichQuotesWithModelGreeks([vix], 15.3, 'VIX', false);
+    const [vixDefault] = enrichQuotesWithModelGreeks([vix], 15.3, 'VIX'); // no 4th arg at all
+    expect(vixOff).toEqual(vixDefault); // explicit false === omitted (default)
+    expect(vixOff.delta).toBe(vix.delta);
+    expect(vixOff.gamma).toBe(vix.gamma);
+    expect(vixOff.theta).toBe(vix.theta);
+    expect(vixOff.vega).toBe(vix.vega);
+    expect(vixOff.rho).toBe(vix.rho);
+    expect(vixOff.iv).toBe(vix.iv); // NOT re-solved when the toggle is off
+    expect(vixOff.forward ?? null).toBeNull(); // no Black-76 path reached at all
+    for (const k of ['lambda', 'vanna', 'vomma', 'charm', 'speed', 'zomma', 'color'] as const) {
+      expect(vixOff[k] ?? null).toBeNull();
+    }
+    expect(vixOff.greeksMissingReason).toBe('futures_priced');
+
+    // Non-VIX quote: completely unaffected by the toggle's value, either way.
+    const [spxOff] = enrichQuotesWithModelGreeks([spx], 6020, 'SPX', false);
+    const [spxOn] = enrichQuotesWithModelGreeks([spx], 6020, 'SPX', true);
+    expect(spxOff).toEqual(spxOn);
+    expect(spxOff.greeksSource).toBe('black-scholes');
+    expect(spxOff.lambda).not.toBeNull();
+    expect(spxOff.forward ?? null).toBeNull();
+  });
+
+  test('enrichChainResult: toggle OFF reproduces the pre-Phase-2 summary (fallbackSource black-scholes, cboeMatched counts provider 1st-order)', () => {
+    const exp = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const result: ChainResult = {
+      symbol: 'VIX',
+      underlyingPrice: 15.3,
+      expirations: [exp],
+      quotes: [cboeVixQuote({ expiration: exp })],
+    };
+    const off = enrichChainResult(result, false);
+    const omitted = enrichChainResult(result); // no 2nd arg at all
+    expect(off).toEqual(omitted);
+    expect(off.greeks?.fallbackSource).toBe('black-scholes');
+    expect(off.greeks?.cboeMatched).toBe(1);
+    expect(off.quotes[0].greeksMissingReason).toBe('futures_priced');
+  });
+
+  // -------------------------------------------------------------------------
+  // Toggle ON: dispatches to the real per-expiration Black-76 path.
+  // A self-consistent chain, priced exactly off a known forward/sigma via
+  // black76Price (same technique as src/vix-pricing.test.ts), so the market
+  // prices actually respect no-arbitrage bounds at every strike.
+  // -------------------------------------------------------------------------
+  function syntheticVixChain(expiration: string, forward: number, sigma: number, strikes: number[]): OptionQuote[] {
+    const t = yearsToExpiration(expiration)!;
+    const out: OptionQuote[] = [];
+    for (const strike of strikes) {
+      const callPrice = black76Price('call', forward, strike, t, sigma, 0.045);
+      const putPrice = black76Price('put', forward, strike, t, sigma, 0.045);
+      out.push({
+        symbol: `VIXC${strike}`, expiration, side: 'call', strike,
+        bid: callPrice - 0.005, ask: callPrice + 0.005, mid: callPrice, last: callPrice,
+        volume: 10, openInterest: 50, iv: 0.00001, // garbage provider iv — must be ignored
+        delta: null, gamma: null, theta: null, vega: null,
+      });
+      out.push({
+        symbol: `VIXP${strike}`, expiration, side: 'put', strike,
+        bid: putPrice - 0.005, ask: putPrice + 0.005, mid: putPrice, last: putPrice,
+        volume: 10, openInterest: 50, iv: 2.5, // garbage provider iv, other direction
+        delta: null, gamma: null, theta: null, vega: null,
+      });
+    }
+    return out;
+  }
+
+  test('toggle ON: a VIX quote with a resolvable forward gets REAL Black-76 greeks, not the suppressed state', () => {
+    const exp = new Date(Date.now() + 19 * 86_400_000).toISOString().slice(0, 10);
+    const quotes = syntheticVixChain(exp, 17.648, 0.92, [16, 17, 18, 19, 20]);
+    const [sample] = enrichQuotesWithModelGreeks(quotes, 15.3, 'VIX', true);
+    expect(sample.greeksSource).toBe('black-76');
+    expect(sample.greeksMissingReason ?? null).toBeNull();
+    expect(sample.forward).not.toBeNull();
+    expect(sample.forward!).toBeCloseTo(17.648, 1);
+    expect(sample.delta).not.toBeNull();
+    expect(sample.lambda).not.toBeNull();
+    // Garbage provider iv (0.00001 / 2.5) must be gone, replaced by a solved one.
+    expect(sample.iv).not.toBe(0.00001);
+    expect(sample.iv).not.toBe(2.5);
+    expect(sample.iv!).toBeCloseTo(0.92, 1);
+  });
+
+  test('enrichChainResult: toggle ON reports fallbackSource black-76 and counts black-76 rows as computed', () => {
+    const exp = new Date(Date.now() + 19 * 86_400_000).toISOString().slice(0, 10);
+    const quotes = syntheticVixChain(exp, 17.648, 0.92, [16, 17, 18, 19, 20]);
+    const result: ChainResult = { symbol: 'VIX', underlyingPrice: 15.3, expirations: [exp], quotes };
+    const on = enrichChainResult(result, true);
+    expect(on.greeks?.fallbackSource).toBe('black-76');
+    expect(on.greeks?.computed).toBe(quotes.length);
+    expect(on.greeks?.missing).toBe(0);
+  });
+
+  test('two VIX expirations in the same enrichChainResult call get DIFFERENT forwards (section 9: no shared spot)', () => {
+    const expA = new Date(Date.now() + 19 * 86_400_000).toISOString().slice(0, 10);
+    const expB = new Date(Date.now() + 201 * 86_400_000).toISOString().slice(0, 10);
+    const quotes = [
+      ...syntheticVixChain(expA, 17.648, 0.92, [16, 17, 18, 19, 20]),
+      ...syntheticVixChain(expB, 20.417, 0.40, [16, 17, 18, 19, 20]),
+    ];
+    const result: ChainResult = { symbol: 'VIX', underlyingPrice: 15.3, expirations: [expA, expB], quotes };
+    const on = enrichChainResult(result, true);
+    const a18 = on.quotes.find((q) => q.expiration === expA && q.side === 'call' && q.strike === 18)!;
+    const b18 = on.quotes.find((q) => q.expiration === expB && q.side === 'call' && q.strike === 18)!;
+    expect(a18.forward!).toBeCloseTo(17.648, 1);
+    expect(b18.forward!).toBeCloseTo(20.417, 1);
+    expect(Math.abs(a18.forward! - b18.forward!)).toBeGreaterThan(2);
+    expect(Math.abs(a18.delta! - b18.delta!)).toBeGreaterThan(0.05);
+    expect(on.greeks?.computed).toBe(quotes.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GREP-BASED PARITY: every call site that needs to forward
+// settings.vixFuturesPricing actually does. Mirrors the existing
+// "both proxies mirror INDEX_SYMBOLS" parity test above — this is the
+// equivalent check for "did I miss updating one spot" on the toggle,
+// specifically called out as worth having given how easy that is to miss.
+// ---------------------------------------------------------------------------
+describe('vixFuturesPricing call-site parity', () => {
+  const loaderSrc = read('src/providers/loader.ts');
+  const mainSrc = read('src/main.tsx');
+
+  test('every enrichChainResult / enrichQuotesWithModelGreeks call in providers/loader.ts forwards vixFuturesPricing', () => {
+    const calls = loaderSrc
+      .split('\n')
+      .filter((l) => /\b(enrichChainResult|enrichQuotesWithModelGreeks)\(/.test(l));
+    // Sanity: there really are calls to check — if this count ever drops to
+    // 0 the loop below would pass vacuously and hide a real regression.
+    expect(calls.length).toBeGreaterThanOrEqual(7);
+    for (const line of calls) {
+      expect(line).toContain('vixFuturesPricing');
+    }
+  });
+
+  test('every loader entry point that can enrich (getBulk/putBulk/loadMeta/loadExpiration) accepts vixFuturesPricing', () => {
+    for (const sig of [
+      'export function getBulk(providerId: string, symbol: string, vixFuturesPricing: boolean = false)',
+      'export function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false)',
+      'export async function loadMeta(provider: DataProvider, symbol: string, ctx: ProviderContext, vixFuturesPricing: boolean = false)',
+      'export async function loadExpiration(provider: DataProvider, symbol: string, expiration: string, ctx: ProviderContext, vixFuturesPricing: boolean = false)',
+    ]) {
+      expect(loaderSrc).toContain(sig);
+    }
+  });
+
+  test('main.tsx passes settings.vixFuturesPricing to every loadMeta/loadExpiration/getBulk call site', () => {
+    for (const snippet of [
+      'await loadMeta(provider, sym, ctx, settings.vixFuturesPricing)',
+      'await loadExpiration(provider, meta.symbol, exp, ctxFor(settings, provider, ac.signal), settings.vixFuturesPricing)',
+      'getBulk(provider.id, meta.symbol, settings.vixFuturesPricing)',
+    ]) {
+      expect(mainSrc).toContain(snippet);
+    }
+    // Sanity: exactly one real call site each (ignoring comments/changelog
+    // prose, which also mention these names) — if a second call site is
+    // ever added without updating this test, this count check (not the
+    // .toContain calls above) is what catches the silent gap.
+    const codeLines = mainSrc.split('\n').filter((l) => !/^\s*(\*|\/\/)/.test(l));
+    const countCalls = (re: RegExp) => codeLines.filter((l) => re.test(l)).length;
+    expect(countCalls(/\bloadMeta\(/)).toBe(1);
+    expect(countCalls(/\bloadExpiration\(/)).toBe(1);
+    expect(countCalls(/\bgetBulk\(/)).toBe(1);
   });
 });
