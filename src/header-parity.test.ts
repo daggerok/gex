@@ -1,8 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const main = readFileSync(join(import.meta.dir, 'main.tsx'), 'utf8');
+// App source is split into modules under src/ (Phase 0), so scan all of it.
+const main = readdirSync(import.meta.dir, { recursive: true })
+    .map(String)
+    .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
+    .sort()
+    .map((f) => readFileSync(join(import.meta.dir, f), 'utf8'))
+    .join('\n');
 const ci = readFileSync(join(import.meta.dir, '../.github/workflows/ci.yaml'), 'utf8');
 const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8'));
 

@@ -1,10 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dir, '..');
 const fetcher = readFileSync(join(root, 'scripts/options-data.py'), 'utf8');
-const main = readFileSync(join(root, 'src/main.tsx'), 'utf8');
+// App source is split into modules under src/ (Phase 0), so scan all of it.
+const main = readdirSync(join(root, 'src'), { recursive: true })
+    .map(String)
+    .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
+    .sort()
+    .map((f) => readFileSync(join(root, 'src', f), 'utf8'))
+    .join('\n');
 
 describe('data/options path layout (PR2)', () => {
   test('fetcher writes under data/options', () => {
