@@ -507,8 +507,9 @@ export const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; sp
             {/* Desk: full width, adaptive height. A DIV/grid layout (not a table)
                 so sticky headers stay opaque during scroll. Inner wrapper carries
                 the min-width so columns stay comfortable / scroll horizontally on
-                small screens. */}
-            <div ref={scrollRef} className="table-container w-full max-h-[calc(100dvh-210px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                small screens. Height offset = chrome above the desk: TopBar +
+                TabSwitcher row (44px, since Phase 2) + controls + this toolbar. */}
+            <div ref={scrollRef} className="table-container w-full max-h-[calc(100dvh-254px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 <div className="od-desk" style={{ minWidth: odMinWidth }}>
                     {sections.map((s, i) => (
                         <ExpirationSection

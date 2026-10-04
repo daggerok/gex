@@ -205,6 +205,13 @@ export const translations: Record<Language, Record<string, string>> = {
         'noOptions': '(no options)',
         'tickerFromIndex': 'Ticker from local index',
         'validTickerFromIndex': 'Valid ticker from local index',
+
+        'tabs.label': 'Views',
+        'tabs.desk': 'Desk',
+        'tabs.gex': 'GEX',
+        'tabs.chart': 'Chart',
+        'tabs.stub.gex': 'GEX view coming soon.',
+        'tabs.stub.chart': 'Chart view coming soon.',
     },
     ru: {
         'app.brand': 'GEX',
@@ -397,6 +404,13 @@ export const translations: Record<Language, Record<string, string>> = {
         'noOptions': '(нет опционов)',
         'tickerFromIndex': 'Тикер из локального индекса',
         'validTickerFromIndex': 'Валидный тикер из локального индекса',
+
+        'tabs.label': 'Представления',
+        'tabs.desk': 'Деск',
+        'tabs.gex': 'GEX',
+        'tabs.chart': 'График',
+        'tabs.stub.gex': 'Экран GEX скоро появится.',
+        'tabs.stub.chart': 'Экран графика скоро появится.',
     },
 };
 
