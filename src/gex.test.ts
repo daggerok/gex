@@ -267,6 +267,81 @@ describe('computeOiVolumeTotals', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 3 of .plans/gex-vix-futures-pricing-research.txt: a quote carrying
+// its own `forward` (VIX/VXN with settings.vixFuturesPricing on and Black-76
+// enrichment succeeding, src/vix-pricing.ts) must use THAT forward in place
+// of the shared `spot` parameter — section 9's "GEX for VIX" fix. Every test
+// above this point passes quotes with no `forward` field at all, so they are
+// an implicit regression guard: none of them changed when this file's
+// computeGexProfile loop started reading `q.forward ?? spot` per quote.
+// ---------------------------------------------------------------------------
+describe('computeGexProfile honors a per-quote forward over the shared spot (Phase 3, section 9)', () => {
+  // Hand-derived: gexCall(gamma, OI, ref) = gamma * OI * 100 * ref^2 * 0.01.
+  // F = 17.648 (the real 2026-10-21 VIX monthly forward from the research
+  // plan's 5.5 snapshot). gamma = 0.02 for both legs.
+  //   call@20, OI=1000: 0.02 * 1000 * 100 * 17.648^2 * 0.01 = 6229.03808
+  //   put@15,  OI=400:  -(0.02 * 400  * 100 * 17.648^2 * 0.01) = -2491.615232
+  const F = 17.648;
+  const EXP_V = '2026-10-21';
+
+  function vq(side: 'call' | 'put', strike: number, openInterest: number, forward: number | null): OptionQuote {
+    return { ...q(EXP_V, side, strike, openInterest, 0.02), forward };
+  }
+
+  test('a wildly wrong `spot` argument is ignored once every quote carries its own forward', () => {
+    const quotes = [vq('call', 20, 1000, F), vq('put', 15, 400, F)];
+    // Pass an obviously-wrong spot (the true app spot for VIX, ~15.31, would
+    // already be wrong for this expiration's forward — 999 is deliberately
+    // absurd so a bug that still reads `spot` anywhere is impossible to miss).
+    const profile = computeGexProfile(quotes, 999);
+    const byStrike = new Map(profile.map((p) => [p.strike, p]));
+    expect(byStrike.get(20)!.callGex).toBeCloseTo(6229.03808, 3);
+    expect(byStrike.get(15)!.putGex).toBeCloseTo(-2491.615232, 3);
+    const totalNet = profile.reduce((sum, p) => sum + p.netGex, 0);
+    expect(totalNet).toBeCloseTo(6229.03808 - 2491.615232, 3);
+  });
+
+  test('a quote without `forward` still falls back to the shared spot (SPX-family path unaffected)', () => {
+    // Same two VIX-shaped rows as above, plus one ordinary quote with no
+    // `forward` field at all (exactly what every SPX-family/equity quote
+    // looks like) sharing a strike with one of them.
+    const mixed = [
+      vq('call', 20, 1000, F),
+      vq('put', 15, 400, F),
+      q(EXP_V, 'call', 100, 1, 0.01), // no `forward` -> must use the spot param
+    ];
+    const profile = computeGexProfile(mixed, 100);
+    const byStrike = new Map(profile.map((p) => [p.strike, p]));
+    // gexCall(0.01, 1, 100) = 0.01*1*100*100^2*0.01 = 100.
+    expect(byStrike.get(100)!.callGex).toBeCloseTo(100, 6);
+    // The forward-bearing rows are completely unaffected by spot=100 (would
+    // be 0.01*1000*100*100^2*0.01=100000 if spot leaked in instead of 17.648).
+    expect(byStrike.get(20)!.callGex).toBeCloseTo(6229.03808, 3);
+  });
+
+  test('findCallPutWalls on a forward-priced profile: strikes and signs are exactly as for the shared-spot path', () => {
+    // Only two strikes, opposite signs -> each is trivially its own wall.
+    const quotes = [vq('call', 20, 1000, F), vq('put', 15, 400, F)];
+    const profile = computeGexProfile(quotes, 999); // spot param irrelevant here too
+    const walls = findCallPutWalls(profile, F); // caller passes nearest-expiration forward, not spot (section 9)
+    expect(walls.callWall).toBe(20);
+    expect(walls.putWall).toBe(15);
+  });
+
+  test('computeGexLevels end-to-end for a single futures-priced expiration', () => {
+    const quotes = [vq('call', 20, 1000, F), vq('put', 15, 400, F)];
+    const levels = computeGexLevels(quotes, F); // F used as the "spot" arg (section 9 design)
+    expect(levels.callWall).toBe(20);
+    expect(levels.putWall).toBe(15);
+    expect(levels.totalNetGex).toBeCloseTo(6229.03808 - 2491.615232, 3);
+    // gammaFlip: only two strikes, signs +/-, cumulative never crosses zero
+    // going strike-ascending (15 put first: -2491.6, then 20 call: +3737.4;
+    // it DOES cross -> interpolate between 15 and 20).
+    expect(levels.gammaFlip).not.toBeNull();
+  });
+});
+
 describe('computeGexLevels (7.7)', () => {
   test('assembles every level from one call', () => {
     const levels = computeGexLevels(FIXTURE, SPOT);

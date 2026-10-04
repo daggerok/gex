@@ -1,4 +1,4 @@
-import { INDEX_SYMBOLS } from '../greeks';
+import { FUTURES_PRICED_SYMBOLS, INDEX_SYMBOLS } from '../greeks';
 import type { OhlcBar, ProviderContext } from '../types';
 import { dbg, num } from '../utils';
 
@@ -36,10 +36,19 @@ export interface ChartRequest {
     interval?: string;
 }
 
-/** Yahoo lists cash indices only in caret form (^SPX); bare SPX answers 404. */
+/**
+ * Yahoo lists cash indices only in caret form (^SPX); bare SPX answers 404.
+ * Futures-priced volatility indices (VIX/VXN, FUTURES_PRICED_SYMBOLS) need the
+ * same ^ prefix for the chart endpoint — this is just the spot index's own
+ * price history (candles), which has always been correct; only the OPTIONS
+ * pricing model needed Black-76 (src/vix-pricing.ts). Confirmed live
+ * (2026-10-04): query1.finance.yahoo.com/v8/finance/chart/%5EVIX -> HTTP 200
+ * with real quotes; the bare .../chart/VIX -> HTTP 404 "No data found,
+ * symbol may be delisted" (same for VXN).
+ */
 export function yahooChartSymbol(symbol: string): string {
     const raw = symbol.toUpperCase().trim().replace(/^[.^]/, '');
-    return INDEX_SYMBOLS.has(raw) ? `^${raw}` : raw;
+    return (INDEX_SYMBOLS.has(raw) || FUTURES_PRICED_SYMBOLS.has(raw)) ? `^${raw}` : raw;
 }
 
 /**

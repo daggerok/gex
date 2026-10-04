@@ -71,6 +71,17 @@ describe('yahooChartSymbol', () => {
         expect(yahooChartSymbol('^SPX')).toBe('^SPX');
         expect(yahooChartSymbol('SPY')).toBe('SPY');
     });
+
+    // Part A of Phase 3 (.plans/gex-vix-futures-pricing-research.txt section 9):
+    // VIX/VXN are futures-priced (FUTURES_PRICED_SYMBOLS), not spot indices
+    // (INDEX_SYMBOLS), but Yahoo's /chart endpoint still needs the same ^
+    // prefix for them — confirmed live, 2026-10-04: ^VIX/^VXN -> HTTP 200,
+    // bare VIX/VXN -> HTTP 404 "No data found, symbol may be delisted".
+    test('caret-prefixes futures-priced volatility indices (VIX/VXN) too', () => {
+        expect(yahooChartSymbol('vix')).toBe('^VIX');
+        expect(yahooChartSymbol('^VIX')).toBe('^VIX');
+        expect(yahooChartSymbol('VXN')).toBe('^VXN');
+    });
 });
 
 describe('fetchOhlc', () => {
