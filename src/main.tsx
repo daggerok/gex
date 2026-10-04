@@ -1035,19 +1035,22 @@ const App: React.FC = () => {
         () => (meta ? meta.expirations.filter((e) => (gexQuotesByExp[e]?.length ?? 0) > 0) : []),
         [meta, gexQuotesByExp],
     );
-    // The GEX tab's OWN expiration selection, independent of Desk. Tagged with
-    // provider+symbol so a new chain falls back to the nearest single date.
-    const gexKey = meta ? `${provider.id}:${meta.symbol}` : '';
-    const [gexSel, setGexSel] = useState<{ key: string; exps: string[] }>({ key: '', exps: [] });
-    const gexSelectedExps = useMemo(
-        () => (gexSel.key === gexKey ? gexSel.exps.filter((e) => gexExpirations.includes(e)) : gexExpirations.slice(0, 1)),
-        [gexSel, gexKey, gexExpirations],
-    );
-    const setGexSelectedExps = useCallback((exps: string[]) => setGexSel({ key: gexKey, exps }), [gexKey]);
+    // The GEX tab reads/writes the SAME `selectedExps` Desk uses (user request:
+    // keep the expiration selection in sync between the Desk and GEX tabs,
+    // not two independent copies). Desk already defaults a fresh chain's
+    // selection to the nearest expiration (setSelectedExps([m.expirations[0]])
+    // above), which is exactly the default the GEX tab used to compute
+    // separately - so unifying the state needs no extra default logic here.
+    // GexView's own `expirations` prop (offered chips) still intentionally
+    // stays limited to `gexExpirations` (data already available - see its
+    // comment above) so a lazy YAHOO expiration Desk hasn't loaded yet isn't
+    // offered as a GEX choice; any such not-yet-loaded expiration in the
+    // shared `selectedExps` simply contributes no quotes (quotesByExp[exp] ??
+    // [] in useGexLevels), it does not error.
     const [gexMetric, setGexMetric] = useState<GexMetric>('netGex');
     // GexLevels computed ONCE here for the GEX tab's selection and shared by
     // the GEX and Chart tabs (plan 7.7 / 8.2) - no view recomputes them.
-    const gex = useGexLevels(spot, spotIsEstimated, gexQuotesByExp, gexSelectedExps, meta?.symbol ?? '', settings.vixFuturesPricing);
+    const gex = useGexLevels(spot, spotIsEstimated, gexQuotesByExp, selectedExps, meta?.symbol ?? '', settings.vixFuturesPricing);
     // Chart tab range (plan 8.2), held here so it survives tab switches.
     const [chartRange, setChartRange] = useState<ChartRange>(DEFAULT_RANGE);
 
@@ -1144,8 +1147,8 @@ const App: React.FC = () => {
                         levels={gex.levels}
                         isFuturesPriced={gex.isFuturesPriced}
                         expirations={gexExpirations}
-                        selectedExps={gexSelectedExps}
-                        setSelectedExps={setGexSelectedExps}
+                        selectedExps={selectedExps}
+                        setSelectedExps={setSelectedExps}
                         metric={gexMetric}
                         setMetric={setGexMetric}
                     />
@@ -1158,7 +1161,7 @@ const App: React.FC = () => {
                         symbol={meta?.symbol ?? ''}
                         levels={gex.levels}
                         isFuturesPriced={gex.isFuturesPriced}
-                        levelExpCount={gexSelectedExps.length}
+                        levelExpCount={selectedExps.length}
                         range={chartRange}
                         setRange={setChartRange}
                     />
