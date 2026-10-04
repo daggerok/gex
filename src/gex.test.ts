@@ -5,6 +5,7 @@ import {
   computeGexLevels,
   computeGexProfile,
   computeMaxPain,
+  computeOiVolumeTotals,
   computePCRatio,
   findCallPutWalls,
   findGammaFlip,
@@ -163,6 +164,19 @@ describe('findGammaFlip (7.3)', () => {
     expect(findGammaFlip(profile)).toBe(95);
   });
 
+  test('leading zero-netGex strikes are not a crossing', () => {
+    // Real CBOE chains report gamma 0 for far-from-the-money strikes, so the
+    // lowest strikes net to exactly 0. Same rows as FIXTURE plus two such
+    // strikes below it: the flip must stay at 102.5, not jump to 80.
+    const withZeroWings = [...FIXTURE, q(EXP_A, 'call', 80, 900, 0), q(EXP_A, 'put', 80, 900, 0), q(EXP_A, 'put', 85, 400, 0)];
+    const profile = computeGexProfile(withZeroWings, SPOT);
+    expect(profile[0].strike).toBe(80);
+    expect(profile[0].netGex).toBe(0);
+    expect(findGammaFlip(profile)).toBeCloseTo(102.5, 9);
+    // An all-zero profile never crosses either.
+    expect(findGammaFlip(computeGexProfile([q(EXP_A, 'call', 80, 10, 0), q(EXP_A, 'put', 85, 10, 0)], SPOT))).toBeNull();
+  });
+
   test('all-same-sign gamma exposure -> null (no extrapolation)', () => {
     const callsOnly = FIXTURE.filter((x) => x.side === 'call');
     expect(findGammaFlip(computeGexProfile(callsOnly, SPOT))).toBeNull();
@@ -239,6 +253,17 @@ describe('computePCRatio (7.6)', () => {
       byOi: 0.5,
       byVolume: null,
     });
+  });
+});
+
+describe('computeOiVolumeTotals', () => {
+  test('plain call/put sums, null-gamma and null OI/volume rows included as 0', () => {
+    // Same hand sums as the P/C ratio test above.
+    expect(computeOiVolumeTotals(FIXTURE)).toEqual({ callOi: 3320, putOi: 1220, callVolume: 70, putVolume: 35 });
+    // A null-gamma row still counts (unlike computeGexProfile); null OI counts as 0.
+    const extra = [...FIXTURE, q(EXP_A, 'call', 100, 7, null, 2), q(EXP_A, 'put', 100, null, G, null)];
+    expect(computeOiVolumeTotals(extra)).toEqual({ callOi: 3327, putOi: 1220, callVolume: 72, putVolume: 35 });
+    expect(computeOiVolumeTotals([])).toEqual({ callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 });
   });
 });
 

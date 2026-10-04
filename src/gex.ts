@@ -88,12 +88,20 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
  * Expects a profile sorted ascending by strike (as computeGexProfile returns).
  * Signature kept stable so a hypothetical-spot recompute (approach B, out of
  * scope for v1) can replace the internals later without touching callers.
+ *
+ * The "exactly 0" rule only applies once some exposure has accumulated: real
+ * chains (CBOE) report gamma 0 for far-from-the-money strikes, so the lowest
+ * strikes often have netGex exactly 0. A leading run of zero cumulative is
+ * "nothing yet", not a crossing - treating it as one put the flip at the
+ * lowest listed strike (e.g. 550 for SPY at spot ~770).
  */
 export function findGammaFlip(profile: readonly GexPoint[]): number | null {
     let cumulative = 0;
+    let accumulated = false;
     for (let i = 0; i < profile.length; i++) {
         cumulative += profile[i].netGex;
-        if (cumulative === 0) return profile[i].strike;
+        if (cumulative === 0 && accumulated) return profile[i].strike;
+        if (cumulative !== 0) accumulated = true;
         if (i + 1 >= profile.length) break;
         const next = cumulative + profile[i + 1].netGex;
         if ((cumulative < 0 && next > 0) || (cumulative > 0 && next < 0)) {
@@ -169,24 +177,39 @@ export function computeMaxPain(quotes: readonly OptionQuote[]): number | null {
     return best;
 }
 
+export interface OiVolumeTotals {
+    callOi: number;
+    putOi: number;
+    callVolume: number;
+    putVolume: number;
+}
+
+/**
+ * Plain call/put sums of open interest and volume over ALL given quotes
+ * (null-gamma quotes included, unlike computeGexProfile). Null OI / volume
+ * count as 0. Feeds the GEX tab's "OI Volume" card and computePCRatio, so the
+ * card totals and the P/C ratios always agree.
+ */
+export function computeOiVolumeTotals(quotes: readonly OptionQuote[]): OiVolumeTotals {
+    const totals: OiVolumeTotals = { callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 };
+    for (const q of quotes) {
+        if (q.side === 'call') {
+            totals.callOi += finiteOr0(q.openInterest);
+            totals.callVolume += finiteOr0(q.volume);
+        } else {
+            totals.putOi += finiteOr0(q.openInterest);
+            totals.putVolume += finiteOr0(q.volume);
+        }
+    }
+    return totals;
+}
+
 /**
  * Put/call ratios (section 7.6) by open interest and by volume. Each is null
  * when its call-side denominator is 0. Null OI / volume count as 0.
  */
 export function computePCRatio(quotes: readonly OptionQuote[]): { byOi: number | null; byVolume: number | null } {
-    let callOi = 0;
-    let putOi = 0;
-    let callVolume = 0;
-    let putVolume = 0;
-    for (const q of quotes) {
-        if (q.side === 'call') {
-            callOi += finiteOr0(q.openInterest);
-            callVolume += finiteOr0(q.volume);
-        } else {
-            putOi += finiteOr0(q.openInterest);
-            putVolume += finiteOr0(q.volume);
-        }
-    }
+    const { callOi, putOi, callVolume, putVolume } = computeOiVolumeTotals(quotes);
     return {
         byOi: callOi === 0 ? null : putOi / callOi,
         byVolume: callVolume === 0 ? null : putVolume / callVolume,

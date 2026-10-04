@@ -1,6 +1,7 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import React from 'react';
 import { ChainTable, type ChainSection } from '../components/ChainTable';
+import { ExpirationChips } from '../components/ExpirationChips';
 import { Icon } from '../components/Icon';
 import { KeyOnboarding } from '../components/KeyOnboarding';
 import { useI18n } from '../i18n';
@@ -71,36 +72,13 @@ export const DeskView: React.FC<DeskViewProps> = ({
                         onSubmit={(e) => { e.preventDefault(); loadChain(); }}
                         className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
                     >
-                        <span className="text-xs text-slate-400">{tr('controls.expirations')}</span>
-                        <div className="themed-scroll flex max-w-[46vw] items-center gap-1 overflow-x-auto">
-                            {meta.expirations.map((exp) => {
-                                const on = selectedExps.includes(exp);
-                                return (
-                                    <button
-                                        key={exp}
-                                        type="button"
-                                        onClick={() => toggleExpiration(exp)}
-                                        aria-pressed={on}
-                                        className={
-                                            'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' +
-                                            (on
-                                                ? ax.chipActive
-                                                : ax.chipIdle)
-                                        }
-                                    >
-                                        {exp}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setSelectedExps(selectedExps.length === meta.expirations.length ? [] : [...meta.expirations])}
-                            className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                            title={tr('controls.all') + ' / ' + tr('controls.none')}
-                        >
-                            {selectedExps.length === meta.expirations.length ? tr('controls.none') : tr('controls.all')}
-                        </button>
+                        <ExpirationChips
+                            expirations={meta.expirations}
+                            selected={selectedExps}
+                            onToggle={toggleExpiration}
+                            onSetAll={setSelectedExps}
+                            colorTheme={settings.colorTheme}
+                        />
                         <button
                             ref={loadBtnRef}
                             type="submit"
