@@ -54,6 +54,11 @@ export interface ChartViewProps {
     symbol: string;
     /** Shared GexLevels computed ONCE in App (same object the GEX tab renders). */
     levels: GexLevels | null;
+    /** True when `symbol` is a futures-priced volatility index (VIX, VXN):
+     *  the level legend shows a "not supported" message instead of "none"
+     *  (the candlestick price chart itself is unaffected - real price data,
+     *  not GEX-model output). */
+    isFuturesPriced: boolean;
     /** Number of expirations the levels were computed from (GEX tab selection). */
     levelExpCount: number;
     range: ChartRange;
@@ -88,7 +93,7 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, levelExpCount, range, setRange }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange }) => {
     const { t: tr, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const dark = useDarkClass();
@@ -247,7 +252,11 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             {/* ---- Level legend (same labels/colors as the GEX tab's Key Levels) ---- */}
             <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                 <span className="text-slate-400">{tr('chart.levels.source', { count: levelExpCount })}</span>
-                {entries.length === 0 && <span className="text-slate-400">{tr('chart.levels.none')}</span>}
+                {entries.length === 0 && (
+                    <span className="text-slate-400">
+                        {isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}
+                    </span>
+                )}
                 {entries.map((l) => (
                     <span key={l.key} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
                         <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${GEX_LEVEL_COLORS[l.key].dot}`} aria-hidden="true" />

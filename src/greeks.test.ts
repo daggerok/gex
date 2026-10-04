@@ -3,12 +3,17 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   BS_DIVIDEND_YIELD,
+  FUTURES_PRICED_SYMBOLS,
   INDEX_DIVIDEND_YIELDS,
   INDEX_SYMBOLS,
   SPX_DIVIDEND_YIELD,
   blackScholesGreeks,
   dividendYieldForSymbol,
+  enrichQuoteWithModelGreeks,
+  enrichQuotesWithModelGreeks,
+  isFuturesPricedSymbol,
 } from './greeks';
+import type { OptionQuote } from './types';
 
 const root = join(import.meta.dir, '..');
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -101,5 +106,105 @@ describe('blackScholesGreeks dividend yield', () => {
     const ndx = blackScholesGreeks(quote, 30800, undefined, dividendYieldForSymbol('NDX')).greeks!;
     const spx = blackScholesGreeks(quote, 30800, undefined, SPX_DIVIDEND_YIELD).greeks!;
     expect(ndx.delta).toBeGreaterThan(spx.delta);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VIX / VXN harm-reduction fix: VIX options are priced off the futures curve
+// per expiration, not spot - this app's Black-Scholes model is the wrong
+// model for them (not just imprecise). Cboe's own feed already supplies
+// correct 1st-order greeks for VIX; only the model-computed higher-order
+// greeks (and, separately, GEX) must be suppressed. See
+// .plans/gex-vix-futures-pricing-research.txt for the full investigation.
+// ---------------------------------------------------------------------------
+describe('futures-priced symbols (VIX, VXN)', () => {
+  test('FUTURES_PRICED_SYMBOLS is exactly VIX and VXN', () => {
+    expect([...FUTURES_PRICED_SYMBOLS].sort()).toEqual(['VIX', 'VXN']);
+  });
+
+  test('isFuturesPricedSymbol accepts provider spellings and casing', () => {
+    expect(isFuturesPricedSymbol('VIX')).toBe(true);
+    expect(isFuturesPricedSymbol('vix')).toBe(true);
+    expect(isFuturesPricedSymbol('^VIX')).toBe(true);
+    expect(isFuturesPricedSymbol('_VIX')).toBe(true);
+    expect(isFuturesPricedSymbol(' vxn ')).toBe(true);
+    expect(isFuturesPricedSymbol('VXN')).toBe(true);
+  });
+
+  test('isFuturesPricedSymbol rejects spot-priced indices, equities and empty input', () => {
+    for (const s of ['SPX', 'XSP', 'NDX', 'DJX', 'RUT', 'AAPL', 'SPY', '', null, undefined]) {
+      expect(isFuturesPricedSymbol(s)).toBe(false);
+    }
+  });
+
+  /** A quote shaped like what Cboe's own feed supplies for VIX today: real
+   *  1st-order greeks (delta/gamma/theta/vega/rho), no higher-order ones. */
+  function cboeVixQuote(overrides: Partial<OptionQuote> = {}): OptionQuote {
+    return {
+      symbol: 'VIX261015C00020000',
+      expiration: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+      side: 'call',
+      strike: 20,
+      bid: 0.5, ask: 0.6, mid: 0.55, last: 0.55,
+      volume: 10, openInterest: 100,
+      iv: 0.9,
+      delta: 0.4, gamma: 0.05, theta: -0.01, vega: 0.02, rho: 0.001,
+      ...overrides,
+    };
+  }
+
+  test('enrichQuoteWithModelGreeks(isFuturesPriced=true) leaves Cboe 1st-order greeks untouched and tags futures_priced', () => {
+    const q = cboeVixQuote();
+    const out = enrichQuoteWithModelGreeks(q, 15.3, BS_DIVIDEND_YIELD, true);
+    // Provider-supplied 1st-order greeks: byte-for-byte unchanged.
+    expect(out.delta).toBe(q.delta);
+    expect(out.gamma).toBe(q.gamma);
+    expect(out.theta).toBe(q.theta);
+    expect(out.vega).toBe(q.vega);
+    expect(out.rho).toBe(q.rho);
+    // Higher-order greeks: never filled in by the (wrong, spot-based) model.
+    for (const k of ['lambda', 'vanna', 'vomma', 'charm', 'speed', 'zomma', 'color'] as const) {
+      expect(out[k] ?? null).toBeNull();
+    }
+    expect(out.greeksMissingReason).toBe('futures_priced');
+  });
+
+  test('enrichQuoteWithModelGreeks(isFuturesPriced=true) never calls the BS model, even with full spot/strike/IV present', () => {
+    const q = cboeVixQuote();
+    // A real spot (15.3) and a real IV (0.9) are both present, so a non-VIX
+    // call would happily fill in BS greeks here. For VIX it must not.
+    const out = enrichQuoteWithModelGreeks(q, 15.3, BS_DIVIDEND_YIELD, true);
+    expect(out.greeksSource ?? null).not.toBe('black-scholes');
+  });
+
+  test('enrichQuoteWithModelGreeks(isFuturesPriced=true) leaves an already fully-enriched quote (static cache) alone', () => {
+    const q = cboeVixQuote({ lambda: 1.2, vanna: 0.01, vomma: 0.02, charm: -0.001, speed: 0.0001, zomma: 0.002, color: -0.0005 });
+    const out = enrichQuoteWithModelGreeks(q, 15.3, BS_DIVIDEND_YIELD, true);
+    expect(out).toBe(q);
+  });
+
+  test('enrichQuotesWithModelGreeks: a VIX quote is suppressed, a non-VIX (SPX) quote is completely unaffected', () => {
+    const exp = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const vix = cboeVixQuote({ expiration: exp });
+    const spx: OptionQuote = {
+      symbol: 'SPX261015C06000000',
+      expiration: exp,
+      side: 'call',
+      strike: 6000,
+      bid: 50, ask: 51, mid: 50.5, last: 50.5,
+      volume: 10, openInterest: 100,
+      iv: 0.15, delta: 0.5, gamma: 0.001, theta: -0.3, vega: 1.2, rho: null,
+    };
+
+    const [vixOut] = enrichQuotesWithModelGreeks([vix], 15.3, 'VIX');
+    expect(vixOut.delta).toBe(vix.delta);
+    expect(vixOut.gamma).toBe(vix.gamma);
+    expect(vixOut.lambda ?? null).toBeNull();
+    expect(vixOut.greeksMissingReason).toBe('futures_priced');
+
+    const [spxOut] = enrichQuotesWithModelGreeks([spx], 6020, 'SPX');
+    expect(spxOut.greeksSource).toBe('black-scholes');
+    expect(spxOut.lambda).not.toBeNull();
+    expect(spxOut.greeksMissingReason ?? null).toBeNull();
   });
 });

@@ -41,6 +41,9 @@ export interface GexViewProps {
     quotes: OptionQuote[];
     /** Shared GexLevels computed ONCE in App (also drawn by the Chart tab). */
     levels: GexLevels | null;
+    /** True when `symbol` is a futures-priced volatility index (VIX, VXN):
+     *  this tab shows a "not supported" message instead of GEX numbers. */
+    isFuturesPriced: boolean;
     /** Expirations selectable on this tab (keys of quotesByExp, ascending). */
     expirations: string[];
     /** This tab's OWN expiration selection (independent of Desk). */
@@ -82,7 +85,7 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
 );
 
 export const GexView: React.FC<GexViewProps> = ({
-    settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, expirations,
+    settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced, expirations,
     selectedExps, setSelectedExps, metric, setMetric,
 }) => {
     const { t: tr } = useI18n();
@@ -153,6 +156,20 @@ export const GexView: React.FC<GexViewProps> = ({
         return (
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
                 <div className={emptyBox}>{tr('gex.empty.noData')}</div>
+            </main>
+        );
+    }
+
+    // Futures-priced volatility index (VIX, VXN): this app's GEX math assumes
+    // spot pricing (src/gex.ts scales by spot^2), which is simply the wrong
+    // model here - short-circuit to an honest message instead of computing
+    // and showing numbers from that model. The Desk tab (plain chain table)
+    // is unaffected: it still shows the real chain and Cboe's own 1st-order
+    // greeks for these symbols.
+    if (isFuturesPriced) {
+        return (
+            <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
+                <div className={emptyBox}>{tr('gex.empty.futuresPriced', { symbol })}</div>
             </main>
         );
     }

@@ -247,6 +247,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'gex.empty.noData': 'Enter a ticker and press Expirations to analyze its gamma exposure.',
         'gex.empty.noSelection': 'Select at least one expiration.',
         'gex.empty.noGamma': 'No gamma data for the selected expirations (this provider may not supply greeks or IV).',
+        'gex.empty.futuresPriced': 'GEX analysis is not available for {{symbol}} (futures-priced, not supported by the current model).',
         'gex.lazyHint': 'YAHOO loads one expiration at a time: only dates already loaded on the Desk tab are listed here.',
 
         'chart.range.label': 'Range',
@@ -262,6 +263,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'chart.empty.noBars': 'No price history returned for {{symbol}}.',
         'chart.levels.source': 'GEX levels from the GEX tab selection ({{count}} exp.):',
         'chart.levels.none': 'none (no gamma data for the selected expirations)',
+        'chart.levels.futuresPriced': 'not available for {{symbol}} (futures-priced, not supported by the current model)',
     },
     ru: {
         'app.brand': 'GEX',
@@ -496,6 +498,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'gex.empty.noData': 'Введи тикер и нажми «Экспирации», чтобы проанализировать гамма-экспозицию.',
         'gex.empty.noSelection': 'Выбери хотя бы одну экспирацию.',
         'gex.empty.noGamma': 'Нет данных по гамме для выбранных экспираций (провайдер может не отдавать греки или IV).',
+        'gex.empty.futuresPriced': 'Анализ GEX недоступен для {{symbol}} (цена определяется фьючерсами, текущая модель это не поддерживает).',
         'gex.lazyHint': 'YAHOO загружает экспирации по одной: здесь показаны только даты, уже загруженные на вкладке «Деск».',
 
         'chart.range.label': 'Период',
@@ -511,6 +514,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'chart.empty.noBars': 'Нет истории цен для {{symbol}}.',
         'chart.levels.source': 'Уровни GEX по выбору на вкладке GEX ({{count}} эксп.):',
         'chart.levels.none': 'нет (нет данных по гамме для выбранных экспираций)',
+        'chart.levels.futuresPriced': 'недоступно для {{symbol}} (цена определяется фьючерсами, текущая модель это не поддерживает)',
     },
 };
 
