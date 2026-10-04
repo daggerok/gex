@@ -23,6 +23,9 @@
  *   - Provider "CBOE" calls:
  *       GET {base}/api/cboe?symbol=AAPL     (equities)   returns CBOE JSON as-is
  *       GET {base}/api/cboe?symbol=_SPX     (cash indices use the "_" prefix)
+ *   - OHLC price history (src/providers/chart.ts, not a chain provider) calls:
+ *       GET {base}/api/chart?symbol=SPY&range=6mo&interval=1d   (Yahoo v8 chart, no crumb)
+ *       GET {base}/api/chart?symbol=^SPX&range=6mo&interval=1d  (indices use the "^" prefix)
  *   - Ticker suggestions for providers that expose a searchable universe call:
  *       GET {base}/api/search?provider=yahoo&q=apple
  *       GET {base}/api/search?provider=nasdaq&q=tesla
@@ -129,6 +132,33 @@ async function handleCboe(url: URL): Promise<Response> {
     return new Response(await res.text(), {
         status: res.status,
         headers: { "Content-Type": "application/json", ...CORS },
+    });
+}
+
+/**
+ * GET /api/chart?symbol=SPY[&range=6mo][&interval=1d]   (indices: symbol=^SPX)
+ * Relays Yahoo's v8 chart (OHLC history) JSON. Unlike /api/options this needs
+ * NO crumb/cookie session - a plain GET with a browser User-Agent works (without
+ * a UA Yahoo answers 429 "Edge: Too Many Requests"). The app's chart client
+ * already picks the right symbol (index -> "^SPX"), so `symbol` passes through.
+ * `range` is allow-listed because Yahoo silently returns a single bar (HTTP 200)
+ * for an unknown range; `interval` is passed through since Yahoo itself answers
+ * 400 with a JSON error for an unknown interval.
+ */
+const CHART_RANGES = new Set(["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"]);
+async function handleChart(url: URL): Promise<Response> {
+    const symbol = (url.searchParams.get("symbol") || "").toUpperCase().trim();
+    if (!symbol) return json({ error: "missing symbol" }, 400);
+    const range = (url.searchParams.get("range") || "6mo").toLowerCase().trim();
+    if (!CHART_RANGES.has(range)) return json({ error: `unsupported range: ${range}` }, 400);
+    const interval = (url.searchParams.get("interval") || "1d").toLowerCase().trim();
+    const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+        `?interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`;
+    logProxy("YAHOO", `${url.pathname}?symbol=${symbol}&range=${range}&interval=${interval}`, target);
+    const res = await fetch(target, { headers: { "User-Agent": UA, Accept: "application/json" } });
+    return new Response(await res.text(), {
+        status: res.status,
+        headers: { "Content-Type": res.headers.get("content-type") || "application/json", ...CORS },
     });
 }
 
@@ -347,6 +377,10 @@ Bun.serve({
             try { return await handleCboe(url); }
             catch (e) { return json({ error: String(e) }, 502); }
         }
+        if (url.pathname === "/api/chart") {
+            try { return await handleChart(url); }
+            catch (e) { return json({ error: String(e) }, 502); }
+        }
         if (url.pathname === "/api/nasdaq") {
             try { return await handleNasdaq(url); }
             catch (e) { return json({ error: String(e) }, 502); }
@@ -356,7 +390,7 @@ Bun.serve({
             catch (e) { return json({ error: String(e) }, 502); }
         }
         if (url.pathname === "/" || url.pathname === "/health") {
-            return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"] });
+            return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"] });
         }
         return json({ error: "not found" }, 404);
     },
@@ -365,6 +399,7 @@ Bun.serve({
 console.log(`\n🚀 GEX proxy running at http://localhost:${PORT}`);
 console.log(`   Yahoo  | http://localhost:${PORT}/api/options?symbol=AAPL`);
 console.log(`   CBOE   | http://localhost:${PORT}/api/cboe?symbol=AAPL   (indices: _SPX, _VIX)`);
+console.log(`   CHART  | http://localhost:${PORT}/api/chart?symbol=SPY&range=6mo&interval=1d   (indices: ^SPX)`);
 console.log(`   NASDAQ | http://localhost:${PORT}/api/nasdaq?symbol=AAPL`);
 console.log(`   SEARCH | http://localhost:${PORT}/api/search?provider=yahoo&q=apple`);
 console.log(`   (relay logs below: "$proxy | $localPath -> $remoteUrl")\n`);

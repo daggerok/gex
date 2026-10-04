@@ -18,11 +18,13 @@
  *   - Provider "NASDAQ"           calls {base}/api/nasdaq?symbol=AAPL
  *   - Provider "CBOE"             calls {base}/api/cboe?symbol=AAPL (or _SPX)
  *   - Provider suggestions         call {base}/api/search?provider=...&q=...
+ *   - OHLC price history (chart.ts) calls {base}/api/chart?symbol=SPY&range=6mo&interval=1d
  *   - (Advanced) generic proxying can use {worker}/raw?url={url}.
  *
  * ENDPOINTS THIS WORKER EXPOSES:
  *   GET /api/options?symbol=AAPL[&date=...]   -> Yahoo optionChain (crumb-handled)
  *   GET /api/cboe?symbol=AAPL                 -> CBOE delayed quotes (CORS-wrapped)
+ *   GET /api/chart?symbol=SPY&range=6mo&interval=1d -> Yahoo v8 OHLC chart (no crumb; ^SPX for indices)
  *   GET /api/nasdaq?symbol=AAPL               -> NASDAQ option chain (CORS-wrapped)
  *   GET /api/search?provider=yahoo&q=apple    -> provider-native ticker suggestions
  *   GET /api/search?provider=nasdaq&q=tesla   -> provider-native ticker suggestions
@@ -127,6 +129,28 @@ async function handleCboe(url) {
   return new Response(await res.text(), {
     status: res.status,
     headers: { "Content-Type": "application/json", ...cors() },
+  });
+}
+
+// GET /api/chart?symbol=SPY[&range=6mo][&interval=1d] (indices: ^SPX) -> Yahoo v8 chart
+// (OHLC history) JSON. No crumb/cookie session needed, only a browser User-Agent
+// (without one Yahoo answers 429 "Edge: Too Many Requests"). `range` is allow-listed
+// because Yahoo silently returns a single bar (HTTP 200) for an unknown range;
+// `interval` passes through since Yahoo answers 400 with a JSON error itself.
+const CHART_RANGES = new Set(["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"]);
+async function handleChart(url) {
+  const symbol = (url.searchParams.get("symbol") || "").toUpperCase().trim();
+  if (!symbol) return json({ error: "missing symbol" }, 400);
+  const range = (url.searchParams.get("range") || "6mo").toLowerCase().trim();
+  if (!CHART_RANGES.has(range)) return json({ error: `unsupported range: ${range}` }, 400);
+  const interval = (url.searchParams.get("interval") || "1d").toLowerCase().trim();
+  const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+    `?interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`;
+  logProxy("YAHOO", `${url.pathname}?symbol=${symbol}&range=${range}&interval=${interval}`, target);
+  const res = await fetch(target, { headers: { "User-Agent": UA, Accept: "application/json" } });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { "Content-Type": res.headers.get("content-type") || "application/json", ...cors() },
   });
 }
 
@@ -300,11 +324,12 @@ export default {
     try {
       if (url.pathname === "/api/options") return await handleYahooOptions(url);
       if (url.pathname === "/api/cboe") return await handleCboe(url);
+      if (url.pathname === "/api/chart") return await handleChart(url);
       if (url.pathname === "/api/nasdaq") return await handleNasdaq(url);
       if (url.pathname === "/api/search") return await handleSearch(url);
       if (url.pathname === "/raw") return await handleRaw(url);
       if (url.pathname === "/" || url.pathname === "/health") {
-        return json({ ok: true, service: "gex-worker", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/raw?url=..."] });
+        return json({ ok: true, service: "gex-worker", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/raw?url=..."] });
       }
       return json({ error: "not found" }, 404);
     } catch (e) {
