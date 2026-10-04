@@ -1,6 +1,7 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { useMemo } from 'react';
 import { computeGexLevels } from './gex';
+import { isFuturesPricedSymbol } from './greeks';
 import type { GexLevels, OptionQuote } from './types';
 import { estimateSpot } from './utils';
 
@@ -18,8 +19,15 @@ export interface GexSlice {
     /** App spot, else a put-call-parity estimate from the nearest selected expiration. */
     spot: number | null;
     spotIsEstimated: boolean;
-    /** null when there is no spot or no quotes to analyze. */
+    /** null when there is no spot or no quotes to analyze, OR `symbol` is a
+     *  futures-priced volatility index (isFuturesPriced below) - this app's
+     *  spot-based GEX math (src/gex.ts scales by spot^2) does not apply to
+     *  those, so levels are suppressed rather than shown wrong. */
     levels: GexLevels | null;
+    /** True when `symbol` is a futures-priced volatility index (VIX, VXN):
+     *  the GEX and Chart tabs should show a "not supported" message instead
+     *  of numbers, even though quotes/spot may both be present. */
+    isFuturesPriced: boolean;
 }
 
 export function useGexLevels(
@@ -27,6 +35,7 @@ export function useGexLevels(
     appSpotIsEstimated: boolean,
     quotesByExp: Record<string, OptionQuote[]>,
     selectedExps: string[],
+    symbol: string | null | undefined,
 ): GexSlice {
     // Quotes of the selected expirations only (caller decides the slice, 7.2).
     const quotes = useMemo(
@@ -42,10 +51,11 @@ export function useGexLevels(
     }, [appSpot, nearestSelected, quotesByExp]);
     const spotIsEstimated = appSpot == null ? spot != null : appSpotIsEstimated;
 
+    const isFuturesPriced = isFuturesPricedSymbol(symbol);
     const levels = useMemo(
-        () => (spot != null && quotes.length ? computeGexLevels(quotes, spot) : null),
-        [quotes, spot],
+        () => (!isFuturesPriced && spot != null && quotes.length ? computeGexLevels(quotes, spot) : null),
+        [quotes, spot, isFuturesPriced],
     );
 
-    return { quotes, spot, spotIsEstimated, levels };
+    return { quotes, spot, spotIsEstimated, levels, isFuturesPriced };
 }

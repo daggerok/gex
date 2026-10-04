@@ -42,6 +42,25 @@ export function dividendYieldForSymbol(symbol: string | null | undefined): numbe
     const raw = String(symbol ?? '').trim().toUpperCase().replace(/^[_^.]/, '');
     return INDEX_SYMBOLS.has(raw) ? INDEX_DIVIDEND_YIELDS[raw] : BS_DIVIDEND_YIELD;
 }
+// Volatility-index options priced off a FUTURES curve per expiration, not the
+// spot index level - this app's Black-Scholes model (spot-based, everywhere
+// else in this file) is simply the wrong model for them, not just imprecise.
+// VIX is already reachable today via CBOE_INDEX_SYMBOLS in
+// src/providers/cboe.ts, whose own feed supplies correct 1st-order greeks
+// (delta/gamma/theta/vega/rho) for it - that part stays untouched. VXN
+// (Nasdaq-100 volatility index) is the same class of instrument; treated the
+// same out of caution rather than independently re-verified live.
+// Deliberately NOT folded into INDEX_SYMBOLS: that set drives the per-index
+// dividend yield and Yahoo `^`-prefix machinery built for spot-priced
+// indices, which does not apply to a futures-priced one. A real fix (a
+// Black-76 futures-priced model) is tracked separately - see
+// .plans/gex-vix-futures-pricing-research.txt.
+export const FUTURES_PRICED_SYMBOLS: ReadonlySet<string> = new Set(['VIX', 'VXN']);
+/** True when `symbol` is a futures-priced volatility index (see FUTURES_PRICED_SYMBOLS). */
+export function isFuturesPricedSymbol(symbol: string | null | undefined): boolean {
+    const raw = String(symbol ?? '').trim().toUpperCase().replace(/^[_^.]/, '');
+    return FUTURES_PRICED_SYMBOLS.has(raw);
+}
 export const HIGHER_ORDER_GREEK_KEYS = ['lambda', 'vanna', 'vomma', 'charm', 'speed', 'zomma', 'color'] as const;
 
 export function normPdf(x: number): number {
@@ -201,8 +220,22 @@ export function hasHigherOrderGreeks(q: OptionQuote): boolean {
  * - Has 1st-order (CBOE/marketdata/DoltHub) → fill only missing ρ/λ/2nd/3rd.
  * - Has IV but no 1st-order (Yahoo) → fill full BS set, tag black-scholes.
  * - No IV and no 1st-order (NASDAQ) → leave empty with missing reason when useful.
+ * - Futures-priced underlying (VIX/VXN, see FUTURES_PRICED_SYMBOLS) → NEVER
+ *   compute BS higher-order greeks (the spot-based model is simply wrong for
+ *   these); keep any provider-supplied 1st-order greeks untouched and tag the
+ *   missing higher-order fields with reason 'futures_priced' instead of
+ *   silently leaving them blank.
  */
-export function enrichQuoteWithModelGreeks(q: OptionQuote, spot: number | null, dividendYield: number = BS_DIVIDEND_YIELD): OptionQuote {
+export function enrichQuoteWithModelGreeks(
+    q: OptionQuote,
+    spot: number | null,
+    dividendYield: number = BS_DIVIDEND_YIELD,
+    isFuturesPriced: boolean = false,
+): OptionQuote {
+    if (isFuturesPriced) {
+        if (hasHigherOrderGreeks(q) || q.greeksMissingReason) return q;
+        return { ...q, greeksMissingReason: 'futures_priced' };
+    }
     if (spot == null || !(spot > 0)) {
         if (!hasFirstOrderGreeks(q) && !q.greeksMissingReason) {
             return { ...q, greeksMissingReason: 'missing_spot' };
@@ -280,9 +313,10 @@ export function enrichQuotesWithModelGreeks(quotes: OptionQuote[], underlyingPri
     if (!quotes.length) return quotes;
     const spot = resolveEnrichmentSpot(quotes, underlyingPrice);
     const dividendYield = dividendYieldForSymbol(symbol);
+    const isFuturesPriced = isFuturesPricedSymbol(symbol);
     let changed = false;
     const out = quotes.map((q) => {
-        const next = enrichQuoteWithModelGreeks(q, spot, dividendYield);
+        const next = enrichQuoteWithModelGreeks(q, spot, dividendYield, isFuturesPriced);
         if (next !== q) changed = true;
         return next;
     });
