@@ -182,7 +182,18 @@ function normalizeSuggestionSymbol(v: unknown): string {
     return String(v ?? "").trim().toUpperCase();
 }
 function isTickerLike(symbol: string): boolean {
-    return /^[A-Z][A-Z0-9.\-]{0,15}$/.test(symbol);
+    return /^\^?[A-Z][A-Z0-9.\-]{0,15}$/.test(symbol);
+}
+// Index symbols the app supports end-to-end (mirror of INDEX_SYMBOLS in
+// src/main.tsx; v1: SPX only, do NOT add VIX - futures-based pricing). Yahoo
+// returns these caret-prefixed (^SPX); we surface them in the app's canonical
+// bare form (SPX) and drop every other caret-prefixed index (^GSPC has no
+// options, ^XSP/^VIX/... are not verified/supported yet).
+const SUPPORTED_INDEX_SYMBOLS = new Set(["SPX"]);
+function canonicalYahooSuggestionSymbol(symbol: string): string {
+    if (!symbol.startsWith("^")) return symbol;
+    const bare = symbol.slice(1);
+    return SUPPORTED_INDEX_SYMBOLS.has(bare) ? bare : "";
 }
 function rankSuggestion(query: string, symbol: string, name = ""): number | null {
     const q = query.toUpperCase().trim();
@@ -224,7 +235,7 @@ async function handleYahooSearch(q: string): Promise<TickerSuggestion[]> {
     return dedupeSuggestions(rows
         .filter((r) => /^(EQUITY|ETF|INDEX)$/i.test(String(r.quoteType || r.typeDisp || "")))
         .map((r) => ({
-            symbol: normalizeSuggestionSymbol(r.symbol),
+            symbol: canonicalYahooSuggestionSymbol(normalizeSuggestionSymbol(r.symbol)),
             name: String(r.longname || r.shortname || r.name || ""),
             exchange: String(r.exchDisp || r.exchange || ""),
             source: "Yahoo",
