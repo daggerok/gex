@@ -1,9 +1,17 @@
 import type { OptionQuote } from './types';
-import { BS_RISK_FREE_RATE, type BsGreeks, normCdf, normPdf, yearsToExpiration } from './greeks';
-import { num } from './utils';
+import {
+    BS_RISK_FREE_RATE,
+    type BsGreeks,
+    hasFirstOrderGreeks,
+    hasHigherOrderGreeks,
+    normCdf,
+    normPdf,
+    yearsToExpiration,
+} from './greeks';
+import { estimateSpot, num } from './utils';
 
 // ---------------------------------------------------------------------------
-// Black-76 (options on futures) pricing — PHASE 1 OF 3, PURE ADDITION ONLY.
+// Black-76 (options on futures) pricing.
 // ---------------------------------------------------------------------------
 // VIX/VXN (see FUTURES_PRICED_SYMBOLS in src/greeks.ts) are cash-settled
 // volatility-index options priced off a futures curve per expiration, not the
@@ -11,10 +19,14 @@ import { num } from './utils';
 // simply the wrong model for them. This module implements the correct model
 // (Black 1976) per .plans/gex-vix-futures-pricing-research.txt sections 6-7.
 //
-// NOTHING in this file is wired into enrichQuoteWithModelGreeks,
-// enrichQuotesWithModelGreeks, computeGexLevels or any other live path yet.
-// That is Phase 2's job. This PR is pure math + tests + an inert settings
-// toggle — zero behavior change to what users see today.
+// PHASE 1 shipped the pure math below (black76Price/black76Greeks/
+// impliedVolBlack76/impliedForward) with nothing wired into a live path.
+// PHASE 2 adds enrichFuturesPricedQuotes, the per-expiration dispatch that
+// src/greeks.ts' enrichQuotesWithModelGreeks calls when BOTH
+// settings.vixFuturesPricing is on AND the symbol is futures-priced. When the
+// toggle is off (the default) or the symbol isn't futures-priced, none of
+// this file runs — the existing suppressed ('futures_priced') path in
+// src/greeks.ts is untouched and the non-VIX path is unaffected.
 //
 // Conventions mirror blackScholesGreeks exactly: theta per calendar day, vega
 // per 1 vol-point, rho per 1 percentage point of r (but see 6.2/6.3 below —
@@ -273,4 +285,148 @@ export function impliedForward(quotes: OptionQuote[], expiration: string, riskFr
         ? forwards[mid]
         : (forwards[mid - 1] + forwards[mid]) / 2;
     return median;
+}
+
+// ---------------------------------------------------------------------------
+// Per-expiration Black-76 enrichment dispatch (research plan sections 7-8) —
+// PHASE 2.
+// ---------------------------------------------------------------------------
+// Each VIX/VXN expiration has its OWN forward (research plan section 9), so
+// unlike enrichQuotesWithModelGreeks (one shared spot for every quote), this
+// function groups quotes by expiration, resolves a forward per group
+// (impliedForward first, falling back to the existing estimateSpot when
+// impliedForward can't find enough two-sided liquid strikes — section 7.1
+// step 4), and enriches every quote in a group with THAT group's forward.
+// Expirations where neither resolves a forward fall back to the existing
+// suppressed 'futures_priced' behavior rather than guessing.
+
+/** Resolve the Black-76 forward for one expiration's quotes: parity first,
+ *  else the existing single-strike parity estimator, else null. */
+function resolveExpirationForward(groupQuotes: OptionQuote[], expiration: string, riskFree: number): number | null {
+    const parity = impliedForward(groupQuotes, expiration, riskFree);
+    if (parity != null && parity > 0) return parity;
+    const fallback = estimateSpot(groupQuotes, expiration);
+    return fallback != null && fallback > 0 ? fallback : null;
+}
+
+/**
+ * Enrich one futures-priced quote against its expiration's own forward.
+ * Mirrors enrichQuoteWithModelGreeks's branching exactly (CBOE 1st-order
+ * present → fill only missing ρ/λ/2nd-3rd; no 1st-order → fill the full set)
+ * but with Black-76 internals and a freshly solved IV — provider-supplied
+ * `iv` is never trusted for these symbols (see this module's doc comment and
+ * research plan 5.6), so `iv` is always overwritten once a model price solves.
+ * `forward` is null when neither impliedForward nor the estimateSpot fallback
+ * could resolve a forward for this expiration — that quote keeps today's
+ * suppressed behavior (greeksMissingReason 'futures_priced').
+ */
+function enrichFuturesPricedQuote(q: OptionQuote, forward: number | null, riskFree: number): OptionQuote {
+    if (forward == null) {
+        if (hasHigherOrderGreeks(q) || q.greeksMissingReason) return q;
+        return { ...q, greeksMissingReason: 'futures_priced' };
+    }
+    // Already solved against THIS forward (idempotent re-enrichment from
+    // cache) — skip recompute; avoids churn on every cache read.
+    if (hasFirstOrderGreeks(q) && hasHigherOrderGreeks(q) && q.greeksSource === 'black-76' && q.forward === forward) {
+        return q;
+    }
+
+    const t = yearsToExpiration(q.expiration);
+    if (t == null || t <= 0) {
+        if (!hasFirstOrderGreeks(q) && !q.greeksMissingReason) return { ...q, forward, greeksMissingReason: 'expired' };
+        return q.forward === forward ? q : { ...q, forward };
+    }
+
+    // Research plan 6.4: solve on the mid only when both sides are live
+    // (bid > 0 and ask > 0) — never on a possibly-stale last trade.
+    const bid = num(q.bid);
+    const ask = num(q.ask);
+    const price = (bid != null && ask != null && bid > 0 && ask > 0) ? (bid + ask) / 2 : null;
+    const sigma = price != null ? impliedVolBlack76(q.side, price, forward, q.strike, t, riskFree) : null;
+    if (sigma == null) {
+        if (!hasFirstOrderGreeks(q) && !q.greeksMissingReason) {
+            return { ...q, forward, greeksMissingReason: price == null ? 'missing_mid' : 'price_out_of_bounds' };
+        }
+        return q.forward === forward ? q : { ...q, forward };
+    }
+
+    const { greeks: calc, reason } = black76Greeks(q, forward, sigma, riskFree);
+    if (!calc) {
+        if (!hasFirstOrderGreeks(q) && !q.greeksMissingReason) return { ...q, forward, greeksMissingReason: reason };
+        return q.forward === forward ? q : { ...q, forward };
+    }
+
+    if (hasFirstOrderGreeks(q)) {
+        // Keep provider delta/gamma/theta/vega; only backfill missing fields.
+        // iv is always replaced — see doc comment above.
+        return {
+            ...q,
+            iv: sigma,
+            forward,
+            rho: q.rho ?? calc.rho,
+            lambda: q.lambda ?? calc.lambda,
+            vanna: q.vanna ?? calc.vanna,
+            vomma: q.vomma ?? calc.vomma,
+            charm: q.charm ?? calc.charm,
+            speed: q.speed ?? calc.speed,
+            zomma: q.zomma ?? calc.zomma,
+            color: q.color ?? calc.color,
+            greeksSource: q.greeksSource ?? 'black-76',
+            greeksMissingReason: q.greeksMissingReason ?? null,
+        };
+    }
+
+    return {
+        ...q,
+        iv: sigma,
+        forward,
+        delta: calc.delta,
+        gamma: calc.gamma,
+        theta: calc.theta,
+        vega: calc.vega,
+        rho: calc.rho,
+        lambda: calc.lambda,
+        vanna: calc.vanna,
+        vomma: calc.vomma,
+        charm: calc.charm,
+        speed: calc.speed,
+        zomma: calc.zomma,
+        color: calc.color,
+        greeksSource: 'black-76',
+        greeksMissingReason: null,
+    };
+}
+
+/**
+ * Enrich a futures-priced (VIX/VXN) quote list with per-expiration Black-76
+ * greeks. Called from enrichQuotesWithModelGreeks ONLY when
+ * settings.vixFuturesPricing is on and the symbol is futures-priced — the
+ * caller is responsible for that gating (see src/greeks.ts). Groups quotes by
+ * expiration, resolves ONE forward per expiration (never one shared forward
+ * across expirations — research plan section 9), and enriches each group
+ * against its own forward. Returns the same array reference when nothing
+ * changed, matching enrichQuotesWithModelGreeks's contract.
+ */
+export function enrichFuturesPricedQuotes(quotes: OptionQuote[], riskFree: number = BS_RISK_FREE_RATE): OptionQuote[] {
+    if (!quotes.length) return quotes;
+
+    const groups = new Map<string, OptionQuote[]>();
+    for (const q of quotes) {
+        const arr = groups.get(q.expiration);
+        if (arr) arr.push(q); else groups.set(q.expiration, [q]);
+    }
+
+    const forwardByExpiration = new Map<string, number | null>();
+    groups.forEach((groupQuotes, expiration) => {
+        forwardByExpiration.set(expiration, resolveExpirationForward(groupQuotes, expiration, riskFree));
+    });
+
+    let changed = false;
+    const out = quotes.map((q) => {
+        const forward = forwardByExpiration.get(q.expiration) ?? null;
+        const next = enrichFuturesPricedQuote(q, forward, riskFree);
+        if (next !== q) changed = true;
+        return next;
+    });
+    return changed ? out : quotes;
 }

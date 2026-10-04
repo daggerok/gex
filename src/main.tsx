@@ -870,7 +870,7 @@ const App: React.FC = () => {
             const ctx = ctxFor(settings, provider, ac.signal);
             if (credsOverride?.token != null) ctx.token = credsOverride.token;
             if (credsOverride?.secret != null) ctx.secret = credsOverride.secret;
-            const m = await loadMeta(provider, sym, ctx);
+            const m = await loadMeta(provider, sym, ctx, settings.vixFuturesPricing);
             if (ac.signal.aborted) return;
             if (m.expirations.length === 0) throw new Error(tr('error.noContracts', { symbol: sym }));
             setMeta(m);
@@ -905,7 +905,7 @@ const App: React.FC = () => {
         const collected: Record<string, OptionQuote[]> = {};
         try {
             for (const exp of ordered) {
-                const quotes = await loadExpiration(provider, meta.symbol, exp, ctxFor(settings, provider, ac.signal));
+                const quotes = await loadExpiration(provider, meta.symbol, exp, ctxFor(settings, provider, ac.signal), settings.vixFuturesPricing);
                 if (ac.signal.aborted) return;
                 collected[exp] = quotes;
             }
@@ -1022,7 +1022,7 @@ const App: React.FC = () => {
     const gexQuotesByExp = useMemo<Record<string, OptionQuote[]>>(() => {
         if (!meta) return {};
         if (provider.mode === 'bulk') {
-            const bulk = getBulk(provider.id, meta.symbol);
+            const bulk = getBulk(provider.id, meta.symbol, settings.vixFuturesPricing);
             if (bulk) {
                 const byExp: Record<string, OptionQuote[]> = {};
                 for (const q of bulk.quotes) (byExp[q.expiration] ??= []).push(q);
@@ -1030,7 +1030,7 @@ const App: React.FC = () => {
             }
         }
         return expData;
-    }, [meta, provider, expData]);
+    }, [meta, provider, expData, settings.vixFuturesPricing]);
     const gexExpirations = useMemo(
         () => (meta ? meta.expirations.filter((e) => (gexQuotesByExp[e]?.length ?? 0) > 0) : []),
         [meta, gexQuotesByExp],
