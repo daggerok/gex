@@ -1414,6 +1414,20 @@ function estimateSpot(quotes: OptionQuote[], expiration: string): number | null 
 // Conventions: theta per calendar day; vega/rho per 1 vol-point / 1pp rate.
 const BS_RISK_FREE_RATE = 0.045;
 const BS_DIVIDEND_YIELD = 0.0;
+// Cash-settled index underlyings supported end-to-end across providers.
+// Canonical (display / input / cache-key) form is the bare symbol; each provider
+// derives its own upstream spelling: Yahoo "^SPX", Cboe "_SPX", NASDAQ unsupported.
+// v1: SPX only. Do NOT add VIX (different, futures-based pricing model).
+// Keep in sync with SUPPORTED_INDEX_SYMBOLS in scripts/options-*-proxy.*.
+const INDEX_SYMBOLS: ReadonlySet<string> = new Set(['SPX']);
+// Approximate S&P 500 continuous dividend yield used by the model greeks for
+// INDEX_SYMBOLS. Hardcoded estimate, not a live figure - it drifts over time.
+const INDEX_DIVIDEND_YIELD = 0.013;
+/** Dividend yield the BS model should use for an underlying symbol. */
+function dividendYieldForSymbol(symbol: string | null | undefined): number {
+    const raw = String(symbol ?? '').trim().toUpperCase().replace(/^[_^.]/, '');
+    return INDEX_SYMBOLS.has(raw) ? INDEX_DIVIDEND_YIELD : BS_DIVIDEND_YIELD;
+}
 const HIGHER_ORDER_GREEK_KEYS = ['lambda', 'vanna', 'vomma', 'charm', 'speed', 'zomma', 'color'] as const;
 
 function normPdf(x: number): number {
@@ -1574,7 +1588,7 @@ function hasHigherOrderGreeks(q: OptionQuote): boolean {
  * - Has IV but no 1st-order (Yahoo) → fill full BS set, tag black-scholes.
  * - No IV and no 1st-order (NASDAQ) → leave empty with missing reason when useful.
  */
-function enrichQuoteWithModelGreeks(q: OptionQuote, spot: number | null): OptionQuote {
+function enrichQuoteWithModelGreeks(q: OptionQuote, spot: number | null, dividendYield: number = BS_DIVIDEND_YIELD): OptionQuote {
     if (spot == null || !(spot > 0)) {
         if (!hasFirstOrderGreeks(q) && !q.greeksMissingReason) {
             return { ...q, greeksMissingReason: 'missing_spot' };
@@ -1583,7 +1597,7 @@ function enrichQuoteWithModelGreeks(q: OptionQuote, spot: number | null): Option
     }
     if (hasFirstOrderGreeks(q) && hasHigherOrderGreeks(q)) return q;
 
-    const { greeks: calc, reason } = blackScholesGreeks(q, spot);
+    const { greeks: calc, reason } = blackScholesGreeks(q, spot, BS_RISK_FREE_RATE, dividendYield);
     if (!calc) {
         if (!hasFirstOrderGreeks(q) && !q.greeksMissingReason) {
             return { ...q, greeksMissingReason: reason };
@@ -1648,12 +1662,13 @@ function resolveEnrichmentSpot(quotes: OptionQuote[], underlyingPrice: number | 
 }
 
 /** Enrich an array of quotes; returns same array reference if nothing changed. */
-function enrichQuotesWithModelGreeks(quotes: OptionQuote[], underlyingPrice: number | null | undefined): OptionQuote[] {
+function enrichQuotesWithModelGreeks(quotes: OptionQuote[], underlyingPrice: number | null | undefined, symbol: string | null | undefined): OptionQuote[] {
     if (!quotes.length) return quotes;
     const spot = resolveEnrichmentSpot(quotes, underlyingPrice);
+    const dividendYield = dividendYieldForSymbol(symbol);
     let changed = false;
     const out = quotes.map((q) => {
-        const next = enrichQuoteWithModelGreeks(q, spot);
+        const next = enrichQuoteWithModelGreeks(q, spot, dividendYield);
         if (next !== q) changed = true;
         return next;
     });
@@ -1662,7 +1677,7 @@ function enrichQuotesWithModelGreeks(quotes: OptionQuote[], underlyingPrice: num
 
 /** Attach model greeks + a light summary onto a bulk ChainResult. */
 function enrichChainResult(result: ChainResult): ChainResult {
-    const quotes = enrichQuotesWithModelGreeks(result.quotes, result.underlyingPrice);
+    const quotes = enrichQuotesWithModelGreeks(result.quotes, result.underlyingPrice, result.symbol);
     if (quotes === result.quotes && result.greeks) return result;
 
     let computed = 0;
@@ -1678,7 +1693,7 @@ function enrichChainResult(result: ChainResult): ChainResult {
         enabled: true,
         fallbackSource: result.greeks?.fallbackSource ?? 'black-scholes',
         riskFreeRate: result.greeks?.riskFreeRate ?? BS_RISK_FREE_RATE,
-        dividendYield: result.greeks?.dividendYield ?? BS_DIVIDEND_YIELD,
+        dividendYield: result.greeks?.dividendYield ?? dividendYieldForSymbol(result.symbol),
         total: quotes.length,
         computed: result.greeks?.computed ?? computed,
         missing: result.greeks?.missing ?? missing,
@@ -2038,10 +2053,13 @@ const yahooProvider: DataProvider = {
     },
     async fetchMeta(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[.]/, '');
+        // Yahoo lists index options only under the caret form (^SPX); bare SPX
+        // silently returns an empty result.
+        const ySym = INDEX_SYMBOLS.has(raw) ? `^${raw}` : raw;
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
         if (!base) throw new Error('Set a Proxy base URL in Settings (e.g. http://localhost:8787).');
-        const url = `${base}/api/options?symbol=${encodeURIComponent(raw)}`;
-        dbg('yahoo fetchMeta', { raw, url });
+        const url = `${base}/api/options?symbol=${encodeURIComponent(ySym)}`;
+        dbg('yahoo fetchMeta', { raw, ySym, url });
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
         const j: any = await res.json().catch(() => null);
         const result = j?.optionChain?.result?.[0];
@@ -2057,10 +2075,11 @@ const yahooProvider: DataProvider = {
     },
     async fetchExpiration(symbol, expiration, ctx) {
         const raw = symbol.toUpperCase().replace(/^[.]/, '');
+        const ySym = INDEX_SYMBOLS.has(raw) ? `^${raw}` : raw;
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
         if (!base) throw new Error('Set a Proxy base URL in Settings (e.g. http://localhost:8787).');
-        const url = `${base}/api/options?symbol=${encodeURIComponent(raw)}&date=${isoToUnix(expiration)}`;
-        dbg('yahoo fetchExpiration', { raw, expiration, url });
+        const url = `${base}/api/options?symbol=${encodeURIComponent(ySym)}&date=${isoToUnix(expiration)}`;
+        dbg('yahoo fetchExpiration', { raw, ySym, expiration, url });
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
         const j: any = await res.json().catch(() => null);
         const opt = j?.optionChain?.result?.[0]?.options?.[0];
@@ -2135,6 +2154,11 @@ const nasdaqProvider: DataProvider = {
     },
     async fetchAll(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        // NASDAQ has no index option-chain endpoint at all ("Symbol not exists."
+        // for every assetclass), so fail early with an actionable message.
+        if (INDEX_SYMBOLS.has(raw)) {
+            throw new Error(`NASDAQ does not support index options (${raw}). Switch to CBOE, YAHOO, or CACHE.`);
+        }
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
         // Direct NASDAQ URL (used only if routed via a generic {url} CORS proxy).
         const direct = `https://api.nasdaq.com/api/quote/${encodeURIComponent(raw)}/option-chain?assetclass=stocks&limit=10000&fromdate=all`;
@@ -2200,6 +2224,12 @@ const nasdaqProvider: DataProvider = {
  *      Set "Proxy base URL" in Settings; we call {base}/api/cboe?symbol=XXX.
  *   2) A generic CORS proxy template ({url}) as a fallback (public ones flaky).
  */
+// Cboe CDN spelling for cash indices is "_SYM" (bare and ^SYM both 403). This is
+// a SUPERSET of INDEX_SYMBOLS on purpose: the CBOE provider already routes these
+// (and the proxy suggests them), so narrowing it to SPX would regress CBOE-only
+// lookups like VIX/NDX. Model-greek and Yahoo/NASDAQ index handling stays
+// limited to INDEX_SYMBOLS.
+const CBOE_INDEX_SYMBOLS: ReadonlySet<string> = new Set([...INDEX_SYMBOLS, 'VIX', 'NDX', 'RUT', 'DJX', 'XSP', 'OEX', 'VXN']);
 const cboeProvider: DataProvider = {
     id: 'cboe',
     label: 'CBOE',
@@ -2218,9 +2248,8 @@ const cboeProvider: DataProvider = {
         return proxyTickerSuggestions('cboe', query, ctx);
     },
     async fetchAll(symbol, ctx) {
-        const INDEX_SET = new Set(['SPX', 'VIX', 'NDX', 'RUT', 'DJX', 'XSP', 'OEX', 'VXN']);
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
-        const cboeSym = INDEX_SET.has(raw) ? `_${raw}` : raw;
+        const cboeSym = CBOE_INDEX_SYMBOLS.has(raw) ? `_${raw}` : raw;
         const target = `https://cdn.cboe.com/api/global/delayed_quotes/options/${cboeSym}.json`;
 
         // Prefer a request-handling proxy base ({base}/api/cboe) if configured;
@@ -2600,13 +2629,13 @@ async function loadExpiration(provider: DataProvider, symbol: string, expiration
         // Re-enrich legacy cache entries that predate client-side BS.
         if (hit.some((q) => hasHigherOrderGreeks(q) || q.greeksSource === 'black-scholes')) return hit;
         const meta = cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
-        const enriched = enrichQuotesWithModelGreeks(hit, meta?.underlyingPrice ?? null);
+        const enriched = enrichQuotesWithModelGreeks(hit, meta?.underlyingPrice ?? null, symbol);
         if (enriched !== hit) cacheSet(key, enriched);
         return enriched;
     }
     const quotes = await provider.fetchExpiration(symbol, expiration, ctx);
     const meta = cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
-    const enriched = enrichQuotesWithModelGreeks(quotes, meta?.underlyingPrice ?? null);
+    const enriched = enrichQuotesWithModelGreeks(quotes, meta?.underlyingPrice ?? null, symbol);
     cacheSet(key, enriched);
     return enriched;
 }
