@@ -5,6 +5,7 @@ import {
   computeGexLevels,
   computeGexProfile,
   computeMaxPain,
+  computeOiVolumeTotals,
   computePCRatio,
   findCallPutWalls,
   findGammaFlip,
@@ -239,6 +240,17 @@ describe('computePCRatio (7.6)', () => {
       byOi: 0.5,
       byVolume: null,
     });
+  });
+});
+
+describe('computeOiVolumeTotals', () => {
+  test('plain call/put sums, null-gamma and null OI/volume rows included as 0', () => {
+    // Same hand sums as the P/C ratio test above.
+    expect(computeOiVolumeTotals(FIXTURE)).toEqual({ callOi: 3320, putOi: 1220, callVolume: 70, putVolume: 35 });
+    // A null-gamma row still counts (unlike computeGexProfile); null OI counts as 0.
+    const extra = [...FIXTURE, q(EXP_A, 'call', 100, 7, null, 2), q(EXP_A, 'put', 100, null, G, null)];
+    expect(computeOiVolumeTotals(extra)).toEqual({ callOi: 3327, putOi: 1220, callVolume: 72, putVolume: 35 });
+    expect(computeOiVolumeTotals([])).toEqual({ callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 });
   });
 });
 

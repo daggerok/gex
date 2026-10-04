@@ -26,6 +26,19 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.49 - Phase 3 GEX tab: views/GexView.tsx replaces the 'gex' TabStub
+ *          (plan section 8.1). Sidebar (OI Volume / GEX Analysis / Key Levels /
+ *          P/C Ratio) + recharts bar chart by strike with spot and call/put wall
+ *          reference lines, metric toggle (Net GEX / Call OI / Put OI / Call
+ *          Volume / Put Volume). All numbers come from src/gex.ts. No new fetch:
+ *          bulk providers (CACHE/CBOE/NASDAQ) read the whole chain already held
+ *          by getBulk() after "Expirations"; lazy YAHOO only offers the
+ *          expirations already in expData. The tab has its OWN expiration
+ *          selection (default: nearest single date, reset per provider+symbol)
+ *          and metric, held here so they survive tab switches. GexView is
+ *          React.lazy-loaded so recharts stays out of the initial bundle. The Desk's chip
+ *          strip is extracted to components/ExpirationChips.tsx and reused.
+ *          Level colors live in gex-colors.ts for reuse by the Chart tab.
  * v0.9.48 - Phase 2 tabs shell: App holds a transient `activeTab`
  *          ('desk' | 'gex' | 'chart', default 'desk', not persisted). A
  *          TabSwitcher (header Pill control) renders under <TopBar/>. Desk is
@@ -644,7 +657,7 @@
  */
 
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain (see ENVIRONMENT above)
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
 import type { ChainSection } from './components/ChainTable';
@@ -652,12 +665,17 @@ import { type AppTab, TabStub, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
-import { loadExpiration, loadMeta } from './providers/loader';
+import { getBulk, loadExpiration, loadMeta } from './providers/loader';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, loadSettings, saveSettings } from './settings-store';
 import { useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
 import { dbg, estimateSpot, friendlyError, isAbortError } from './utils';
 import { DeskView } from './views/DeskView';
+import type { GexMetric } from './views/GexView';
+
+// GEX tab is code-split: recharts (~500 KB minified) loads only when the tab
+// is first opened, so the Desk's initial bundle stays as small as before.
+const GexView = lazy(() => import('./views/GexView').then((m) => ({ default: m.GexView })));
 
 // ============================================================================
 // MAIN APPLICATION COMPONENT
@@ -981,6 +999,37 @@ const App: React.FC = () => {
     }, [meta, expData]);
     const spotIsEstimated = meta != null && meta.underlyingPrice == null && spot != null;
 
+    // ---- GEX tab (Phase 3): reuses chain data already held, never fetches ----
+    // Bulk providers (CACHE/CBOE/NASDAQ) already hold EVERY expiration in the
+    // in-memory bulk cache once "Expirations" succeeds, so the GEX tab can
+    // offer all of them. Lazy YAHOO only has what Desk loaded into expData.
+    const gexQuotesByExp = useMemo<Record<string, OptionQuote[]>>(() => {
+        if (!meta) return {};
+        if (provider.mode === 'bulk') {
+            const bulk = getBulk(provider.id, meta.symbol);
+            if (bulk) {
+                const byExp: Record<string, OptionQuote[]> = {};
+                for (const q of bulk.quotes) (byExp[q.expiration] ??= []).push(q);
+                return byExp;
+            }
+        }
+        return expData;
+    }, [meta, provider, expData]);
+    const gexExpirations = useMemo(
+        () => (meta ? meta.expirations.filter((e) => (gexQuotesByExp[e]?.length ?? 0) > 0) : []),
+        [meta, gexQuotesByExp],
+    );
+    // The GEX tab's OWN expiration selection, independent of Desk. Tagged with
+    // provider+symbol so a new chain falls back to the nearest single date.
+    const gexKey = meta ? `${provider.id}:${meta.symbol}` : '';
+    const [gexSel, setGexSel] = useState<{ key: string; exps: string[] }>({ key: '', exps: [] });
+    const gexSelectedExps = useMemo(
+        () => (gexSel.key === gexKey ? gexSel.exps.filter((e) => gexExpirations.includes(e)) : gexExpirations.slice(0, 1)),
+        [gexSel, gexKey, gexExpirations],
+    );
+    const setGexSelectedExps = useCallback((exps: string[]) => setGexSel({ key: gexKey, exps }), [gexKey]);
+    const [gexMetric, setGexMetric] = useState<GexMetric>('netGex');
+
     // Onboarding preview: provider demo ticker, else jump to CACHE + AAPL.
     const onboardingPreview = useCallback(() => {
         if (provider.demoSymbol) {
@@ -1062,7 +1111,24 @@ const App: React.FC = () => {
                     hasRows={hasRows}
                 />
             </div>
-            {activeTab !== 'desk' && <TabStub tab={activeTab} />}
+            {activeTab === 'gex' && (
+                <Suspense fallback={null}>
+                    <GexView
+                        settings={settings}
+                        provider={provider}
+                        symbol={meta?.symbol ?? ''}
+                        spot={spot}
+                        spotIsEstimated={spotIsEstimated}
+                        quotesByExp={gexQuotesByExp}
+                        expirations={gexExpirations}
+                        selectedExps={gexSelectedExps}
+                        setSelectedExps={setGexSelectedExps}
+                        metric={gexMetric}
+                        setMetric={setGexMetric}
+                    />
+                </Suspense>
+            )}
+            {activeTab === 'chart' && <TabStub tab="chart" />}
         </div>
     );
 };
