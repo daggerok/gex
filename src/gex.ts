@@ -15,6 +15,22 @@ import type { GexLevels, GexPoint, OptionQuote } from './types';
 // direction is not public data). It was not reverse-engineered against any
 // commercial GEX product, so expect numbers in the same ballpark as other
 // public GEX tools, not an exact match (plan section 17 item 3).
+//
+// Per-quote reference price (Phase 3 of .plans/gex-vix-futures-pricing-
+// research.txt, section 9): for almost every symbol one shared `spot` is the
+// right reference price for every quote in the chain. VIX/VXN (futures-priced
+// - see FUTURES_PRICED_SYMBOLS in src/greeks.ts) are the exception: each
+// expiration is priced off its OWN forward (src/vix-pricing.ts's
+// enrichFuturesPricedQuotes sets OptionQuote.forward per quote when
+// settings.vixFuturesPricing is on and Black-76 enrichment succeeds).
+// computeGexProfile below uses `q.forward` in place of the shared `spot`
+// parameter whenever a quote carries one - the formula itself (gexCall/
+// gexPut) is unchanged, only which reference price gets passed in per quote.
+// A quote without `forward` (every non-futures-priced quote, and any
+// futures-priced quote whose own enrichment couldn't resolve a forward) falls
+// back to `spot` exactly as before - this is a no-op for the SPX-family path:
+// `forward` is never set there, so `q.forward ?? spot` always resolves to
+// `spot` for them, byte-for-byte identical to the pre-Phase-3 behavior.
 
 /** Shares per standard equity/index option contract. */
 export const CONTRACT_MULTIPLIER = 100;
@@ -52,12 +68,18 @@ function finiteOr0(value: number | null | undefined): number {
  * excluded from the profile ENTIRELY - it contributes neither GEX nor OI/volume,
  * and a strike whose quotes all lack gamma produces no point. It is never
  * treated as gamma 0. Null openInterest / volume count as 0.
+ *
+ * Per-quote reference price (see the module doc comment, Phase 3): each
+ * quote uses `q.forward` in place of `spot` when present and positive -
+ * this is how VIX/VXN's per-expiration forward is honored. Every other
+ * quote (forward null/absent) uses `spot` unchanged.
  */
 export function computeGexProfile(quotes: readonly OptionQuote[], spot: number): GexPoint[] {
     const byStrike = new Map<number, GexPoint>();
     for (const q of quotes) {
         if (typeof q.gamma !== 'number' || !Number.isFinite(q.gamma)) continue;
         if (!Number.isFinite(q.strike)) continue;
+        const ref = typeof q.forward === 'number' && Number.isFinite(q.forward) && q.forward > 0 ? q.forward : spot;
         let point = byStrike.get(q.strike);
         if (!point) {
             point = { strike: q.strike, callGex: 0, putGex: 0, netGex: 0, callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 };
@@ -66,11 +88,11 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
         const oi = finiteOr0(q.openInterest);
         const volume = finiteOr0(q.volume);
         if (q.side === 'call') {
-            point.callGex += gexCall(q.gamma, oi, spot);
+            point.callGex += gexCall(q.gamma, oi, ref);
             point.callOi += oi;
             point.callVolume += volume;
         } else {
-            point.putGex += gexPut(q.gamma, oi, spot);
+            point.putGex += gexPut(q.gamma, oi, ref);
             point.putOi += oi;
             point.putVolume += volume;
         }
@@ -129,6 +151,16 @@ export interface CallPutWalls {
  *    SECOND_WALL_MIN_DISTANCE_PCT * spot away from the primary wall (an
  *    unsourced heuristic, see the constant's comment)
  * Ties on netGex resolve to the lowest strike (first in ascending order).
+ *
+ * `spot` here is just "the reference price the 2%-distance rule measures
+ * from" - for a futures-priced symbol (VIX/VXN) there is no single spot in
+ * the GEX-relevant sense once multiple expirations/forwards are in play, so
+ * the caller (src/use-gex-levels.ts) passes the nearest selected
+ * expiration's forward instead of the true spot index level (design
+ * decision, Phase 3 of .plans/gex-vix-futures-pricing-research.txt section
+ * 9: strikes live in futures-space for these symbols, so a futures-space
+ * reference price makes the 2%-of-reference distance threshold meaningful;
+ * the true spot VIX index is still shown separately in the UI).
  */
 export function findCallPutWalls(profile: readonly GexPoint[], spot: number): CallPutWalls {
     const minDistance = SECOND_WALL_MIN_DISTANCE_PCT * spot;
@@ -219,6 +251,13 @@ export function computePCRatio(quotes: readonly OptionQuote[]): { byOi: number |
 /**
  * Convenience wrapper (section 7.7): the single function views call. Builds the
  * profile, then gamma flip, walls, max pain and put/call ratios.
+ *
+ * `spot` is the reference price computeGexProfile falls back to for any quote
+ * without its own `forward`, and the anchor findCallPutWalls' second-wall
+ * distance rule measures from (see both functions' doc comments). For the
+ * SPX-family path this is the true spot; for a futures-priced symbol whose
+ * quotes carry per-expiration forwards, the caller passes a forward instead
+ * (src/use-gex-levels.ts) - this function itself does not need to know which.
  */
 export function computeGexLevels(quotes: readonly OptionQuote[], spot: number): GexLevels {
     const profile = computeGexProfile(quotes, spot);
