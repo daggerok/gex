@@ -199,6 +199,20 @@ export const SettingsPanel: React.FC<{
                     <p className="mt-2 text-[11px] text-slate-400">{t('settings.deskColumns.note')}</p>
                 </div>
 
+                {/* ---- VIX futures pricing (Phase 1/3 — inert, nothing reads it yet) ---- */}
+                <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
+                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                        <input
+                            type="checkbox"
+                            checked={settings.vixFuturesPricing}
+                            onChange={(e) => onChange({ vixFuturesPricing: e.target.checked })}
+                            className={`h-3.5 w-3.5 ${ax.accentInput}`}
+                        />
+                        <span className="font-medium">{t('settings.vixFuturesPricing')}</span>
+                    </label>
+                    <p className="mt-1 text-[11px] text-slate-400">{t('settings.vixFuturesPricing.hint')}</p>
+                </div>
+
                 {/* ---- Cache: stats + clear actions --------------------------- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('settings.cache')}</h3>

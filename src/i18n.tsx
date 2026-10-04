@@ -102,6 +102,9 @@ export const translations: Record<Language, Record<string, string>> = {
         'deskColumns.header.mid': 'Mid',
         'deskColumns.header.ask': 'Ask',
 
+        'settings.vixFuturesPricing': 'VIX futures-priced greeks (experimental)',
+        'settings.vixFuturesPricing.hint': 'Black-76 pricing for VIX/VXN options. Not wired up yet — toggling this has no effect yet.',
+
         'settings.cache': 'Cache',
         'settings.cache.records': 'Data records',
         'settings.cache.dataSize': 'Data size',
@@ -352,6 +355,9 @@ export const translations: Record<Language, Record<string, string>> = {
         'deskColumns.header.bid': 'Бид',
         'deskColumns.header.mid': 'Мид',
         'deskColumns.header.ask': 'Аск',
+
+        'settings.vixFuturesPricing': 'Гриски VIX по фьючерсам (экспериментально)',
+        'settings.vixFuturesPricing.hint': 'Модель Black-76 для опционов VIX/VXN. Пока не подключена — переключатель ни на что не влияет.',
 
         'settings.cache': 'Кэш',
         'settings.cache.records': 'Записей данных',

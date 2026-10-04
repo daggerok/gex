@@ -237,6 +237,15 @@ export interface Settings {
     /** Column groups shown in the options desk. Greeks are enabled by default. */
     deskColumns: DeskColumnSettings;
     lastTicker: string;
+    /**
+     * Opt-in to Black-76 futures-priced greeks/IV for VIX/VXN (see
+     * src/vix-pricing.ts and .plans/gex-vix-futures-pricing-research.txt).
+     * PHASE 1: this field is persisted and toggleable but nothing reads it
+     * yet — wiring it into the live enrichment path is Phase 2. Defaults to
+     * OFF: a new, not-yet-fully-wired feature must not change behavior for
+     * existing users until it is actually wired up.
+     */
+    vixFuturesPricing: boolean;
 }
 
 // ============================================================================

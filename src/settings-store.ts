@@ -235,6 +235,10 @@ export const DEFAULT_SETTINGS: Settings = {
         puts: { openInterest: true, volume: true, iv: true, delta: true, gamma: true, theta: true, vega: true, rho: false, lambda: false, vanna: false, vomma: false, charm: false, speed: false, zomma: false, color: false },
     },
     lastTicker: 'AAPL',
+    // Phase 1 of 3 (VIX Black-76 pricing, see src/vix-pricing.ts): OFF by
+    // default — nothing reads this yet, so flipping it has zero effect
+    // until Phase 2 wires it into the enrichment path.
+    vixFuturesPricing: false,
 };
 
 /** Fresh settings object with the current host default (not a shared mutable ref). */
@@ -254,6 +258,7 @@ export function loadSettings(): Settings {
             ...parsed,
             language: (parsed.language && LANGUAGES.includes(parsed.language) ? parsed.language : DEFAULT_LANGUAGE) as Language,
             colorTheme: normalizeColorTheme(parsed.colorTheme),
+            vixFuturesPricing: parsed.vixFuturesPricing === true,
             tokens: { ...DEFAULT_SETTINGS.tokens, ...(parsed.tokens || {}) },
             secrets: { ...DEFAULT_SETTINGS.secrets, ...(parsed.secrets || {}) },
             deskColumns: {
