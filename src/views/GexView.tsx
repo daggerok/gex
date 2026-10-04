@@ -239,7 +239,7 @@ export const GexView: React.FC<GexViewProps> = ({
                 {/* ---- Main chart ---- */}
                 <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3">
                     <h3 className="mb-2 text-xs text-slate-500 dark:text-slate-400">{tr('gex.chart.title', { metric: metricLabel })}</h3>
-                    <div className="h-[360px] lg:h-[calc(100dvh-280px)] lg:min-h-[420px]">
+                    <div className="h-[360px] lg:h-[calc(100dvh-304px)] lg:min-h-[420px]">
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (

@@ -35,6 +35,8 @@
  *          tab's expiration selection) and passed to both GexView and ChartView;
  *          neither view calls computeGexLevels itself. Range is held here so it
  *          survives tab switches. New i18n keys: chart.*.
+ *          components/AttributionFooter.tsx renders the lightweight-charts
+ *          NOTICE (verbatim) + https://www.tradingview.com/ link on every tab.
  * v0.9.49 - Phase 3 GEX tab: views/GexView.tsx replaces the 'gex' TabStub
  *          (plan section 8.1). Sidebar (OI Volume / GEX Analysis / Key Levels /
  *          P/C Ratio) + recharts bar chart by strike with spot and call/put wall
@@ -669,6 +671,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
+import { AttributionFooter } from './components/AttributionFooter';
 import type { ChainSection } from './components/ChainTable';
 import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
@@ -1159,6 +1162,9 @@ const App: React.FC = () => {
                     />
                 </Suspense>
             )}
+
+            {/* lightweight-charts attribution (Apache-2.0 NOTICE + link), on every tab. */}
+            <AttributionFooter />
         </div>
     );
 };
