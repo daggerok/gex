@@ -3,12 +3,12 @@ import React, { useMemo } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ExpirationChips } from '../components/ExpirationChips';
-import { computeGexLevels, computeGexProfile, computeOiVolumeTotals, computePCRatio } from '../gex';
+import { computeGexProfile, computeOiVolumeTotals, computePCRatio } from '../gex';
 import { GEX_BAR_COLORS, GEX_LEVEL_COLORS, type GexLevelKey } from '../gex-colors';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
 import type { DataProvider, GexLevels, GexPoint, OptionQuote, Settings } from '../types';
-import { estimateSpot, fmt, fmtInt } from '../utils';
+import { fmt, fmtInt } from '../utils';
 
 // ============================================================================
 // GEX VIEW (Tab 2) - plan section 8.1 + gex-implementation-plan-wireframe-
@@ -34,11 +34,13 @@ export interface GexViewProps {
     provider: DataProvider;
     /** Symbol of the loaded chain ('' when nothing is loaded). */
     symbol: string;
-    /** App's spot (provider spot, or put-call-parity estimate). */
+    /** Spot the levels were computed with (App spot, or parity estimate). */
     spot: number | null;
     spotIsEstimated: boolean;
-    /** Quotes already in App state, keyed by expiration. */
-    quotesByExp: Record<string, OptionQuote[]>;
+    /** Quotes of selectedExps (from App's shared useGexLevels slice). */
+    quotes: OptionQuote[];
+    /** Shared GexLevels computed ONCE in App (also drawn by the Chart tab). */
+    levels: GexLevels | null;
     /** Expirations selectable on this tab (keys of quotesByExp, ascending). */
     expirations: string[];
     /** This tab's OWN expiration selection (independent of Desk). */
@@ -80,34 +82,18 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
 );
 
 export const GexView: React.FC<GexViewProps> = ({
-    settings, provider, symbol, spot, spotIsEstimated, quotesByExp, expirations, selectedExps, setSelectedExps,
-    metric, setMetric,
+    settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, expirations,
+    selectedExps, setSelectedExps, metric, setMetric,
 }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const na = tr('gex.na');
 
-    // Quotes of the selected expirations only (caller decides the slice, 7.2).
-    const quotes = useMemo(
-        () => selectedExps.flatMap((exp) => quotesByExp[exp] ?? []),
-        [selectedExps, quotesByExp],
-    );
-
-    // Spot: App's value, else a parity estimate from the nearest selected expiration.
-    const nearestSelected = [...selectedExps].sort()[0];
-    const effSpot = useMemo(() => {
-        if (spot != null) return spot;
-        return nearestSelected && quotesByExp[nearestSelected] ? estimateSpot(quotesByExp[nearestSelected], nearestSelected) : null;
-    }, [spot, nearestSelected, quotesByExp]);
-    const effSpotIsEstimated = spot == null ? effSpot != null : spotIsEstimated;
-
+    // quotes / effSpot / levels come from App's useGexLevels (computed once,
+    // shared with the Chart tab). The profile below only feeds the bar chart.
     const totals = useMemo(() => computeOiVolumeTotals(quotes), [quotes]);
     const profile: GexPoint[] = useMemo(
         () => (effSpot != null && quotes.length ? computeGexProfile(quotes, effSpot) : []),
-        [quotes, effSpot],
-    );
-    const levels: GexLevels | null = useMemo(
-        () => (effSpot != null && quotes.length ? computeGexLevels(quotes, effSpot) : null),
         [quotes, effSpot],
     );
     const pcr = useMemo(
