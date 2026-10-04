@@ -188,7 +188,7 @@ These files are optional infrastructure outside the core app source:
 src/
   index.html                  # Parcel entry shell
   index.css                   # Tailwind v4, theme tokens, scrollbar/table-desk CSS
-  main.tsx                    # App shell: state, effects, render (+ shared changelog)
+  main.tsx                    # App shell: state (incl. active tab), effects, render (+ shared changelog)
   types.ts                    # domain + settings types
   i18n.tsx                    # en/ru dictionaries, I18nProvider, useI18n()
   utils.ts                    # debug logger, formatting/parsing helpers, friendlyError
@@ -196,7 +196,7 @@ src/
   theme.ts                    # theme controller hook + palette accent classes
   settings-store.ts           # persisted settings + localStorage query cache
   providers/                  # CACHE/CBOE/NASDAQ/YAHOO providers, registry, bulk/lazy loader
-  components/                 # TopBar, SettingsPanel, ChainTable, switches, onboarding, icons
+  components/                 # TopBar, TabSwitcher, SettingsPanel, ChainTable, switches, onboarding, icons
   views/DeskView.tsx          # Desk view: expiration controls + chain table
 data/
   index.json                  # { files, count, names, no_options }

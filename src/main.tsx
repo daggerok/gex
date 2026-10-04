@@ -26,6 +26,14 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.48 - Phase 2 tabs shell: App holds a transient `activeTab`
+ *          ('desk' | 'gex' | 'chart', default 'desk', not persisted). A
+ *          TabSwitcher (header Pill control) renders under <TopBar/>. Desk is
+ *          the unchanged DeskView, kept mounted (hidden) on other tabs so its
+ *          ChainTable state survives switching. GEX / Chart are placeholder
+ *          stubs until Phase 3 / Phase 5. New i18n keys: tabs.*.
+ *          ChainTable max-height offset 210px -> 254px to absorb the 44px tab
+ *          row, so a loaded desk still fits the viewport (no page scroll).
  * v0.9.47 - Phase 0 file-layout refactor (zero behavior change): the former
  *          single-file app is split verbatim into modules:
  *            types.ts, i18n.tsx, utils.ts, greeks.ts, theme.ts,
@@ -640,6 +648,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
 import type { ChainSection } from './components/ChainTable';
+import { type AppTab, TabStub, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
@@ -682,6 +691,10 @@ const App: React.FC = () => {
     }, []);
 
     useThemeController(settings.theme, settings.colorTheme);
+
+    // Active content tab below TopBar. Transient per session (not persisted
+    // in Settings): every page load starts on Desk, exactly like pre-tabs.
+    const [activeTab, setActiveTab] = useState<AppTab>('desk');
 
     // Proxy health probe (LIVE providers only; CACHE mutes indicators).
     const [proxyOk, setProxyOk] = useState<boolean | null>(null);
@@ -1014,34 +1027,42 @@ const App: React.FC = () => {
                 proxyChecking={proxyChecking}
             />
 
-            <DeskView
-                settings={settings}
-                provider={provider}
-                meta={meta}
-                selectedExps={selectedExps}
-                setSelectedExps={setSelectedExps}
-                toggleExpiration={toggleExpiration}
-                loadChain={loadChain}
-                getDates={getDates}
-                loadBtnRef={loadBtnRef}
-                tickerInput={tickerInput}
-                metaLoading={metaLoading}
-                expLoading={expLoading}
-                anyLoading={anyLoading}
-                cancelAll={cancelAll}
-                chainSymbol={chainSymbol}
-                spot={spot}
-                spotIsEstimated={spotIsEstimated}
-                notice={notice}
-                error={error}
-                showOnboarding={showOnboarding}
-                setToken={setToken}
-                setSecret={setSecret}
-                onboardingPreview={onboardingPreview}
-                previewLabel={previewLabel}
-                sections={sections}
-                hasRows={hasRows}
-            />
+            <TabSwitcher value={activeTab} onChange={setActiveTab} colorTheme={settings.colorTheme} />
+
+            {/* Desk stays MOUNTED while another tab is shown (just hidden), so
+                ChainTable's local state (collapsed sections, active expiration,
+                scroll position) survives a tab round-trip. */}
+            <div hidden={activeTab !== 'desk'}>
+                <DeskView
+                    settings={settings}
+                    provider={provider}
+                    meta={meta}
+                    selectedExps={selectedExps}
+                    setSelectedExps={setSelectedExps}
+                    toggleExpiration={toggleExpiration}
+                    loadChain={loadChain}
+                    getDates={getDates}
+                    loadBtnRef={loadBtnRef}
+                    tickerInput={tickerInput}
+                    metaLoading={metaLoading}
+                    expLoading={expLoading}
+                    anyLoading={anyLoading}
+                    cancelAll={cancelAll}
+                    chainSymbol={chainSymbol}
+                    spot={spot}
+                    spotIsEstimated={spotIsEstimated}
+                    notice={notice}
+                    error={error}
+                    showOnboarding={showOnboarding}
+                    setToken={setToken}
+                    setSecret={setSecret}
+                    onboardingPreview={onboardingPreview}
+                    previewLabel={previewLabel}
+                    sections={sections}
+                    hasRows={hasRows}
+                />
+            </div>
+            {activeTab !== 'desk' && <TabStub tab={activeTab} />}
         </div>
     );
 };
