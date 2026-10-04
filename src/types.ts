@@ -238,3 +238,48 @@ export interface Settings {
     deskColumns: DeskColumnSettings;
     lastTicker: string;
 }
+
+// ============================================================================
+// GEX / CHART TYPES (see .plans/gex-implementation-plan.txt section 5)
+// ============================================================================
+
+/** Aggregated gamma exposure at a single strike (output of computeGexProfile). */
+export interface GexPoint {
+    strike: number;
+    callGex: number;
+    /** Negative number (puts contribute negative gamma exposure). */
+    putGex: number;
+    /** callGex + putGex. */
+    netGex: number;
+    callOi: number;
+    putOi: number;
+    callVolume: number;
+    putVolume: number;
+}
+
+/** Key levels derived from a chain slice (output of computeGexLevels). */
+export interface GexLevels {
+    spot: number;
+    gammaFlip: number | null;
+    callWall: number | null;
+    putWall: number | null;
+    /** "Resistance 2" - null if none qualifies. */
+    callWall2: number | null;
+    /** "Support 2" - null if none qualifies. */
+    putWall2: number | null;
+    maxPain: number | null;
+    pcRatioOi: number | null;
+    pcRatioVolume: number | null;
+    totalNetGex: number;
+}
+
+/** A single OHLC candle (for the chart tab / providers/chart.ts). */
+export interface OhlcBar {
+    /** Unix seconds (UTC midnight for daily bars). */
+    time: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number | null;
+}
