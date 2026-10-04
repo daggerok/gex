@@ -374,8 +374,10 @@ export const TopBar: React.FC<{
                         {dark ? '☀️' : '🌙'}
                     </button>
 
-                    {/* 8. i18n — fundamentals flag Pill */}
-                    <div title={t('settings.language')} className="flex-shrink-0">
+                    {/* 8. i18n — fundamentals flag Pill. Hidden below sm (like the
+                        provider select): the row's fixed-width items overflow a
+                        390px viewport otherwise; language stays in the ⚙️ panel. */}
+                    <div title={t('settings.language')} className="hidden sm:block flex-shrink-0">
                         <Pill
                             value={settings.language}
                             options={[
