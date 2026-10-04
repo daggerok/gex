@@ -5,8 +5,11 @@ import type { Language } from './i18n';
 // ============================================================================
 
 /** Source of greeks stored on a quote. `black-scholes` is a model estimate.
- *  Legacy static files may still carry `marketdata` / `dolthub` tags. */
-export type GreeksSource = 'cboe' | 'black-scholes' | 'marketdata' | 'dolthub' | null;
+ *  `black-76` is the futures-priced model estimate for VIX/VXN (Phase 2 of
+ *  .plans/gex-vix-futures-pricing-research.txt, opt-in via
+ *  settings.vixFuturesPricing). Legacy static files may still carry
+ *  `marketdata` / `dolthub` tags. */
+export type GreeksSource = 'cboe' | 'black-scholes' | 'black-76' | 'marketdata' | 'dolthub' | null;
 
 /** Top-level greeks enrichment summary written by scripts/options-data.py. */
 export interface GreeksSummary {
@@ -65,6 +68,13 @@ export interface OptionQuote {
     greeksSource?: GreeksSource;
     /** Why greeks are still missing after enrichment, if known. */
     greeksMissingReason?: string | null;
+    /**
+     * Per-expiration futures/forward price used to price this quote under
+     * Black-76 (VIX/VXN only, when settings.vixFuturesPricing is on). Client
+     * computed, never written by scripts/options-data.py or persisted to
+     * data/options/*.json. Null/absent for every non-futures-priced quote.
+     */
+    forward?: number | null;
 }
 
 /** Lightweight chain metadata (expirations + spot) — the cheap first fetch. */

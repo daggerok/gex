@@ -1,5 +1,12 @@
 import type { ChainResult, GreeksSummary, OptionQuote } from './types';
 import { estimateSpot, num } from './utils';
+// Lazily-bound to avoid a hard circular-import ordering requirement at module
+// init: vix-pricing.ts itself imports BS_RISK_FREE_RATE/normCdf/normPdf/
+// yearsToExpiration/hasFirstOrderGreeks/hasHigherOrderGreeks from this file.
+// Both modules only reference each other's exports from inside function
+// bodies (never at top-level), so the cycle is safe — see
+// https://nodejs.org/api/esm.html#circular-dependencies for why this works.
+import { enrichFuturesPricedQuotes } from './vix-pricing';
 
 // ---------------------------------------------------------------------------
 // Client-side Black-Scholes greeks — SINGLE SOURCE OF TRUTH for model math
@@ -47,13 +54,15 @@ export function dividendYieldForSymbol(symbol: string | null | undefined): numbe
 // else in this file) is simply the wrong model for them, not just imprecise.
 // VIX is already reachable today via CBOE_INDEX_SYMBOLS in
 // src/providers/cboe.ts, whose own feed supplies correct 1st-order greeks
-// (delta/gamma/theta/vega/rho) for it - that part stays untouched. VXN
-// (Nasdaq-100 volatility index) is the same class of instrument; treated the
-// same out of caution rather than independently re-verified live.
+// (delta/gamma/theta/vega/rho) for it - that part stays untouched by default.
+// VXN (Nasdaq-100 volatility index) is the same class of instrument; treated
+// the same out of caution rather than independently re-verified live.
 // Deliberately NOT folded into INDEX_SYMBOLS: that set drives the per-index
 // dividend yield and Yahoo `^`-prefix machinery built for spot-priced
-// indices, which does not apply to a futures-priced one. A real fix (a
-// Black-76 futures-priced model) is tracked separately - see
+// indices, which does not apply to a futures-priced one.
+// Real Black-76 futures-priced greeks (src/vix-pricing.ts) are available
+// opt-in via settings.vixFuturesPricing (default OFF) — see
+// enrichQuotesWithModelGreeks below and
 // .plans/gex-vix-futures-pricing-research.txt.
 export const FUTURES_PRICED_SYMBOLS: ReadonlySet<string> = new Set(['VIX', 'VXN']);
 /** True when `symbol` is a futures-priced volatility index (see FUTURES_PRICED_SYMBOLS). */
@@ -225,6 +234,14 @@ export function hasHigherOrderGreeks(q: OptionQuote): boolean {
  *   these); keep any provider-supplied 1st-order greeks untouched and tag the
  *   missing higher-order fields with reason 'futures_priced' instead of
  *   silently leaving them blank.
+ *
+ * NOTE: this function is only reached for a futures-priced symbol when the
+ * caller (enrichQuotesWithModelGreeks) determined settings.vixFuturesPricing
+ * is OFF. When it's ON, enrichQuotesWithModelGreeks dispatches to
+ * enrichFuturesPricedQuotes (src/vix-pricing.ts) instead, which replaces the
+ * 'futures_priced' suppression above with real per-expiration Black-76
+ * greeks. This function and its `isFuturesPriced` suppression branch are
+ * unchanged by that — they remain the exact toggle-off behavior.
  */
 export function enrichQuoteWithModelGreeks(
     q: OptionQuote,
@@ -308,12 +325,34 @@ export function resolveEnrichmentSpot(quotes: OptionQuote[], underlyingPrice: nu
     return null;
 }
 
-/** Enrich an array of quotes; returns same array reference if nothing changed. */
-export function enrichQuotesWithModelGreeks(quotes: OptionQuote[], underlyingPrice: number | null | undefined, symbol: string | null | undefined): OptionQuote[] {
+/**
+ * Enrich an array of quotes; returns same array reference if nothing changed.
+ *
+ * `vixFuturesPricing` (default false, matching settings.vixFuturesPricing's
+ * default) gates the ONLY branch point for futures-priced symbols (VIX/VXN):
+ *   - off, or not a futures-priced symbol → the exact code path that shipped
+ *     before this toggle existed (enrichQuoteWithModelGreeks per quote, one
+ *     shared `spot` for the whole list). PROVABLY unchanged: this branch
+ *     does not reference vixFuturesPricing or enrichFuturesPricedQuotes at
+ *     all.
+ *   - on AND futures-priced → enrichFuturesPricedQuotes (src/vix-pricing.ts),
+ *     which resolves a SEPARATE Black-76 forward per expiration (never one
+ *     shared spot — each VIX/VXN expiration has its own forward, research
+ *     plan section 9) and never reaches the code below.
+ */
+export function enrichQuotesWithModelGreeks(
+    quotes: OptionQuote[],
+    underlyingPrice: number | null | undefined,
+    symbol: string | null | undefined,
+    vixFuturesPricing: boolean = false,
+): OptionQuote[] {
     if (!quotes.length) return quotes;
+    const isFuturesPriced = isFuturesPricedSymbol(symbol);
+    if (vixFuturesPricing && isFuturesPriced) {
+        return enrichFuturesPricedQuotes(quotes);
+    }
     const spot = resolveEnrichmentSpot(quotes, underlyingPrice);
     const dividendYield = dividendYieldForSymbol(symbol);
-    const isFuturesPriced = isFuturesPricedSymbol(symbol);
     let changed = false;
     const out = quotes.map((q) => {
         const next = enrichQuoteWithModelGreeks(q, spot, dividendYield, isFuturesPriced);
@@ -323,23 +362,29 @@ export function enrichQuotesWithModelGreeks(quotes: OptionQuote[], underlyingPri
     return changed ? out : quotes;
 }
 
-/** Attach model greeks + a light summary onto a bulk ChainResult. */
-export function enrichChainResult(result: ChainResult): ChainResult {
-    const quotes = enrichQuotesWithModelGreeks(result.quotes, result.underlyingPrice, result.symbol);
+/**
+ * Attach model greeks + a light summary onto a bulk ChainResult.
+ * `vixFuturesPricing` is forwarded to enrichQuotesWithModelGreeks unchanged
+ * (see its doc comment) — default false keeps every existing caller's
+ * behavior identical.
+ */
+export function enrichChainResult(result: ChainResult, vixFuturesPricing: boolean = false): ChainResult {
+    const quotes = enrichQuotesWithModelGreeks(result.quotes, result.underlyingPrice, result.symbol, vixFuturesPricing);
     if (quotes === result.quotes && result.greeks) return result;
 
     let computed = 0;
     let missing = 0;
     let providerFirst = 0;
     for (const q of quotes) {
-        if (q.greeksSource === 'black-scholes') computed += 1;
+        if (q.greeksSource === 'black-scholes' || q.greeksSource === 'black-76') computed += 1;
         else if (hasFirstOrderGreeks(q)) providerFirst += 1;
         if (!hasFirstOrderGreeks(q)) missing += 1;
     }
+    const isVixPriced = vixFuturesPricing && isFuturesPricedSymbol(result.symbol);
     const greeks: GreeksSummary = {
         ...(result.greeks || {}),
         enabled: true,
-        fallbackSource: result.greeks?.fallbackSource ?? 'black-scholes',
+        fallbackSource: result.greeks?.fallbackSource ?? (isVixPriced ? 'black-76' : 'black-scholes'),
         riskFreeRate: result.greeks?.riskFreeRate ?? BS_RISK_FREE_RATE,
         dividendYield: result.greeks?.dividendYield ?? dividendYieldForSymbol(result.symbol),
         total: quotes.length,

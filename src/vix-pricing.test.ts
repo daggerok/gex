@@ -4,6 +4,7 @@ import type { OptionQuote } from './types';
 import {
   black76Greeks,
   black76Price,
+  enrichFuturesPricedQuotes,
   impliedForward,
   impliedVolBlack76,
 } from './vix-pricing';
@@ -286,5 +287,186 @@ describe('impliedForward', () => {
     const quotes = syntheticChain(expInDays(DAYS), [15, 16, 17]);
     expect(impliedForward(quotes, '2000-01-01', R)).toBeNull(); // expired
     expect(impliedForward(quotes, expInDays(100), R)).toBeNull(); // no quotes for this expiration
+  });
+});
+
+// ===========================================================================
+// 5. enrichFuturesPricedQuotes — PHASE 2 per-expiration dispatch
+// ===========================================================================
+// This is what src/greeks.ts' enrichQuotesWithModelGreeks calls when
+// settings.vixFuturesPricing is ON and the symbol is futures-priced. The one
+// thing that MUST hold, per research plan section 9: every VIX/VXN
+// expiration has its OWN forward, so a bug that collapses two expirations
+// onto one shared forward (e.g. reusing resolveEnrichmentSpot, which picks a
+// single spot for the WHOLE quote list) must make these tests fail.
+describe('enrichFuturesPricedQuotes', () => {
+  const R = 0.045;
+
+  /** A fully self-consistent two-sided chain for one expiration, priced
+   *  EXACTLY off `forward`/`sigma` via Black-76 (like impliedForward's own
+   *  syntheticChain helper above), so impliedForward recovers `forward`
+   *  near-exactly and impliedVolBlack76 recovers `sigma` near-exactly. */
+  function chain(expiration: string, forward: number, sigma: number, strikes: number[]): OptionQuote[] {
+    const t = yearsToExpiration(expiration)!;
+    const out: OptionQuote[] = [];
+    for (const strike of strikes) {
+      const callPrice = black76Price('call', forward, strike, t, sigma, R);
+      const putPrice = black76Price('put', forward, strike, t, sigma, R);
+      out.push(q({
+        side: 'call', strike, expiration,
+        bid: callPrice - 0.005, ask: callPrice + 0.005, mid: callPrice, last: callPrice,
+        iv: 0.00001, // deliberately garbage provider IV — must never be trusted (see module doc)
+      }));
+      out.push(q({
+        side: 'put', strike, expiration,
+        bid: putPrice - 0.005, ask: putPrice + 0.005, mid: putPrice, last: putPrice,
+        iv: 2.5, // deliberately garbage provider IV, other direction
+      }));
+    }
+    return out;
+  }
+
+  test('two expirations get their OWN forward and OWN Black-76 greeks — not one shared forward', () => {
+    // Deliberately far apart (research plan 5.5's actual Oct/Jun forwards
+    // span 16.48..20.88) so a bug that blends them is impossible to miss.
+    const expA = expInDays(19);  // near monthly, contango front
+    const expB = expInDays(201); // far monthly, deep in contango
+    const FA = 17.648, SIGMA_A = 0.92;
+    const FB = 20.417, SIGMA_B = 0.40;
+    const strikes = [16, 17, 18, 19, 20];
+
+    const quotes = [...chain(expA, FA, SIGMA_A, strikes), ...chain(expB, FB, SIGMA_B, strikes)];
+    const out = enrichFuturesPricedQuotes(quotes, R);
+
+    const byExpStrike = (exp: string, side: 'call' | 'put', strike: number) =>
+      out.find((x) => x.expiration === exp && x.side === side && x.strike === strike)!;
+
+    // Each group's forward is recovered independently and precisely — if the
+    // code regressed to a single shared spot/forward for the whole array,
+    // these two would be equal (or both wrong).
+    const kA = byExpStrike(expA, 'call', 18);
+    const kB = byExpStrike(expB, 'call', 18);
+    expect(kA.forward).not.toBeNull();
+    expect(kB.forward).not.toBeNull();
+    expect(kA.forward!).toBeCloseTo(FA, 2);
+    expect(kB.forward!).toBeCloseTo(FB, 2);
+    expect(Math.abs(kA.forward! - kB.forward!)).toBeGreaterThan(2); // visibly different
+
+    // IV solved per-group, never the garbage provider iv (0.00001 / 2.5 above).
+    expect(kA.iv).toBeCloseTo(SIGMA_A, 2);
+    expect(kB.iv).toBeCloseTo(SIGMA_B, 2);
+    expect(Math.abs(kA.iv! - kB.iv!)).toBeGreaterThan(0.1); // visibly different
+
+    // Deltas at the SAME strike (18) are visibly different between the two
+    // expirations because both forward AND sigma differ per group.
+    expect(kA.delta).not.toBeNull();
+    expect(kB.delta).not.toBeNull();
+    expect(Math.abs(kA.delta! - kB.delta!)).toBeGreaterThan(0.05);
+
+    expect(kA.greeksSource).toBe('black-76');
+    expect(kB.greeksSource).toBe('black-76');
+    expect(kA.greeksMissingReason ?? null).toBeNull();
+    expect(kB.greeksMissingReason ?? null).toBeNull();
+  });
+
+  test('CBOE-shaped quote (1st-order already present): keeps provider delta/gamma/theta/vega, fills ρ/λ/2nd-3rd, overwrites iv', () => {
+    const expiration = expInDays(19);
+    const F = 17.648, SIGMA = 0.92;
+    const strikes = [16, 17, 18, 19, 20];
+    const quotes = chain(expiration, F, SIGMA, strikes);
+    // Shape one quote like Cboe's own feed: real 1st-order greeks + a
+    // greeksSource tag already set, same as scripts/options-data.py writes.
+    const target = quotes.find((x) => x.side === 'put' && x.strike === 20)!;
+    target.delta = -0.6708; target.gamma = 0.0922; target.theta = -0.0377; target.vega = 0.0144;
+    target.greeksSource = 'cboe';
+
+    const out = enrichFuturesPricedQuotes(quotes, R);
+    const result = out.find((x) => x.side === 'put' && x.strike === 20)!;
+
+    // Provider 1st-order greeks: byte-for-byte unchanged.
+    expect(result.delta).toBe(-0.6708);
+    expect(result.gamma).toBe(0.0922);
+    expect(result.theta).toBe(-0.0377);
+    expect(result.vega).toBe(0.0144);
+    // greeksSource tag is preserved (not overwritten to 'black-76') — mirrors
+    // enrichQuoteWithModelGreeks's existing `q.greeksSource ?? 'black-scholes'`
+    // pattern for the spot-BS path.
+    expect(result.greeksSource).toBe('cboe');
+    // rho/lambda/2nd-3rd ARE filled in (were null on the Cboe-shaped fixture).
+    expect(result.rho).not.toBeNull();
+    expect(result.lambda).not.toBeNull();
+    expect(result.vanna).not.toBeNull();
+    expect(result.vomma).not.toBeNull();
+    expect(result.charm).not.toBeNull();
+    expect(result.speed).not.toBeNull();
+    expect(result.zomma).not.toBeNull();
+    expect(result.color).not.toBeNull();
+    // iv is ALWAYS re-derived for these symbols, even when 1st-order greeks
+    // are kept — never whatever the provider/garbage-fixture iv (2.5) was.
+    expect(result.iv).toBeCloseTo(SIGMA, 2);
+    expect(result.forward).toBeCloseTo(F, 2);
+  });
+
+  test('no 1st-order greeks (Yahoo-shaped): fills the FULL set, tags black-76', () => {
+    const expiration = expInDays(19);
+    const F = 18.3449, SIGMA = 0.5388;
+    const quotes = chain(expiration, F, SIGMA, [14, 15, 16, 17, 18, 19, 20]);
+    const out = enrichFuturesPricedQuotes(quotes, R);
+    const result = out.find((x) => x.side === 'put' && x.strike === 15)!;
+    expect(result.greeksSource).toBe('black-76');
+    expect(result.greeksMissingReason ?? null).toBeNull();
+    for (const key of ['delta', 'gamma', 'theta', 'vega', 'rho', 'lambda', 'vanna', 'vomma', 'charm', 'speed', 'zomma', 'color'] as const) {
+      expect(result[key]).not.toBeNull();
+    }
+    expect(result.iv).toBeCloseTo(SIGMA, 2);
+  });
+
+  test('impliedForward fails (no two-sided quotes) → falls back to estimateSpot', () => {
+    const expiration = expInDays(5); // sparse weekly, research plan 5.4/5.7
+    // No live bid/ask anywhere (impliedForward needs bid>0 && ask>0 on BOTH
+    // legs), but a last-trade price exists at one strike pair — exactly the
+    // estimateSpot fallback scenario (research plan 7.1 step 4).
+    const quotes = [
+      q({ side: 'call', strike: 17, expiration, bid: 0, ask: 0, mid: null, last: 1.2 }),
+      q({ side: 'put', strike: 17, expiration, bid: 0, ask: 0, mid: null, last: 0.55 }),
+    ];
+    expect(impliedForward(quotes, expiration, R)).toBeNull(); // confirms parity truly fails here
+    const expectedFallback = 17 + (1.2 - 0.55); // estimateSpot's own formula
+
+    const out = enrichFuturesPricedQuotes(quotes, R);
+    // No live mid on either leg → impliedVolBlack76 isn't even attempted
+    // (price must come from bid/ask, never a stale last trade — research
+    // plan 6.4), so these end up with a resolved forward but a
+    // 'missing_mid' reason rather than solved greeks. The important
+    // assertion here is which FORWARD got attached before that.
+    expect(out[0].forward).toBeCloseTo(expectedFallback, 6);
+    expect(out[1].forward).toBeCloseTo(expectedFallback, 6);
+  });
+
+  test('impliedForward AND estimateSpot both fail → suppressed "futures_priced" fallback (unchanged toggle-off behavior)', () => {
+    const expiration = expInDays(33); // research plan 5.5's 11-04: zero bids, no parity pairs
+    const quotes = [
+      q({ side: 'call', strike: 20, expiration, bid: null, ask: null, mid: null, last: null }),
+      q({ side: 'put', strike: 20, expiration, bid: null, ask: null, mid: null, last: null }),
+    ];
+    expect(impliedForward(quotes, expiration, R)).toBeNull();
+    const out = enrichFuturesPricedQuotes(quotes, R);
+    expect(out[0].greeksMissingReason).toBe('futures_priced');
+    expect(out[1].greeksMissingReason).toBe('futures_priced');
+    expect(out[0].delta ?? null).toBeNull();
+  });
+
+  test('idempotent: re-running on an already-enriched result changes nothing (no churn on repeated cache reads)', () => {
+    const expiration = expInDays(19);
+    const quotes = chain(expiration, 17.648, 0.92, [16, 17, 18, 19, 20]);
+    const once = enrichFuturesPricedQuotes(quotes, R);
+    const twice = enrichFuturesPricedQuotes(once, R);
+    expect(twice).toBe(once); // same array reference — nothing changed
+  });
+
+  test('empty input returns the same array reference', () => {
+    const input: OptionQuote[] = [];
+    const out = enrichFuturesPricedQuotes(input, R);
+    expect(out).toBe(input);
   });
 });
