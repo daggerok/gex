@@ -164,6 +164,19 @@ describe('findGammaFlip (7.3)', () => {
     expect(findGammaFlip(profile)).toBe(95);
   });
 
+  test('leading zero-netGex strikes are not a crossing', () => {
+    // Real CBOE chains report gamma 0 for far-from-the-money strikes, so the
+    // lowest strikes net to exactly 0. Same rows as FIXTURE plus two such
+    // strikes below it: the flip must stay at 102.5, not jump to 80.
+    const withZeroWings = [...FIXTURE, q(EXP_A, 'call', 80, 900, 0), q(EXP_A, 'put', 80, 900, 0), q(EXP_A, 'put', 85, 400, 0)];
+    const profile = computeGexProfile(withZeroWings, SPOT);
+    expect(profile[0].strike).toBe(80);
+    expect(profile[0].netGex).toBe(0);
+    expect(findGammaFlip(profile)).toBeCloseTo(102.5, 9);
+    // An all-zero profile never crosses either.
+    expect(findGammaFlip(computeGexProfile([q(EXP_A, 'call', 80, 10, 0), q(EXP_A, 'put', 85, 10, 0)], SPOT))).toBeNull();
+  });
+
   test('all-same-sign gamma exposure -> null (no extrapolation)', () => {
     const callsOnly = FIXTURE.filter((x) => x.side === 'call');
     expect(findGammaFlip(computeGexProfile(callsOnly, SPOT))).toBeNull();

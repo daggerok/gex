@@ -88,12 +88,20 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
  * Expects a profile sorted ascending by strike (as computeGexProfile returns).
  * Signature kept stable so a hypothetical-spot recompute (approach B, out of
  * scope for v1) can replace the internals later without touching callers.
+ *
+ * The "exactly 0" rule only applies once some exposure has accumulated: real
+ * chains (CBOE) report gamma 0 for far-from-the-money strikes, so the lowest
+ * strikes often have netGex exactly 0. A leading run of zero cumulative is
+ * "nothing yet", not a crossing - treating it as one put the flip at the
+ * lowest listed strike (e.g. 550 for SPY at spot ~770).
  */
 export function findGammaFlip(profile: readonly GexPoint[]): number | null {
     let cumulative = 0;
+    let accumulated = false;
     for (let i = 0; i < profile.length; i++) {
         cumulative += profile[i].netGex;
-        if (cumulative === 0) return profile[i].strike;
+        if (cumulative === 0 && accumulated) return profile[i].strike;
+        if (cumulative !== 0) accumulated = true;
         if (i + 1 >= profile.length) break;
         const next = cumulative + profile[i + 1].netGex;
         if ((cumulative < 0 && next > 0) || (cumulative > 0 && next < 0)) {
