@@ -50,7 +50,7 @@ export interface GexViewProps {
     isFuturesPriced: boolean;
     /** Expirations selectable on this tab (keys of quotesByExp, ascending). */
     expirations: string[];
-    /** This tab's OWN expiration selection (independent of Desk). */
+    /** Shared with the Desk tab (same state, not an independent copy). */
     selectedExps: string[];
     setSelectedExps: (exps: string[]) => void;
     metric: GexMetric;
