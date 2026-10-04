@@ -104,7 +104,7 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 ## Static-cache greeks
 
-**Single source of truth for model greeks: the browser** (`src/main.tsx`).
+**Single source of truth for model greeks: the browser** (`src/greeks.ts`).
 
 - `scripts/options-data.py` writes yfinance quotes and, when available, **Cboe delayed 1st-order** greeks (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
 - It does **not** compute λ / Vanna / Vomma / Charm / Speed / Zomma / Color or full Black-Scholes fallback — that would duplicate the UI.
@@ -188,7 +188,16 @@ These files are optional infrastructure outside the core app source:
 src/
   index.html                  # Parcel entry shell
   index.css                   # Tailwind v4, theme tokens, scrollbar/table-desk CSS
-  main.tsx                    # React app, providers, UI, cache/state logic, i18n
+  main.tsx                    # App shell: state, effects, render (+ shared changelog)
+  types.ts                    # domain + settings types
+  i18n.tsx                    # en/ru dictionaries, I18nProvider, useI18n()
+  utils.ts                    # debug logger, formatting/parsing helpers, friendlyError
+  greeks.ts                   # client-side Black-Scholes model greeks (single source of truth)
+  theme.ts                    # theme controller hook + palette accent classes
+  settings-store.ts           # persisted settings + localStorage query cache
+  providers/                  # CACHE/CBOE/NASDAQ/YAHOO providers, registry, bulk/lazy loader
+  components/                 # TopBar, SettingsPanel, ChainTable, switches, onboarding, icons
+  views/DeskView.tsx          # Desk view: expiration controls + chain table
 data/
   index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # one option-chain cache file per ticker, with greeks metadata when refreshed

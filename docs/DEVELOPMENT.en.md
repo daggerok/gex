@@ -45,7 +45,7 @@ We use `uv` to manage the Python environment.
 
 ## Greeks architecture
 - **1st order:** Loaded from CBOE (in the fetch script) or computed in the UI.
-- **2nd and 3rd order + λ:** Computed **only** on the client side in `src/main.tsx`.
+- **2nd and 3rd order + λ:** Computed **only** on the client side in `src/greeks.ts`.
 - **Forbidden:** Adding Black-Scholes calculations in Python scripts.
 
 ## Pre-PR checks

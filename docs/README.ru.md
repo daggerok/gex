@@ -104,7 +104,7 @@ bun run build-github-pages
 
 ## Greeks в static cache
 
-**Единый источник model greeks — браузер** (`src/main.tsx`).
+**Единый источник model greeks — браузер** (`src/greeks.ts`).
 
 - `scripts/options-data.py` пишет yfinance quotes и, если есть, **Cboe delayed 1st-order** (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
 - Скрипт **не** считает λ / Vanna / Vomma / Charm / Speed / Zomma / Color и не делает full Black-Scholes fallback — это дубль UI.
@@ -186,7 +186,16 @@ bun ./scripts/options-local-proxy.ts
 src/
   index.html                  # Parcel entry shell
   index.css                   # Tailwind v4, тема, scrollbars/CSS для доски
-  main.tsx                    # React app, providers, UI, кэш/состояние, i18n
+  main.tsx                    # App shell: состояние, эффекты, рендер (+ общий changelog)
+  types.ts                    # доменные типы и типы настроек
+  i18n.tsx                    # словари en/ru, I18nProvider, useI18n()
+  utils.ts                    # debug-логгер, хелперы форматирования/парсинга, friendlyError
+  greeks.ts                   # клиентские model greeks Black-Scholes (единый источник)
+  theme.ts                    # хук темы + accent-классы палитры
+  settings-store.ts           # сохраняемые настройки + localStorage-кэш запросов
+  providers/                  # провайдеры CACHE/CBOE/NASDAQ/YAHOO, реестр, bulk/lazy загрузчик
+  components/                 # TopBar, SettingsPanel, ChainTable, переключатели, onboarding, иконки
+  views/DeskView.tsx          # Desk: выбор экспираций + таблица цепочки
 data/
   index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # один cache-файл цепочки на тикер, с greeks metadata после refresh
