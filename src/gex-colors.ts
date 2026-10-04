@@ -1,10 +1,10 @@
 // ---------------------------------------------------------------------------
 // GEX level colors - shared by the GEX tab (Key Levels card + recharts
-// reference lines) and, later, the Chart tab's price lines (plan sections
+// reference lines) and the Chart tab's lightweight-charts price lines (plan sections
 // 8.1 / 8.2) so both tabs use the exact same color per level.
 //
-// `hex` is for chart libraries that take raw colors (recharts, and
-// lightweight-charts in Phase 5). `dot` is the matching Tailwind class for
+// `hex` is for chart libraries that take raw colors (recharts and
+// lightweight-charts). `dot` is the matching Tailwind class for
 // HTML swatches; class names are spelled out literally so Tailwind's source
 // scanner picks them up. Values follow the Tab 2 wireframe.
 // ---------------------------------------------------------------------------

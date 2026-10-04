@@ -26,6 +26,17 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.50 - Phase 5 Chart tab: views/ChartView.tsx replaces the 'chart' TabStub
+ *          (plan section 8.2). Daily candles from providers/chart.ts fetchOhlc
+ *          (range 1M / 3M / 6M default / 1Y, interval fixed 1d) drawn with
+ *          lightweight-charts (new dependency, Chart tab only, React.lazy-loaded)
+ *          plus one price line per non-null GEX level, colored from gex-colors.ts.
+ *          GexLevels are now computed ONCE here (use-gex-levels.ts, for the GEX
+ *          tab's expiration selection) and passed to both GexView and ChartView;
+ *          neither view calls computeGexLevels itself. Range is held here so it
+ *          survives tab switches. New i18n keys: chart.*.
+ *          components/AttributionFooter.tsx renders the lightweight-charts
+ *          NOTICE (verbatim) + https://www.tradingview.com/ link on every tab.
  * v0.9.49 - Phase 3 GEX tab: views/GexView.tsx replaces the 'gex' TabStub
  *          (plan section 8.1). Sidebar (OI Volume / GEX Analysis / Key Levels /
  *          P/C Ratio) + recharts bar chart by strike with spot and call/put wall
@@ -660,8 +671,9 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
+import { AttributionFooter } from './components/AttributionFooter';
 import type { ChainSection } from './components/ChainTable';
-import { type AppTab, TabStub, TabSwitcher } from './components/TabSwitcher';
+import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
@@ -669,13 +681,17 @@ import { getBulk, loadExpiration, loadMeta } from './providers/loader';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, loadSettings, saveSettings } from './settings-store';
 import { useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
+import { useGexLevels } from './use-gex-levels';
 import { dbg, estimateSpot, friendlyError, isAbortError } from './utils';
 import { DeskView } from './views/DeskView';
+import { type ChartRange, DEFAULT_RANGE } from './views/chart-range';
 import type { GexMetric } from './views/GexView';
 
 // GEX tab is code-split: recharts (~500 KB minified) loads only when the tab
 // is first opened, so the Desk's initial bundle stays as small as before.
 const GexView = lazy(() => import('./views/GexView').then((m) => ({ default: m.GexView })));
+// Chart tab is code-split the same way: lightweight-charts loads on first open.
+const ChartView = lazy(() => import('./views/ChartView').then((m) => ({ default: m.ChartView })));
 
 // ============================================================================
 // MAIN APPLICATION COMPONENT
@@ -1029,6 +1045,11 @@ const App: React.FC = () => {
     );
     const setGexSelectedExps = useCallback((exps: string[]) => setGexSel({ key: gexKey, exps }), [gexKey]);
     const [gexMetric, setGexMetric] = useState<GexMetric>('netGex');
+    // GexLevels computed ONCE here for the GEX tab's selection and shared by
+    // the GEX and Chart tabs (plan 7.7 / 8.2) - no view recomputes them.
+    const gex = useGexLevels(spot, spotIsEstimated, gexQuotesByExp, gexSelectedExps);
+    // Chart tab range (plan 8.2), held here so it survives tab switches.
+    const [chartRange, setChartRange] = useState<ChartRange>(DEFAULT_RANGE);
 
     // Onboarding preview: provider demo ticker, else jump to CACHE + AAPL.
     const onboardingPreview = useCallback(() => {
@@ -1117,9 +1138,10 @@ const App: React.FC = () => {
                         settings={settings}
                         provider={provider}
                         symbol={meta?.symbol ?? ''}
-                        spot={spot}
-                        spotIsEstimated={spotIsEstimated}
-                        quotesByExp={gexQuotesByExp}
+                        spot={gex.spot}
+                        spotIsEstimated={gex.spotIsEstimated}
+                        quotes={gex.quotes}
+                        levels={gex.levels}
                         expirations={gexExpirations}
                         selectedExps={gexSelectedExps}
                         setSelectedExps={setGexSelectedExps}
@@ -1128,7 +1150,21 @@ const App: React.FC = () => {
                     />
                 </Suspense>
             )}
-            {activeTab === 'chart' && <TabStub tab="chart" />}
+            {activeTab === 'chart' && (
+                <Suspense fallback={null}>
+                    <ChartView
+                        settings={settings}
+                        symbol={meta?.symbol ?? ''}
+                        levels={gex.levels}
+                        levelExpCount={gexSelectedExps.length}
+                        range={chartRange}
+                        setRange={setChartRange}
+                    />
+                </Suspense>
+            )}
+
+            {/* lightweight-charts attribution (Apache-2.0 NOTICE + link), on every tab. */}
+            <AttributionFooter />
         </div>
     );
 };
