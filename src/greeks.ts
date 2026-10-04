@@ -10,19 +10,37 @@ import { estimateSpot, num } from './utils';
 // Conventions: theta per calendar day; vega/rho per 1 vol-point / 1pp rate.
 export const BS_RISK_FREE_RATE = 0.045;
 export const BS_DIVIDEND_YIELD = 0.0;
-// Cash-settled index underlyings supported end-to-end across providers.
+// Approximate S&P 500 continuous dividend yield. Shared by SPX and XSP: XSP is
+// literally SPX/10 (same constituents, same weights), so the yields must match.
+export const SPX_DIVIDEND_YIELD = 0.011;
+// Per-index continuous dividend yield used by the model greeks. Each index gets
+// ITS OWN figure - reusing the S&P 500 yield for e.g. Nasdaq-100 or the Dow
+// misprices carry. Hardcoded estimates, not live figures - they drift over time.
+// Source (2026-10): trailing-12m distribution yield of the tracking ETF plus its
+// expense ratio (ETF payouts are net of fees): SPY 0.99%+0.09%, QQQ 0.41%+0.18%,
+// DIA 1.41%+0.16%, IWM 0.97%+0.19%.
 // Canonical (display / input / cache-key) form is the bare symbol; each provider
 // derives its own upstream spelling: Yahoo "^SPX", Cboe "_SPX", NASDAQ unsupported.
-// v1: SPX only. Do NOT add VIX (different, futures-based pricing model).
-// Keep in sync with SUPPORTED_INDEX_SYMBOLS in scripts/options-*-proxy.*.
-export const INDEX_SYMBOLS: ReadonlySet<string> = new Set(['SPX']);
-// Approximate S&P 500 continuous dividend yield used by the model greeks for
-// INDEX_SYMBOLS. Hardcoded estimate, not a live figure - it drifts over time.
-export const INDEX_DIVIDEND_YIELD = 0.013;
+// Every key here was live-verified against both yfinance (^SYM) and Cboe (_SYM).
+// OEX is NOT here: its listed chain is effectively dead (~50 contracts of total
+// OI, zero IV on Cboe, 4 sparse expirations on Yahoo). Do NOT add VIX
+// (different, futures-based pricing model).
+// Keep in sync with data/Indices.txt and SUPPORTED_INDEX_SYMBOLS in
+// scripts/options-*-proxy.*.
+export const INDEX_DIVIDEND_YIELDS: Readonly<Record<string, number>> = {
+    SPX: SPX_DIVIDEND_YIELD, // S&P 500
+    XSP: SPX_DIVIDEND_YIELD, // Mini-SPX = S&P 500 / 10
+    NDX: 0.006,              // Nasdaq-100: tech/growth-heavy, low payout
+    DJX: 0.015,              // Dow Jones Industrial Average / 100: mature blue chips
+    RUT: 0.011,              // Russell 2000: small caps, close to the S&P 500 today
+};
+// Cash-settled index underlyings supported end-to-end across providers. Derived
+// from the yield table so an index can never be added without its own yield.
+export const INDEX_SYMBOLS: ReadonlySet<string> = new Set(Object.keys(INDEX_DIVIDEND_YIELDS));
 /** Dividend yield the BS model should use for an underlying symbol. */
 export function dividendYieldForSymbol(symbol: string | null | undefined): number {
     const raw = String(symbol ?? '').trim().toUpperCase().replace(/^[_^.]/, '');
-    return INDEX_SYMBOLS.has(raw) ? INDEX_DIVIDEND_YIELD : BS_DIVIDEND_YIELD;
+    return INDEX_SYMBOLS.has(raw) ? INDEX_DIVIDEND_YIELDS[raw] : BS_DIVIDEND_YIELD;
 }
 export const HIGHER_ORDER_GREEK_KEYS = ['lambda', 'vanna', 'vomma', 'charm', 'speed', 'zomma', 'color'] as const;
 

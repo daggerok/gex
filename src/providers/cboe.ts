@@ -14,9 +14,9 @@ import { proxyTickerSuggestions } from './proxy-search';
  */
 // Cboe CDN spelling for cash indices is "_SYM" (bare and ^SYM both 403). This is
 // a SUPERSET of INDEX_SYMBOLS on purpose: the CBOE provider already routes these
-// (and the proxy suggests them), so narrowing it to SPX would regress CBOE-only
-// lookups like VIX/NDX. Model-greek and Yahoo/NASDAQ index handling stays
-// limited to INDEX_SYMBOLS.
+// (and the proxy suggests them), so narrowing it to INDEX_SYMBOLS would regress
+// CBOE-only lookups like VIX, VXN, and OEX. Model-greek and Yahoo/NASDAQ index
+// handling stays limited to INDEX_SYMBOLS.
 export const CBOE_INDEX_SYMBOLS: ReadonlySet<string> = new Set([...INDEX_SYMBOLS, 'VIX', 'NDX', 'RUT', 'DJX', 'XSP', 'OEX', 'VXN']);
 export const cboeProvider: DataProvider = {
     id: 'cboe',

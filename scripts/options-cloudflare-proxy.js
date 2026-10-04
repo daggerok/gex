@@ -192,11 +192,11 @@ function isTickerLike(symbol) {
   return /^\^?[A-Z][A-Z0-9.\-]{0,15}$/.test(symbol);
 }
 // Index symbols the app supports end-to-end (mirror of INDEX_SYMBOLS in
-// src/main.tsx; v1: SPX only, do NOT add VIX - futures-based pricing). Yahoo
-// returns these caret-prefixed (^SPX); we surface them in the app's canonical
-// bare form (SPX) and drop every other caret-prefixed index (^GSPC has no
-// options, ^XSP/^VIX/... are not verified/supported yet).
-const SUPPORTED_INDEX_SYMBOLS = new Set(["SPX"]);
+// src/greeks.ts; do NOT add VIX - futures-based pricing). Yahoo returns these
+// caret-prefixed (^SPX); we surface them in the app's canonical bare form (SPX)
+// and drop every other caret-prefixed index (^GSPC has no options, ^OEX has a
+// near-empty chain, ^VIX/... are not verified/supported yet).
+const SUPPORTED_INDEX_SYMBOLS = new Set(["SPX", "XSP", "NDX", "DJX", "RUT"]);
 function canonicalYahooSuggestionSymbol(symbol) {
   if (!symbol.startsWith("^")) return symbol;
   const bare = symbol.slice(1);
