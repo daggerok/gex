@@ -11,7 +11,10 @@
 #      fresh today and stops at its budget or when the source rate-limits it.
 #      Each run does NEW work; the next run resumes — so we cache ALL tickers
 #      before re-looping, and never re-loop only the top-cap names.
-#   3. Commits the fresh data/options/*.json back to the repo.
+#   3. Fetches index option chains (data/Indices.txt, e.g. SPX) in a SEPARATE
+#      step with a smaller MAX_EXPIRATIONS / MAX_FETCHES budget, so large index
+#      chains stay bounded in size and never eat into the equity budget.
+#   4. Commits the fresh data/options/*.json back to the repo.
 # The site (GitHub Pages) then reads its OWN data/options/*.json via the app's
 # "Static cache" provider — zero CORS issues, zero exposed keys.
 #
@@ -71,6 +74,18 @@ jobs:
 
       - name: Fetch option chains
         run: TICKERS=$(cat data/All.txt) uv run --with yfinance --with requests python scripts/options-data.py
+
+      # Index options (data/Indices.txt, v1: SPX only) run as their OWN step with
+      # a smaller expiration cap: an index chain is far larger than an equity's
+      # (SPX at MAX_EXPIRATIONS=50 is ~5.4 MB vs ~1.3 MB at 15), and a separate
+      # budget means a slow index fetch can never crowd out the equity run above.
+      # Indices enter the cache ONLY through this explicit allowlist, never via
+      # the script's live universe discovery.
+      - name: Fetch index option chains
+        env:
+          MAX_EXPIRATIONS: "15"
+          MAX_FETCHES: "5"
+        run: TICKERS=$(cat data/Indices.txt) uv run --with yfinance --with requests python scripts/options-data.py
 
       - name: Commit updated data
         run: |
