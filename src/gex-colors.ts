@@ -47,3 +47,57 @@ export const GEX_METRIC_COLORS: Record<'callOi' | 'putOi' | 'callVolume' | 'putV
     putOi: GEX_LEVEL_COLORS.putWall.hex,         // red-500
     putVolume: GEX_LEVEL_COLORS.putWall2.hex,    // red-300
 };
+
+// ---------------------------------------------------------------------------
+// USER-CUSTOMIZABLE PER-METRIC CHART COLORS (GEX tab multi-metric bar chart).
+// Lets the user override the bar color for each of the 6 series (Net GEX
+// positive/negative + the 4 OI/Volume metrics) via a color picker. Persisted
+// in its own dedicated localStorage key rather than folded into the shared
+// `Settings` object/`SETTINGS_KEY` blob (see settings-store.ts): `Settings` is
+// loaded/saved as one object there, and this is a small, independent,
+// GEX-chart-only preference - a separate key avoids coupling its shape (and
+// any future additions to it) to unrelated settings migrations. Every
+// localStorage access is wrapped in try/catch, matching this app's existing
+// convention (settings-store.ts's cacheGet/cacheSet/loadSettings/saveSettings).
+// ---------------------------------------------------------------------------
+
+export interface MetricColorSet {
+    netGexPos: string;
+    netGexNeg: string;
+    callOi: string;
+    putOi: string;
+    callVolume: string;
+    putVolume: string;
+}
+
+/** Defaults mirror today's hardcoded chart colors exactly. */
+export const DEFAULT_METRIC_COLORS: MetricColorSet = {
+    netGexPos: GEX_BAR_COLORS.call,
+    netGexNeg: GEX_BAR_COLORS.put,
+    callOi: GEX_METRIC_COLORS.callOi,
+    putOi: GEX_METRIC_COLORS.putOi,
+    callVolume: GEX_METRIC_COLORS.callVolume,
+    putVolume: GEX_METRIC_COLORS.putVolume,
+};
+
+export const METRIC_COLORS_KEY = 'gex.metricColors.v1';
+
+/** Load custom metric colors from localStorage, merged over the defaults
+ *  (forward-compatible: a stored blob missing a key, or from an older
+ *  shape, still yields a complete, valid MetricColorSet). */
+export function loadMetricColors(): MetricColorSet {
+    try {
+        const raw = localStorage.getItem(METRIC_COLORS_KEY);
+        if (!raw) return { ...DEFAULT_METRIC_COLORS };
+        const parsed = JSON.parse(raw);
+        return { ...DEFAULT_METRIC_COLORS, ...parsed };
+    } catch {
+        return { ...DEFAULT_METRIC_COLORS };
+    }
+}
+
+/** Persist custom metric colors to localStorage (best-effort; ignores quota/
+ *  serialization errors, same convention as settings-store.ts's saveSettings). */
+export function saveMetricColors(colors: MetricColorSet): void {
+    try { localStorage.setItem(METRIC_COLORS_KEY, JSON.stringify(colors)); } catch { /* ignore */ }
+}
