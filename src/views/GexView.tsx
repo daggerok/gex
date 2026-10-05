@@ -376,11 +376,30 @@ export const GexView: React.FC<GexViewProps> = ({
 
     return (
         <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
-            {/* ---- Controls: metric toggle (expiration picker + Load now live
-                in the shared panel in main.tsx, in the same row as the
-                Desk/GEX/Chart tab pills) ---- */}
+            {/* ---- Controls: metric toggle + Key Levels toggle (expiration
+                picker + Load live in the shared panel in main.tsx, in the
+                same row as the Desk/GEX/Chart tab pills). Both panels are
+                flex items of ONE flex-wrap row: plain flex-wrap naturally
+                keeps them side by side whenever the viewport has room for
+                both and wraps each onto its own row once it doesn't - no
+                JS-measured breakpoint or hardcoded media query needed.
+                `grow shrink basis-[…]` (rather than the default `auto`
+                basis, which is each panel's full un-scrolled content width -
+                ~660px/~850px with all 5/6 buttons showing - and would only
+                let two panels share a row above ~1850px) gives the
+                WRAP DECISION a smaller "comfortable" width to pack against,
+                then grows each panel back out (capped by `max-w-[…]`, each
+                panel's own full content width) to fill any extra room on
+                the line - so a wide viewport still shows every button
+                unscrolled, a mid viewport may lean on each panel's own
+                `overflow-x-auto` button row before it wraps, and `min-w-`
+                is just the absolute floor. `items-center` (not the
+                flex-wrap default `stretch`) is load-bearing: it keeps each
+                panel's own height independent of its sibling, so neither
+                panel's internal `overflow-x-auto` button row is forced to
+                match the other's height. ---- */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
-                <div className={box} role="group" aria-label={tr('gex.metric.label')}>
+                <div className={box + ' grow shrink basis-[460px] min-w-[260px] max-w-[670px]'} role="group" aria-label={tr('gex.metric.label')}>
                     <span className="text-xs text-slate-400">{tr('gex.metric.label')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
                         {GEX_METRICS.map((m) => {
@@ -444,26 +463,17 @@ export const GexView: React.FC<GexViewProps> = ({
                         {tr('gex.metric.reset')}
                     </button>
                 </div>
-                <div className="flex items-baseline gap-2">
-                    <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
-                    {effSpot != null && (
-                        <span className="text-sm text-slate-500 dark:text-slate-400">
-                            {tr('spot.label')} <span className="font-semibold text-slate-800 dark:text-slate-200">${fmt(effSpot)}</span>
-                            {effSpotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">{tr('spot.estimated')}</span>}
-                        </span>
-                    )}
-                    <span className="text-xs text-slate-400">{tr('spot.delayed', { provider: provider.label.split(' ')[0] })}</span>
-                </div>
-            </div>
 
-            {/* ---- Key Levels toggle+color panel: same per-item affordances
-                as the metrics panel above (toggle button + color picker),
-                one row per the 6 toggleable levels (Call Wall / Resistance 2
-                / Gamma Flip / Put Wall / Support 2 / Max Pain). Purely
-                additive - the sidebar's Key Levels card (below) keeps
-                showing all 6 as text regardless of this panel's state. ---- */}
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-                <div className={box} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
+                {/* ---- Key Levels toggle+color panel: same per-item
+                    affordances as the metrics panel above (toggle button +
+                    color picker), one row per the 6 toggleable levels (Call
+                    Wall / Resistance 2 / Gamma Flip / Put Wall / Support 2 /
+                    Max Pain). Purely additive - the sidebar's Key Levels
+                    card (below) keeps showing all 6 as text regardless of
+                    this panel's state. A flex-wrap sibling of the Metrics
+                    panel above (see the row-level comment) rather than its
+                    own separate row. ---- */}
+                <div className={box + ' grow shrink basis-[600px] min-w-[300px] max-w-[860px]'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
                     <span className="text-xs text-slate-400">{tr('gex.sidebar.keyLevels')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
                         {ALL_LEVEL_KEYS.map((key) => {
@@ -498,6 +508,17 @@ export const GexView: React.FC<GexViewProps> = ({
                     >
                         {tr('gex.level.reset')}
                     </button>
+                </div>
+
+                <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
+                    {effSpot != null && (
+                        <span className="text-sm text-slate-500 dark:text-slate-400">
+                            {tr('spot.label')} <span className="font-semibold text-slate-800 dark:text-slate-200">${fmt(effSpot)}</span>
+                            {effSpotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">{tr('spot.estimated')}</span>}
+                        </span>
+                    )}
+                    <span className="text-xs text-slate-400">{tr('spot.delayed', { provider: provider.label.split(' ')[0] })}</span>
                 </div>
             </div>
 
