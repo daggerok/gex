@@ -9,7 +9,17 @@
 // scanner picks them up. Values follow the Tab 2 wireframe.
 // ---------------------------------------------------------------------------
 
-export type GexLevelKey = 'callWall' | 'callWall2' | 'gammaFlip' | 'putWall' | 'putWall2' | 'maxPain' | 'spot';
+/**
+ * `gammaFlip` (the single legacy collapsed value, GexLevels.gammaFlip) is kept
+ * here alongside its two directional replacements - `gammaFlipPos` (last
+ * negative -> positive crossing) / `gammaFlipNeg` (last positive -> negative
+ * crossing) - purely for ChartView.tsx (the Chart tab's lightweight-charts
+ * price lines), which still reads the collapsed field unchanged. GexView.tsx
+ * (the GEX tab) was retired off `gammaFlip`/`GexLevels.gammaFlip` entirely and
+ * reads `gammaFlipPos`/`gammaFlipNeg` directly instead (see types.ts's
+ * GexLevels doc comment) - it never selects the plain `gammaFlip` key.
+ */
+export type GexLevelKey = 'callWall' | 'callWall2' | 'gammaFlip' | 'gammaFlipPos' | 'gammaFlipNeg' | 'putWall' | 'putWall2' | 'maxPain' | 'spot';
 
 export interface GexLevelColor {
     hex: string;
@@ -17,13 +27,15 @@ export interface GexLevelColor {
 }
 
 export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
-    callWall: { hex: '#22c55e', dot: 'bg-green-500' },   // green-500
-    callWall2: { hex: '#86efac', dot: 'bg-green-300' },  // green-300 (Resistance 2)
-    gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400
-    putWall: { hex: '#ef4444', dot: 'bg-red-500' },      // red-500
-    putWall2: { hex: '#fca5a5', dot: 'bg-red-300' },     // red-300 (Support 2)
-    maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },   // yellow-400
-    spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
+    callWall: { hex: '#22c55e', dot: 'bg-green-500' },      // green-500
+    callWall2: { hex: '#86efac', dot: 'bg-green-300' },     // green-300 (Resistance 2)
+    gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' },    // violet-400 (legacy collapsed value - ChartView.tsx only)
+    gammaFlipPos: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400 (last -> + crossing)
+    gammaFlipNeg: { hex: '#7c3aed', dot: 'bg-violet-600' }, // violet-600 (last + -> crossing) - darker shade of the same hue, distinguishable from gammaFlipPos and from every other level color
+    putWall: { hex: '#ef4444', dot: 'bg-red-500' },         // red-500
+    putWall2: { hex: '#fca5a5', dot: 'bg-red-300' },        // red-300 (Support 2)
+    maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },      // yellow-400
+    spot: { hex: '#f59e0b', dot: 'bg-amber-500' },          // amber-500
 };
 
 /** Bar fills for the GEX tab: call-side (positive) vs put-side (negative).
@@ -104,21 +116,31 @@ export function saveMetricColors(colors: MetricColorSet): void {
 
 // ---------------------------------------------------------------------------
 // USER-CUSTOMIZABLE PER-LEVEL CHART COLORS (GEX tab Key Levels toggle+color
-// panel). Exact same pattern as MetricColorSet above, one level short of
-// GEX_LEVEL_COLORS - `spot` is always drawn (it isn't one of the 6 toggleable
-// Key Levels: Call Wall / Resistance 2 / Gamma Flip / Put Wall / Support 2 /
-// Max Pain), so it's intentionally excluded here. A dedicated localStorage
+// panel). Exact same pattern as MetricColorSet above, two keys short of
+// GEX_LEVEL_COLORS: `spot` is always drawn (it isn't one of the 7 toggleable
+// Key Levels: Call Wall / Resistance 2 / Gamma Flip + / Gamma Flip - /
+// Put Wall / Support 2 / Max Pain), and the legacy collapsed `gammaFlip` key
+// is ChartView.tsx-only (GexView.tsx's toggle panel never renders a plain
+// "gammaFlip" entry, only gammaFlipPos/gammaFlipNeg - see gex-colors.ts's
+// GexLevelKey doc comment) - both are intentionally excluded here. Both
+// gammaFlipPos and gammaFlipNeg always get their own stored color/selection
+// state, even though GexView.tsx only ever shows ONE combined "Gamma Flip"
+// entry in the toggle panel when just one of the two is non-null for the
+// current data - this way a user's per-direction preference carries over
+// correctly if the data later shifts shape (e.g. a reload with a genuine
+// two-crossing chain). A dedicated localStorage
 // key (not METRIC_COLORS_KEY) keeps this independent of the metric-color
 // blob, same reasoning as that key's own comment above.
 // ---------------------------------------------------------------------------
 
-export type LevelColorSet = Record<Exclude<GexLevelKey, 'spot'>, string>;
+export type LevelColorSet = Record<Exclude<GexLevelKey, 'spot' | 'gammaFlip'>, string>;
 
 /** Defaults mirror today's hardcoded GEX_LEVEL_COLORS hex values exactly. */
 export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
     callWall: GEX_LEVEL_COLORS.callWall.hex,
     callWall2: GEX_LEVEL_COLORS.callWall2.hex,
-    gammaFlip: GEX_LEVEL_COLORS.gammaFlip.hex,
+    gammaFlipPos: GEX_LEVEL_COLORS.gammaFlipPos.hex,
+    gammaFlipNeg: GEX_LEVEL_COLORS.gammaFlipNeg.hex,
     putWall: GEX_LEVEL_COLORS.putWall.hex,
     putWall2: GEX_LEVEL_COLORS.putWall2.hex,
     maxPain: GEX_LEVEL_COLORS.maxPain.hex,
