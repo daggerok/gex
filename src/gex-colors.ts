@@ -123,25 +123,25 @@ export function saveMetricColors(colors: MetricColorSet): void {
 
 // ---------------------------------------------------------------------------
 // USER-CUSTOMIZABLE PER-LEVEL CHART COLORS (GEX tab Key Levels toggle+color
-// panel). Exact same pattern as MetricColorSet above, two keys short of
-// GEX_LEVEL_COLORS: `spot` is always drawn (it isn't one of the 9 toggleable
-// Key Levels: Call Wall / Resistance 1.5 / Resistance 2 / Gamma Flip + /
-// Gamma Flip - / Put Wall / Support 1.5 / Support 2 / Max Pain), and the
-// legacy collapsed `gammaFlip` key
-// is ChartView.tsx-only (GexView.tsx's toggle panel never renders a plain
-// "gammaFlip" entry, only gammaFlipPos/gammaFlipNeg - see gex-colors.ts's
-// GexLevelKey doc comment) - both are intentionally excluded here. Both
-// gammaFlipPos and gammaFlipNeg always get their own stored color/selection
-// state, even though GexView.tsx only ever shows ONE combined "Gamma Flip"
-// entry in the toggle panel when just one of the two is non-null for the
-// current data - this way a user's per-direction preference carries over
-// correctly if the data later shifts shape (e.g. a reload with a genuine
-// two-crossing chain). A dedicated localStorage
-// key (not METRIC_COLORS_KEY) keeps this independent of the metric-color
-// blob, same reasoning as that key's own comment above.
+// panel). Exact same pattern as MetricColorSet above, one key short of
+// GEX_LEVEL_COLORS: the legacy collapsed `gammaFlip` key is ChartView.tsx-only
+// (GexView.tsx's toggle panel never renders a plain "gammaFlip" entry, only
+// gammaFlipPos/gammaFlipNeg - see gex-colors.ts's GexLevelKey doc comment) -
+// that one is intentionally excluded here. `spot` WAS excluded too (it used
+// to always be drawn, un-toggleable) but is now a toggleable/colorable Key
+// Level exactly like the other 9 - it's the reference point every other
+// level's position is read relative to, which is reason enough to let the
+// user show/hide and recolor it the same way. Both gammaFlipPos and
+// gammaFlipNeg always get their own stored color/selection state, even though
+// GexView.tsx only ever shows ONE combined "Gamma Flip" entry in the toggle
+// panel when just one of the two is non-null for the current data - this way
+// a user's per-direction preference carries over correctly if the data later
+// shifts shape (e.g. a reload with a genuine two-crossing chain). A dedicated
+// localStorage key (not METRIC_COLORS_KEY) keeps this independent of the
+// metric-color blob, same reasoning as that key's own comment above.
 // ---------------------------------------------------------------------------
 
-export type LevelColorSet = Record<Exclude<GexLevelKey, 'spot' | 'gammaFlip'>, string>;
+export type LevelColorSet = Record<Exclude<GexLevelKey, 'gammaFlip'>, string>;
 
 /** Defaults mirror today's hardcoded GEX_LEVEL_COLORS hex values exactly. */
 export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
@@ -154,6 +154,7 @@ export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
     putWall1_5: GEX_LEVEL_COLORS.putWall1_5.hex,
     putWall2: GEX_LEVEL_COLORS.putWall2.hex,
     maxPain: GEX_LEVEL_COLORS.maxPain.hex,
+    spot: GEX_LEVEL_COLORS.spot.hex,
 };
 
 export const LEVEL_COLORS_KEY = 'gex.levelColors.v1';

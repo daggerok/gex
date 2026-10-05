@@ -1,5 +1,7 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, trimZeroBoundaries } from '../gex';
@@ -23,13 +25,18 @@ import { fmt, fmtInt } from '../utils';
 export type GexMetric = 'netGex' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
 export const GEX_METRICS: GexMetric[] = ['netGex', 'callOi', 'putOi', 'callVolume', 'putVolume'];
 
-/** GexView.tsx's own toggleable-level key: every GexLevelKey except `spot`
- *  (always drawn, never toggleable) and the legacy collapsed `gammaFlip`
- *  (ChartView.tsx-only - see gex-colors.ts's GexLevelKey doc comment; this
- *  view reads gammaFlipPos/gammaFlipNeg directly and never selects it). */
-type ToggleableLevelKey = Exclude<GexLevelKey, 'spot' | 'gammaFlip'>;
+/** GexView.tsx's own toggleable-level key: every GexLevelKey except the
+ *  legacy collapsed `gammaFlip` (ChartView.tsx-only - see gex-colors.ts's
+ *  GexLevelKey doc comment; this view reads gammaFlipPos/gammaFlipNeg
+ *  directly and never selects it). `spot` USED to be excluded too (always
+ *  drawn, never toggleable) - it's now a toggleable/colorable Key Level like
+ *  every other one, per the user's "add it similarly to other levels"
+ *  request: it's the reference point every other level's position is read
+ *  relative to, which is reason enough to let it be shown/hidden/recolored
+ *  the same way. */
+type ToggleableLevelKey = Exclude<GexLevelKey, 'gammaFlip'>;
 
-/** The 9 toggleable Key Levels (everything in GexLevels except `spot`/legacy
+/** The 10 toggleable Key Levels (everything in GexLevels except legacy
  *  `gammaFlip` - see ToggleableLevelKey above; also gex-colors.ts's
  *  LevelColorSet). `gammaFlipPos`/`gammaFlipNeg` each carry their own
  *  selection + color state independently (see the `selectedLevels`/
@@ -38,8 +45,11 @@ type ToggleableLevelKey = Exclude<GexLevelKey, 'spot' | 'gammaFlip'>;
  *  `gammaFlipPanelKeys` below. `callWall1_5`/`putWall1_5` ("Resistance 1.5"/
  *  "Support 1.5") sit between the primary wall and the distance-filtered
  *  `callWall2`/`putWall2`, matching their conceptual position (src/gex.ts's
- *  findCallPutWalls doc comment). */
-const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall1_5', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall', 'putWall1_5', 'putWall2', 'maxPain'];
+ *  findCallPutWalls doc comment). `spot` is listed last here - its actual
+ *  rendered position (toggle panel AND sidebar card) is decided by each
+ *  one's own by-strike sort (see `levelPanelKeys`/`keyLevels` below), this
+ *  array is just the base/reset order. */
+const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall1_5', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall', 'putWall1_5', 'putWall2', 'maxPain', 'spot'];
 
 /** Default ON selection (Part 2, revised): only Call Wall / Put Wall start
  *  OFF - they're redundant with just looking at the chart's own tallest bars.
@@ -49,8 +59,10 @@ const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall1_5', 'callWa
  *  by default anyway. Gamma Flip (both directional keys - whichever applies
  *  to the loaded data) and Max Pain start ON. Resistance 1.5 / Support 1.5
  *  also start ON - the user is actively curious to see these (unlike
- *  Call Wall/Put Wall, which are redundant with the chart's own bars). */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall1_5', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall1_5', 'putWall2', 'maxPain'];
+ *  Call Wall/Put Wall, which are redundant with the chart's own bars). Spot
+ *  starts ON too - it's important reference info, same spirit as Gamma
+ *  Flip/Max Pain defaulting on. */
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall1_5', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall1_5', 'putWall2', 'maxPain', 'spot'];
 
 /** i18n key for each non-gamma-flip level's sidebar/toggle-panel label and
  *  <ReferenceLine> chart label. Gamma Flip is handled separately (see
@@ -65,6 +77,10 @@ const LEVEL_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gamm
     putWall1_5: 'gex.level.support1_5',
     putWall2: 'gex.level.support2',
     maxPain: 'gex.level.maxPain',
+    // Reuses the plain 'spot.label' key ("Spot"/"Спот") already shown
+    // elsewhere in this file (spot.label/spot.estimated/spot.delayed i18n
+    // group) rather than inventing a parallel 'gex.level.spot' string.
+    spot: 'spot.label',
 };
 
 /** Same as LEVEL_LABEL_KEY but for the <ReferenceLine> label on the chart
@@ -79,6 +95,13 @@ const LEVEL_CHART_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' |
     putWall1_5: 'gex.chart.support1_5',
     putWall2: 'gex.chart.support2',
     maxPain: 'gex.chart.maxPain',
+    // 'gex.chart.spot' used to read "Spot {{price}}" for the old always-on,
+    // never-rotated, plain horizontal <ReferenceLine> label (which had room
+    // to spell out the price inline). Now that Spot is just another rotated
+    // diagonal Key Level label like the rest (see the ALL_LEVEL_KEYS render
+    // loop below), it reads plain "Spot" - no value baked into the label
+    // text, same as every other level's chart label.
+    spot: 'gex.chart.spot',
 };
 
 /** i18n tooltip key (Part 4) for every Key Levels panel entry - plain
@@ -94,6 +117,10 @@ const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
     putWall1_5: 'gex.level.tooltip.support1_5',
     putWall2: 'gex.level.tooltip.support2',
     maxPain: 'gex.level.tooltip.maxPain',
+    // Plain (non-estimated) case - see `levelTooltip` below for the
+    // 'gex.level.tooltip.spotEstimated' variant used when the spot shown is
+    // a put-call-parity estimate rather than the provider's own reported price.
+    spot: 'gex.level.tooltip.spot',
 };
 
 export interface GexViewProps {
@@ -136,53 +163,65 @@ function fmtSignedCompact(v: number): string {
 }
 
 /**
- * Custom <ReferenceLine> label renderer (Part 3): rotates a Key Level's chart
- * label 45deg so it reads bottom-left to top-right, anchored a few px below
- * the top of the plot area - replacing the old plain horizontal label that
- * was manually stacked down from the top (`dy: 14 * index`) to avoid
- * overlapping its siblings.
+ * Custom <ReferenceLine> label renderer (Part 3, revised): rotates a Key
+ * Level's chart label -45deg and hangs it BELOW the chart's X-axis, with the
+ * label's LAST character anchored right at the level's own strike/X-axis
+ * tick position and the rest of the text trailing down-and-to-the-left from
+ * there - same diagonal slant and the same bottom-left-to-top-right READING
+ * direction as before, just relocated: it now reads as a label hanging off
+ * the axis tick rather than one sitting above the bars. This replaced an
+ * earlier version that anchored near the TOP of the plot area instead (see
+ * git history) - the user found that placement visually cluttered the bars
+ * themselves (diagonal labels sitting on top of the chart's own data), and
+ * wanted them moved below the X-axis instead, like a chart library's rotated
+ * axis-tick labels, just one per Key Level rather than one per axis tick.
  *
  * recharts hands a vertical <ReferenceLine>'s label render function a
- * `viewBox` whose `x` is this line's own pixel column and whose `y` is the
- * top of the whole plot area (see recharts' ReferenceLine.getVerticalLineEndPoints
- * + Label's CartesianLabelContextProvider: a vertical line's rect is
- * {x: coord, y: plotTop, width: 0, height: plotHeight}). Anchoring at
- * (viewBox.x, viewBox.y + a FIXED inset) keeps every label near the chart's
- * top edge regardless of each level's own strike - different strikes land at
- * different pixel columns, so rotating each label around its OWN anchor is
- * what keeps them apart, via each label's own X position, not a vertical
- * offset.
+ * `viewBox` whose `x` is this line's own pixel column, whose `y` is the TOP
+ * of the whole plot area, and whose `height` is the plot area's height (see
+ * recharts' ReferenceLine.getVerticalLineEndPoints + Label's
+ * CartesianLabelContextProvider: a vertical line's rect is {x: coord, y:
+ * plotTop, width: 0, height: plotHeight}) - so `viewBox.y + viewBox.height`
+ * is the BOTTOM of the plot area, i.e. the X axis line itself. `BOTTOM_GAP`
+ * (28px) clears recharts' own numeric X-axis tick labels (the "7,320" etc.
+ * strike numbers already rendered just below the axis, ~18-20px tall at this
+ * chart's 11px tick font) before the diagonal label starts, so the two don't
+ * visually collide. The BarChart's own `margin.bottom` was widened (see its
+ * usage site) to make room for this - a vertical <ReferenceLine>'s label is
+ * rendered as a sibling layer of the plotted bars, not inside their clipped
+ * group, so it is NOT clipped by the chart's own plot-area clipPath, but it
+ * IS clipped by the SVG/<ResponsiveContainer>'s own bottom edge if the chart
+ * isn't given enough total height via `margin.bottom` to draw into -
+ * verified live (Playwright) that widening `margin.bottom` alone is
+ * sufficient, no clipPath workaround needed.
  *
- * EVERY label starts at the exact same y (`viewBox.y + 40`, no per-level
- * stagger) - a deliberate user requirement: "they all must be above the
- * chart area, so starting symbol will be always on the same level for all
- * labels". An earlier version added a per-drawn-level vertical nudge
- * (`offsetIndex * 22`) to reduce overlap between labels whose strikes land
- * close together (e.g. SPX's own Max Pain/Support 2/Resistance 2 strikes);
- * that staggering was removed per the above requirement - only the X
- * position (each level's own strike) and the -45deg rotation now keep
- * labels apart. Known, accepted consequence: two levels whose strikes sit
- * very close together (e.g. a genuine two-crossing chain putting
- * gammaFlipPos/gammaFlipNeg only ~15 strike points apart out of an
- * ~1850-point chart) will have their same-baseline diagonal labels overlap
- * more than the old staggered version did - still individually readable,
- * just closer together. This is an honest limitation, not a bug: the user
- * explicitly chose one shared baseline over the old anti-overlap stagger.
+ * EVERY label anchors at the exact same offset below the axis (no
+ * per-level stagger, same reasoning as the original top-anchored version
+ * this replaces) - only each level's own strike (X position) and the -45deg
+ * rotation keep labels apart. Same accepted limitation as before: two levels
+ * whose strikes sit very close together can still have their diagonal labels
+ * overlap - individually readable, just closer together.
  *
- * The rotation sign is `-45`, not `+45`: verified live with a Playwright
- * screenshot (see the PR) that this is the sign which actually reads
- * bottom-left-to-top-right in SVG's/recharts' y-down coordinate system -
- * `+45` produces the mirrored top-left-to-bottom-right diagonal instead.
+ * `textAnchor="end"` (flipped from the old version's `"start"`) is what
+ * moves the ANCHORED character from the first to the last: with the same
+ * `rotate(-45 ${x} ${y})` pivot, the text before the anchor now extends in
+ * the LOCAL -x direction (characters precede the anchor for `text-anchor:
+ * end`), which the same -45deg rotation sends down-and-to-the-left on
+ * screen - verified live (Playwright screenshot, see the PR) that this
+ * reads correctly (last character at the axis tick, trailing down-left),
+ * not assumed from the transform math alone.
  */
 function renderRotatedLevelLabel(color: string, text: string) {
-    return (props: { viewBox?: { x?: number; y?: number } }) => {
+    return (props: { viewBox?: { x?: number; y?: number; height?: number } }) => {
         const vx = props.viewBox?.x;
         const vy = props.viewBox?.y;
-        if (vx == null || vy == null) return <React.Fragment />;
+        const vh = props.viewBox?.height;
+        if (vx == null || vy == null || vh == null) return <React.Fragment />;
+        const BOTTOM_GAP = 28; // clears recharts' own numeric X-axis tick labels below the axis line
         const x = vx + 4;
-        const y = vy + 40;
+        const y = vy + vh + BOTTOM_GAP;
         return (
-            <text x={x} y={y} transform={`rotate(-45 ${x} ${y})`} fill={color} fontSize={10} textAnchor="start">
+            <text x={x} y={y} transform={`rotate(-45 ${x} ${y})`} fill={color} fontSize={10} textAnchor="end">
                 {text}
             </text>
         );
@@ -224,6 +263,56 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
  * one for most metrics/levels, two for Net GEX's signed pos/neg halves) is
  * wrapped in its own span that stops click/mousedown propagation, so
  * interacting with the swatch never bubbles up to the outer toggle handler.
+ *
+ * CUSTOM HOVER/FOCUS TOOLTIP (replaces the native `title` popup as the
+ * visible-on-desktop affordance; `title` itself is KEPT on the chip - see
+ * below). `title`'s explanatory text is often a full sentence or two (see
+ * LEVEL_TOOLTIP_KEY's i18n strings), and the OS-rendered native `title`
+ * tooltip can't be animated - there is no CSS hook into it at all - so a
+ * small custom tooltip renders the same text with a fade/slide-in transition
+ * instead.
+ *
+ * PORTAL, NOT A PLAIN `group-hover` SIBLING: both the Metrics row and the Key
+ * Levels row this chip lives in are `overflow-x-auto` (`themed-scroll flex
+ * items-center gap-2 overflow-x-auto`). Per the CSS2.1 overflow computation
+ * rules, setting `overflow-x: auto` with no explicit `overflow-y` forces
+ * `overflow-y` to `auto` too (only one axis staying `visible` while the other
+ * is non-visible isn't a legal combination) - so the row clips in BOTH axes,
+ * not just the one it scrolls. Verified live (Playwright): a plain
+ * `absolute bottom-full ... group-hover:opacity-100` tooltip, as a normal
+ * in-DOM child of the chip, was silently cut off at the row's own top edge
+ * exactly as that rule predicts - invisible, not just mispositioned. Fixed by
+ * rendering the tooltip through `createPortal` to `document.body`, positioned
+ * with `position: fixed` + `getBoundingClientRect()` (viewport coordinates,
+ * independent of any ancestor's overflow/stacking context) instead of
+ * `position: absolute` inside the clipped row. One consequence of the
+ * portal: Tailwind's `group-hover`/`group-focus-within` selectors need real
+ * DOM ancestry and can't reach across a portal boundary, so visibility here
+ * is plain React state (`open`, set on mouse/focus enter+leave) rather than
+ * a CSS pseudo-class - the fade/slide is still pure CSS (`transition-*`
+ * classes reacting to that state), just driven by a class toggle instead of
+ * `:hover`.
+ *
+ * The tooltip DOM node is always mounted (even while hidden, at `opacity-0
+ * pointer-events-none`) rather than conditionally rendered on `open` - an
+ * element that's created already AT its final "visible" style never
+ * transitions (there's no prior frame to animate from); staying mounted and
+ * only toggling the opacity/transform classes is what lets the transition
+ * play on every open, including the very first hover.
+ *
+ * Horizontal placement is clamped to the viewport (`show()` below) so a chip
+ * near either edge of the scrollable row doesn't push the tooltip off
+ * screen; vertical placement flips from above to below the chip if there
+ * isn't enough room above (e.g. a chip very close to the top of the
+ * viewport) - checked against the tooltip's own measured height via `tipRef`.
+ *
+ * `title` is kept on the chip IN ADDITION to the custom tooltip (not
+ * replaced) - touch devices with no hover state, and any assistive tech that
+ * specifically keys off the native `title` attribute rather than (or
+ * alongside) `aria-describedby`, still get it; it's a cheap, harmless safety
+ * net under the custom one, not redundant effort. `aria-describedby` links
+ * the chip to the custom tooltip node by id (via `useId`) so screen readers
+ * announce the same explanatory text the visible tooltip shows.
  */
 const ToggleChip: React.FC<{
     on: boolean;
@@ -233,7 +322,21 @@ const ToggleChip: React.FC<{
     idleClass: string;
     swatches: React.ReactNode;
     children: React.ReactNode;
-}> = ({ on, onToggle, title, activeClass, idleClass, swatches, children }) => {
+    /** Net GEX is the only chip with TWO color swatches (its signed +/-
+     *  halves) - the user wants those two stacked in their own row ABOVE the
+     *  label instead of inline after it, unlike every single-swatch chip
+     *  (every other metric, every Key Level), which keeps the original
+     *  inline (label, then swatch, same row) layout. Defaults to false
+     *  (inline) so every existing call site is unaffected; only the Net GEX
+     *  chip passes `true`. */
+    swatchesAbove?: boolean;
+}> = ({ on, onToggle, title, activeClass, idleClass, swatches, children, swatchesAbove = false }) => {
+    const chipRef = useRef<HTMLDivElement>(null);
+    const tipRef = useRef<HTMLDivElement>(null);
+    const tooltipId = useId();
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState({ top: 0, left: 0, placement: 'top' as 'top' | 'bottom' });
+
     const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -241,20 +344,96 @@ const ToggleChip: React.FC<{
         }
     };
     const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+
+    const GAP = 8; // px between the chip and the tooltip
+    const EDGE_MARGIN = 8; // px kept clear of either viewport edge
+
+    const show = () => {
+        const chip = chipRef.current;
+        if (chip) {
+            const r = chip.getBoundingClientRect();
+            const tipW = tipRef.current?.offsetWidth ?? 0;
+            const tipH = tipRef.current?.offsetHeight ?? 0;
+            const halfTip = tipW / 2;
+            let left = r.left + r.width / 2;
+            left = Math.min(Math.max(left, halfTip + EDGE_MARGIN), window.innerWidth - halfTip - EDGE_MARGIN);
+            // Default above the chip; flip below it if there isn't room
+            // above (e.g. a chip docked near the top of the viewport).
+            const placement: 'top' | 'bottom' = r.top - tipH - GAP < 0 ? 'bottom' : 'top';
+            const top = placement === 'top' ? r.top - GAP : r.bottom + GAP;
+            setPos({ top, left, placement });
+        }
+        setOpen(true);
+    };
+    const hide = () => setOpen(false);
+
     return (
         <div
+            ref={chipRef}
             role="button"
             tabIndex={0}
             aria-pressed={on}
+            aria-describedby={tooltipId}
             title={title}
             onClick={onToggle}
             onKeyDown={onKeyDown}
-            className={'flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? activeClass : idleClass)}
+            onMouseEnter={show}
+            onMouseLeave={hide}
+            onFocus={show}
+            onBlur={hide}
+            className={
+                'relative flex shrink-0 cursor-pointer rounded-md border px-2 py-0.5 text-xs font-medium ' +
+                (swatchesAbove ? 'flex-col items-center gap-0.5 py-1' : 'items-center gap-1.5') + ' ' +
+                (on ? activeClass : idleClass)
+            }
         >
+            {/* DOM order mirrors visual order (row layout for the default
+                inline case, column layout for `swatchesAbove`) - every other
+                chip keeps the exact original "label, then swatch" order
+                (swatch reads to the RIGHT of the label in the normal
+                left-to-right row); only Net GEX (`swatchesAbove`) flips to
+                "swatches, then label" so the stacked column puts the two
+                color swatches on top and the label underneath. */}
+            {swatchesAbove && (
+                <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
+                    {swatches}
+                </span>
+            )}
             <span>{children}</span>
-            <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
-                {swatches}
-            </span>
+            {!swatchesAbove && (
+                <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
+                    {swatches}
+                </span>
+            )}
+            {createPortal(
+                <div
+                    ref={tipRef}
+                    id={tooltipId}
+                    role="tooltip"
+                    style={{
+                        top: pos.top,
+                        left: pos.left,
+                        // Both the placement flip (-100%/0%, above vs below the
+                        // chip) and the small reveal slide (a few px toward the
+                        // chip while hidden, 0 once open) live in this ONE
+                        // inline `transform` - an inline `style.transform`
+                        // always wins over a Tailwind `translate-*` utility
+                        // class for the same property (inline style beats any
+                        // stylesheet rule), so the slide can't be a separate
+                        // conditional className alongside this or it would
+                        // simply be overridden and never apply.
+                        transform: `translate(-50%, calc(${pos.placement === 'top' ? '-100%' : '0%'} + ${open ? '0px' : pos.placement === 'top' ? '4px' : '-4px'}))`,
+                    }}
+                    className={
+                        'pointer-events-none fixed z-50 w-64 max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] leading-snug text-slate-100 shadow-lg ' +
+                        'transition-[opacity,transform] duration-150 ease-out dark:border-slate-600 ' +
+                        (open ? 'opacity-100' : 'opacity-0')
+                    }
+                >
+                    {title}
+                </div>,
+                document.body,
+            )}
         </div>
     );
 };
@@ -415,10 +594,37 @@ export const GexView: React.FC<GexViewProps> = ({
      *  the "dynamic based on current data" part; the sidebar card mirrors it
      *  via the `keyLevels` array below. */
     const gammaFlipPanelKeys: Array<'gammaFlipPos' | 'gammaFlipNeg'> = bothGammaFlip ? ['gammaFlipPos', 'gammaFlipNeg'] : [soloGammaFlipKey];
-    // Fixed logical UI order (NOT price-sorted - see the sidebar Card's
-    // separate price-descending sort below, which is display-only and reads
-    // from its own `keyLevels` array, not this one).
-    const levelPanelKeys: Array<ToggleableLevelKey> = ['callWall', 'callWall1_5', 'callWall2', ...gammaFlipPanelKeys, 'putWall', 'putWall1_5', 'putWall2', 'maxPain'];
+    /** Base logical order, BEFORE the by-strike sort just below - only used
+     *  as the stable tie-break among levels that sort equal (i.e. every
+     *  null-valued one, see `levelPanelKeys` itself). `spot` sits next to the
+     *  gamma-flip entries here since it's the reference point every other
+     *  level's position is read relative to - a reasonable logical "center",
+     *  though it's moot for the actual rendered order once sorted below. */
+    const levelPanelKeysBase: Array<ToggleableLevelKey> = ['callWall', 'callWall1_5', 'callWall2', ...gammaFlipPanelKeys, 'spot', 'putWall', 'putWall1_5', 'putWall2', 'maxPain'];
+    /** The Key Levels TOGGLE PANEL's actual left-to-right order: ascending by
+     *  each level's live strike (`levels?.[key]`), recomputed every render so
+     *  it tracks real data as it loads/changes - the user wants the chip with
+     *  the LOWEST strike leftmost and the HIGHEST strike rightmost. This is
+     *  the mirror image of the sidebar Card's own sort below (`keyLevels`'
+     *  `.sort()`): same idea, OPPOSITE direction (ascending here for a
+     *  left-to-right row vs. descending there for a top-to-bottom list), and
+     *  over a completely independent array/state - sorting this one must
+     *  never affect `keyLevels`' sidebar order, and vice versa.
+     *
+     *  A level with no value for the current data (an optional wall/gamma-
+     *  flip direction that doesn't qualify, or no data loaded at all) has no
+     *  real strike to sort by, so it sinks to the FAR RIGHT, after every
+     *  level with a real value - mirroring the sidebar's own "nulls sink"
+     *  rule, just at the opposite end since this row reads left-to-right
+     *  instead of top-to-bottom. `Array#sort` is stable, so among themselves
+     *  the null-valued entries keep `levelPanelKeysBase`'s order. */
+    const levelPanelKeys: Array<ToggleableLevelKey> = [...levelPanelKeysBase].sort((a, b) => {
+        const va = levels?.[a] ?? null;
+        const vb = levels?.[b] ?? null;
+        if (va == null) return vb == null ? 0 : 1;
+        if (vb == null) return -1;
+        return va - vb;
+    });
 
     const levelLabel = (key: ToggleableLevelKey): string => {
         if (key === 'gammaFlipPos' || key === 'gammaFlipNeg') {
@@ -447,9 +653,14 @@ export const GexView: React.FC<GexViewProps> = ({
     };
     /** Part 4 hover-tooltip text for a Key Levels panel entry - the combined
      *  single-entry case gets the direction-agnostic explanation, the
-     *  two-entry case gets each direction's own. */
+     *  two-entry case gets each direction's own. Spot gets its own variant
+     *  when the shown value is a put-call-parity estimate rather than a
+     *  provider-reported price (`effSpotIsEstimated`) - folds that signal
+     *  into the tooltip instead of only a sidebar badge, so it isn't lost
+     *  now that Spot is a toggleable level like the rest. */
     const levelTooltip = (key: ToggleableLevelKey): string => {
         if ((key === 'gammaFlipPos' || key === 'gammaFlipNeg') && !bothGammaFlip) return tr('gex.level.tooltip.gammaFlip');
+        if (key === 'spot' && effSpotIsEstimated) return tr('gex.level.tooltip.spotEstimated');
         return tr(LEVEL_TOOLTIP_KEY[key]);
     };
 
@@ -551,18 +762,24 @@ export const GexView: React.FC<GexViewProps> = ({
     // above), two rows "Gamma Flip +"/"Gamma Flip -" when both do. Neither
     // row is `optional` (unlike callWall2/putWall2/callWall1_5/putWall1_5):
     // even with no data at all it still shows one placeholder "Gamma Flip"
-    // row reading "-", same as callWall/putWall/maxPain already do.
+    // row reading "-", same as callWall/putWall/maxPain already do. `spot`
+    // is likewise never `optional` (GexLevels.spot is a plain `number`, not
+    // nullable, whenever `levels` itself is non-null) and carries its own
+    // `suffix` - the former "(est.)" badge from the now-removed symbol/spot
+    // header block, folded into this row instead of being dropped (see
+    // `gex.level.tooltip.spotEstimated` for the matching tooltip variant).
     //
-    // Built in a fixed logical order here (matching levelPanelKeys' order);
-    // the sidebar Card below re-sorts its OWN rendering by strike price
-    // descending (see `.sort()` at the JSX usage site) - this array's build
-    // order is otherwise unused for display purposes, only for feeding that
-    // sort.
-    const keyLevels: Array<{ key: ToggleableLevelKey; label: string; value: number | null; optional?: boolean }> = [
+    // Built in a fixed logical order here (matching levelPanelKeysBase'
+    // order); the sidebar Card below re-sorts its OWN rendering by strike
+    // price descending (see `.sort()` at the JSX usage site) - this array's
+    // build order is otherwise unused for display purposes, only for feeding
+    // that sort.
+    const keyLevels: Array<{ key: ToggleableLevelKey; label: string; value: number | null; optional?: boolean; suffix?: string }> = [
         { key: 'callWall', label: levelLabel('callWall'), value: levels?.callWall ?? null },
         { key: 'callWall1_5', label: levelLabel('callWall1_5'), value: levels?.callWall1_5 ?? null, optional: true },
         { key: 'callWall2', label: levelLabel('callWall2'), value: levels?.callWall2 ?? null, optional: true },
         ...gammaFlipPanelKeys.map((key) => ({ key, label: levelLabel(key), value: levels?.[key] ?? null })),
+        { key: 'spot', label: levelLabel('spot'), value: levels?.spot ?? null, suffix: effSpotIsEstimated ? tr('spot.estimated') : undefined },
         { key: 'putWall', label: levelLabel('putWall'), value: levels?.putWall ?? null },
         { key: 'putWall1_5', label: levelLabel('putWall1_5'), value: levels?.putWall1_5 ?? null, optional: true },
         { key: 'putWall2', label: levelLabel('putWall2'), value: levels?.putWall2 ?? null, optional: true },
@@ -638,18 +855,23 @@ export const GexView: React.FC<GexViewProps> = ({
                 `ml-auto` on ITS OWN element (not `justify-between` on this
                 row) - `ml-auto` consumes all free space to its left on
                 whichever line it ends up sharing, so Metrics/Key Levels still
-                read left/right whenever both fit on one line, and the
-                symbol/spot info block (last in source order, no special
-                positioning) simply trails after Key Levels on that same line
-                - `ml-auto` only pulls its own element rightward, so later
-                siblings with no margin of their own just continue normally
-                right after it. On a narrower viewport where a panel wraps
-                onto its own line, `ml-auto` right-aligns that panel alone on
-                its line (harmless - still no overflow, just an alignment
-                detail on an otherwise-empty line). ---- */}
+                read left/right whenever both fit on one line. On a narrower
+                viewport where a panel wraps onto its own line, `ml-auto`
+                right-aligns that panel alone on its line (harmless - still
+                no overflow, just an alignment detail on an otherwise-empty
+                line). The symbol/spot/"delayed" info block that used to
+                trail after Key Levels here (last in source order) was
+                removed: the user found it redundant with TopBar's own ticker
+                input (always visible, every tab) and `spot` is now just
+                another toggleable/colorable Key Level (see
+                `ALL_LEVEL_KEYS`/`keyLevels`), its former "(est.)" badge
+                folded into that level's own sidebar row/tooltip instead of a
+                separate header span. The "delayed · {provider}" text
+                specifically has no replacement elsewhere on THIS tab - see
+                the PR description. ---- */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
                 <div className={box + ' grow shrink basis-[460px] min-w-[260px] max-w-[670px]'} role="group" aria-label={tr('gex.metric.label')}>
-                    <span className="text-xs text-slate-400">{tr('gex.metric.label')}</span>
+                    <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.metric.label')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
                         {GEX_METRICS.map((m) => {
                             const on = metrics.includes(m);
@@ -664,6 +886,13 @@ export const GexView: React.FC<GexViewProps> = ({
                                     title={tr('gex.metric.tooltip.' + m)}
                                     activeClass={ax.chipActive}
                                     idleClass={ax.chipIdle}
+                                    // Net GEX is the only metric with TWO swatches (signed +/-
+                                    // halves) - stack them in their own row above the label
+                                    // instead of inline after it (the user found two swatches
+                                    // inline, after the label, too cramped/unclear on which
+                                    // swatch was which); every other metric keeps one swatch
+                                    // inline, unchanged.
+                                    swatchesAbove={m === 'netGex'}
                                     // Per-metric bar color pickers. Net GEX needs two (its
                                     // signed pos/neg stacked halves); the 4 OI/Volume metrics
                                     // get one each. Dependency-free <input type="color">,
@@ -725,7 +954,13 @@ export const GexView: React.FC<GexViewProps> = ({
                     flex-wrap sibling of the Metrics panel above (see the
                     row-level comment) rather than its own separate row. ---- */}
                 <div className={box + ' grow shrink basis-[600px] min-w-[300px] max-w-[860px] ml-auto'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
-                    <span className="text-xs text-slate-400">{tr('gex.sidebar.keyLevels')}</span>
+                    {/* whitespace-nowrap: "Key Levels" is two words and was
+                        wrapping onto "Key"/"Levels" lines in tighter layouts
+                        - force it onto one line regardless of how tight the
+                        row gets (same defensive treatment applied to the
+                        Metrics label above, even though "Metrics" is a single
+                        word that can't actually wrap). */}
+                    <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.sidebar.keyLevels')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
                         {levelPanelKeys.map((key) => {
                             const on = selectedLevels.includes(key);
@@ -761,17 +996,6 @@ export const GexView: React.FC<GexViewProps> = ({
                     >
                         {tr('gex.level.reset')}
                     </button>
-                </div>
-
-                <div className="flex items-baseline gap-2">
-                    <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
-                    {effSpot != null && (
-                        <span className="text-sm text-slate-500 dark:text-slate-400">
-                            {tr('spot.label')} <span className="font-semibold text-slate-800 dark:text-slate-200">${fmt(effSpot)}</span>
-                            {effSpotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">{tr('spot.estimated')}</span>}
-                        </span>
-                    )}
-                    <span className="text-xs text-slate-400">{tr('spot.delayed', { provider: provider.label.split(' ')[0] })}</span>
                 </div>
             </div>
 
@@ -821,7 +1045,12 @@ export const GexView: React.FC<GexViewProps> = ({
                             .filter((l) => !(l.optional && l.value == null))
                             .sort((a, b) => (a.value == null ? 1 : b.value == null ? -1 : b.value - a.value))
                             .map((l) => (
-                                <Row key={l.key} label={l.label} value={l.value != null ? fmt(l.value) : na} dot={GEX_LEVEL_COLORS[l.key].dot} />
+                                <Row
+                                    key={l.key}
+                                    label={l.label}
+                                    value={l.value != null ? fmt(l.value) + (l.suffix ? ` ${l.suffix}` : '') : na}
+                                    dot={GEX_LEVEL_COLORS[l.key].dot}
+                                />
                             ))}
                     </Card>
                     <Card title={tr('gex.sidebar.pcRatio')}>
@@ -872,7 +1101,16 @@ export const GexView: React.FC<GexViewProps> = ({
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart
                                     data={chart.rows}
-                                    margin={{ top: 24, right: 16, bottom: 8, left: 8 }}
+                                    // bottom: 110 (widened from 8) makes room for the Key Level
+                                    // diagonal labels now hanging BELOW the X axis (see
+                                    // renderRotatedLevelLabel's doc comment) - the longest chart
+                                    // label text ("Resistance 1.5") at this -45deg rotation and
+                                    // 10px font needs roughly BOTTOM_GAP (28px, clears the axis'
+                                    // own numeric tick labels) + ~60px of diagonal vertical extent
+                                    // + a little slack; verified live (Playwright) that 110px
+                                    // keeps every label fully on-screen, not clipped by the
+                                    // chart's own bottom edge.
+                                    margin={{ top: 24, right: 16, bottom: 110, left: 8 }}
                                     stackOffset="sign"
                                     barCategoryGap="15%"
                                     onMouseDown={onChartMouseDown}
@@ -919,7 +1157,17 @@ export const GexView: React.FC<GexViewProps> = ({
                                             );
                                         }}
                                     />
-                                    <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
+                                    {/* verticalAlign="top": moved off the bottom edge, where it
+                                        used to sit right in the middle of the Key Level diagonal
+                                        labels now hanging below the X axis (see
+                                        renderRotatedLevelLabel's doc comment) - recharts renders
+                                        the Legend as an absolutely-positioned overlay, not
+                                        something the chart's own `margin` makes room for, so
+                                        widening `margin.bottom` alone didn't move it out of the
+                                        labels' way; moving the Legend to the top (clear of the
+                                        bars, which only draw up to the plot's own top margin) was
+                                        simpler than trying to out-position it from the bottom. */}
+                                    <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
                                     {hasNetGex && <ReferenceLine y={0} stroke="#94a3b8" />}
                                     {hasNetGex && (
                                         <>
@@ -933,13 +1181,33 @@ export const GexView: React.FC<GexViewProps> = ({
                                     {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
                                         <ReferenceArea x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
                                     )}
-                                    {/* All 9 toggleable Key Level keys (gammaFlipPos/gammaFlipNeg
+                                    {/* All 10 toggleable Key Level keys (gammaFlipPos/gammaFlipNeg
                                         included independently - see ALL_LEVEL_KEYS above), gated
                                         independently on their own toggle (selectedLevels) and drawn
                                         in their own configured color (levelColors). `levels?.[key]`
                                         reads the same computed GexLevels field the sidebar's Key
                                         Levels card already shows (src/gex.ts, rule R1) - this never
-                                        recomputes anything. */}
+                                        recomputes anything.
+
+                                        `spot` is included here too (full parity with every other
+                                        level, per the user's "add it similarly to other levels"
+                                        request) - it used to get its own always-on, un-rotated,
+                                        plain-horizontal <ReferenceLine> block (removed). Wherever
+                                        this code actually runs, `levels` is guaranteed non-null and
+                                        `levels.spot` is exactly `effSpot` (see use-gex-levels.ts:
+                                        the only way to reach this branch with `chart` truthy is
+                                        `effSpot != null` - computeGexProfile is gated on that - and
+                                        for a non-futures-priced symbol `levels` is non-null under
+                                        that exact same condition; a futures-priced symbol with no
+                                        real levels is caught by the earlier `isFuturesPriced &&
+                                        !levels` early return, before this code is reached at all) -
+                                        so no special-casing is needed, `levels?.spot` alone is
+                                        correct. Chose full rotated-diagonal parity over keeping spot
+                                        upright-and-distinct: now that it's a toggleable/colorable
+                                        level like the other 9, treating it identically is the
+                                        simpler, more consistent choice, and its color (amber-500,
+                                        GEX_LEVEL_COLORS.spot) already reads as visually distinct
+                                        from every other level's color regardless of rotation. */}
                                     {(() => {
                                         // Every drawn label shares the exact same baseline y
                                         // (see renderRotatedLevelLabel's doc comment) - only each
@@ -961,20 +1229,6 @@ export const GexView: React.FC<GexViewProps> = ({
                                             );
                                         });
                                     })()}
-                                    {/* Spot stays a plain horizontal label (not rotated like the
-                                        Key Levels above): it's the one always-on reference every
-                                        other line is read relative to, not a toggleable Key Level,
-                                        and keeping it upright keeps it visually distinct even when
-                                        a rotated Key Level label happens to land nearby. */}
-                                    {effSpot != null && (
-                                        <ReferenceLine
-                                            x={effSpot}
-                                            stroke={GEX_LEVEL_COLORS.spot.hex}
-                                            strokeWidth={1.5}
-                                            strokeDasharray="4 3"
-                                            label={{ value: tr('gex.chart.spot', { price: fmt(effSpot) }), position: 'insideTopRight', fill: GEX_LEVEL_COLORS.spot.hex, fontSize: 11 }}
-                                        />
-                                    )}
                                 </BarChart>
                             </ResponsiveContainer>
                         )}
