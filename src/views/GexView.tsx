@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ExpirationChips } from '../components/ExpirationChips';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio } from '../gex';
 import { GEX_BAR_COLORS, GEX_LEVEL_COLORS, GEX_METRIC_COLORS, type GexLevelKey } from '../gex-colors';
 import { useI18n } from '../i18n';
@@ -48,11 +47,9 @@ export interface GexViewProps {
      *  per-quote-forward levels ARE available, this only adds a small note
      *  clarifying they're futures-terms-based, not spot-based. */
     isFuturesPriced: boolean;
-    /** Expirations selectable on this tab (keys of quotesByExp, ascending). */
-    expirations: string[];
-    /** Shared with the Desk tab (same state, not an independent copy). */
+    /** Shared with Desk and Chart (one picker in main.tsx's panel, not an
+     *  independent copy) - read here only to reset zoom when it changes. */
     selectedExps: string[];
-    setSelectedExps: (exps: string[]) => void;
     /** Non-empty; defaults to ['netGex'] (main.tsx), matching the old single-select default. */
     metrics: GexMetric[];
     setMetrics: (metrics: GexMetric[]) => void;
@@ -90,8 +87,8 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
 );
 
 export const GexView: React.FC<GexViewProps> = ({
-    settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced, expirations,
-    selectedExps, setSelectedExps, metrics, setMetrics,
+    settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced,
+    selectedExps, metrics, setMetrics,
 }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(settings.colorTheme);
@@ -245,7 +242,15 @@ export const GexView: React.FC<GexViewProps> = ({
     const box = 'flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5';
     const emptyBox = 'grid h-full min-h-[240px] place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-4 text-center text-sm text-slate-400';
 
-    if (!symbol || expirations.length === 0) {
+    // Gate is now just "is a ticker loaded" (meta exists): the picker + Load
+    // button live in the shared panel (main.tsx), so a loaded ticker with
+    // nothing fetched yet for the selected expirations is an expected,
+    // incomplete-until-Load state (quotes/levels below), not an error - see
+    // main.tsx's gexQuotesByExp comment. Previously this also required
+    // `gexExpirations.length > 0` (data already loaded for SOME expiration),
+    // which no longer applies since this tab no longer restricts selection to
+    // already-loaded dates.
+    if (!symbol) {
         return (
             <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
                 <div className={emptyBox}>{tr('gex.empty.noData')}</div>
@@ -277,17 +282,10 @@ export const GexView: React.FC<GexViewProps> = ({
 
     return (
         <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
-            {/* ---- Controls: expiration chips (own selection) + metric toggle ---- */}
+            {/* ---- Controls: metric toggle (expiration picker + Load now live
+                in the shared panel in main.tsx, in the same row as the
+                Desk/GEX/Chart tab pills) ---- */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
-                <div className={box}>
-                    <ExpirationChips
-                        expirations={expirations}
-                        selected={selectedExps}
-                        onToggle={(exp) => setSelectedExps(selectedExps.includes(exp) ? selectedExps.filter((e) => e !== exp) : [...selectedExps, exp])}
-                        onSetAll={setSelectedExps}
-                        colorTheme={settings.colorTheme}
-                    />
-                </div>
                 <div className={box} role="group" aria-label={tr('gex.metric.label')}>
                     <span className="text-xs text-slate-400">{tr('gex.metric.label')}</span>
                     <div className="themed-scroll flex items-center gap-1 overflow-x-auto">

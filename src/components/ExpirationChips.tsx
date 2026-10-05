@@ -5,10 +5,23 @@ import { accentOf } from '../theme';
 import type { ColorThemeId } from '../types';
 
 /**
- * Multi-select expiration chips + "All"/"None" toggle, shared by Desk (Tab 1)
- * and GEX (Tab 2). Renders a fragment (label, chip strip, toggle) so each
- * caller supplies its own wrapper: Desk wraps it in the Load <form>, GEX in a
- * plain box with the same styling. Extracted verbatim from DeskView.
+ * Multi-select expiration chips + "All"/"None" toggle. Rendered ONCE in a
+ * shared panel (main.tsx, via TabSwitcher's `endSlot`, in the same row as the
+ * Desk/GEX/Chart tab pills) alongside the Load button, visible on Desk and
+ * GEX alike - no longer duplicated per-view (see main.tsx changelog). Renders
+ * a fragment (label, chip strip, toggle) so the caller supplies the wrapper.
+ *
+ * Overflow fix: the chip strip caps itself at `max-w-[70vw]` and scrolls
+ * internally (`overflow-x-auto`) - that part was never the bug. The bug was
+ * the CALLER's row not wrapping: a plain `flex` row has no upper bound of its
+ * own, so at narrow (mobile) widths the fixed-width "All"/"None" toggle AND
+ * the Load button (a sibling in the caller's row) got pushed past the right
+ * edge of the viewport - genuinely clipped, not just scrolled - because nothing
+ * in that row could wrap. Confirmed live via Playwright at 320-414px widths
+ * before this fix (Load button's bounding rect exceeded window.innerWidth and
+ * document.documentElement.scrollWidth grew past the viewport). Callers now
+ * add `flex-wrap` to their own row so the toggle/Load button drop to a second
+ * line instead of sliding off-screen when space is tight.
  */
 export const ExpirationChips: React.FC<{
     expirations: string[];
@@ -24,7 +37,15 @@ export const ExpirationChips: React.FC<{
     return (
         <>
             <span className="text-xs text-slate-400">{tr('controls.expirations')}</span>
-            <div className="themed-scroll flex max-w-[46vw] items-center gap-1 overflow-x-auto">
+            {/* Was max-w-[46vw]: that cap was sized to share a row with Desk's
+                ticker-input/provider-dropdown row. Now this strip lives alone
+                in the shared panel (main.tsx), so it can afford more room;
+                widened to 70vw. Still capped (not unbounded) so the "All"/
+                "None" toggle in a wide chain never has to fight for space on
+                the same line - the caller's row additionally wraps (flex-wrap)
+                as a second line of defense at widths where even 70vw plus the
+                toggle/Load button don't fit. */}
+            <div className="themed-scroll flex max-w-[70vw] items-center gap-1 overflow-x-auto">
                 {expirations.map((exp) => {
                     const on = selected.includes(exp);
                     return (
