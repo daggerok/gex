@@ -26,8 +26,24 @@ export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
     spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
 };
 
-/** Bar fills for the GEX tab: call-side (positive) vs put-side (negative). */
+/** Bar fills for the GEX tab: call-side (positive) vs put-side (negative).
+ *  Used by the signed netGex pos/neg stacked bars. */
 export const GEX_BAR_COLORS = {
     call: '#22c55e', // green-500
     put: '#ef4444',  // red-500
 } as const;
+
+/**
+ * Per-metric bar colors for the OI/Volume grouped-bar overlay (multi-metric
+ * chart, section 8.1): call side stays green, put side stays red (same
+ * convention as GEX_BAR_COLORS), with OI the solid shade and Volume the
+ * lighter shade so the two are distinguishable when both are shown at once -
+ * reuses the exact green-300/red-300 already defined above for
+ * callWall2/putWall2, instead of inventing new colors.
+ */
+export const GEX_METRIC_COLORS: Record<'callOi' | 'putOi' | 'callVolume' | 'putVolume', string> = {
+    callOi: GEX_LEVEL_COLORS.callWall.hex,       // green-500
+    callVolume: GEX_LEVEL_COLORS.callWall2.hex,  // green-300
+    putOi: GEX_LEVEL_COLORS.putWall.hex,         // red-500
+    putVolume: GEX_LEVEL_COLORS.putWall2.hex,    // red-300
+};
