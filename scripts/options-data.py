@@ -777,7 +777,15 @@ def _has_delta_gamma(q):
 
 
 def _apply_greeks_enrichment(symbol, matched_symbol, spot, quotes):
-    """Attach Cboe 1st-order greeks only. `spot` kept for API compatibility / future use."""
+    """Attach Cboe 1st-order greeks, plus open_interest/volume when Cboe has a
+    match. yfinance's own open_interest/volume are frequently 0 for index
+    options (SPX observed: ~99% zero) while Cboe — the listing exchange for
+    its own product — reports real, mostly-nonzero values for the same
+    contracts (SPX observed: ~73% nonzero). Cboe's numbers are preferred
+    whenever matched, the same way its greeks already are; yfinance's values
+    are only kept as a fallback when there is no Cboe match. `spot` kept for
+    API compatibility / future use.
+    """
     del spot  # unused — model greeks live in the UI
     total = len(quotes)
     cboe_rows = _fetch_cboe_greeks(symbol, matched_symbol)
@@ -799,6 +807,12 @@ def _apply_greeks_enrichment(symbol, matched_symbol, spot, quotes):
         occ = str(q.get("symbol", "")).upper()
         c = cboe_rows.get(occ)
         if c:
+            oi = _num(c.get("open_interest"))
+            if oi is not None:
+                q["openInterest"] = oi
+            vol = _num(c.get("volume"))
+            if vol is not None:
+                q["volume"] = vol
             for field in ("delta", "gamma", "theta", "vega", "rho"):
                 val = _num(c.get(field))
                 if val is not None:
