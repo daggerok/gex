@@ -124,6 +124,36 @@ export const GAMMA_FLIP_GRID_POINTS = 60;
 export const GAMMA_FLIP_RANGE_PCT = 0.20;
 
 /**
+ * Minimum `iv` a quote must carry to be included in the hypothetical-spot
+ * sweep. DISCOVERED NECESSARY against real cached data (SPX.json), not a
+ * theoretical worry: a real quote (SPXW261009C07125000, OI 15) carries
+ * `iv = 0.00001` - CBOE's own feed, not computed in this app (scripts/
+ * options-data.py passes `impliedVolatility` straight through) - and the
+ * chain's full set of distinct sub-0.3 IVs forms an unmistakable failed-
+ * bisection-solve sequence (1e-5, 0.000254, 0.000498, 0.000987, 0.001963,
+ * 0.003916, 0.007822, 0.015635, 0.031260, 0.062509, 0.125009, 0.250008 - each
+ * ~2x the last), i.e. CBOE's own IV solver gave up on quotes with no real
+ * two-sided market (bid = ask = 0 for ~98% of the sub-0.01 group) and left
+ * whatever halving-bisection midpoint it was at, not a real implied vol.
+ * BS gamma is proportional to 1/(S * sigma * sqrt(T)), so an
+ * near-zero sigma makes gamma (and so dollar-GEX) spike without bound as the
+ * hypothetical S sweeps near that quote's own strike - that one OI-15 quote
+ * alone produced a ~$19.7B swing at one grid point against a chain whose
+ * normal per-quote contributions were in the hundreds of millions, flipping
+ * the aggregate's sign at that single point and creating a spurious second
+ * crossing. The OLD per-strike-profile algorithm never hit this failure mode
+ * because it used the provider's own pre-computed real-spot gamma (0.0001
+ * for that exact quote - already sane) and never recomputed anything from
+ * `iv`. A large IV (the high end of the same failed-solve sequence, e.g.
+ * 7.93 seen on a deep-ITM quote) does NOT cause a blowup - it only shrinks
+ * gamma toward 0 - so only a MINIMUM floor is needed, not a cap. 0.05 (5%)
+ * is well below any genuine SPX-family implied vol (even the 2020 crash
+ * peaked under 0.9) and above the entire observed failed-solve sequence, so
+ * it only excludes provably-degenerate quotes.
+ */
+export const GAMMA_FLIP_MIN_IV = 0.05;
+
+/**
  * Gamma Flip / "Zero Gamma Level" (section 7.3, REWRITTEN - see history
  * below): the hypothetical underlying PRICE S* at which, if every option in
  * the chain had its gamma recomputed via Black-Scholes AS IF the spot were
@@ -222,9 +252,15 @@ export const GAMMA_FLIP_RANGE_PCT = 0.20;
  */
 export function findGammaFlipHypotheticalSpot(quotes: readonly OptionQuote[], spot: number): GammaFlipCrossings {
     if (!Number.isFinite(spot) || spot <= 0) return { pos: null, neg: null };
-    // Exclude futures-priced quotes (VIX/VXN) - see doc comment above.
+    // Exclude futures-priced quotes (VIX/VXN) - see doc comment above - and
+    // quotes whose `iv` is below GAMMA_FLIP_MIN_IV (degenerate/failed-solve
+    // placeholder, not a real vol - see that constant's doc comment for the
+    // real-data discovery). blackScholesGreeks would otherwise happily
+    // recompute an enormous, unrealistic gamma from a near-zero iv as the
+    // hypothetical S sweeps near that quote's own strike.
     const eligible = quotes.filter(
-        (q) => !(typeof q.forward === 'number' && Number.isFinite(q.forward) && q.forward > 0),
+        (q) => !(typeof q.forward === 'number' && Number.isFinite(q.forward) && q.forward > 0)
+            && typeof q.iv === 'number' && Number.isFinite(q.iv) && q.iv >= GAMMA_FLIP_MIN_IV,
     );
     if (eligible.length === 0) return { pos: null, neg: null };
 
