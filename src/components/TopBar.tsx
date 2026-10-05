@@ -72,9 +72,9 @@ export const TopBar: React.FC<{
     onChange: (patch: Partial<Settings>) => void;
     onSetToken: (providerId: string, token: string) => void;
     onSetSecret: (providerId: string, secret: string) => void;
-    onClearData: () => void;
+    onClearData: () => Promise<void>;
     onClearSettings: () => void;
-    onClearAll: () => void;
+    onClearAll: () => Promise<void>;
     tickerInput: string;
     onTickerInput: (v: string) => void;
     onSearch: () => void;

@@ -1,8 +1,8 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { providerDescription, useI18n } from '../i18n';
 import { LIVE_PROVIDERS, PROVIDERS, PROXY_PRESETS } from '../providers';
-import { cacheStats, fmtBytes, subscribeCache } from '../settings-store';
+import { cacheStats, type CacheStats, fmtBytes, subscribeCache } from '../settings-store';
 import { accentOf } from '../theme';
 import type { DataProvider, Settings } from '../types';
 import { ColorThemeSwitch } from './ColorThemeSwitch';
@@ -21,9 +21,9 @@ export const SettingsPanel: React.FC<{
     onSetToken: (providerId: string, token: string) => void;
     onSetSecret: (providerId: string, secret: string) => void;
     /** Cache actions (return the fresh stats to refresh the panel). */
-    onClearData: () => void;
+    onClearData: () => Promise<void>;
     onClearSettings: () => void;
-    onClearAll: () => void;
+    onClearAll: () => Promise<void>;
     onClose: () => void;
     /** When true, render body only (no absolute popover chrome) — used inside fundamentals-style settings card. */
     embedded?: boolean;
@@ -34,15 +34,29 @@ export const SettingsPanel: React.FC<{
     const currentSecret = settings.secrets[provider.id] || '';
     // Cache stats — recompute on any cache mutation (LIVE, no manual refresh):
     // subscribe to the cache pub/sub so fetching or clearing updates the numbers
-    // immediately while the panel is open.
+    // immediately while the panel is open. cacheStats() is IndexedDB-backed and
+    // therefore async, so this is an effect + state (cancelled-flag pattern,
+    // same one used elsewhere in this app for async UI) rather than a useMemo.
     const [statsNonce, setStatsNonce] = useState(0);
     useEffect(() => subscribeCache(() => setStatsNonce((n) => n + 1)), []);
-    const stats = useMemo(() => cacheStats(), [statsNonce]);
+    const [stats, setStats] = useState<CacheStats>({ entries: 0, bytes: 0, maxBytes: 0, oldest: null, newest: null, settingsBytes: 0 });
+    const [statsLoading, setStatsLoading] = useState(true);
+    useEffect(() => {
+        let cancelled = false;
+        setStatsLoading(true);
+        cacheStats().then((s) => {
+            if (cancelled) return;
+            setStats(s);
+            setStatsLoading(false);
+        });
+        return () => { cancelled = true; };
+    }, [statsNonce]);
     const pct = stats.maxBytes > 0 ? Math.min(100, Math.round((stats.bytes / stats.maxBytes) * 100)) : 0;
     const fmtTs = (ts: number | null) => (ts ? new Date(ts).toLocaleString() : '—');
-    // Two-step confirm for destructive actions (armed button id).
+    // Two-step confirm for destructive actions (armed button id); `clearingId`
+    // tracks the one currently running its (now async) clear action.
     const [armed, setArmed] = useState<string>('');
-    const bump = () => setStatsNonce((n) => n + 1);
+    const [clearingId, setClearingId] = useState<string>('');
     return (
         <>
             {/* Click-away backdrop (standalone popover only) */}
@@ -221,11 +235,11 @@ export const SettingsPanel: React.FC<{
                     <div className="mb-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2 text-[11px] text-slate-500 dark:text-slate-400">
                         <div className="flex items-center justify-between">
                             <span>{t('settings.cache.records')}</span>
-                            <span className="font-semibold text-slate-700 dark:text-slate-200">{stats.entries}</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-200">{statsLoading ? t('controls.loading') : stats.entries}</span>
                         </div>
                         <div className="flex items-center justify-between">
                             <span>{t('settings.cache.dataSize')}</span>
-                            <span className="font-semibold text-slate-700 dark:text-slate-200">{fmtBytes(stats.bytes)} / {fmtBytes(stats.maxBytes)} ({pct}%)</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-200">{statsLoading ? t('controls.loading') : `${fmtBytes(stats.bytes)} / ${fmtBytes(stats.maxBytes)} (${pct}%)`}</span>
                         </div>
                         {/* Usage bar */}
                         <div className="my-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
@@ -258,19 +272,26 @@ export const SettingsPanel: React.FC<{
                             </div>
                             <button
                                 type="button"
-                                onClick={() => {
-                                    if (armed === a.id) { a.run(); setArmed(''); bump(); }
-                                    else { setArmed(a.id); }
+                                disabled={clearingId !== ''}
+                                onClick={async () => {
+                                    if (armed === a.id) {
+                                        setArmed('');
+                                        setClearingId(a.id);
+                                        try { await a.run(); }
+                                        finally { setClearingId(''); }
+                                    } else {
+                                        setArmed(a.id);
+                                    }
                                 }}
                                 onBlur={() => setArmed((cur) => (cur === a.id ? '' : cur))}
                                 className={
-                                    'shrink-0 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ' +
+                                    'shrink-0 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ' +
                                     (armed === a.id
                                         ? 'border-rose-500 bg-rose-600 text-white hover:bg-rose-700'
                                         : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-rose-400 hover:text-rose-600 dark:hover:text-rose-400')
                                 }
                             >
-                                {armed === a.id ? t('settings.cache.confirm') : a.label}
+                                {clearingId === a.id ? t('controls.loading') : (armed === a.id ? t('settings.cache.confirm') : a.label)}
                             </button>
                         </div>
                     ))}

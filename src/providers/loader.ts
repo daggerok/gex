@@ -31,31 +31,31 @@ export function chainLooksEnriched(result: ChainResult): boolean {
  * any re-enrich this performs — see enrichQuotesWithModelGreeks's doc comment
  * in src/greeks.ts for why default-false is behavior-preserving.
  */
-export function getBulk(providerId: string, symbol: string, vixFuturesPricing: boolean = false): ChainResult | null {
+export async function getBulk(providerId: string, symbol: string, vixFuturesPricing: boolean = false): Promise<ChainResult | null> {
     const k = bulkKey(providerId, symbol);
     const mem = bulkCache.get(k);
     if (mem) {
         if (chainLooksEnriched(mem)) return mem;
         const fixed = enrichChainResult(mem, vixFuturesPricing);
         bulkCache.set(k, fixed);
-        cacheSet(k, fixed);
+        await cacheSet(k, fixed);
         return fixed;
     }
-    const disk = cacheGet<ChainResult>(k);
+    const disk = await cacheGet<ChainResult>(k);
     if (disk) {
         const fixed = chainLooksEnriched(disk) ? disk : enrichChainResult(disk, vixFuturesPricing);
         bulkCache.set(k, fixed);
-        if (fixed !== disk) cacheSet(k, fixed);
+        if (fixed !== disk) await cacheSet(k, fixed);
         return fixed;
     }
     return null;
 }
 /** Store a bulk result (always model-enriched) in memory + persistent cache. */
-export function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false): void {
+export async function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false): Promise<void> {
     const enriched = enrichChainResult(result, vixFuturesPricing);
     const k = bulkKey(providerId, enriched.symbol);
     bulkCache.set(k, enriched);
-    cacheSet(k, enriched);
+    await cacheSet(k, enriched);
 }
 /** Cache key for a single lazy expiration. */
 export const lazyKey = (providerId: string, symbol: string, exp: string) =>
@@ -66,42 +66,42 @@ export async function loadMeta(provider: DataProvider, symbol: string, ctx: Prov
     if (provider.mode === 'bulk') {
         if (!provider.fetchAll) throw new Error('Provider misconfigured (bulk without fetchAll).');
         const result = await provider.fetchAll(symbol, ctx);
-        putBulk(provider.id, result, vixFuturesPricing);
-        const cached = getBulk(provider.id, result.symbol, vixFuturesPricing) ?? enrichChainResult(result, vixFuturesPricing);
+        await putBulk(provider.id, result, vixFuturesPricing);
+        const cached = (await getBulk(provider.id, result.symbol, vixFuturesPricing)) ?? enrichChainResult(result, vixFuturesPricing);
         return { symbol: cached.symbol, underlyingPrice: cached.underlyingPrice, expirations: cached.expirations, greeks: cached.greeks };
     }
     if (!provider.fetchMeta) throw new Error('Provider misconfigured (lazy without fetchMeta).');
     const meta = await provider.fetchMeta(symbol, ctx);
     // Persist meta so expirations survive reloads (cheap; keyed with ":meta").
-    cacheSet(lazyKey(provider.id, meta.symbol, 'meta'), meta);
+    await cacheSet(lazyKey(provider.id, meta.symbol, 'meta'), meta);
     return meta;
 }
 
 /** Load the quotes for one expiration for the active provider (cached + enriched). */
 export async function loadExpiration(provider: DataProvider, symbol: string, expiration: string, ctx: ProviderContext, vixFuturesPricing: boolean = false): Promise<OptionQuote[]> {
     if (provider.mode === 'bulk') {
-        const cached = getBulk(provider.id, symbol, vixFuturesPricing);
+        const cached = await getBulk(provider.id, symbol, vixFuturesPricing);
         const result = cached ?? (provider.fetchAll ? await provider.fetchAll(symbol, ctx) : null);
-        if (result && !cached) putBulk(provider.id, result, vixFuturesPricing);
-        const final = getBulk(provider.id, symbol, vixFuturesPricing) ?? (result ? enrichChainResult(result, vixFuturesPricing) : null);
+        if (result && !cached) await putBulk(provider.id, result, vixFuturesPricing);
+        const final = (await getBulk(provider.id, symbol, vixFuturesPricing)) ?? (result ? enrichChainResult(result, vixFuturesPricing) : null);
         return (final?.quotes ?? []).filter((q) => q.expiration === expiration);
     }
     if (!provider.fetchExpiration) throw new Error('Provider misconfigured (lazy without fetchExpiration).');
     // Serve a lazy expiration from the persistent cache when available.
     const key = lazyKey(provider.id, symbol, expiration);
-    const hit = cacheGet<OptionQuote[]>(key);
+    const hit = await cacheGet<OptionQuote[]>(key);
     if (hit) {
         dbg('cache hit (lazy)', key);
         // Re-enrich legacy cache entries that predate client-side BS/Black-76.
         if (hit.some((q) => hasHigherOrderGreeks(q) || q.greeksSource === 'black-scholes' || q.greeksSource === 'black-76')) return hit;
-        const meta = cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
+        const meta = await cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
         const enriched = enrichQuotesWithModelGreeks(hit, meta?.underlyingPrice ?? null, symbol, vixFuturesPricing);
-        if (enriched !== hit) cacheSet(key, enriched);
+        if (enriched !== hit) await cacheSet(key, enriched);
         return enriched;
     }
     const quotes = await provider.fetchExpiration(symbol, expiration, ctx);
-    const meta = cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
+    const meta = await cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
     const enriched = enrichQuotesWithModelGreeks(quotes, meta?.underlyingPrice ?? null, symbol, vixFuturesPricing);
-    cacheSet(key, enriched);
+    await cacheSet(key, enriched);
     return enriched;
 }
