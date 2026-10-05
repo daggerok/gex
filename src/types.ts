@@ -279,7 +279,29 @@ export interface GexPoint {
 /** Key levels derived from a chain slice (output of computeGexLevels). */
 export interface GexLevels {
     spot: number;
+    /**
+     * The last net-GEX zero-crossing overall (ascending by strike) - whichever
+     * of `gammaFlipPos` / `gammaFlipNeg` has the higher (later) strike, or the
+     * sole non-null one if only one direction crosses anywhere in the chain.
+     * Kept as a plain convenience field so existing consumers (src/views/
+     * GexView.tsx) keep compiling and working unchanged. See src/gex.ts's
+     * findGammaFlip/findGammaFlipCrossings doc comments for the full rule.
+     */
     gammaFlip: number | null;
+    /**
+     * Last negative -> positive netGex transition (ascending by strike).
+     * Null if the profile never crosses in that direction. A follow-up UI
+     * change will show this as "Gamma Flip +" alongside gammaFlipNeg when
+     * both are non-null.
+     */
+    gammaFlipPos: number | null;
+    /**
+     * Last positive -> negative netGex transition (ascending by strike).
+     * Null if the profile never crosses in that direction. A follow-up UI
+     * change will show this as "Gamma Flip -" alongside gammaFlipPos when
+     * both are non-null.
+     */
+    gammaFlipNeg: number | null;
     callWall: number | null;
     putWall: number | null;
     /** "Resistance 2" - null if none qualifies. */
