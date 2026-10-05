@@ -72,6 +72,19 @@ const LEVEL_CHART_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' |
     maxPain: 'gex.chart.maxPain',
 };
 
+/** i18n tooltip key (Part 4) for every Key Levels panel entry - plain
+ *  "gammaFlip" generic tooltip covers the single-entry case; the dual-entry
+ *  case uses the directional tooltips instead (see `levelTooltip` below). */
+const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
+    callWall: 'gex.level.tooltip.callWall',
+    callWall2: 'gex.level.tooltip.resistance2',
+    gammaFlipPos: 'gex.level.tooltip.gammaFlipPos',
+    gammaFlipNeg: 'gex.level.tooltip.gammaFlipNeg',
+    putWall: 'gex.level.tooltip.putWall',
+    putWall2: 'gex.level.tooltip.support2',
+    maxPain: 'gex.level.tooltip.maxPain',
+};
+
 export interface GexViewProps {
     settings: Settings;
     provider: DataProvider;
@@ -362,6 +375,13 @@ export const GexView: React.FC<GexViewProps> = ({
         }
         return tr(LEVEL_CHART_LABEL_KEY[key]);
     };
+    /** Part 4 hover-tooltip text for a Key Levels panel entry - the combined
+     *  single-entry case gets the direction-agnostic explanation, the
+     *  two-entry case gets each direction's own. */
+    const levelTooltip = (key: ToggleableLevelKey): string => {
+        if ((key === 'gammaFlipPos' || key === 'gammaFlipNeg') && !bothGammaFlip) return tr('gex.level.tooltip.gammaFlip');
+        return tr(LEVEL_TOOLTIP_KEY[key]);
+    };
 
     // ---- Zoom (section 8.1 part 2) ------------------------------------------
     // recharts 3.9 has no built-in rectangular zoom, so horizontal zoom
@@ -535,7 +555,20 @@ export const GexView: React.FC<GexViewProps> = ({
                 flex-wrap default `stretch`) is load-bearing: it keeps each
                 panel's own height independent of its sibling, so neither
                 panel's internal `overflow-x-auto` button row is forced to
-                match the other's height. ---- */}
+                match the other's height. Metrics stays left (plain source
+                order, no extra class); Key Levels is pushed to the right via
+                `ml-auto` on ITS OWN element (not `justify-between` on this
+                row) - `ml-auto` consumes all free space to its left on
+                whichever line it ends up sharing, so Metrics/Key Levels still
+                read left/right whenever both fit on one line, and the
+                symbol/spot info block (last in source order, no special
+                positioning) simply trails after Key Levels on that same line
+                - `ml-auto` only pulls its own element rightward, so later
+                siblings with no margin of their own just continue normally
+                right after it. On a narrower viewport where a panel wraps
+                onto its own line, `ml-auto` right-aligns that panel alone on
+                its line (harmless - still no overflow, just an alignment
+                detail on an otherwise-empty line). ---- */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
                 <div className={box + ' grow shrink basis-[460px] min-w-[260px] max-w-[670px]'} role="group" aria-label={tr('gex.metric.label')}>
                     <span className="text-xs text-slate-400">{tr('gex.metric.label')}</span>
@@ -551,6 +584,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         // chart is never empty.
                                         onClick={() => setMetrics(on ? (metrics.length > 1 ? metrics.filter((x) => x !== m) : metrics) : [...metrics, m])}
                                         aria-pressed={on}
+                                        title={tr('gex.metric.tooltip.' + m)}
                                         className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? ax.chipActive : ax.chipIdle)}
                                     >
                                         {tr('gex.metric.' + m)}
@@ -613,7 +647,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     for every level regardless of this panel's state. A
                     flex-wrap sibling of the Metrics panel above (see the
                     row-level comment) rather than its own separate row. ---- */}
-                <div className={box + ' grow shrink basis-[600px] min-w-[300px] max-w-[860px]'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
+                <div className={box + ' grow shrink basis-[600px] min-w-[300px] max-w-[860px] ml-auto'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
                     <span className="text-xs text-slate-400">{tr('gex.sidebar.keyLevels')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
                         {levelPanelKeys.map((key) => {
@@ -625,6 +659,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         type="button"
                                         onClick={() => setSelectedLevels(on ? selectedLevels.filter((x) => x !== key) : [...selectedLevels, key])}
                                         aria-pressed={on}
+                                        title={levelTooltip(key)}
                                         className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? ax.chipActive : ax.chipIdle)}
                                     >
                                         {label}

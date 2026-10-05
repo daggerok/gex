@@ -266,6 +266,24 @@ export const translations: Record<Language, Record<string, string>> = {
         'gex.metric.colorNetGexNeg': 'Net GEX (−) color',
         'gex.level.reset': 'Reset',
         'gex.level.color': '{{level}} color',
+
+        // Hover tooltips (native title attr) for the Metrics panel buttons and
+        // the Key Levels panel entries - plain-language explanations for a
+        // non-programmer trader, not implementation detail.
+        'gex.metric.tooltip.netGex': 'Net dollar gamma exposure at this strike: calls minus puts, where each side\'s GEX = gamma x open interest x 100 x spot^2 x 0.01. Calls add positively, puts subtract; the result estimates how many dollars of hedging flow dealers would need to transact here for every 1% move in the underlying.',
+        'gex.metric.tooltip.callOi': 'Total open interest for calls at this strike - the open-interest field from every call contract at that strike, summed across the selected expirations. Counts outstanding contracts, not shares or dollars.',
+        'gex.metric.tooltip.putOi': 'Total open interest for puts at this strike - the open-interest field from every put contract at that strike, summed across the selected expirations. Counts outstanding contracts, not shares or dollars.',
+        'gex.metric.tooltip.callVolume': 'Total contracts traded today for calls at this strike - the volume field from every call contract at that strike, summed across the selected expirations.',
+        'gex.metric.tooltip.putVolume': 'Total contracts traded today for puts at this strike - the volume field from every put contract at that strike, summed across the selected expirations.',
+        'gex.level.tooltip.callWall': 'The strike with the single largest positive Net GEX among call-dominated strikes (netGex > 0). Dealers hedging a large long-gamma position here tend to buy as price falls and sell as it rises, which can act as resistance.',
+        'gex.level.tooltip.putWall': 'The strike with the largest-magnitude negative Net GEX among put-dominated strikes (netGex < 0). Dealer hedging here tends to work the opposite way, which can act as support.',
+        'gex.level.tooltip.resistance2': 'The next call wall at least 2% away (by strike) from the Call Wall. This 2%-distance "second wall" rule is this app\'s own heuristic, not an industry standard - treat it as a rough secondary marker, not a precise level.',
+        'gex.level.tooltip.support2': 'The next put wall at least 2% away (by strike) from the Put Wall. This 2%-distance "second wall" rule is this app\'s own heuristic, not an industry standard - treat it as a rough secondary marker, not a precise level.',
+        'gex.level.tooltip.gammaFlip': 'The strike where the Net GEX profile itself flips sign - the real bar right where the chart\'s own colors turn from red to green (or back). Above a positive-gamma flip, dealer hedging tends to dampen price moves; below it, hedging tends to reinforce them.',
+        'gex.level.tooltip.gammaFlipPos': 'The strike of the LAST negative-to-positive Net GEX crossing in the profile - the green bar right after the chart\'s colors last flip from red to green, reading left to right. Above it, dealer hedging flow tends to dampen price moves.',
+        'gex.level.tooltip.gammaFlipNeg': 'The strike of the LAST positive-to-negative Net GEX crossing in the profile - the red bar right after the chart\'s colors last flip from green to red, reading left to right. Below it, dealer hedging flow tends to reinforce price moves.',
+        'gex.level.tooltip.maxPain': 'The strike where option sellers\' total payout to holders would be smallest if the underlying settled there at expiration. For each candidate strike S: call payout = OI x max(0, price - S), put payout = OI x max(0, S - price), summed across all contracts; Max Pain is the S that minimizes this sum.',
+
         'gex.empty.noData': 'Enter a ticker and press Expirations to analyze its gamma exposure.',
         'gex.empty.noSelection': 'Select at least one expiration.',
         'gex.empty.noGamma': 'No gamma data for the selected expirations (this provider may not supply greeks or IV).',
@@ -541,6 +559,21 @@ export const translations: Record<Language, Record<string, string>> = {
         'gex.metric.colorNetGexNeg': 'Цвет Нетто GEX (−)',
         'gex.level.reset': 'Сбросить',
         'gex.level.color': 'Цвет: {{level}}',
+
+        'gex.metric.tooltip.netGex': 'Нетто-долларовая гамма-экспозиция на этом страйке: коллы минус путы, где GEX каждой стороны = гамма x открытый интерес x 100 x спот^2 x 0.01. Коллы добавляют с плюсом, путы — с минусом; результат показывает, сколько долларов хеджирующего потока потребуется дилерам на каждый 1% движения базового актива.',
+        'gex.metric.tooltip.callOi': 'Суммарный открытый интерес коллов на этом страйке — поле открытого интереса каждого контракта-колла на этом страйке, просуммированное по выбранным экспирациям. Считает контракты, а не акции или доллары.',
+        'gex.metric.tooltip.putOi': 'Суммарный открытый интерес путов на этом страйке — поле открытого интереса каждого контракта-пута на этом страйке, просуммированное по выбранным экспирациям. Считает контракты, а не акции или доллары.',
+        'gex.metric.tooltip.callVolume': 'Суммарный объём торгов коллами на этом страйке за сегодня — поле объёма каждого контракта-колла на этом страйке, просуммированное по выбранным экспирациям.',
+        'gex.metric.tooltip.putVolume': 'Суммарный объём торгов путами на этом страйке за сегодня — поле объёма каждого контракта-пута на этом страйке, просуммированное по выбранным экспирациям.',
+        'gex.level.tooltip.callWall': 'Страйк с максимальным положительным Net GEX среди страйков с преобладанием коллов (netGex > 0). Дилеры, хеджирующие здесь крупную длинную гамма-позицию, обычно покупают при падении цены и продают при росте — это может работать как сопротивление.',
+        'gex.level.tooltip.putWall': 'Страйк с максимальным по модулю отрицательным Net GEX среди страйков с преобладанием путов (netGex < 0). Хеджирование дилеров здесь работает в обратную сторону — это может работать как поддержка.',
+        'gex.level.tooltip.resistance2': 'Следующая стена коллов минимум на 2% дальше (по страйку) от Стены коллов. Это правило «второй стены» на расстоянии 2% — собственная эвристика приложения, а не отраслевой стандарт; воспринимай её как грубый вторичный ориентир, а не точный уровень.',
+        'gex.level.tooltip.support2': 'Следующая стена путов минимум на 2% дальше (по страйку) от Стены путов. Это правило «второй стены» на расстоянии 2% — собственная эвристика приложения, а не отраслевой стандарт; воспринимай её как грубый вторичный ориентир, а не точный уровень.',
+        'gex.level.tooltip.gammaFlip': 'Страйк, на котором сам профиль Net GEX меняет знак — реальный бар именно там, где цвета на графике меняются с красного на зелёный (или обратно). Выше положительного гамма-флипа хеджирующий поток дилеров склонен сглаживать движение цены; ниже — усиливать его.',
+        'gex.level.tooltip.gammaFlipPos': 'Страйк ПОСЛЕДНЕГО перехода Net GEX из отрицательного в положительное в профиле — зелёный бар сразу после того, как цвета на графике в последний раз меняются с красного на зелёный слева направо. Выше него хеджирующий поток дилеров склонен сглаживать движение цены.',
+        'gex.level.tooltip.gammaFlipNeg': 'Страйк ПОСЛЕДНЕГО перехода Net GEX из положительного в отрицательное в профиле — красный бар сразу после того, как цвета на графике в последний раз меняются с зелёного на красный слева направо. Ниже него хеджирующий поток дилеров склонен усиливать движение цены.',
+        'gex.level.tooltip.maxPain': 'Страйк, при котором суммарная выплата продавцов опционов держателям была бы минимальной, если бы базовый актив экспирировался на этом уровне. Для каждого страйка-кандидата S: выплата по коллам = OI x max(0, цена - S), выплата по путам = OI x max(0, S - цена), сумма по всем контрактам; Max Pain — это S, минимизирующий эту сумму.',
+
         'gex.empty.noData': 'Введи тикер и нажми «Экспирации», чтобы проанализировать гамма-экспозицию.',
         'gex.empty.noSelection': 'Выбери хотя бы одну экспирацию.',
         'gex.empty.noGamma': 'Нет данных по гамме для выбранных экспираций (провайдер может не отдавать греки или IV).',
