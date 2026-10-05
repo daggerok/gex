@@ -837,20 +837,40 @@ export const GexView: React.FC<GexViewProps> = ({
                 the line - so a wide viewport still shows every button
                 unscrolled, a mid viewport may lean on each panel's own
                 `overflow-x-auto` button row before it wraps, and `min-w-`
-                is just the absolute floor. `items-center` (not the
-                flex-wrap default `stretch`) is load-bearing: it keeps each
-                panel's own height independent of its sibling, so neither
-                panel's internal `overflow-x-auto` button row is forced to
-                match the other's height. Metrics stays left (plain source
-                order, no extra class); Key Levels is pushed to the right via
-                `ml-auto` on ITS OWN element (not `justify-between` on this
-                row) - `ml-auto` consumes all free space to its left on
-                whichever line it ends up sharing, so Metrics/Key Levels still
-                read left/right whenever both fit on one line. On a narrower
-                viewport where a panel wraps onto its own line, `ml-auto`
-                right-aligns that panel alone on its line (harmless - still
-                no overflow, just an alignment detail on an otherwise-empty
-                line). The symbol/spot/"delayed" info block that used to
+                is just the absolute floor. Metrics' own cap is `max-w-[50%]`
+                (relative to this row, NOT a fixed px like Key Levels' own
+                `max-w-[860px]`) - the user wants Metrics to never eat more
+                than half the shared row, so Key Levels always has at least
+                the other half before it needs to wrap or lean on its own
+                `overflow-x-auto`. `items-center` (not the flex-wrap default
+                `stretch`) is load-bearing: it keeps each panel's own height
+                independent of its sibling, so neither panel's internal
+                `overflow-x-auto` button row is forced to match the other's
+                height. Metrics stays left (plain source order, no extra
+                class); Key Levels is pushed to the right via `ml-auto` on
+                ITS OWN element (not `justify-between` on this row) -
+                `ml-auto` consumes all free space to its left on whichever
+                line it ends up sharing, so Metrics/Key Levels still read
+                left/right whenever both fit on one line WITH slack left
+                over. Verified live (Playwright, several widths): this is
+                NOT an "always push to the far right regardless" gap - once
+                Metrics is capped relatively instead of by a fixed px value,
+                `ml-auto` correctly collapses to flexbox's normal free-space
+                behavior - at a width where Metrics+Key Levels' natural grown
+                sizes already fill the row (e.g. 1440px wide: Metrics 622px/
+                43%, Key Levels 762px), the measured gap between them is
+                exactly 8px (this row's own `gap-2`, i.e. ml-auto's own
+                contribution is 0px) - no artificial push-right; at a wider
+                width with genuine slack (1920px: Metrics 936px/49%, Key
+                Levels at its own 860px cap), the measured gap is 76px, i.e.
+                Key Levels visibly sits flush at the row's right edge. On a
+                narrower viewport where a panel wraps onto its own line,
+                `ml-auto` right-aligns that panel alone on its line (harmless
+                - still no overflow, just an alignment detail on an
+                otherwise-empty line); Key Levels' own `overflow-x-auto` chip
+                row remains the final fallback once even its own line is too
+                narrow for every chip (confirmed down to 390px). The symbol/
+                spot/"delayed" info block that used to
                 trail after Key Levels here (last in source order) was
                 removed: the user found it redundant with TopBar's own ticker
                 input (always visible, every tab) and `spot` is now just
@@ -861,7 +881,17 @@ export const GexView: React.FC<GexViewProps> = ({
                 specifically has no replacement elsewhere on THIS tab - see
                 the PR description. ---- */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
-                <div className={box + ' grow shrink basis-[460px] min-w-[260px] max-w-[670px]'} role="group" aria-label={tr('gex.metric.label')}>
+                {/* max-w-[50%] (relative to this flex row, not a fixed px
+                    cap like Key Levels' own max-w-[860px] below) - the user
+                    wants Metrics to never eat more than half the shared row,
+                    so Key Levels always has at least the other half to work
+                    with before it needs to wrap or fall back to its own
+                    internal overflow-x-auto scroll. A flex item's
+                    percentage max-width resolves against its flex
+                    container's own (definite) width, not the viewport, so
+                    this stays correct regardless of how wide the page's
+                    own gutter/max-w-none ends up being. */}
+                <div className={box + ' grow shrink basis-[460px] min-w-[260px] max-w-[50%]'} role="group" aria-label={tr('gex.metric.label')}>
                     <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.metric.label')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
                         {GEX_METRICS.map((m) => {
