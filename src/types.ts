@@ -279,7 +279,33 @@ export interface GexPoint {
 /** Key levels derived from a chain slice (output of computeGexLevels). */
 export interface GexLevels {
     spot: number;
+    /**
+     * The legacy single gamma-flip value, collapsed from `gammaFlipPos` /
+     * `gammaFlipNeg` by the sign of `totalNetGex`: positive total picks
+     * `gammaFlipPos`, non-positive picks `gammaFlipNeg` (either may be null).
+     * Kept as a plain convenience field so existing consumers (src/views/
+     * GexView.tsx) keep compiling and working unchanged. This is a TEMPORARY
+     * PLACEHOLDER for the rare case where both directional fields are
+     * non-null (a genuine two-crossing chain) - a separate, already-planned
+     * follow-up PR replaces GexView.tsx's consumption of this field with the
+     * `gammaFlipPos`/`gammaFlipNeg` pair directly. See src/gex.ts's
+     * findGammaFlip/findGammaFlipCrossings doc comments for the full rule.
+     */
     gammaFlip: number | null;
+    /**
+     * Last negative -> positive netGex transition (ascending by strike).
+     * Null if the profile never crosses in that direction. A follow-up UI
+     * change will show this as "Gamma Flip +" alongside gammaFlipNeg when
+     * both are non-null.
+     */
+    gammaFlipPos: number | null;
+    /**
+     * Last positive -> negative netGex transition (ascending by strike).
+     * Null if the profile never crosses in that direction. A follow-up UI
+     * change will show this as "Gamma Flip -" alongside gammaFlipPos when
+     * both are non-null.
+     */
+    gammaFlipNeg: number | null;
     callWall: number | null;
     putWall: number | null;
     /** "Resistance 2" - null if none qualifies. */
