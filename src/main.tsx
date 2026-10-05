@@ -1070,17 +1070,30 @@ const App: React.FC = () => {
     // Bulk providers (CACHE/CBOE/NASDAQ) already hold EVERY expiration in the
     // in-memory bulk cache once "Expirations" succeeds, so the GEX tab can
     // offer all of them. Lazy YAHOO only has what Desk loaded into expData.
-    const gexQuotesByExp = useMemo<Record<string, OptionQuote[]>>(() => {
-        if (!meta) return {};
-        if (provider.mode === 'bulk') {
-            const bulk = getBulk(provider.id, meta.symbol, settings.vixFuturesPricing);
-            if (bulk) {
-                const byExp: Record<string, OptionQuote[]> = {};
-                for (const q of bulk.quotes) (byExp[q.expiration] ??= []).push(q);
-                return byExp;
+    // getBulk is now async (IndexedDB-backed persistent cache), so this can no
+    // longer be a plain useMemo — it's an effect + state, same
+    // cancelled-flag pattern used for ticker suggestions above. In practice
+    // the bulk entry is already sitting in the synchronous in-memory
+    // bulkCache (warmed by loadMeta's putBulk call before meta is ever set
+    // here), so this resolves within a tick with no visible loading state.
+    const [gexQuotesByExp, setGexQuotesByExp] = useState<Record<string, OptionQuote[]>>({});
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            if (!meta) { if (!cancelled) setGexQuotesByExp({}); return; }
+            if (provider.mode === 'bulk') {
+                const bulk = await getBulk(provider.id, meta.symbol, settings.vixFuturesPricing);
+                if (cancelled) return;
+                if (bulk) {
+                    const byExp: Record<string, OptionQuote[]> = {};
+                    for (const q of bulk.quotes) (byExp[q.expiration] ??= []).push(q);
+                    setGexQuotesByExp(byExp);
+                    return;
+                }
             }
-        }
-        return expData;
+            if (!cancelled) setGexQuotesByExp(expData);
+        })();
+        return () => { cancelled = true; };
     }, [meta, provider, expData, settings.vixFuturesPricing]);
     // The GEX tab reads/writes the SAME `selectedExps` Desk uses (user request:
     // keep the expiration selection in sync between the Desk and GEX tabs,
@@ -1127,9 +1140,9 @@ const App: React.FC = () => {
                 onChange={patchSettings}
                 onSetToken={setToken}
                 onSetSecret={setSecret}
-                onClearData={() => { clearCacheData(); resetView(); }}
+                onClearData={async () => { await clearCacheData(); resetView(); }}
                 onClearSettings={() => { clearSettingsStore(); setSettings(freshDefaultSettings()); resetView(); }}
-                onClearAll={() => { clearAll(); setSettings(freshDefaultSettings()); resetView(); }}
+                onClearAll={async () => { await clearAll(); setSettings(freshDefaultSettings()); resetView(); }}
                 tickerInput={tickerInput}
                 onTickerInput={setTickerInput}
                 onSearch={() => getDates(tickerInput)}
