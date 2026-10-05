@@ -921,44 +921,44 @@ export const GexView: React.FC<GexViewProps> = ({
                 ~660px/~850px with all 5/6 buttons showing - and would only
                 let two panels share a row above ~1850px) gives the
                 WRAP DECISION a smaller "comfortable" width to pack against,
-                then grows each panel back out (capped by `max-w-[…]`, each
-                panel's own full content width) to fill any extra room on
+                then grows each panel back out to fill any extra room on
                 the line - so a wide viewport still shows every button
                 unscrolled, a mid viewport may lean on each panel's own
                 `overflow-x-auto` button row before it wraps, and `min-w-`
                 is just the absolute floor. Metrics' own cap is `max-w-[50%]`
-                (relative to this row, NOT a fixed px like Key Levels' own
-                `max-w-[860px]`) - the user wants Metrics to never eat more
-                than half the shared row, so Key Levels always has at least
-                the other half before it needs to wrap or lean on its own
-                `overflow-x-auto`. `items-center` (not the flex-wrap default
-                `stretch`) is load-bearing: it keeps each panel's own height
-                independent of its sibling, so neither panel's internal
-                `overflow-x-auto` button row is forced to match the other's
-                height. Metrics stays left (plain source order, no extra
-                class); Key Levels is pushed to the right via `ml-auto` on
-                ITS OWN element (not `justify-between` on this row) -
-                `ml-auto` consumes all free space to its left on whichever
-                line it ends up sharing, so Metrics/Key Levels still read
-                left/right whenever both fit on one line WITH slack left
-                over. Verified live (Playwright, several widths): this is
-                NOT an "always push to the far right regardless" gap - once
-                Metrics is capped relatively instead of by a fixed px value,
-                `ml-auto` correctly collapses to flexbox's normal free-space
-                behavior - at a width where Metrics+Key Levels' natural grown
-                sizes already fill the row (e.g. 1440px wide: Metrics 622px/
-                43%, Key Levels 762px), the measured gap between them is
-                exactly 8px (this row's own `gap-2`, i.e. ml-auto's own
-                contribution is 0px) - no artificial push-right; at a wider
-                width with genuine slack (1920px: Metrics 936px/49%, Key
-                Levels at its own 860px cap), the measured gap is 76px, i.e.
-                Key Levels visibly sits flush at the row's right edge. On a
-                narrower viewport where a panel wraps onto its own line,
-                `ml-auto` right-aligns that panel alone on its line (harmless
-                - still no overflow, just an alignment detail on an
-                otherwise-empty line); Key Levels' own `overflow-x-auto` chip
-                row remains the final fallback once even its own line is too
-                narrow for every chip (confirmed down to 390px). The symbol/
+                (relative to this row) - the user wants Metrics to never eat
+                more than half the shared row, so Key Levels always has at
+                least the other half before it needs to wrap or lean on its
+                own `overflow-x-auto`. `items-center` (not the flex-wrap
+                default `stretch`) is load-bearing: it keeps each panel's own
+                height independent of its sibling, so neither panel's
+                internal `overflow-x-auto` button row is forced to match the
+                other's height. Metrics stays left (plain source order, no
+                extra class) and Key Levels is just a normal flex sibling
+                right after it, in plain source order too - NOT pushed to the
+                row's right edge.
+
+                An earlier revision had Key Levels carry `ml-auto` (push all
+                free space to its own left) PLUS a fixed `max-w-[860px]` cap.
+                That combination was a bug, not a feature: whenever Metrics
+                used less than half the row (e.g. only 1-2 metrics toggled
+                on), `ml-auto` shoved Key Levels flush against the row's
+                right edge while its 860px cap still capped how wide it was
+                allowed to grow - so the leftover space between Metrics'
+                right edge and Key Levels' now-pushed-right left edge became
+                a dead, empty gap, and Key Levels' own chip row still had to
+                fall back on its internal `overflow-x-auto` scroll even
+                though there was clearly more total row width available than
+                860px. Removing `ml-auto` (Key Levels just sits where normal
+                flex flow puts it, right after Metrics, separated only by
+                this row's own `gap-2`) and dropping the fixed cap (Key
+                Levels' `grow` now consumes whatever width Metrics' own
+                `max-w-[50%]`-capped, shrink-to-fit sizing leaves behind)
+                fixes both halves at once: no artificial gap, and Key Levels
+                gets to show more of its chips unscrolled on a wide row,
+                falling back to its own `overflow-x-auto` only once the
+                genuinely-remaining space (not an arbitrary 860px) truly
+                isn't enough. The symbol/
                 spot/"delayed" info block that used to
                 trail after Key Levels here (last in source order) was
                 removed: the user found it redundant with TopBar's own ticker
@@ -970,8 +970,8 @@ export const GexView: React.FC<GexViewProps> = ({
                 specifically has no replacement elsewhere on THIS tab - see
                 the PR description. ---- */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
-                {/* max-w-[50%] (relative to this flex row, not a fixed px
-                    cap like Key Levels' own max-w-[860px] below) is a
+                {/* max-w-[50%] (relative to this flex row - Key Levels below
+                    has no fixed-px cap of its own, see its own comment) is a
                     CEILING, not a target: no `grow`, so this panel sizes to
                     its own content (shrink-to-fit, `basis-auto`) and ends
                     right after its last chip/Reset button, only hitting the
@@ -984,7 +984,15 @@ export const GexView: React.FC<GexViewProps> = ({
                     `grow`, which stretched the panel to the 50% cap
                     regardless of whether its own buttons needed that much
                     space, leaving a dead gap inside its own border while
-                    squeezing Key Levels into whatever was left - removed. */}
+                    squeezing Key Levels into whatever was left - removed.
+
+                    Key Levels (below) has NO fixed `max-w-[…]` cap of its
+                    own anymore, and no `ml-auto` either - it just `grow`s to
+                    fill whatever width Metrics doesn't use, sitting flush
+                    against it with only this row's plain `gap-2` in
+                    between. See Key Levels' own comment below for why the
+                    earlier `ml-auto` + `max-w-[860px]` combination was a
+                    bug, not a feature. */}
                 <div className={box + ' shrink basis-auto min-w-[260px] max-w-[50%]'} role="group" aria-label={tr('gex.metric.label')}>
                     <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.metric.label')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
@@ -1058,8 +1066,25 @@ export const GexView: React.FC<GexViewProps> = ({
                     - the sidebar's Key Levels card (below) keeps showing text
                     for every level regardless of this panel's state. A
                     flex-wrap sibling of the Metrics panel above (see the
-                    row-level comment) rather than its own separate row. ---- */}
-                <div className={box + ' grow shrink basis-[600px] min-w-[300px] max-w-[860px] ml-auto'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
+                    row-level comment) rather than its own separate row.
+
+                    No `ml-auto` and no fixed `max-w-[…]` (see the row-level
+                    comment above for why the earlier ml-auto+860px-cap
+                    combination was a bug): this panel is a plain in-flow
+                    sibling, right after Metrics, and `grow` lets it consume
+                    whatever width Metrics' own `max-w-[50%]`-capped sizing
+                    leaves behind in the row - so it naturally gets more room
+                    to show chips unscrolled the fewer metrics are toggled
+                    on, instead of being stuck behind a fixed px ceiling.
+                    `basis-[600px]` is only the WRAP-DECISION width (same
+                    role as Metrics' `basis-auto` - see the row-level
+                    comment); once on a line with room to spare it grows past
+                    that freely. Its own `overflow-x-auto` chip row below
+                    remains the final fallback once even the full remaining
+                    row width genuinely isn't enough for every chip (e.g. a
+                    narrow viewport, or Metrics itself using most of the
+                    row). ---- */}
+                <div className={box + ' grow shrink basis-[600px] min-w-[300px]'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
                     {/* whitespace-nowrap: "Key Levels" is two words and was
                         wrapping onto "Key"/"Levels" lines in tighter layouts
                         - force it onto one line regardless of how tight the
