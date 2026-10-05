@@ -26,6 +26,34 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.52 - Persist UI state across reloads (user request: "if I refreshed a
+ *          page or opened after close, is it possible to keep this"):
+ *          - Settings gains three fields: `activeTab` (AppTab), `selectedExps`
+ *            (string[]), `gexMetrics` (GexMetric[]) — see types.ts/
+ *            settings-store.ts. `lastTicker` already existed but, until now,
+ *            was WRITE-ONLY: nothing on boot ever read it back.
+ *          - REVERSES v0.9.48's deliberate choice to keep `activeTab`
+ *            transient ("every page load starts on Desk"): the user now
+ *            explicitly wants the opposite. `selectedExps`/`gexMetrics` had
+ *            no persistence before at all.
+ *          - BOOT SEQUENCE (new `hasPersistedState` + restoreSession, both
+ *            near the top of App): if a settings record already existed at
+ *            mount (the ONLY reliable "is there something to restore" check —
+ *            `lastTicker`'s default 'AAPL' is indistinguishable in value from
+ *            a real prior load of AAPL), replay the exact same `getDates()`
+ *            fetch path a manual search uses for the persisted ticker, then
+ *            intersect the persisted `selectedExps` against the freshly
+ *            fetched expirations (a stale selection may name dates that no
+ *            longer exist) — falling back to getDates' own nearest-expiration
+ *            default when the intersection is empty. `activeTab`/`gexMetrics`
+ *            restore immediately via lazy useState initializers (no fetch
+ *            needed) and, since their defaults now equal the old hardcoded
+ *            constants, a brand-new user's first load is unchanged.
+ *          - FAILS SAFELY: any restore-fetch failure is handled entirely by
+ *            getDates' existing try/catch (same as a failed manual search) —
+ *            no new error path, no stuck spinner.
+ *          - Fully automatic/silent by design (no "resume session?" prompt) —
+ *            matches the user's own framing of the request.
  * v0.9.51 - Share the expiration panel + Load button across Desk and GEX:
  *          - PROBLEM: since v0.9.49/50 unified `selectedExps` between Desk and
  *            GEX, a user could pick/deselect expirations from the GEX tab (its
@@ -725,7 +753,7 @@ import { TopBar } from './components/TopBar';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
 import { getBulk, loadExpiration, loadMeta } from './providers/loader';
-import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, loadSettings, saveSettings } from './settings-store';
+import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
 import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
 import { useGexLevels } from './use-gex-levels';
@@ -746,6 +774,18 @@ const ChartView = lazy(() => import('./views/ChartView').then((m) => ({ default:
 
 const App: React.FC = () => {
     const { t: tr, lang } = useI18n();
+    // Captured once, synchronously, in the same render as the first
+    // loadSettings() call below — BEFORE anything in this session can write
+    // a fresh settings record. This is the boot-time "is there something to
+    // restore" check the restore effect (further down) gates its one-time
+    // ticker/expirations fetch on: a brand-new user has no record at all, so
+    // this is false and the restore effect does nothing, leaving tickerInput/
+    // activeTab/gexMetrics exactly at DEFAULT_SETTINGS (identical to today's
+    // first load). `lastTicker`'s VALUE can't be used for this check instead
+    // — a returning user who genuinely loaded AAPL looks identical to a
+    // brand-new user's default 'AAPL' — only "was a record ever written" is
+    // a reliable signal.
+    const [hasPersistedState] = useState<boolean>(() => hasPersistedSettings());
     // ---- Settings state (persisted) ----------------------------------------
     const [settings, setSettings] = useState<Settings>(() => loadSettings());
     const patchSettings = useCallback((patch: Partial<Settings>) => {
@@ -777,9 +817,18 @@ const App: React.FC = () => {
     // compute itself.
     const ax = accentOf(settings.colorTheme);
 
-    // Active content tab below TopBar. Transient per session (not persisted
-    // in Settings): every page load starts on Desk, exactly like pre-tabs.
-    const [activeTab, setActiveTab] = useState<AppTab>('desk');
+    // Active content tab below TopBar. Persisted in Settings (reversing an
+    // earlier phase's deliberate choice to keep this transient — the user
+    // now explicitly wants a reload to land back where they were). Lazy-init
+    // reads settings.activeTab directly: for a brand-new user that's just
+    // DEFAULT_SETTINGS.activeTab ('desk'), identical to the old hardcoded
+    // default; for a returning user it's whatever tab they were last on.
+    // changeTab (below, near the render) is what actually persists a change.
+    const [activeTab, setActiveTab] = useState<AppTab>(() => settings.activeTab);
+    const changeTab = useCallback((tab: AppTab) => {
+        setActiveTab(tab);
+        patchSettings({ activeTab: tab });
+    }, [patchSettings]);
 
     // Proxy health probe (LIVE providers only; CACHE mutes indicators).
     const [proxyOk, setProxyOk] = useState<boolean | null>(null);
@@ -901,15 +950,22 @@ const App: React.FC = () => {
      * STEP 1 — "Expirations": load ONLY expirations (+ spot). No chain yet.
      * `credsOverride` lets the onboarding pass just-entered key/secret without
      * waiting for the async settings state to commit (avoids a stale-closure race).
+     * Returns the fetched ChainMeta on success, or null on any failure/abort/
+     * empty-ticker — callers that only fire-and-forget (the Search button,
+     * onboarding preview) already ignored the old implicit `undefined`
+     * return, so this is purely additive. The restore effect below is the
+     * first caller that actually uses the return value: it needs to know
+     * whether the SAME fetch path a manual search uses succeeded before it
+     * can intersect the persisted expiration selection against real data.
      */
-    const getDates = useCallback(async (symbol: string, credsOverride?: { token?: string; secret?: string }) => {
+    const getDates = useCallback(async (symbol: string, credsOverride?: { token?: string; secret?: string }): Promise<ChainMeta | null> => {
         const sym = symbol.trim().toUpperCase();
         setError('');
         setNotice('');
         if (!sym) {
             setError(tr('error.enterTicker'));
             setErrorNonce((n) => n + 1);
-            return;
+            return null;
         }
         const ac = new AbortController();
         metaAbort.current = ac;
@@ -922,23 +978,78 @@ const App: React.FC = () => {
             if (credsOverride?.token != null) ctx.token = credsOverride.token;
             if (credsOverride?.secret != null) ctx.secret = credsOverride.secret;
             const m = await loadMeta(provider, sym, ctx, settings.vixFuturesPricing);
-            if (ac.signal.aborted) return;
+            if (ac.signal.aborted) return null;
             if (m.expirations.length === 0) throw new Error(tr('error.noContracts', { symbol: sym }));
             setMeta(m);
             // Pre-select the nearest expiration by default (user can add more).
             setSelectedExps([m.expirations[0]]);
-            patchSettings({ lastTicker: m.symbol });
+            patchSettings({ lastTicker: m.symbol, selectedExps: [m.expirations[0]] });
             dbg('getDates ok', { expirations: m.expirations.length });
+            return m;
         } catch (e: unknown) {
-            if (isAbortError(e)) { setNotice(tr('notice.cancelled')); return; }
+            if (isAbortError(e)) { setNotice(tr('notice.cancelled')); return null; }
             setMeta(null);
             setError(friendlyError(e, provider, lang));
             setErrorNonce((n) => n + 1);
             dbg('getDates error', e);
+            return null;
         } finally {
             if (metaAbort.current === ac) { setMetaLoading(false); metaAbort.current = null; }
         }
     }, [provider, settings, patchSettings]);
+
+    /**
+     * BOOT-TIME RESTORE (UI-state persistence, user request: "if I refreshed
+     * a page or opened after close, is it possible to keep this"). Runs this
+     * exact sequence, fully automatically and silently — no confirmation
+     * prompt, matching the user's framing of it as something that should
+     * "just happen":
+     *   1. activeTab/gexMetrics are already restored by this point (their
+     *      useState lazy initializers above read straight from `settings`).
+     *   2. If `hasPersistedState` is true (a settings record already existed
+     *      at mount — see its declaration above), replay the SAME fetch path
+     *      a manual ticker search uses (`getDates`, unchanged) for the
+     *      persisted `lastTicker`.
+     *   3. Once that resolves with real expirations, intersect the persisted
+     *      `selectedExps` against them — a stale selection may name
+     *      expirations that no longer exist for this ticker today — and
+     *      adopt the intersection ONLY if it's non-empty. An empty
+     *      intersection falls through to getDates' own default (nearest
+     *      expiration), which it already set + persisted before this effect
+     *      ever inspects the result.
+     *   4. Any failure (bad ticker, network/proxy down, revoked token, ...)
+     *      is handled entirely by getDates' own existing try/catch: meta
+     *      stays null, an error message is shown, loading never gets stuck
+     *      — i.e. the SAME safe/blank fallback a failed manual search
+     *      already produces, not a new error path invented for this feature.
+     * A brand-new user (hasPersistedState === false) skips step 2 onward
+     * entirely: tickerInput/activeTab/gexMetrics are already at
+     * DEFAULT_SETTINGS, so the first load is byte-for-byte identical to
+     * today's.
+     */
+    const restoreSession = useCallback(async () => {
+        const ticker = settings.lastTicker.trim();
+        if (!ticker) return; // defensive; DEFAULT_SETTINGS.lastTicker is never empty in practice
+        const persistedExps = settings.selectedExps;
+        const m = await getDates(ticker);
+        if (!m) return; // getDates already failed safely (error shown, meta stays null)
+        const intersected = persistedExps.filter((exp) => m.expirations.includes(exp));
+        if (intersected.length > 0) {
+            setSelectedExps(intersected);
+            patchSettings({ selectedExps: intersected });
+        }
+        // else: keep getDates' own default (nearest expiration) — already
+        // set in state and persisted inside getDates itself.
+    }, [getDates, settings.lastTicker, settings.selectedExps, patchSettings]);
+
+    useEffect(() => {
+        if (hasPersistedState) void restoreSession();
+        // Intentionally run exactly ONCE, right after mount. Not depending on
+        // `restoreSession` (which is recreated whenever settings/getDates
+        // change) is deliberate — this must never re-fire later in the
+        // session, only at boot.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     /**
      * STEP 2 — "Load": fetch ALL selected expirations (earliest→latest) and
@@ -977,14 +1088,24 @@ const App: React.FC = () => {
     }, [provider, settings, meta, selectedExps]);
 
     /** Toggle one expiration in the multi-select, then focus the Load button so
-     *  pressing Enter immediately loads (no need to click Load). */
+     *  pressing Enter immediately loads (no need to click Load). Persists the
+     *  resulting selection into Settings (selectedExps) so a reload restores it. */
     const toggleExpiration = useCallback((exp: string) => {
-        setSelectedExps((prev) =>
-            prev.includes(exp) ? prev.filter((e) => e !== exp) : [...prev, exp],
-        );
+        setSelectedExps((prev) => {
+            const next = prev.includes(exp) ? prev.filter((e) => e !== exp) : [...prev, exp];
+            patchSettings({ selectedExps: next });
+            return next;
+        });
         // Focus after the state/DOM settles.
         requestAnimationFrame(() => loadBtnRef.current?.focus());
-    }, []);
+    }, [patchSettings]);
+
+    /** Wraps the shared ExpirationChips' "All"/"None" setter so that action
+     *  also persists into Settings, same as toggleExpiration above. */
+    const setSelectedExpsAndPersist = useCallback((next: string[]) => {
+        setSelectedExps(next);
+        patchSettings({ selectedExps: next });
+    }, [patchSettings]);
 
     /** Move focus to Expirations (after ticker confirm) so Space/Enter activates it. */
     const focusGetDatesButton = useCallback(() => {
@@ -1108,7 +1229,16 @@ const App: React.FC = () => {
     // selected-but-not-yet-loaded expiration simply contributes no quotes
     // (quotesByExp[exp] ?? [] in useGexLevels); it does not error, just gives
     // an expectedly-incomplete analysis until Load is pressed.
-    const [gexMetrics, setGexMetrics] = useState<GexMetric[]>(['netGex']);
+    // Persisted in Settings (gexMetrics); lazy-init reads it directly, same
+    // reasoning as `activeTab` above — a brand-new user's settings.gexMetrics
+    // is DEFAULT_SETTINGS.gexMetrics (['netGex']), identical to the old
+    // hardcoded default. changeGexMetrics (passed to GexView below) persists
+    // every toggle.
+    const [gexMetrics, setGexMetrics] = useState<GexMetric[]>(() => settings.gexMetrics);
+    const changeGexMetrics = useCallback((metrics: GexMetric[]) => {
+        setGexMetrics(metrics);
+        patchSettings({ gexMetrics: metrics });
+    }, [patchSettings]);
     // GexLevels computed ONCE here for the GEX tab's selection and shared by
     // the GEX and Chart tabs (plan 7.7 / 8.2) - no view recomputes them.
     const gex = useGexLevels(spot, spotIsEstimated, gexQuotesByExp, selectedExps, meta?.symbol ?? '', settings.vixFuturesPricing);
@@ -1141,8 +1271,25 @@ const App: React.FC = () => {
                 onSetToken={setToken}
                 onSetSecret={setSecret}
                 onClearData={async () => { await clearCacheData(); resetView(); }}
-                onClearSettings={() => { clearSettingsStore(); setSettings(freshDefaultSettings()); resetView(); }}
-                onClearAll={async () => { await clearAll(); setSettings(freshDefaultSettings()); resetView(); }}
+                onClearSettings={() => {
+                    clearSettingsStore();
+                    const fresh = freshDefaultSettings();
+                    setSettings(fresh);
+                    // activeTab/gexMetrics are local state mirrors of Settings
+                    // (for the same reason tickerInput mirrors lastTicker) —
+                    // "resets in-memory settings to defaults" must reset these too.
+                    setActiveTab(fresh.activeTab);
+                    setGexMetrics(fresh.gexMetrics);
+                    resetView();
+                }}
+                onClearAll={async () => {
+                    await clearAll();
+                    const fresh = freshDefaultSettings();
+                    setSettings(fresh);
+                    setActiveTab(fresh.activeTab);
+                    setGexMetrics(fresh.gexMetrics);
+                    resetView();
+                }}
                 tickerInput={tickerInput}
                 onTickerInput={setTickerInput}
                 onSearch={() => getDates(tickerInput)}
@@ -1163,7 +1310,7 @@ const App: React.FC = () => {
 
             <TabSwitcher
                 value={activeTab}
-                onChange={setActiveTab}
+                onChange={changeTab}
                 colorTheme={settings.colorTheme}
                 /* ---- Shared expiration panel (picker + Load) — one copy, used
                     by Desk AND GEX (not Chart - it doesn't act on expirations),
@@ -1196,7 +1343,7 @@ const App: React.FC = () => {
                             expirations={meta.expirations}
                             selected={selectedExps}
                             onToggle={toggleExpiration}
-                            onSetAll={setSelectedExps}
+                            onSetAll={setSelectedExpsAndPersist}
                             colorTheme={settings.colorTheme}
                         />
                         <button
@@ -1253,7 +1400,7 @@ const App: React.FC = () => {
                         isFuturesPriced={gex.isFuturesPriced}
                         selectedExps={selectedExps}
                         metrics={gexMetrics}
-                        setMetrics={setGexMetrics}
+                        setMetrics={changeGexMetrics}
                     />
                 </Suspense>
             )}
