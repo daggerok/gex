@@ -103,36 +103,109 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
 }
 
 /**
- * Gamma flip via the "cumulative net GEX crosses zero" approach (section 7.3).
- * Returns the strike where cumulative netGex is exactly 0, or the linear
- * interpolation between the two strikes where it first changes sign. Returns
- * null if it never changes sign - never extrapolates outside the strike range.
- * Expects a profile sorted ascending by strike (as computeGexProfile returns).
- * Signature kept stable so a hypothetical-spot recompute (approach B, out of
- * scope for v1) can replace the internals later without touching callers.
+ * Gamma flip / "zero gamma level" (section 7.3, REDEFINED - see history
+ * below): the strike where the net GEX PROFILE ITSELF - the same per-strike
+ * bars the chart draws - crosses from negative to positive or vice versa.
+ * This is the standard public definition (e.g.
+ * https://www.insiderfinance.io/resources/the-ultimate-guide-to-gamma-exposure-gex)
+ * and matches the visual red/green flip on the rendered chart.
  *
- * The "exactly 0" rule only applies once some exposure has accumulated: real
- * chains (CBOE) report gamma 0 for far-from-the-money strikes, so the lowest
- * strikes often have netGex exactly 0. A leading run of zero cumulative is
- * "nothing yet", not a crossing - treating it as one put the flip at the
- * lowest listed strike (e.g. 550 for SPY at spot ~770).
+ * HISTORY: an earlier version of this function computed a CUMULATIVE sum of
+ * netGex walking up from the lowest strike and returned where THAT crossed
+ * zero. That is a different quantity (closer to an integral of the profile)
+ * and does not match the standard definition or the visual chart flip -
+ * confirmed wrong against real cached data (SPX chain: old algorithm
+ * returned ~7828, deep inside the positive region past the call wall, while
+ * the profile's own sign literally flips at ~7716, right where the chart
+ * visibly turns from red to green). This function now scans the profile
+ * directly instead.
+ *
+ * Algorithm: walk the profile once, tracking the sign of the last NONZERO
+ * netGex seen. Each time a new nonzero netGex has a sign different from the
+ * last one, that is a crossing - interpolated linearly between the two
+ * bounding nonzero strikes, same formula this function has always used for
+ * its single crossing. A real chain can have more than one crossing (e.g. a
+ * small isolated anomalous strike or two sandwiched inside what's otherwise
+ * a clean transition, or a wide/noisy "All expirations" selection with
+ * deep-ITM strikes far from spot). Per the user's own definition: "gamma
+ * flip is the place where last negative transferred to positive and vice
+ * versa - last positive transferred to negative" - i.e. whichever sign the
+ * chain ends in at its HIGHEST strike is the terminal regime, and the flip
+ * is the LAST transition into that terminal regime. So every crossing is
+ * collected walking strikes ascending, and the LAST one found is returned -
+ * not the one nearest spot, not the first one found. (An earlier version of
+ * this fix picked the crossing nearest spot; that is wrong in general - it
+ * was only a coincidental match for the single real examples checked so far
+ * because spot happened to sit beyond the last crossing in both - and has
+ * been replaced with this "last crossing" rule per direct user correction.)
+ *
+ * Exact-zero rule (documented decision): a strike with netGex === 0 is
+ * never interpolated against - it already reads zero, so if it sits between
+ * a negative and a positive nonzero strike, IT is the crossing point itself
+ * (its own strike, no interpolation). A run of consecutive exact-zero
+ * strikes bridging a sign change contributes every strike in that run as a
+ * crossing candidate (ascending order is preserved, so "last crossing"
+ * still picks the correct one among them). A zero strike that does NOT
+ * bridge a sign change - flanked by the same sign on both sides, or with no
+ * nonzero neighbor on one side at all - is NOT a crossing. This is what
+ * keeps CBOE's "leading zero exposure" (far OTM strikes reporting exact
+ * gamma 0) from being misread as a crossing at the edge of the chain,
+ * exactly like the old cumulative algorithm's leading-zero handling, but
+ * now applied symmetrically to both edges and to zero runs anywhere in the
+ * profile, not just a leading run.
+ *
+ * Returns null when the profile has no sign change at all (uniformly
+ * positive or uniformly negative netGex - a genuine one-sided gamma
+ * regime), or is empty/all-zero. Never extrapolates outside the strike
+ * range. Expects a profile sorted ascending by strike (as computeGexProfile
+ * returns).
+ *
+ * `spot` is kept as a parameter (matching findCallPutWalls' house pattern
+ * of taking spot explicitly, and computeGexLevels already has it on hand to
+ * pass through) even though the "last crossing" selection rule above does
+ * not use it - it is intentionally unused by this function's current
+ * selection logic, not a leftover from the earlier nearest-to-spot attempt.
  */
-export function findGammaFlip(profile: readonly GexPoint[]): number | null {
-    let cumulative = 0;
-    let accumulated = false;
-    for (let i = 0; i < profile.length; i++) {
-        cumulative += profile[i].netGex;
-        if (cumulative === 0 && accumulated) return profile[i].strike;
-        if (cumulative !== 0) accumulated = true;
-        if (i + 1 >= profile.length) break;
-        const next = cumulative + profile[i + 1].netGex;
-        if ((cumulative < 0 && next > 0) || (cumulative > 0 && next < 0)) {
-            const k0 = profile[i].strike;
-            const k1 = profile[i + 1].strike;
-            return k0 + (k1 - k0) * (0 - cumulative) / (next - cumulative);
+export function findGammaFlip(profile: readonly GexPoint[], spot: number): number | null {
+    void spot; // see doc comment: kept for signature consistency, unused by the "last crossing" rule
+    const crossings: number[] = [];
+    let prevSign: -1 | 1 | null = null;
+    let prevStrike: number | null = null;
+    let prevNetGex: number | null = null;
+    let pendingZeroStrikes: number[] = [];
+
+    for (const point of profile) {
+        if (point.netGex === 0) {
+            pendingZeroStrikes.push(point.strike);
+            continue;
         }
+        const sign: -1 | 1 = point.netGex > 0 ? 1 : -1;
+        if (prevSign !== null && sign !== prevSign) {
+            if (pendingZeroStrikes.length > 0) {
+                // The exact-zero strike(s) in between already read 0 - each
+                // one IS a crossing point, no interpolation needed.
+                crossings.push(...pendingZeroStrikes);
+            } else {
+                const k0 = prevStrike!;
+                const k1 = point.strike;
+                const v0 = prevNetGex!;
+                const v1 = point.netGex;
+                crossings.push(k0 + (k1 - k0) * (0 - v0) / (v1 - v0));
+            }
+        }
+        // Same sign as before (or the first nonzero point seen): any zero
+        // run just passed through was flat/leading noise, not a crossing.
+        pendingZeroStrikes = [];
+        prevSign = sign;
+        prevStrike = point.strike;
+        prevNetGex = point.netGex;
     }
-    return null;
+
+    if (crossings.length === 0) return null;
+    // Crossings were collected walking strikes ascending, so the LAST entry
+    // is the last transition into the chain's terminal-strike regime - the
+    // gamma flip, per the rule in the doc comment above.
+    return crossings[crossings.length - 1];
 }
 
 export interface CallPutWalls {
@@ -312,7 +385,7 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number): 
     const pcr = computePCRatio(quotes);
     return {
         spot,
-        gammaFlip: findGammaFlip(profile),
+        gammaFlip: findGammaFlip(profile, spot),
         ...walls,
         maxPain: computeMaxPain(quotes),
         pcRatioOi: pcr.byOi,

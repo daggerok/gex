@@ -142,48 +142,81 @@ describe('computeGexProfile (7.2)', () => {
   });
 });
 
-describe('findGammaFlip (7.3)', () => {
-  test('normal case: interpolates where cumulative netGex crosses zero', () => {
-    // cumulative goes -50000 @100 -> +50000 @105:
-    // flip = 100 + 5 * (0 - (-50000)) / (50000 - (-50000)) = 100 + 2.5
-    expect(findGammaFlip(computeGexProfile(FIXTURE, SPOT))).toBeCloseTo(102.5, 9);
+// Minimal helper for findGammaFlip tests that only care about the netGex
+// column - the function never reads callGex/putGex/OI/volume, so the other
+// fields are filler.
+function gp(strike: number, netGex: number): import('./types').GexPoint {
+  return { strike, callGex: 0, putGex: 0, netGex, callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 };
+}
+
+describe('findGammaFlip (7.3, redefined: the LAST profile zero-crossing, not a cumulative sum)', () => {
+  test('normal case: interpolates the single crossing of the netGex profile itself', () => {
+    // FIXTURE's per-strike (NOT cumulative) netGex: -40000@90, -20000@95,
+    // +10000@100, +100000@105, +80000@106, +30000@110, +50000@115.
+    // Only one sign change in the whole profile: 95 (-20000) -> 100 (+10000).
+    // flip = 95 + 5 * (0 - (-20000)) / (10000 - (-20000)) = 95 + 10/3
+    expect(findGammaFlip(computeGexProfile(FIXTURE, SPOT), SPOT)).toBeCloseTo(95 + 5 * (20000 / 30000), 9);
   });
 
-  test('single expiration gives a different flip than the aggregate', () => {
-    // EXP_A cumulative: -20000 @90, -40000 @95, -40000 @100, +20000 @105
-    // flip = 100 + 5 * 40000 / 60000 = 103.333...
+  test('single expiration slice: an exact netGex === 0 strike bridging a sign change is itself the flip', () => {
+    // EXP_A-only per-strike netGex: -20000@90, -20000@95, 0@100, +60000@105,
+    // +80000@106 (hand-derived: strike 100 has call OI 200 vs put OI 200 at
+    // the same gamma, so callGex + putGex nets to exactly 0 there).
+    // 100 sits between -20000 (@95) and +60000 (@105) - an exact-zero strike
+    // bridging a sign change IS the crossing (see findGammaFlip's doc
+    // comment), so the flip is exactly 100, no interpolation.
     const profile = computeGexProfile(FIXTURE.filter((x) => x.expiration === EXP_A), SPOT);
-    expect(findGammaFlip(profile)).toBeCloseTo(100 + 5 * (40000 / 60000), 9);
+    expect(profile.find((p) => p.strike === 100)!.netGex).toBe(0);
+    expect(findGammaFlip(profile, SPOT)).toBe(100);
   });
 
-  test('cumulative exactly zero at a strike returns that strike', () => {
-    // -X @90, +X @95 (identical gamma/OI, so the sum is exactly 0), then +
-    const profile = computeGexProfile(
-      [q(EXP_A, 'put', 90, 100), q(EXP_A, 'call', 95, 100), q(EXP_A, 'call', 100, 50)],
-      SPOT,
-    );
-    expect(findGammaFlip(profile)).toBe(95);
+  test('an exact netGex === 0 strike NOT bridging a sign change is not a crossing', () => {
+    // -100 @90, 0 @95, -50 @100: the zero sits between two NEGATIVE
+    // neighbors (same sign both sides), so it is flat/noise, not a flip.
+    const profile = [gp(90, -100), gp(95, 0), gp(100, -50)];
+    expect(findGammaFlip(profile, 100)).toBeNull();
   });
 
-  test('leading zero-netGex strikes are not a crossing', () => {
+  test('multiple sign crossings (neg->pos->neg->pos): the LAST crossing wins, not the one nearest spot', () => {
+    // Mirrors the user's own real-chain example: a small isolated anomalous
+    // strike (or two) sandwiched inside what's otherwise a clean transition
+    // from a big negative valley to a big positive peak, producing three
+    // crossings close together instead of one clean one.
+    // netGex alternates sign every strike: -10@90, +10@95, -10@100, +10@105.
+    // Crossings (same interpolation formula, applied per-pair, in ascending-
+    // strike order):
+    //   90->95:   90 + 5*(0-(-10))/(10-(-10))   = 92.5  (neg -> pos)
+    //   95->100:  95 + 5*(0-10)/(-10-10)        = 97.5  (pos -> neg)
+    //   100->105: 100 + 5*(0-(-10))/(10-(-10))  = 102.5 (neg -> pos, terminal)
+    // The chain ends positive (105 is +10), so gamma flip is the LAST
+    // transition into that positive regime: 102.5. spot = 93 is deliberately
+    // placed so "nearest to spot" would instead pick 92.5 (distance 0.5 vs
+    // 102.5's distance 9.5) - proving this asserts the corrected "last
+    // crossing" rule, not a nearest-to-spot tie-break.
+    const profile = [gp(90, -10), gp(95, 10), gp(100, -10), gp(105, 10)];
+    expect(findGammaFlip(profile, 93)).toBeCloseTo(102.5, 9);
+  });
+
+  test('leading zero-netGex strikes are not a crossing (CBOE far-OTM exact-zero gamma)', () => {
     // Real CBOE chains report gamma 0 for far-from-the-money strikes, so the
     // lowest strikes net to exactly 0. Same rows as FIXTURE plus two such
-    // strikes below it: the flip must stay at 102.5, not jump to 80.
+    // strikes below it: the flip must stay at the normal single crossing
+    // (95 -> 100), not be misread as a crossing down at the leading zeros.
     const withZeroWings = [...FIXTURE, q(EXP_A, 'call', 80, 900, 0), q(EXP_A, 'put', 80, 900, 0), q(EXP_A, 'put', 85, 400, 0)];
     const profile = computeGexProfile(withZeroWings, SPOT);
     expect(profile[0].strike).toBe(80);
     expect(profile[0].netGex).toBe(0);
-    expect(findGammaFlip(profile)).toBeCloseTo(102.5, 9);
+    expect(findGammaFlip(profile, SPOT)).toBeCloseTo(95 + 5 * (20000 / 30000), 9);
     // An all-zero profile never crosses either.
-    expect(findGammaFlip(computeGexProfile([q(EXP_A, 'call', 80, 10, 0), q(EXP_A, 'put', 85, 10, 0)], SPOT))).toBeNull();
+    expect(findGammaFlip(computeGexProfile([q(EXP_A, 'call', 80, 10, 0), q(EXP_A, 'put', 85, 10, 0)], SPOT), SPOT)).toBeNull();
   });
 
   test('all-same-sign gamma exposure -> null (no extrapolation)', () => {
     const callsOnly = FIXTURE.filter((x) => x.side === 'call');
-    expect(findGammaFlip(computeGexProfile(callsOnly, SPOT))).toBeNull();
+    expect(findGammaFlip(computeGexProfile(callsOnly, SPOT), SPOT)).toBeNull();
     const putsOnly = FIXTURE.filter((x) => x.side === 'put');
-    expect(findGammaFlip(computeGexProfile(putsOnly, SPOT))).toBeNull();
-    expect(findGammaFlip([])).toBeNull();
+    expect(findGammaFlip(computeGexProfile(putsOnly, SPOT), SPOT)).toBeNull();
+    expect(findGammaFlip([], SPOT)).toBeNull();
   });
 });
 
@@ -336,9 +369,9 @@ describe('computeGexProfile honors a per-quote forward over the shared spot (Pha
     expect(levels.callWall).toBe(20);
     expect(levels.putWall).toBe(15);
     expect(levels.totalNetGex).toBeCloseTo(6229.03808 - 2491.615232, 3);
-    // gammaFlip: only two strikes, signs +/-, cumulative never crosses zero
-    // going strike-ascending (15 put first: -2491.6, then 20 call: +3737.4;
-    // it DOES cross -> interpolate between 15 and 20).
+    // gammaFlip: only two strikes, netGex -2491.615232@15 then +6229.03808@20
+    // - one sign change, so the profile-crossing definition interpolates
+    // between them same as before (just no cumulative sum involved now).
     expect(levels.gammaFlip).not.toBeNull();
   });
 });
@@ -347,7 +380,9 @@ describe('computeGexLevels (7.7)', () => {
   test('assembles every level from one call', () => {
     const levels = computeGexLevels(FIXTURE, SPOT);
     expect(levels.spot).toBe(SPOT);
-    expect(levels.gammaFlip).toBeCloseTo(102.5, 9);
+    // Per-strike netGex crosses sign once, 95 (-20000) -> 100 (+10000):
+    // flip = 95 + 5 * (0 - (-20000)) / (10000 - (-20000)) = 95 + 10/3.
+    expect(levels.gammaFlip).toBeCloseTo(95 + 5 * (20000 / 30000), 9);
     expect(levels.callWall).toBe(105);
     expect(levels.putWall).toBe(90);
     expect(levels.callWall2).toBe(115);
