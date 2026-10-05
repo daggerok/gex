@@ -38,6 +38,15 @@ type ToggleableLevelKey = Exclude<GexLevelKey, 'spot' | 'gammaFlip'>;
  *  `gammaFlipPanelKeys` below. */
 const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall', 'putWall2', 'maxPain'];
 
+/** Default ON selection (Part 2, revised): only Call Wall / Put Wall start
+ *  OFF - they're redundant with just looking at the chart's own tallest bars.
+ *  Resistance 2 / Support 2 start ON despite their current 2%-distance
+ *  heuristic not being fully trusted yet (a redesign is deferred, not
+ *  touching findCallPutWalls' math) - the user decided to keep them visible
+ *  by default anyway. Gamma Flip (both directional keys - whichever applies
+ *  to the loaded data) and Max Pain start ON. */
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall2', 'maxPain'];
+
 /** i18n key for each non-gamma-flip level's sidebar/toggle-panel label and
  *  <ReferenceLine> chart label. Gamma Flip is handled separately (see
  *  `levelLabel`/`levelChartLabel` below) since its label is adaptive:
@@ -238,8 +247,10 @@ export const GexView: React.FC<GexViewProps> = ({
     // loadMetricColors/saveMetricColors, but the selection array is just
     // useState in main.tsx with no localStorage key); unlike metrics, there's
     // no "at least one must stay on" rule here - toggling every level off is
-    // a valid (if unusual) choice, and Reset always brings all 6 back.
-    const [selectedLevels, setSelectedLevels] = useState<Array<ToggleableLevelKey>>(() => [...ALL_LEVEL_KEYS]);
+    // a valid (if unusual) choice. Reset restores DEFAULT_SELECTED_LEVELS
+    // (Part 2 - only Call Wall/Put Wall start OFF; Resistance 2/Support 2/
+    // Gamma Flip/Max Pain start ON), not "every level on".
+    const [selectedLevels, setSelectedLevels] = useState<Array<ToggleableLevelKey>>(() => [...DEFAULT_SELECTED_LEVELS]);
     const [levelColors, setLevelColorsState] = useState<LevelColorSet>(() => loadLevelColors());
     const setLevelColor = (key: ToggleableLevelKey, value: string) => {
         setLevelColorsState((prev) => {
@@ -249,7 +260,7 @@ export const GexView: React.FC<GexViewProps> = ({
         });
     };
     const resetLevelsPanel = () => {
-        setSelectedLevels([...ALL_LEVEL_KEYS]);
+        setSelectedLevels([...DEFAULT_SELECTED_LEVELS]);
         setLevelColorsState(DEFAULT_LEVEL_COLORS);
         saveLevelColors(DEFAULT_LEVEL_COLORS);
     };
