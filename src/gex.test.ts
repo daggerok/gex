@@ -11,6 +11,7 @@ import {
   findGammaFlip,
   gexCall,
   gexPut,
+  trimZeroBoundaries,
 } from './gex';
 import type { OptionQuote } from './types';
 
@@ -371,5 +372,71 @@ describe('computeGexLevels (7.7)', () => {
       pcRatioVolume: null,
       totalNetGex: 0,
     });
+  });
+});
+
+describe('trimZeroBoundaries (GEX tab chart axis trimming, section 8.1 part 3)', () => {
+  // Minimal SPX-shaped fixture mirroring the user's own worked example:
+  // real (non-zero) data runs 7025..8150, flanked on both sides by strikes
+  // where every metric is 0 - 7000 (one below 7025) and 8175/8200 (two above
+  // the last real strike, 8150) - at $25 spacing like real SPX chains.
+  function point(strike: number, netGex: number, callOi = 0, putOi = 0): { strike: number; netGex: number; callOi: number; putOi: number } {
+    return { strike, netGex, callOi, putOi };
+  }
+  const spxLike = [
+    point(6975, 0),
+    point(7000, 0), // boundary zero strike that should survive the left trim
+    point(7025, -500), // lowest non-zero strike
+    point(7050, 1200),
+    point(8150, 800), // highest non-zero strike
+    point(8175, 0), // boundary zero strike that should survive the right trim
+    point(8200, 0),
+    point(8225, 0),
+  ];
+
+  test('(a) keeps exactly one boundary-zero strike per edge, drops the rest - all metrics selected', () => {
+    const trimmed = trimZeroBoundaries(spxLike, ['netGex', 'callOi', 'putOi']);
+    // Left edge: 6975 (second zero strike out) is dropped, 7000 (the one
+    // adjacent to the first non-zero strike, 7025) survives.
+    // Right edge: 8175 is the last strike shown (one past 8150); 8200/8225
+    // are dropped entirely, matching the user's exact worked example.
+    expect(trimmed.map((p) => p.strike)).toEqual([7000, 7025, 7050, 8150, 8175]);
+  });
+
+  test('(b) re-evaluates "zero" against only the live metric selection (Put OI alone, Net GEX not selected)', () => {
+    // Every strike (including the "real data" ones) carries the SAME non-zero
+    // Net GEX noise - if the check were hardcoded to Net GEX (or looked at
+    // every field instead of only the live selection), nothing would ever
+    // trim. Only putOi actually distinguishes real strikes from boundary
+    // ones here, so a correct, selection-scoped check must still trim
+    // exactly like the all-metrics case above.
+    const putOiFixture = [
+      point(6975, 999, 0, 0),
+      point(7000, 999, 0, 0),
+      point(7025, 999, 0, 400), // lowest strike with non-zero putOi
+      point(7050, 999, 0, 900),
+      point(8150, 999, 0, 250), // highest strike with non-zero putOi
+      point(8175, 999, 0, 0),
+      point(8200, 999, 0, 0),
+    ];
+    const trimmed = trimZeroBoundaries(putOiFixture, ['putOi']);
+    expect(trimmed.map((p) => p.strike)).toEqual([7000, 7025, 7050, 8150, 8175]);
+
+    // Sanity check the scoping the other way too: selecting 'netGex' on this
+    // same fixture (where it's uniformly 999, i.e. never zero) must trim
+    // nothing at all - confirming the function only looks at the keys it's
+    // given, not every numeric field on the point.
+    expect(trimZeroBoundaries(putOiFixture, ['netGex']).map((p) => p.strike)).toEqual(putOiFixture.map((p) => p.strike));
+  });
+
+  test('entirely-zero profile returns empty (pathological case, no crash)', () => {
+    const allZero = [point(100, 0), point(101, 0), point(102, 0)];
+    expect(trimZeroBoundaries(allZero, ['netGex'])).toEqual([]);
+  });
+
+  test('fewer than 2 points, or no keys, returns the input unchanged', () => {
+    const one = [point(100, 5)];
+    expect(trimZeroBoundaries(one, ['netGex'])).toEqual(one);
+    expect(trimZeroBoundaries(spxLike, [])).toEqual(spxLike);
   });
 });

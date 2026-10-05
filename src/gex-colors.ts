@@ -101,3 +101,46 @@ export function loadMetricColors(): MetricColorSet {
 export function saveMetricColors(colors: MetricColorSet): void {
     try { localStorage.setItem(METRIC_COLORS_KEY, JSON.stringify(colors)); } catch { /* ignore */ }
 }
+
+// ---------------------------------------------------------------------------
+// USER-CUSTOMIZABLE PER-LEVEL CHART COLORS (GEX tab Key Levels toggle+color
+// panel). Exact same pattern as MetricColorSet above, one level short of
+// GEX_LEVEL_COLORS - `spot` is always drawn (it isn't one of the 6 toggleable
+// Key Levels: Call Wall / Resistance 2 / Gamma Flip / Put Wall / Support 2 /
+// Max Pain), so it's intentionally excluded here. A dedicated localStorage
+// key (not METRIC_COLORS_KEY) keeps this independent of the metric-color
+// blob, same reasoning as that key's own comment above.
+// ---------------------------------------------------------------------------
+
+export type LevelColorSet = Record<Exclude<GexLevelKey, 'spot'>, string>;
+
+/** Defaults mirror today's hardcoded GEX_LEVEL_COLORS hex values exactly. */
+export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
+    callWall: GEX_LEVEL_COLORS.callWall.hex,
+    callWall2: GEX_LEVEL_COLORS.callWall2.hex,
+    gammaFlip: GEX_LEVEL_COLORS.gammaFlip.hex,
+    putWall: GEX_LEVEL_COLORS.putWall.hex,
+    putWall2: GEX_LEVEL_COLORS.putWall2.hex,
+    maxPain: GEX_LEVEL_COLORS.maxPain.hex,
+};
+
+export const LEVEL_COLORS_KEY = 'gex.levelColors.v1';
+
+/** Load custom level colors from localStorage, merged over the defaults
+ *  (forward-compatible, same convention as loadMetricColors). */
+export function loadLevelColors(): LevelColorSet {
+    try {
+        const raw = localStorage.getItem(LEVEL_COLORS_KEY);
+        if (!raw) return { ...DEFAULT_LEVEL_COLORS };
+        const parsed = JSON.parse(raw);
+        return { ...DEFAULT_LEVEL_COLORS, ...parsed };
+    } catch {
+        return { ...DEFAULT_LEVEL_COLORS };
+    }
+}
+
+/** Persist custom level colors to localStorage (best-effort, same convention
+ *  as saveMetricColors). */
+export function saveLevelColors(colors: LevelColorSet): void {
+    try { localStorage.setItem(LEVEL_COLORS_KEY, JSON.stringify(colors)); } catch { /* ignore */ }
+}

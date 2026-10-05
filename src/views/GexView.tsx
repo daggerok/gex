@@ -2,9 +2,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { computeGexProfile, computeOiVolumeTotals, computePCRatio } from '../gex';
+import { computeGexProfile, computeOiVolumeTotals, computePCRatio, trimZeroBoundaries } from '../gex';
 import {
-    DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadMetricColors, saveMetricColors, type GexLevelKey, type MetricColorSet,
+    DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
+    type GexLevelKey, type LevelColorSet, type MetricColorSet,
 } from '../gex-colors';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
@@ -22,13 +23,22 @@ import { fmt, fmtInt } from '../utils';
 export type GexMetric = 'netGex' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
 export const GEX_METRICS: GexMetric[] = ['netGex', 'callOi', 'putOi', 'callVolume', 'putVolume'];
 
-/**
- * Display-only strike window around spot for the bar chart (not GEX math):
- * full chains (SPY: strikes from ~0.2x to ~2x spot) would squeeze the bars
- * that matter into a few pixels. The window is widened to always include the
- * call/put walls, and ignored when it would leave nothing to draw.
- */
-const CHART_STRIKE_WINDOW_PCT = 0.15;
+/** The 6 toggleable Key Levels (everything in GexLevels except `spot`, which
+ *  is always drawn and isn't user-toggleable - see gex-colors.ts's LevelColorSet). */
+const ALL_LEVEL_KEYS: Array<Exclude<GexLevelKey, 'spot'>> = ['callWall', 'callWall2', 'gammaFlip', 'putWall', 'putWall2', 'maxPain'];
+
+/** i18n key for each level's <ReferenceLine> label on the chart (distinct from
+ *  gex.level.* - the sidebar text labels - so the two can read differently:
+ *  the chart line stays short even when the sidebar label carries an
+ *  "(R1)"/"(S1)" suffix). */
+const LEVEL_CHART_LABEL_KEY: Record<Exclude<GexLevelKey, 'spot'>, string> = {
+    callWall: 'gex.chart.callWall',
+    callWall2: 'gex.chart.resistance2',
+    gammaFlip: 'gex.chart.gammaFlip',
+    putWall: 'gex.chart.putWall',
+    putWall2: 'gex.chart.support2',
+    maxPain: 'gex.chart.maxPain',
+};
 
 export interface GexViewProps {
     settings: Settings;
@@ -115,16 +125,18 @@ export const GexView: React.FC<GexViewProps> = ({
         ? 'text-green-600 dark:text-green-400'
         : net < 0 ? 'text-red-600 dark:text-red-400' : undefined;
 
-    // ---- Chart data (display only: windowing + splitting sign for colors) ----
+    // ---- Chart data (display only: zero-boundary trimming + splitting sign
+    // for colors). No more spot-percentage windowing (removed) - the chart
+    // now shows the FULL range of real data for the selected expirations by
+    // default; drilling into a sub-range is what xZoom/yZoomFactor are for.
+    // The only trimming left is per-edge: drop all-zero strikes beyond a
+    // single boundary marker on each side (trimZeroBoundaries, src/gex.ts),
+    // evaluated against whichever metrics are currently selected - a strike
+    // only counts as zero when every one of `metrics`'s fields reads 0 there.
     const chart = useMemo(() => {
         if (!profile.length) return null;
-        let visible = profile;
-        if (effSpot != null) {
-            const lo = Math.min(effSpot * (1 - CHART_STRIKE_WINDOW_PCT), levels?.putWall ?? Infinity, levels?.callWall ?? Infinity);
-            const hi = Math.max(effSpot * (1 + CHART_STRIKE_WINDOW_PCT), levels?.putWall ?? -Infinity, levels?.callWall ?? -Infinity);
-            const inWindow = profile.filter((p) => p.strike >= lo && p.strike <= hi);
-            if (inWindow.length) visible = inWindow;
-        }
+        const visible = trimZeroBoundaries(profile, metrics);
+        if (!visible.length) return null; // pathological: all-zero across the current selection
         let gap = Infinity;
         for (let i = 1; i < visible.length; i++) gap = Math.min(gap, visible[i].strike - visible[i - 1].strike);
         const pad = Number.isFinite(gap) && gap > 0 ? gap : Math.max(1, visible[0].strike * 0.01);
@@ -147,7 +159,7 @@ export const GexView: React.FC<GexViewProps> = ({
             putVolumeNeg: -p.putVolume,
         }));
         return { rows, domain: [minK - pad, maxK + pad] as [number, number] };
-    }, [profile, effSpot, levels]);
+    }, [profile, effSpot, metrics]);
 
     // ---- Multi-metric selection --------------------------------------------
     // netGex keeps its signed pos/neg stacked treatment. The 4 OI/Volume
@@ -193,6 +205,31 @@ export const GexView: React.FC<GexViewProps> = ({
     const chartTitle = metrics.length === 1
         ? tr('gex.chart.title', { metric: selectedLabels[0] })
         : tr('gex.chart.titleMulti', { metrics: selectedLabels.join(', ') });
+
+    // ---- Key Levels: toggleable + colorable <ReferenceLine>s ---------------
+    // Same pattern as the metrics panel above: per-level show/hide + a color
+    // picker, persisted colors (gex-colors.ts's loadLevelColors/
+    // saveLevelColors, dedicated 'gex.levelColors.v1' key). Selection itself
+    // is plain component state (not persisted) - mirroring how `metrics`
+    // selection itself works today (its *colors* persist via
+    // loadMetricColors/saveMetricColors, but the selection array is just
+    // useState in main.tsx with no localStorage key); unlike metrics, there's
+    // no "at least one must stay on" rule here - toggling every level off is
+    // a valid (if unusual) choice, and Reset always brings all 6 back.
+    const [selectedLevels, setSelectedLevels] = useState<Array<Exclude<GexLevelKey, 'spot'>>>(() => [...ALL_LEVEL_KEYS]);
+    const [levelColors, setLevelColorsState] = useState<LevelColorSet>(() => loadLevelColors());
+    const setLevelColor = (key: Exclude<GexLevelKey, 'spot'>, value: string) => {
+        setLevelColorsState((prev) => {
+            const next = { ...prev, [key]: value };
+            saveLevelColors(next);
+            return next;
+        });
+    };
+    const resetLevelsPanel = () => {
+        setSelectedLevels([...ALL_LEVEL_KEYS]);
+        setLevelColorsState(DEFAULT_LEVEL_COLORS);
+        saveLevelColors(DEFAULT_LEVEL_COLORS);
+    };
 
     // ---- Zoom (section 8.1 part 2) ------------------------------------------
     // recharts 3.9 has no built-in rectangular zoom, so horizontal zoom
@@ -419,6 +456,51 @@ export const GexView: React.FC<GexViewProps> = ({
                 </div>
             </div>
 
+            {/* ---- Key Levels toggle+color panel: same per-item affordances
+                as the metrics panel above (toggle button + color picker),
+                one row per the 6 toggleable levels (Call Wall / Resistance 2
+                / Gamma Flip / Put Wall / Support 2 / Max Pain). Purely
+                additive - the sidebar's Key Levels card (below) keeps
+                showing all 6 as text regardless of this panel's state. ---- */}
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+                <div className={box} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
+                    <span className="text-xs text-slate-400">{tr('gex.sidebar.keyLevels')}</span>
+                    <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
+                        {ALL_LEVEL_KEYS.map((key) => {
+                            const on = selectedLevels.includes(key);
+                            const label = keyLevels.find((l) => l.key === key)?.label ?? key;
+                            return (
+                                <div key={key} className="flex shrink-0 items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedLevels(on ? selectedLevels.filter((x) => x !== key) : [...selectedLevels, key])}
+                                        aria-pressed={on}
+                                        className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? ax.chipActive : ax.chipIdle)}
+                                    >
+                                        {label}
+                                    </button>
+                                    <input
+                                        type="color"
+                                        value={levelColors[key]}
+                                        onChange={(e) => setLevelColor(key, e.target.value)}
+                                        title={tr('gex.level.color', { level: label })}
+                                        aria-label={tr('gex.level.color', { level: label })}
+                                        className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={resetLevelsPanel}
+                        className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + ax.chipIdle}
+                    >
+                        {tr('gex.level.reset')}
+                    </button>
+                </div>
+            </div>
+
             {provider.mode === 'lazy' && (
                 <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
                     {tr('gex.lazyHint')}
@@ -565,22 +647,33 @@ export const GexView: React.FC<GexViewProps> = ({
                                     {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
                                         <ReferenceArea x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
                                     )}
-                                    {levels?.callWall != null && (
-                                        <ReferenceLine
-                                            x={levels.callWall}
-                                            stroke={GEX_LEVEL_COLORS.callWall.hex}
-                                            strokeDasharray="2 4"
-                                            label={{ value: tr('gex.chart.callWall'), position: 'insideTopRight', fill: GEX_LEVEL_COLORS.callWall.hex, fontSize: 10, dy: 14 }}
-                                        />
-                                    )}
-                                    {levels?.putWall != null && (
-                                        <ReferenceLine
-                                            x={levels.putWall}
-                                            stroke={GEX_LEVEL_COLORS.putWall.hex}
-                                            strokeDasharray="2 4"
-                                            label={{ value: tr('gex.chart.putWall'), position: 'insideTopRight', fill: GEX_LEVEL_COLORS.putWall.hex, fontSize: 10, dy: 28 }}
-                                        />
-                                    )}
+                                    {/* All 6 Key Levels, gated independently on their own toggle
+                                        (selectedLevels) and drawn in their own configured color
+                                        (levelColors) - generalized from the old callWall/putWall-
+                                        only pair above. `levels?.[key]` reads the same computed
+                                        GexLevels field the sidebar's Key Levels card already shows
+                                        (src/gex.ts, rule R1) - this never recomputes anything. */}
+                                    {ALL_LEVEL_KEYS.map((key) => {
+                                        if (!selectedLevels.includes(key)) return null;
+                                        const value = levels?.[key];
+                                        if (value == null) return null;
+                                        const color = levelColors[key];
+                                        return (
+                                            <ReferenceLine
+                                                key={key}
+                                                x={value}
+                                                stroke={color}
+                                                strokeDasharray="2 4"
+                                                label={{
+                                                    value: tr(LEVEL_CHART_LABEL_KEY[key]),
+                                                    position: 'insideTopRight',
+                                                    fill: color,
+                                                    fontSize: 10,
+                                                    dy: 14 * (ALL_LEVEL_KEYS.indexOf(key) + 1),
+                                                }}
+                                            />
+                                        );
+                                    })}
                                     {effSpot != null && (
                                         <ReferenceLine
                                             x={effSpot}
