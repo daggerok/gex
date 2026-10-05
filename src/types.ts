@@ -340,28 +340,6 @@ export interface GexLevels {
     callWall2: number | null;
     /** "Support 2" - null if none qualifies. */
     putWall2: number | null;
-    /**
-     * "Resistance 1.5" - the strike with the SECOND-largest netGex among ALL
-     * positive-netGex strikes, ranked purely by magnitude, with NO
-     * minimum-distance restriction from `callWall` (unlike `callWall2`, which
-     * requires being at least SECOND_WALL_MIN_DISTANCE_PCT away from
-     * `callWall`). Surfaces a large nearby peak the distance rule on
-     * `callWall2` would otherwise skip. Can legitimately coincide with
-     * `callWall2` - that's not a bug. Null if fewer than 2 positive-netGex
-     * strikes exist.
-     */
-    callWall1_5: number | null;
-    /**
-     * "Support 1.5" - the strike with the SECOND-largest |netGex| among ALL
-     * negative-netGex strikes, ranked purely by magnitude, with NO
-     * minimum-distance restriction from `putWall` (unlike `putWall2`, which
-     * requires being at least SECOND_WALL_MIN_DISTANCE_PCT away from
-     * `putWall`). Surfaces a large nearby trough the distance rule on
-     * `putWall2` would otherwise skip. Can legitimately coincide with
-     * `putWall2` - that's not a bug. Null if fewer than 2 negative-netGex
-     * strikes exist.
-     */
-    putWall1_5: number | null;
     maxPain: number | null;
     pcRatioOi: number | null;
     pcRatioVolume: number | null;
