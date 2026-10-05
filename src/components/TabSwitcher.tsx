@@ -20,8 +20,10 @@ export const TabSwitcher: React.FC<{
     colorTheme: ColorThemeId;
     /** Rendered in the SAME row as the tab pills, after them (main.tsx's
      *  shared expiration picker + Load button) - one horizontal bar:
-     *  [Desk | GEX | Chart]  [expiration chips... All] [Load]. Omit (or pass
-     *  null/undefined) where it doesn't apply, e.g. the Chart tab. */
+     *  [Desk | GEX | Chart]  [expiration chips... All] [Load]. The row wraps
+     *  (flex-wrap) so this drops to its own line on narrow viewports instead
+     *  of squeezing/clipping next to the pills. Omit (or pass null/undefined)
+     *  where it doesn't apply, e.g. the Chart tab. */
     endSlot?: React.ReactNode;
 }> = ({ value, onChange, colorTheme, endSlot }) => {
     const { t } = useI18n();
@@ -41,7 +43,7 @@ export const TabSwitcher: React.FC<{
         : 'bg-indigo-600 text-white shadow-sm';
     return (
         <nav aria-label={t('tabs.label')} className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-8 2xl:px-16">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
                 <Pill
                     value={value}
                     options={APP_TABS.map((k) => ({ k, l: t('tabs.' + k) }))}

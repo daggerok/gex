@@ -54,6 +54,24 @@
  *            incomplete analysis until Load is pressed, not an error.
  *            GexView's top empty-gate is now just "is a ticker loaded"
  *            (`!symbol`) instead of also requiring already-loaded data.
+ *          - BUG FIX (reported w/ screenshot, reproduced live via Playwright
+ *            at mobile widths 320-414px before fixing): ExpirationChips'
+ *            own chip strip already capped+scrolled itself
+ *            (max-w-[46vw]/overflow-x-auto), but its caller's row was a
+ *            plain `flex` (no wrap) - so the fixed-width "All"/"None" toggle
+ *            and the Load button, siblings in that row, got pushed past the
+ *            viewport's right edge at narrow widths (confirmed:
+ *            document.documentElement.scrollWidth > window.innerWidth, and
+ *            the Load button's bounding rect exceeded innerWidth) - genuinely
+ *            clipped, not reachable via the chip strip's own scrollbar. Fixed
+ *            at two levels: TabSwitcher's own row is `flex-wrap` (so the whole
+ *            expiration form drops below the tab pills when it doesn't fit
+ *            next to them) and the form itself is also `flex-wrap` (so Load
+ *            drops to its own line within the form as a second line of
+ *            defense). Also widened the chip strip's cap to max-w-[70vw] - it
+ *            no longer shares a row with Desk's ticker-input/provider-dropdown
+ *            or GEX's metric toggle, so it can afford more room. Verified at
+ *            320-1440px (390px wraps to two lines; 1024/1440px fit on one).
  * v0.9.50 - Phase 5 Chart tab: views/ChartView.tsx replaces the 'chart' TabStub
  *          (plan section 8.2). Daily candles from providers/chart.ts fetchOhlc
  *          (range 1M / 3M / 6M default / 1Y, interval fixed 1d) drawn with
@@ -1147,11 +1165,19 @@ const App: React.FC = () => {
                     ticker's expirations are loaded (`meta` exists), same gate
                     as the old Desk-only form. A <form> so pressing Enter (once
                     the Load button is focused after picking a date) submits
-                    and loads immediately. ---- */
+                    and loads immediately. flex-wrap on TabSwitcher's row (and
+                    on this form itself) + the widened chip-strip cap
+                    (ExpirationChips, max-w-[70vw]) fix the chip-row overflow
+                    bug: at narrow widths the form now wraps to its own line
+                    below the tab pills, and the Load button wraps within the
+                    form, instead of being clipped past the right edge of the
+                    viewport (confirmed live via Playwright before this fix -
+                    see ExpirationChips.tsx's doc comment for the measured
+                    root cause). ---- */
                 endSlot={meta && activeTab !== 'chart' ? (
                     <form
                         onSubmit={(e) => { e.preventDefault(); loadChain(); }}
-                        className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
+                        className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
                     >
                         <ExpirationChips
                             expirations={meta.expirations}
