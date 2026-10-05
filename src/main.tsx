@@ -26,6 +26,34 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.51 - Share the expiration panel + Load button across Desk and GEX:
+ *          - PROBLEM: since v0.9.49/50 unified `selectedExps` between Desk and
+ *            GEX, a user could pick/deselect expirations from the GEX tab (its
+ *            own "All" toggle), but the Load button existed ONLY on Desk - a
+ *            lazy YAHOO expiration picked from the GEX tab had no way to
+ *            actually be fetched from that tab.
+ *          - FIX: the expiration chips + Load <form> moved OUT of DeskView
+ *            (and GexView's now-redundant own copy was removed) into ONE
+ *            shared panel. TabSwitcher gained an `endSlot` prop that renders
+ *            in the SAME ROW as the Desk/GEX/Chart pills, to their right - one
+ *            horizontal bar: [Desk|GEX|Chart]  [chips… All] [Load]. main.tsx
+ *            passes the panel only when `meta` exists AND `activeTab !==
+ *            'chart'` - Chart doesn't act on the expiration selection the way
+ *            Desk/GEX do, so the panel is hidden there entirely (not just
+ *            inert). Same `loadChain()` wiring, button states/labels and
+ *            Enter-to-submit <form> behavior as before - a relocation, not a
+ *            redesign. Desk keeps its own chainSymbol/spot/provider display
+ *            and Cancel button (those reflect the loaded DESK chain
+ *            specifically, not the picker) - only the picker+Load moved.
+ *          - The shared panel now offers the FULL `meta.expirations` list
+ *            (previously GexView restricted its OWN chip copy to
+ *            `gexExpirations`, the already-loaded subset) since the Load
+ *            button is right there to fetch whatever's selected; an
+ *            unloaded expiration simply contributes no quotes
+ *            (quotesByExp[exp] ?? [] in useGexLevels) - an expectedly
+ *            incomplete analysis until Load is pressed, not an error.
+ *            GexView's top empty-gate is now just "is a ticker loaded"
+ *            (`!symbol`) instead of also requiring already-loaded data.
  * v0.9.50 - Phase 5 Chart tab: views/ChartView.tsx replaces the 'chart' TabStub
  *          (plan section 8.2). Daily candles from providers/chart.ts fetchOhlc
  *          (range 1M / 3M / 6M default / 1Y, interval fixed 1d) drawn with
@@ -673,13 +701,14 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { createRoot } from 'react-dom/client';
 import { AttributionFooter } from './components/AttributionFooter';
 import type { ChainSection } from './components/ChainTable';
+import { ExpirationChips } from './components/ExpirationChips';
 import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
 import { getBulk, loadExpiration, loadMeta } from './providers/loader';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, loadSettings, saveSettings } from './settings-store';
-import { useThemeController } from './theme';
+import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
 import { useGexLevels } from './use-gex-levels';
 import { dbg, estimateSpot, friendlyError, isAbortError } from './utils';
@@ -725,6 +754,10 @@ const App: React.FC = () => {
     }, []);
 
     useThemeController(settings.theme, settings.colorTheme);
+    // Used by the shared expiration-panel Load button (rendered in the same
+    // row as TabSwitcher's tab pills, below), mirroring what DeskView used to
+    // compute itself.
+    const ax = accentOf(settings.colorTheme);
 
     // Active content tab below TopBar. Transient per session (not persisted
     // in Settings): every page load starts on Desk, exactly like pre-tabs.
@@ -1031,22 +1064,19 @@ const App: React.FC = () => {
         }
         return expData;
     }, [meta, provider, expData, settings.vixFuturesPricing]);
-    const gexExpirations = useMemo(
-        () => (meta ? meta.expirations.filter((e) => (gexQuotesByExp[e]?.length ?? 0) > 0) : []),
-        [meta, gexQuotesByExp],
-    );
     // The GEX tab reads/writes the SAME `selectedExps` Desk uses (user request:
     // keep the expiration selection in sync between the Desk and GEX tabs,
     // not two independent copies). Desk already defaults a fresh chain's
     // selection to the nearest expiration (setSelectedExps([m.expirations[0]])
     // above), which is exactly the default the GEX tab used to compute
     // separately - so unifying the state needs no extra default logic here.
-    // GexView's own `expirations` prop (offered chips) still intentionally
-    // stays limited to `gexExpirations` (data already available - see its
-    // comment above) so a lazy YAHOO expiration Desk hasn't loaded yet isn't
-    // offered as a GEX choice; any such not-yet-loaded expiration in the
-    // shared `selectedExps` simply contributes no quotes (quotesByExp[exp] ??
-    // [] in useGexLevels), it does not error.
+    // The shared expiration panel (below, in TabSwitcher's row) now offers the
+    // FULL `meta.expirations` list on Desk and GEX alike - not the narrower
+    // "already loaded" subset this used to compute as `gexExpirations` - since
+    // its Load button is right there to fetch whatever's selected. Any
+    // selected-but-not-yet-loaded expiration simply contributes no quotes
+    // (quotesByExp[exp] ?? [] in useGexLevels); it does not error, just gives
+    // an expectedly-incomplete analysis until Load is pressed.
     const [gexMetrics, setGexMetrics] = useState<GexMetric[]>(['netGex']);
     // GexLevels computed ONCE here for the GEX tab's selection and shared by
     // the GEX and Chart tabs (plan 7.7 / 8.2) - no view recomputes them.
@@ -1100,7 +1130,47 @@ const App: React.FC = () => {
                 proxyChecking={proxyChecking}
             />
 
-            <TabSwitcher value={activeTab} onChange={setActiveTab} colorTheme={settings.colorTheme} />
+            <TabSwitcher
+                value={activeTab}
+                onChange={setActiveTab}
+                colorTheme={settings.colorTheme}
+                /* ---- Shared expiration panel (picker + Load) — one copy, used
+                    by Desk AND GEX (not Chart - it doesn't act on expirations),
+                    rendered in the SAME row as the tab pills, to their right -
+                    one horizontal bar: [Desk|GEX|Chart]  [chips... All] [Load].
+                    So selecting expirations and fetching them works the same
+                    way on either tab (user request: GEX had no Load button of
+                    its own, so a lazy YAHOO expiration picked from the GEX tab
+                    had no way to actually be fetched). Offers the FULL
+                    `meta.expirations` list (not just already-loaded dates -
+                    see the gexQuotesByExp comment above); only rendered once a
+                    ticker's expirations are loaded (`meta` exists), same gate
+                    as the old Desk-only form. A <form> so pressing Enter (once
+                    the Load button is focused after picking a date) submits
+                    and loads immediately. ---- */
+                endSlot={meta && activeTab !== 'chart' ? (
+                    <form
+                        onSubmit={(e) => { e.preventDefault(); loadChain(); }}
+                        className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
+                    >
+                        <ExpirationChips
+                            expirations={meta.expirations}
+                            selected={selectedExps}
+                            onToggle={toggleExpiration}
+                            onSetAll={setSelectedExps}
+                            colorTheme={settings.colorTheme}
+                        />
+                        <button
+                            ref={loadBtnRef}
+                            type="submit"
+                            disabled={expLoading || selectedExps.length === 0}
+                            className={`shrink-0 rounded-md ${ax.btn} px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 ${ax.focusRingOffset}`}
+                        >
+                            {expLoading ? tr('controls.loading') : (selectedExps.length > 1 ? tr('controls.loadCount', { count: selectedExps.length }) : tr('controls.load'))}
+                        </button>
+                    </form>
+                ) : null}
+            />
 
             {/* Desk stays MOUNTED while another tab is shown (just hidden), so
                 ChainTable's local state (collapsed sections, active expiration,
@@ -1110,12 +1180,8 @@ const App: React.FC = () => {
                     settings={settings}
                     provider={provider}
                     meta={meta}
-                    selectedExps={selectedExps}
-                    setSelectedExps={setSelectedExps}
-                    toggleExpiration={toggleExpiration}
                     loadChain={loadChain}
                     getDates={getDates}
-                    loadBtnRef={loadBtnRef}
                     tickerInput={tickerInput}
                     metaLoading={metaLoading}
                     expLoading={expLoading}
@@ -1146,9 +1212,7 @@ const App: React.FC = () => {
                         quotes={gex.quotes}
                         levels={gex.levels}
                         isFuturesPriced={gex.isFuturesPriced}
-                        expirations={gexExpirations}
                         selectedExps={selectedExps}
-                        setSelectedExps={setSelectedExps}
                         metrics={gexMetrics}
                         setMetrics={setGexMetrics}
                     />

@@ -5,10 +5,11 @@ import { accentOf } from '../theme';
 import type { ColorThemeId } from '../types';
 
 /**
- * Multi-select expiration chips + "All"/"None" toggle, shared by Desk (Tab 1)
- * and GEX (Tab 2). Renders a fragment (label, chip strip, toggle) so each
- * caller supplies its own wrapper: Desk wraps it in the Load <form>, GEX in a
- * plain box with the same styling. Extracted verbatim from DeskView.
+ * Multi-select expiration chips + "All"/"None" toggle. Rendered ONCE in a
+ * shared panel (main.tsx, via TabSwitcher's `endSlot`, in the same row as the
+ * Desk/GEX/Chart tab pills) alongside the Load button, visible on Desk and
+ * GEX alike - no longer duplicated per-view (see main.tsx changelog). Renders
+ * a fragment (label, chip strip, toggle) so the caller supplies the wrapper.
  */
 export const ExpirationChips: React.FC<{
     expirations: string[];

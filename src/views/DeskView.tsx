@@ -1,7 +1,6 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import React from 'react';
 import { ChainTable, type ChainSection } from '../components/ChainTable';
-import { ExpirationChips } from '../components/ExpirationChips';
 import { Icon } from '../components/Icon';
 import { KeyOnboarding } from '../components/KeyOnboarding';
 import { useI18n } from '../i18n';
@@ -19,12 +18,8 @@ export interface DeskViewProps {
     settings: Settings;
     provider: DataProvider;
     meta: ChainMeta | null;
-    selectedExps: string[];
-    setSelectedExps: React.Dispatch<React.SetStateAction<string[]>>;
-    toggleExpiration: (exp: string) => void;
     loadChain: () => Promise<void>;
     getDates: (symbol: string, credsOverride?: { token?: string; secret?: string }) => Promise<void>;
-    loadBtnRef: React.RefObject<HTMLButtonElement | null>;
     tickerInput: string;
     metaLoading: boolean;
     expLoading: boolean;
@@ -45,8 +40,8 @@ export interface DeskViewProps {
 }
 
 export const DeskView: React.FC<DeskViewProps> = ({
-    settings, provider, meta, selectedExps, setSelectedExps, toggleExpiration, loadChain, getDates,
-    loadBtnRef, tickerInput, metaLoading, expLoading, anyLoading, cancelAll, chainSymbol, spot,
+    settings, provider, meta, loadChain, getDates,
+    tickerInput, metaLoading, expLoading, anyLoading, cancelAll, chainSymbol, spot,
     spotIsEstimated, notice, error, showOnboarding, setToken, setSecret, onboardingPreview,
     previewLabel, sections, hasRows,
 }) => {
@@ -58,37 +53,11 @@ export const DeskView: React.FC<DeskViewProps> = ({
             option desk uses all the horizontal space instead of a narrow
             column. See index.css for the matching container note. */
         <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
-            {/* ---- Controls: STEP 1 (ticker → Expirations), STEP 2 (exp → Load) ---- */}
+            {/* ---- Controls: STEP 1 result (Cancel/spot) — the expiration
+                picker + Load button (STEP 2) now live in the shared panel in
+                main.tsx, in the same row as the Desk/GEX/Chart tab pills,
+                visible from Desk and GEX alike. ---- */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
-
-
-                {/* Multi-expiration selector + Load — after "Expirations" succeeds.
-                    Pick one or MANY dates (checkboxes); they render stacked
-                    earliest→latest. "All"/"None" quick toggles included. */}
-                {meta && (
-                    /* A <form> so pressing Enter (once the Load button is focused
-                       after picking a date) submits and loads immediately. */
-                    <form
-                        onSubmit={(e) => { e.preventDefault(); loadChain(); }}
-                        className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
-                    >
-                        <ExpirationChips
-                            expirations={meta.expirations}
-                            selected={selectedExps}
-                            onToggle={toggleExpiration}
-                            onSetAll={setSelectedExps}
-                            colorTheme={settings.colorTheme}
-                        />
-                        <button
-                            ref={loadBtnRef}
-                            type="submit"
-                            disabled={expLoading || selectedExps.length === 0}
-                            className={`shrink-0 rounded-md ${ax.btn} px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 ${ax.focusRingOffset}`}
-                        >
-                            {expLoading ? tr('controls.loading') : (selectedExps.length > 1 ? tr('controls.loadCount', { count: selectedExps.length }) : tr('controls.load'))}
-                        </button>
-                    </form>
-                )}
 
                 {/* Cancel — visible only while a request is in flight. */}
                 {anyLoading && (
