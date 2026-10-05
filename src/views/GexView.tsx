@@ -133,23 +133,39 @@ export const GexView: React.FC<GexViewProps> = ({
         // Every GexPoint field is carried through (not just the selected
         // metrics) so toggling metrics on/off never needs to recompute rows -
         // only which Bars/axes get rendered below changes.
+        //
+        // putOiNeg/putVolumeNeg mirror putOi/putVolume onto the negative axis
+        // for the bars only (same signed call/put convention netGex already
+        // uses) - the real p.putOi/p.putVolume values (from src/gex.ts, rule
+        // R1) are left untouched and carried through via `...p`, so the
+        // tooltip/legend can still report the actual non-negative count.
         const rows = visible.map((p) => ({
             ...p,
             pos: Math.max(p.netGex, 0),
             neg: Math.min(p.netGex, 0),
+            putOiNeg: -p.putOi,
+            putVolumeNeg: -p.putVolume,
         }));
         return { rows, domain: [minK - pad, maxK + pad] as [number, number] };
     }, [profile, effSpot, levels]);
 
     // ---- Multi-metric selection --------------------------------------------
-    // netGex keeps its signed pos/neg stacked treatment; the 4 OI/Volume
-    // metrics render as grouped (non-stacked) bars. All metrics now share one
-    // Y axis (see "Chart axes + zoom" below) - when netGex is combined with
-    // an OI/Volume metric, the OI/Volume bars will look small/flat next to
-    // netGex's much larger dollar-gamma magnitude. That's an accepted,
-    // explicit tradeoff, not something normalized away.
+    // netGex keeps its signed pos/neg stacked treatment. The 4 OI/Volume
+    // metrics now follow the same signed call/put convention: Call OI/Volume
+    // draw as plain positive bars (dataKey === the metric itself); Put OI/
+    // Volume draw mirrored onto the negative axis (dataKey === `${m}Neg`,
+    // see the `rows` comment above) - independently per metric, so selecting
+    // only "Put OI" still draws it negative without "Call OI" also being on.
+    // All metrics share one Y axis (see "Chart axes + zoom" below) - when
+    // netGex is combined with an OI/Volume metric, the OI/Volume bars will
+    // look small/flat next to netGex's much larger dollar-gamma magnitude.
+    // That's an accepted, explicit tradeoff, not something normalized away.
     const countMetrics = GEX_METRICS.filter((m) => m !== 'netGex' && metrics.includes(m)) as Array<Exclude<GexMetric, 'netGex'>>;
     const hasNetGex = metrics.includes('netGex');
+    const isPutMetric = (m: GexMetric) => m === 'putOi' || m === 'putVolume';
+    /** dataKey the <Bar> for a count metric actually plots - put metrics plot
+     *  their negated mirror field, so the bar draws below zero (see `rows`). */
+    const barKeyFor = (m: Exclude<GexMetric, 'netGex'>) => (isPutMetric(m) ? `${m}Neg` : m);
     const metricLabel = (m: GexMetric) => tr('gex.metric.' + m);
 
     // ---- Per-metric bar colors (user-customizable, persisted) --------------
@@ -228,33 +244,47 @@ export const GexView: React.FC<GexViewProps> = ({
 
     // ---- Chart axes + zoom ---------------------------------------------------
     // Single shared Y axis for every selected metric (no dual-axis split).
-    // netGex keeps its symmetric +/-max domain (same visual treatment as
-    // before: zero sits in the middle, pos/neg bars scaled identically) -
-    // when any OI/Volume metric is also selected, the domain's magnitude
-    // grows to fit whichever of the two groups has the larger max, so the
-    // OI/Volume bars (always >=0, drawn within the upper half of the same
-    // axis) never get clipped. When netGex is combined with an OI/Volume
-    // metric, the latter's bars will look small/flat next to netGex's much
-    // larger dollar-gamma scale - an accepted tradeoff, not solved here via
-    // normalization/log scales/a second axis.
+    //
+    // Now that Put OI/Volume also draw negative (mirroring netGex's existing
+    // call/put convention), the domain tracks each side's extent
+    // independently - posMax from netGex's positive half + any selected call
+    // metric, negMax (a magnitude) from netGex's negative half + any selected
+    // put metric - and fits the axis to [-negMax, posMax] rather than forcing
+    // a single +/-max symmetric domain. This is a deliberate choice over
+    // symmetric: it's what the axis already did for OI/Volume-only selections
+    // before this change (a plain [0, max], i.e. negMax implicitly 0 - the
+    // positive-only case below reproduces that exactly), so e.g. "Call OI"
+    // alone still fills the whole chart height, not just the top half; "Put
+    // OI" alone now mirrors that, filling the whole height below zero
+    // ([-negMax, 0]) rather than wasting the top half on an empty positive
+    // side a forced symmetric domain would leave. Pixels-per-unit is a single
+    // linear scale across the whole domain either way, so a call bar and a
+    // put bar of equal magnitude still draw with equal height whenever both
+    // sides are in play - independent sizing only moves where the zero line
+    // sits, it never distorts the relative bar heights.
     const yBase = useMemo((): [number, number] => {
         if (!chart) return [0, 1];
-        let netGexAbsMax = 0;
-        let countMax = 0;
+        let posMax = 0;
+        let negMax = 0;
         for (const row of chart.rows) {
-            if (hasNetGex) netGexAbsMax = Math.max(netGexAbsMax, Math.abs(row.pos), Math.abs(row.neg));
-            for (const m of countMetrics) countMax = Math.max(countMax, row[m] ?? 0);
+            if (hasNetGex) {
+                posMax = Math.max(posMax, row.pos);
+                negMax = Math.max(negMax, Math.abs(row.neg));
+            }
+            for (const m of countMetrics) {
+                if (isPutMetric(m)) negMax = Math.max(negMax, row[m] ?? 0);
+                else posMax = Math.max(posMax, row[m] ?? 0);
+            }
         }
-        if (!hasNetGex) return [0, countMax || 1];
-        const max = Math.max(netGexAbsMax, countMax) || 1;
-        return [-max, max];
+        if (posMax === 0 && negMax === 0) return [0, 1];
+        return [-negMax, posMax];
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chart, hasNetGex, countMetrics.join(',')]);
 
     const yDomain = scaleAroundZero(yBase, yZoomFactor);
-    // Signed formatting only makes sense once the domain can actually go
-    // negative (i.e. netGex is selected); OI/Volume-only domains start at 0.
-    const yTickFormatter = (v: number) => (hasNetGex ? fmtSignedCompact(v) : fmtCompact(v));
+    // Signed formatting once the domain can actually go negative - true
+    // whenever netGex is selected, or any put metric (now also negative) is.
+    const yTickFormatter = (v: number) => (yBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
     const xDomain = xZoom ?? chart?.domain ?? ([0, 1] as [number, number]);
 
     const keyLevels: Array<{ key: GexLevelKey; label: string; value: number | null; optional?: boolean }> = [
@@ -530,7 +560,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         </>
                                     )}
                                     {countMetrics.map((m) => (
-                                        <Bar key={m} dataKey={m} name={metricLabel(m)} fill={metricColors[m]} isAnimationActive={false} />
+                                        <Bar key={m} dataKey={barKeyFor(m)} name={metricLabel(m)} fill={metricColors[m]} isAnimationActive={false} />
                                     ))}
                                     {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
                                         <ReferenceArea x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
