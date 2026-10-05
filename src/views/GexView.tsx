@@ -147,37 +147,40 @@ function fmtSignedCompact(v: number): string {
  * top of the whole plot area (see recharts' ReferenceLine.getVerticalLineEndPoints
  * + Label's CartesianLabelContextProvider: a vertical line's rect is
  * {x: coord, y: plotTop, width: 0, height: plotHeight}). Anchoring at
- * (viewBox.x, viewBox.y + a small inset) keeps every label near the chart's
+ * (viewBox.x, viewBox.y + a FIXED inset) keeps every label near the chart's
  * top edge regardless of each level's own strike - different strikes land at
  * different pixel columns, so rotating each label around its OWN anchor is
- * what keeps them apart now, instead of the old per-index vertical offset
- * (two levels at the same strike/column still separate along the diagonal
- * text's own length). `offsetIndex` adds a per-drawn-level vertical nudge -
- * found to be genuinely needed (not just a rare edge case), verified live:
- * SPX's own Max Pain/Support 2/Spot/Resistance 2 strikes land close enough
- * together that a nudge keeps their diagonal labels from running into each
- * other near the chart's top edge. 40px of inset clears the always-on,
- * never-offset Spot label's own row; 22px per index gives each subsequent
- * label its own diagonal "lane" alongside its neighbors. Still not perfect
- * at the extreme: verified live that a genuine two-crossing SPX chain can
- * put gammaFlipPos/gammaFlipNeg only ~15 strike points apart (out of an
- * ~1850-point chart) - close enough that even this offset plus the shorter
- * "Flip +"/"Flip -" chart wording (see levelChartLabel below) still leaves
- * their labels partially touching, though both remain individually
- * readable. Accepted as an honest limitation rather than chased further.
+ * what keeps them apart, via each label's own X position, not a vertical
+ * offset.
+ *
+ * EVERY label starts at the exact same y (`viewBox.y + 40`, no per-level
+ * stagger) - a deliberate user requirement: "they all must be above the
+ * chart area, so starting symbol will be always on the same level for all
+ * labels". An earlier version added a per-drawn-level vertical nudge
+ * (`offsetIndex * 22`) to reduce overlap between labels whose strikes land
+ * close together (e.g. SPX's own Max Pain/Support 2/Resistance 2 strikes);
+ * that staggering was removed per the above requirement - only the X
+ * position (each level's own strike) and the -45deg rotation now keep
+ * labels apart. Known, accepted consequence: two levels whose strikes sit
+ * very close together (e.g. a genuine two-crossing chain putting
+ * gammaFlipPos/gammaFlipNeg only ~15 strike points apart out of an
+ * ~1850-point chart) will have their same-baseline diagonal labels overlap
+ * more than the old staggered version did - still individually readable,
+ * just closer together. This is an honest limitation, not a bug: the user
+ * explicitly chose one shared baseline over the old anti-overlap stagger.
  *
  * The rotation sign is `-45`, not `+45`: verified live with a Playwright
  * screenshot (see the PR) that this is the sign which actually reads
  * bottom-left-to-top-right in SVG's/recharts' y-down coordinate system -
  * `+45` produces the mirrored top-left-to-bottom-right diagonal instead.
  */
-function renderRotatedLevelLabel(color: string, text: string, offsetIndex = 0) {
+function renderRotatedLevelLabel(color: string, text: string) {
     return (props: { viewBox?: { x?: number; y?: number } }) => {
         const vx = props.viewBox?.x;
         const vy = props.viewBox?.y;
         if (vx == null || vy == null) return <React.Fragment />;
         const x = vx + 4;
-        const y = vy + 40 + offsetIndex * 22;
+        const y = vy + 40;
         return (
             <text x={x} y={y} transform={`rotate(-45 ${x} ${y})`} fill={color} fontSize={10} textAnchor="start">
                 {text}
@@ -429,11 +432,13 @@ export const GexView: React.FC<GexViewProps> = ({
     // Call Wall (R1)/Put Wall (S1) (see LEVEL_CHART_LABEL_KEY's doc comment).
     // Verified live (Playwright, SPX "All expirations") that a genuine
     // two-crossing chain can land gammaFlipPos/gammaFlipNeg only ~15 strike
-    // points apart - at that distance even a generous per-index vertical
-    // offset (see renderRotatedLevelLabel) can't keep two FULL "Gamma Flip +"/
-    // "Gamma Flip -" diagonal labels from overlapping, so the chart case
-    // specifically gets the shorter wording; the sidebar/toggle panel have
-    // much more horizontal room and keep the fuller one.
+    // points apart - at that distance even the shorter wording can't fully
+    // keep two FULL "Gamma Flip +"/"Gamma Flip -" diagonal labels from
+    // overlapping now that every label shares one fixed baseline (see
+    // renderRotatedLevelLabel's doc comment - no per-level vertical offset
+    // any more), so the chart case specifically gets the shorter wording;
+    // the sidebar/toggle panel have much more horizontal room and keep the
+    // fuller one.
     const levelChartLabel = (key: ToggleableLevelKey): string => {
         if (key === 'gammaFlipPos' || key === 'gammaFlipNeg') {
             return bothGammaFlip ? tr(key === 'gammaFlipPos' ? 'gex.chart.gammaFlipPos' : 'gex.chart.gammaFlipNeg') : tr('gex.chart.gammaFlip');
@@ -936,16 +941,14 @@ export const GexView: React.FC<GexViewProps> = ({
                                         Levels card already shows (src/gex.ts, rule R1) - this never
                                         recomputes anything. */}
                                     {(() => {
-                                        // Only the levels actually drawn this render get an
-                                        // offsetIndex (see renderRotatedLevelLabel's doc comment) -
-                                        // computed here instead of ALL_LEVEL_KEYS.indexOf so hidden/
-                                        // null levels don't burn an index for no reason.
-                                        let drawnIndex = -1;
+                                        // Every drawn label shares the exact same baseline y
+                                        // (see renderRotatedLevelLabel's doc comment) - only each
+                                        // level's own strike (x position) and the -45deg rotation
+                                        // keep labels apart, no per-drawn-level vertical offset.
                                         return ALL_LEVEL_KEYS.map((key) => {
                                             if (!selectedLevels.includes(key)) return null;
                                             const value = levels?.[key];
                                             if (value == null) return null;
-                                            drawnIndex += 1;
                                             const color = levelColors[key];
                                             return (
                                                 <ReferenceLine
@@ -953,7 +956,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                     x={value}
                                                     stroke={color}
                                                     strokeDasharray="2 4"
-                                                    label={renderRotatedLevelLabel(color, levelChartLabel(key), drawnIndex)}
+                                                    label={renderRotatedLevelLabel(color, levelChartLabel(key))}
                                                 />
                                             );
                                         });
