@@ -453,6 +453,24 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+ * [Scrollbar Hiding] - visually hides the scrollbar track/thumb on a
+ * scrollable surface while leaving it fully scrollable (wheel/trackpad/touch/
+ * drag all still work - only `overflow-x: auto`'s own visible scrollbar
+ * chrome is suppressed, scrolling itself is untouched). Deliberately a
+ * SEPARATE class from `.themed-scroll` above, not a modification of it -
+ * `.themed-scroll` is shared by several other scrollable surfaces (the Desk
+ * tab's ChainTable, the tabs strip, a popover) that still want a visible
+ * themed scrollbar; this is opt-in per-surface (currently just the GEX tab's
+ * Key Levels panel chip row, views/GexView.tsx) rather than a global change.
+ * ------------------------------------------------------------------------- */
+.scrollbar-hidden {
+    scrollbar-width: none;      /* Firefox */
+}
+.scrollbar-hidden::-webkit-scrollbar {
+    display: none;             /* Chrome / Safari / Edge */
+}
+
+/* ---------------------------------------------------------------------------
  * Option-chain desk — DIV/GRID layout with STACKING sticky expiration bars.
  *
  * We DELIBERATELY do NOT use a <table>. Native tables have a well-known bug:

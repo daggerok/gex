@@ -239,6 +239,13 @@ export const translations: Record<Language, Record<string, string>> = {
         'gex.pcRatio.byVolume': 'By Volume',
         'gex.metric.label': 'Metrics',
         'gex.metric.netGex': 'Net GEX',
+        // Short "AG" abbreviation for the toggle chip itself (matches the
+        // reference tool's own abbreviation); 'gex.metric.absoluteGammaFull'
+        // below spells out "Absolute Gamma" wherever there's room (chart
+        // title, legend, hover-tooltip rows) - see GexView.tsx's
+        // metricLabelFull.
+        'gex.metric.absoluteGamma': 'AG',
+        'gex.metric.absoluteGammaFull': 'Absolute Gamma',
         'gex.metric.callOi': 'Call OI',
         'gex.metric.putOi': 'Put OI',
         'gex.metric.callVolume': 'Call Volume',
@@ -267,6 +274,7 @@ export const translations: Record<Language, Record<string, string>> = {
         // the Key Levels panel entries - plain-language explanations for a
         // non-programmer trader, not implementation detail.
         'gex.metric.tooltip.netGex': 'Net dollar gamma exposure at this strike: calls minus puts, where each side\'s GEX = gamma x open interest x 100 x spot^2 x 0.01. Calls add positively, puts subtract; the result estimates how many dollars of hedging flow dealers would need to transact here for every 1% move in the underlying.',
+        'gex.metric.tooltip.absoluteGamma': 'Absolute Gamma (AG): total gamma exposure at this strike regardless of direction - |Call GEX| + |Put GEX|, with no cancellation between calls and puts (unlike Net GEX, which nets them). A strike with a large AG is a strong support/resistance/pinning magnet even if its net GEX is small. Plotted on its own right-hand axis since AG is always a much larger, always-positive number than the signed metrics sharing the left axis.',
         'gex.metric.tooltip.callOi': 'Total open interest for calls at this strike - the open-interest field from every call contract at that strike, summed across the selected expirations. Counts outstanding contracts, not shares or dollars.',
         'gex.metric.tooltip.putOi': 'Total open interest for puts at this strike - the open-interest field from every put contract at that strike, summed across the selected expirations. Counts outstanding contracts, not shares or dollars.',
         'gex.metric.tooltip.callVolume': 'Total contracts traded today for calls at this strike - the volume field from every call contract at that strike, summed across the selected expirations.',
@@ -528,6 +536,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'gex.pcRatio.byVolume': 'По объёму',
         'gex.metric.label': 'Метрики',
         'gex.metric.netGex': 'Нетто GEX',
+        'gex.metric.absoluteGamma': 'AG',
+        'gex.metric.absoluteGammaFull': 'Абсолютная гамма',
         'gex.metric.callOi': 'ОИ коллов',
         'gex.metric.putOi': 'ОИ путов',
         'gex.metric.callVolume': 'Объём коллов',
@@ -553,6 +563,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'gex.level.color': 'Цвет: {{level}}',
 
         'gex.metric.tooltip.netGex': 'Нетто-долларовая гамма-экспозиция на этом страйке: коллы минус путы, где GEX каждой стороны = гамма x открытый интерес x 100 x спот^2 x 0.01. Коллы добавляют с плюсом, путы — с минусом; результат показывает, сколько долларов хеджирующего потока потребуется дилерам на каждый 1% движения базового актива.',
+        'gex.metric.tooltip.absoluteGamma': 'Абсолютная гамма (AG): суммарная гамма-экспозиция на этом страйке независимо от направления — |GEX коллов| + |GEX путов|, без взаимной компенсации коллов и путов (в отличие от Нетто GEX, где они вычитаются). Страйк с большим AG — сильный магнит поддержки/сопротивления/прижатия цены, даже если его нетто GEX невелик. Отображается на собственной правой оси, так как AG — всегда намного большее и всегда положительное число по сравнению со знаковыми метриками на левой оси.',
         'gex.metric.tooltip.callOi': 'Суммарный открытый интерес коллов на этом страйке — поле открытого интереса каждого контракта-колла на этом страйке, просуммированное по выбранным экспирациям. Считает контракты, а не акции или доллары.',
         'gex.metric.tooltip.putOi': 'Суммарный открытый интерес путов на этом страйке — поле открытого интереса каждого контракта-пута на этом страйке, просуммированное по выбранным экспирациям. Считает контракты, а не акции или доллары.',
         'gex.metric.tooltip.callVolume': 'Суммарный объём торгов коллами на этом страйке за сегодня — поле объёма каждого контракта-колла на этом страйке, просуммированное по выбранным экспирациям.',
