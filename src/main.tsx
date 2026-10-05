@@ -26,6 +26,16 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.53 - Footer scoped per tab (user request: show the TradingView/
+ *          lightweight-charts attribution only where that library is
+ *          actually used): AttributionFooter.tsx now renders only when
+ *          `activeTab === 'chart'`; every other tab shows the new
+ *          `RepoFooter` (plain link to this project's own GitHub repo)
+ *          instead. Reverses the earlier "on every tab" choice noted in
+ *          v0.9.52's own entry below - that was a reasonable reading of
+ *          Apache-2.0 at the time, but scoping to the one tab that actually
+ *          generates the display lightweight-charts' NOTICE refers to is the
+ *          more precise one.
  * v0.9.52 - Persist UI state across reloads (user request: "if I refreshed a
  *          page or opened after close, is it possible to keep this"):
  *          - Settings gains three fields: `activeTab` (AppTab), `selectedExps`
@@ -745,7 +755,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
-import { AttributionFooter } from './components/AttributionFooter';
+import { AttributionFooter, RepoFooter } from './components/AttributionFooter';
 import type { ChainSection } from './components/ChainTable';
 import { ExpirationChips } from './components/ExpirationChips';
 import { type AppTab, TabSwitcher } from './components/TabSwitcher';
@@ -1418,8 +1428,11 @@ const App: React.FC = () => {
                 </Suspense>
             )}
 
-            {/* lightweight-charts attribution (Apache-2.0 NOTICE + link), on every tab. */}
-            <AttributionFooter />
+            {/* lightweight-charts attribution (Apache-2.0 NOTICE + link) ONLY on the
+                Chart tab (the only one that actually loads/renders that library - see
+                AttributionFooter.tsx's own doc comment); every other tab shows a plain
+                link back to this project's own GitHub repo instead. */}
+            {activeTab === 'chart' ? <AttributionFooter /> : <RepoFooter />}
         </div>
     );
 };
