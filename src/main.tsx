@@ -1273,7 +1273,7 @@ const App: React.FC = () => {
 
     // ---- Render ------------------------------------------------------------
     return (
-        <div className="min-h-screen">
+        <div className="min-h-screen flex flex-col">
             <TopBar
                 settings={settings}
                 provider={provider}
@@ -1318,6 +1318,13 @@ const App: React.FC = () => {
                 proxyChecking={proxyChecking}
             />
 
+            {/* flex-1: grows to fill whatever height TopBar (fixed) doesn't use, so the
+                footer below is pushed to the bottom of the viewport on a short/empty
+                tab (e.g. Chart with no proxy running) instead of floating right under
+                a short content block - same visual anchor point as a tall tab like Desk
+                with real data loaded, where this div's own content already pushes the
+                footer there anyway. */}
+            <div className="flex-1">
             <TabSwitcher
                 value={activeTab}
                 onChange={changeTab}
@@ -1427,6 +1434,7 @@ const App: React.FC = () => {
                     />
                 </Suspense>
             )}
+            </div>
 
             {/* lightweight-charts attribution (Apache-2.0 NOTICE + link) ONLY on the
                 Chart tab (the only one that actually loads/renders that library - see
