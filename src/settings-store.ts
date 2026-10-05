@@ -4,22 +4,68 @@ import type { ChainResult, ColorThemeId, Settings } from './types';
 import { dbg } from './utils';
 
 // ============================================================================
-// PERSISTENT QUERY CACHE (localStorage, size-aware LRU eviction)
+// PERSISTENT QUERY CACHE (IndexedDB, size-aware LRU eviction)
 // ============================================================================
 
 /**
- * Every successful query is stored in localStorage so it survives reloads and
- * lets us serve from cache without spending another request. Because
- * localStorage is small (~5 MB) and can throw QuotaExceededError, we track the
- * approximate byte size and, BEFORE writing, evict the LEAST-RECENTLY-USED
- * (oldest `ts`) records until the new entry fits under CACHE_MAX_BYTES. If a
- * write still throws quota, we evict-and-retry until it succeeds or the cache
- * is empty. (Per the requirement: when storage would be exceeded, drop the
- * oldest records first, then store.)
+ * Every successful query is stored in IndexedDB so it survives reloads and
+ * lets us serve from cache without spending another request.
+ *
+ * This used to be a localStorage-backed cache capped at ~4 MB total — tiny
+ * enough that a single large index chain (SPX can be 1.3–5.4 MB) could by
+ * itself approach or blow the whole budget, causing aggressive eviction for
+ * exactly the tickers where persistence matters most. IndexedDB's practical
+ * quota is far larger (hundreds of MB to several GB depending on browser), so
+ * we keep a much bigger — but still soft — cap and the same LRU eviction
+ * policy, adapted to be async-safe.
+ *
+ * Schema: one object store (`entries`, keyPath `key`) holding records of
+ * `{ key, value, ts, size }` — `value` is the cached payload (same shape as
+ * before: ChainResult for bulk, OptionQuote[]/ChainMeta for lazy), `ts` is the
+ * LRU timestamp, `size` is a rough byte estimate used for eviction/quota math.
+ * A secondary index on `ts` exists for potential future use; in practice we
+ * maintain an in-memory mirror of `{key: {ts,size}}` (hydrated once per
+ * session from a cursor sweep, then kept in sync on every write/delete) so
+ * repeated eviction/stats checks don't require rescanning the whole store.
+ *
+ * Because IndexedDB can still throw QuotaExceededError (real browser quota,
+ * not just our soft cap), writes evict-and-retry on quota errors exactly like
+ * before, and any other write failure is swallowed — a failed cache WRITE
+ * must never prevent the user from seeing data they just fetched, only from
+ * it being persisted for next time.
  */
-export const CACHE_PREFIX = 'gex.cache.'; // one localStorage key per entry
-export const CACHE_INDEX_KEY = 'gex.cache.index.v1'; // {key: {ts,size}} map
-export const CACHE_MAX_BYTES = 4_000_000; // stay well under the ~5 MB localStorage cap
+const CACHE_DB_NAME = 'gex-cache-db';
+const CACHE_DB_VERSION = 1;
+const CACHE_STORE_NAME = 'entries';
+
+// ~200 MB soft cap. Reasoning: real-world IndexedDB quotas are typically a
+// generous share of free disk space in Chromium/Firefox (often hundreds of MB
+// to multiple GB), while Safari has historically been more conservative — but
+// even Safari's documented per-origin limits are comfortably above 200 MB on
+// any machine with meaningful free disk space. 200 MB is ~50x the old 4 MB
+// localStorage cap: it holds dozens of SPX-sized (~5.4 MB) chains plus a large
+// number of equity chains without coming close to realistic browser quota
+// errors, while still bounding unbounded growth with an LRU policy.
+export const CACHE_MAX_BYTES = 200_000_000;
+
+// Old localStorage-based cache keys (pre-IndexedDB-migration). We don't
+// migrate their contents — this is a disposable performance cache, anything
+// missing just gets re-fetched from the provider, same as a cold cache today
+// — but we do remove the stale keys on first load so they don't linger as
+// dead weight in localStorage.
+const LEGACY_CACHE_PREFIX = 'gex.cache.';
+const LEGACY_CACHE_INDEX_KEY = 'gex.cache.index.v1';
+
+function clearLegacyLocalStorageCache(): void {
+    try {
+        localStorage.removeItem(LEGACY_CACHE_INDEX_KEY);
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(LEGACY_CACHE_PREFIX)) localStorage.removeItem(k);
+        }
+    } catch { /* ignore — no localStorage (SSR/tests) or access denied */ }
+}
+clearLegacyLocalStorageCache(); // one-time sweep, runs once per module load (page load)
 
 /**
  * Tiny pub/sub so the Settings → Cache stats update LIVE (no manual refresh)
@@ -32,72 +78,208 @@ export function subscribeCache(fn: () => void): () => void { cacheListeners.add(
 
 export interface CacheMeta { ts: number; size: number; }
 export type CacheIndex = Record<string, CacheMeta>;
+interface CacheRecord { key: string; value: unknown; ts: number; size: number; }
 
-export function cacheLoadIndex(): CacheIndex {
-    try { return JSON.parse(localStorage.getItem(CACHE_INDEX_KEY) || '{}'); }
-    catch { return {}; }
+// ---- IndexedDB plumbing (native API, Promise-wrapped by hand) -------------
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function openCacheDb(): Promise<IDBDatabase> {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB unavailable in this environment')); return; }
+        let req: IDBOpenDBRequest;
+        try { req = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION); }
+        catch (err) { reject(err as Error); return; }
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(CACHE_STORE_NAME)) {
+                const store = db.createObjectStore(CACHE_STORE_NAME, { keyPath: 'key' });
+                store.createIndex('by-ts', 'ts', { unique: false });
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error ?? new Error('IndexedDB open failed'));
+        req.onblocked = () => reject(new Error('IndexedDB open blocked by another tab'));
+    });
+    // Don't cache a failed open forever — let a later call retry (e.g. transient failure).
+    dbPromise.catch(() => { dbPromise = null; });
+    return dbPromise;
 }
-export function cacheSaveIndex(ix: CacheIndex): void {
-    try { localStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(ix)); } catch { /* ignore */ }
+
+function idbGet(db: IDBDatabase, key: string): Promise<CacheRecord | undefined> {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE_NAME, 'readonly');
+        const req = tx.objectStore(CACHE_STORE_NAME).get(key);
+        req.onsuccess = () => resolve(req.result as CacheRecord | undefined);
+        req.onerror = () => reject(req.error ?? new Error('IndexedDB get failed'));
+    });
 }
+
+async function idbPut(rec: CacheRecord): Promise<void> {
+    const db = await openCacheDb();
+    await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
+        tx.objectStore(CACHE_STORE_NAME).put(rec);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB put failed'));
+        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB put aborted'));
+    });
+}
+
+async function idbDelete(key: string): Promise<void> {
+    try {
+        const db = await openCacheDb();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
+            tx.objectStore(CACHE_STORE_NAME).delete(key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB delete failed'));
+        });
+    } catch { /* ignore */ }
+}
+
+async function idbClear(): Promise<void> {
+    try {
+        const db = await openCacheDb();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
+            tx.objectStore(CACHE_STORE_NAME).clear();
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB clear failed'));
+        });
+    } catch { /* ignore */ }
+}
+
+function isQuotaError(err: unknown): boolean {
+    return (err instanceof DOMException && err.name === 'QuotaExceededError')
+        || (!!err && typeof err === 'object' && (err as { name?: string }).name === 'QuotaExceededError');
+}
+
+// ---- In-memory LRU index (hydrated once per session from IndexedDB) -------
+
+let cacheIndexPromise: Promise<CacheIndex> | null = null;
+
+/** Load (and memoize) the `{key: {ts,size}}` index from IndexedDB. */
+export function cacheLoadIndex(): Promise<CacheIndex> {
+    if (cacheIndexPromise) return cacheIndexPromise;
+    cacheIndexPromise = (async () => {
+        try {
+            const db = await openCacheDb();
+            const ix: CacheIndex = {};
+            await new Promise<void>((resolve, reject) => {
+                const tx = db.transaction(CACHE_STORE_NAME, 'readonly');
+                const req = tx.objectStore(CACHE_STORE_NAME).openCursor();
+                req.onsuccess = () => {
+                    const cursor = req.result;
+                    if (cursor) {
+                        const rec = cursor.value as CacheRecord;
+                        ix[rec.key] = { ts: rec.ts, size: rec.size };
+                        cursor.continue();
+                    } else {
+                        resolve();
+                    }
+                };
+                req.onerror = () => reject(req.error ?? new Error('cache index scan failed'));
+            });
+            return ix;
+        } catch (err) {
+            dbg('cache: index load failed, starting empty', err);
+            return {};
+        }
+    })();
+    return cacheIndexPromise;
+}
+
 export function cacheTotalBytes(ix: CacheIndex): number {
     let n = 0;
     for (const k in ix) n += ix[k].size;
     return n;
 }
-/** Remove a single cache entry (both its data key and its index record). */
-export function cacheDrop(ix: CacheIndex, key: string): void {
-    try { localStorage.removeItem(CACHE_PREFIX + key); } catch { /* ignore */ }
-    delete ix[key];
-}
-/** Evict oldest-first until total + `incoming` fits under CACHE_MAX_BYTES. */
-export function cacheEvictToFit(ix: CacheIndex, incoming: number): void {
-    if (incoming > CACHE_MAX_BYTES) return; // a single huge entry: caller handles
+
+/**
+ * Pure eviction-ordering logic: which keys (oldest-first) to drop so that
+ * `total(ix) + incoming` fits under `maxBytes`. Kept pure/sync so it's
+ * unit-testable without a real IndexedDB.
+ */
+export function pickEvictionKeys(ix: CacheIndex, incoming: number, maxBytes: number = CACHE_MAX_BYTES): string[] {
+    if (incoming > maxBytes) return []; // a single huge entry: caller (cacheSet) handles via quota retry
     const byOldest = Object.keys(ix).sort((a, b) => ix[a].ts - ix[b].ts);
-    let i = 0;
-    while (cacheTotalBytes(ix) + incoming > CACHE_MAX_BYTES && i < byOldest.length) {
-        dbg('cache evict (size)', byOldest[i]);
-        cacheDrop(ix, byOldest[i]);
-        i++;
+    const toEvict: string[] = [];
+    let total = cacheTotalBytes(ix);
+    for (const k of byOldest) {
+        if (total + incoming <= maxBytes) break;
+        toEvict.push(k);
+        total -= ix[k].size;
+    }
+    return toEvict;
+}
+
+/** Remove a single cache entry (both its IndexedDB record and its index entry). */
+export async function cacheDrop(ix: CacheIndex, key: string): Promise<void> {
+    delete ix[key];
+    await idbDelete(key);
+}
+
+/** Evict oldest-first until total + `incoming` fits under CACHE_MAX_BYTES. */
+export async function cacheEvictToFit(ix: CacheIndex, incoming: number): Promise<void> {
+    for (const k of pickEvictionKeys(ix, incoming, CACHE_MAX_BYTES)) {
+        dbg('cache evict (size)', k);
+        await cacheDrop(ix, k);
     }
 }
-/** Read a cached JSON value by key (updates its LRU timestamp on hit). */
-export function cacheGet<T>(key: string): T | null {
+
+/** Read a cached JSON-serializable value by key (updates its LRU timestamp on hit). */
+export async function cacheGet<T>(key: string): Promise<T | null> {
     try {
-        const raw = localStorage.getItem(CACHE_PREFIX + key);
-        if (raw == null) return null;
-        const ix = cacheLoadIndex();
-        if (ix[key]) { ix[key].ts = Date.now(); cacheSaveIndex(ix); } // touch LRU
-        return JSON.parse(raw) as T;
-    } catch { return null; }
+        const db = await openCacheDb();
+        const rec = await idbGet(db, key);
+        if (!rec) return null;
+        const ts = Date.now();
+        // Touch LRU — best-effort, never blocks returning the value we already have.
+        void cacheLoadIndex().then((ix) => { if (ix[key]) ix[key].ts = ts; }).catch(() => { /* ignore */ });
+        void idbPut({ ...rec, ts }).catch(() => { /* ignore */ });
+        return rec.value as T;
+    } catch (err) {
+        dbg('cache get failed', key, err);
+        return null;
+    }
 }
+
 /**
- * Write a cached JSON value. Evicts oldest entries first if needed, and retries
- * on QuotaExceededError by dropping more oldest entries until it fits.
+ * Write a cached value. Evicts oldest entries first if needed, and retries
+ * on QuotaExceededError by dropping more oldest entries until it fits. Any
+ * other write failure is swallowed — the in-memory bulkCache (set by the
+ * caller before/alongside this) still holds the just-fetched data, so a
+ * persistence failure never blocks the user from seeing it.
  */
-export function cacheSet(key: string, value: unknown): void {
+export async function cacheSet(key: string, value: unknown): Promise<void> {
     let payload: string;
     try { payload = JSON.stringify(value); } catch { return; }
     const size = payload.length + key.length + 32; // rough byte estimate
-    const ix = cacheLoadIndex();
+    const ix = await cacheLoadIndex();
     // Replacing an existing key frees its old size first.
-    if (ix[key]) cacheDrop(ix, key);
-    cacheEvictToFit(ix, size);
+    if (ix[key]) await cacheDrop(ix, key);
+    await cacheEvictToFit(ix, size);
 
+    const rec: CacheRecord = { key, value, ts: Date.now(), size };
     for (let attempt = 0; attempt < 50; attempt++) {
         try {
-            localStorage.setItem(CACHE_PREFIX + key, payload);
-            ix[key] = { ts: Date.now(), size };
-            cacheSaveIndex(ix);
+            await idbPut(rec);
+            ix[key] = { ts: rec.ts, size };
             notifyCacheChanged(); // live-update stats
             return;
-        } catch {
+        } catch (err) {
+            if (!isQuotaError(err)) {
+                dbg('cache set failed (non-quota)', key, err);
+                notifyCacheChanged();
+                return; // fail safely — don't crash; just isn't persisted
+            }
             // Quota still exceeded — drop the oldest remaining entry and retry.
             const oldest = Object.keys(ix).sort((a, b) => ix[a].ts - ix[b].ts)[0];
             if (!oldest) { dbg('cache: cannot fit even after full eviction'); notifyCacheChanged(); return; }
             dbg('cache evict (quota retry)', oldest);
-            cacheDrop(ix, oldest);
-            cacheSaveIndex(ix);
+            await cacheDrop(ix, oldest);
         }
     }
 }
@@ -122,8 +304,8 @@ export interface CacheStats {
 }
 
 /** Compute current cache statistics (data entries + settings size). */
-export function cacheStats(): CacheStats {
-    const ix = cacheLoadIndex();
+export async function cacheStats(): Promise<CacheStats> {
+    const ix = await cacheLoadIndex();
     const keys = Object.keys(ix);
     let oldest: number | null = null;
     let newest: number | null = null;
@@ -149,18 +331,11 @@ export function cacheStats(): CacheStats {
  * fetching chains), leaving user settings intact. Also clears the in-memory
  * bulk cache so the next query re-fetches fresh.
  */
-export function clearCacheData(): void {
-    const ix = cacheLoadIndex();
-    for (const k of Object.keys(ix)) {
-        try { localStorage.removeItem(CACHE_PREFIX + k); } catch { /* ignore */ }
-    }
-    try { localStorage.removeItem(CACHE_INDEX_KEY); } catch { /* ignore */ }
-    // Defensive sweep: drop any stray cache-prefixed keys not in the index.
+export async function clearCacheData(): Promise<void> {
+    await idbClear();
     try {
-        for (let i = localStorage.length - 1; i >= 0; i--) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith(CACHE_PREFIX)) localStorage.removeItem(k);
-        }
+        const ix = await cacheLoadIndex();
+        for (const k of Object.keys(ix)) delete ix[k];
     } catch { /* ignore */ }
     bulkCache.clear();
     notifyCacheChanged(); // live-update stats
@@ -179,15 +354,20 @@ export function clearSettingsStore(): void {
 }
 
 /**
- * CLEAR ALL — wipe EVERYTHING this app stored in localStorage (data + settings +
- * any legacy/older-versioned keys under our namespace).
+ * CLEAR ALL — wipe EVERYTHING this app stored (localStorage settings/legacy
+ * keys + the IndexedDB data cache).
  */
-export function clearAll(): void {
+export async function clearAll(): Promise<void> {
     try {
         for (let i = localStorage.length - 1; i >= 0; i--) {
             const k = localStorage.key(i);
             if (k && k.startsWith('gex.')) localStorage.removeItem(k);
         }
+    } catch { /* ignore */ }
+    await idbClear();
+    try {
+        const ix = await cacheLoadIndex();
+        for (const k of Object.keys(ix)) delete ix[k];
     } catch { /* ignore */ }
     bulkCache.clear();
     notifyCacheChanged(); // live-update stats
@@ -200,7 +380,7 @@ export function clearAll(): void {
 
 /**
  * In-memory cache for BULK providers (fast within a session), keyed by
- * `${providerId}:${SYMBOL}`. Backed by the persistent localStorage cache above
+ * `${providerId}:${SYMBOL}`. Backed by the persistent IndexedDB cache above
  * so results also survive reloads.
  */
 export const bulkCache = new Map<string, ChainResult>();
