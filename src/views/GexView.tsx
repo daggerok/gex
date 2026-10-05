@@ -205,6 +205,57 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
     </div>
 );
 
+/**
+ * One toggleable chip combining a show/hide toggle AND its color swatch(es)
+ * into a single visual unit (Metrics panel + Key Levels panel): clicking the
+ * chip's body (label) toggles the metric/level on/off, clicking the nested
+ * color swatch opens the native color picker instead, without also
+ * triggering the toggle.
+ *
+ * A real `<button>` can't contain an `<input type="color">` - interactive
+ * content isn't allowed inside `<button>` per the HTML spec, and support for
+ * it is inconsistent across browsers even though some render it anyway - so
+ * the toggle itself is a `<div role="button">` with equivalent keyboard
+ * semantics (`tabIndex`, `aria-pressed`, Enter/Space via onKeyDown) instead
+ * of a literal `<button>`. `swatches` (the actual `<input type="color">`(s) -
+ * one for most metrics/levels, two for Net GEX's signed pos/neg halves) is
+ * wrapped in its own span that stops click/mousedown propagation, so
+ * interacting with the swatch never bubbles up to the outer toggle handler.
+ */
+const ToggleChip: React.FC<{
+    on: boolean;
+    onToggle: () => void;
+    title: string;
+    activeClass: string;
+    idleClass: string;
+    swatches: React.ReactNode;
+    children: React.ReactNode;
+}> = ({ on, onToggle, title, activeClass, idleClass, swatches, children }) => {
+    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+        }
+    };
+    const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+    return (
+        <div
+            role="button"
+            tabIndex={0}
+            aria-pressed={on}
+            title={title}
+            onClick={onToggle}
+            onKeyDown={onKeyDown}
+            className={'flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? activeClass : idleClass)}
+        >
+            <span>{children}</span>
+            <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
+                {swatches}
+            </span>
+        </div>
+    );
+};
+
 export const GexView: React.FC<GexViewProps> = ({
     settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced,
     selectedExps, metrics, setMetrics,
@@ -598,25 +649,22 @@ export const GexView: React.FC<GexViewProps> = ({
                         {GEX_METRICS.map((m) => {
                             const on = metrics.includes(m);
                             return (
-                                <div key={m} className="flex shrink-0 items-center gap-1">
-                                    <button
-                                        type="button"
-                                        // Independently togglable (not radio buttons); the last
-                                        // remaining selected metric can't be turned off, so the
-                                        // chart is never empty.
-                                        onClick={() => setMetrics(on ? (metrics.length > 1 ? metrics.filter((x) => x !== m) : metrics) : [...metrics, m])}
-                                        aria-pressed={on}
-                                        title={tr('gex.metric.tooltip.' + m)}
-                                        className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? ax.chipActive : ax.chipIdle)}
-                                    >
-                                        {tr('gex.metric.' + m)}
-                                    </button>
-                                    {/* Per-metric bar color pickers. Net GEX needs two (its
-                                        signed pos/neg stacked halves); the 4 OI/Volume metrics
-                                        get one each. Dependency-free <input type="color">,
-                                        always visible (not gated on `on`) so a color can be
-                                        set up before toggling the metric on. */}
-                                    {m === 'netGex' ? (
+                                <ToggleChip
+                                    key={m}
+                                    on={on}
+                                    // Independently togglable (not radio buttons); the last
+                                    // remaining selected metric can't be turned off, so the
+                                    // chart is never empty.
+                                    onToggle={() => setMetrics(on ? (metrics.length > 1 ? metrics.filter((x) => x !== m) : metrics) : [...metrics, m])}
+                                    title={tr('gex.metric.tooltip.' + m)}
+                                    activeClass={ax.chipActive}
+                                    idleClass={ax.chipIdle}
+                                    // Per-metric bar color pickers. Net GEX needs two (its
+                                    // signed pos/neg stacked halves); the 4 OI/Volume metrics
+                                    // get one each. Dependency-free <input type="color">,
+                                    // always visible (not gated on `on`) so a color can be
+                                    // set up before toggling the metric on.
+                                    swatches={m === 'netGex' ? (
                                         <>
                                             <input
                                                 type="color"
@@ -624,7 +672,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                 onChange={(e) => setMetricColor('netGexPos', e.target.value)}
                                                 title={tr('gex.metric.colorNetGexPos')}
                                                 aria-label={tr('gex.metric.colorNetGexPos')}
-                                                className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                                className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                             />
                                             <input
                                                 type="color"
@@ -632,7 +680,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                 onChange={(e) => setMetricColor('netGexNeg', e.target.value)}
                                                 title={tr('gex.metric.colorNetGexNeg')}
                                                 aria-label={tr('gex.metric.colorNetGexNeg')}
-                                                className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                                className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                             />
                                         </>
                                     ) : (
@@ -642,10 +690,12 @@ export const GexView: React.FC<GexViewProps> = ({
                                             onChange={(e) => setMetricColor(m, e.target.value)}
                                             title={tr('gex.metric.color', { metric: metricLabel(m) })}
                                             aria-label={tr('gex.metric.color', { metric: metricLabel(m) })}
-                                            className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                            className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                         />
                                     )}
-                                </div>
+                                >
+                                    {tr('gex.metric.' + m)}
+                                </ToggleChip>
                             );
                         })}
                     </div>
@@ -676,25 +726,26 @@ export const GexView: React.FC<GexViewProps> = ({
                             const on = selectedLevels.includes(key);
                             const label = levelLabel(key);
                             return (
-                                <div key={key} className="flex shrink-0 items-center gap-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => setSelectedLevels(on ? selectedLevels.filter((x) => x !== key) : [...selectedLevels, key])}
-                                        aria-pressed={on}
-                                        title={levelTooltip(key)}
-                                        className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? ax.chipActive : ax.chipIdle)}
-                                    >
-                                        {label}
-                                    </button>
-                                    <input
-                                        type="color"
-                                        value={levelColors[key]}
-                                        onChange={(e) => setLevelColor(key, e.target.value)}
-                                        title={tr('gex.level.color', { level: label })}
-                                        aria-label={tr('gex.level.color', { level: label })}
-                                        className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
-                                    />
-                                </div>
+                                <ToggleChip
+                                    key={key}
+                                    on={on}
+                                    onToggle={() => setSelectedLevels(on ? selectedLevels.filter((x) => x !== key) : [...selectedLevels, key])}
+                                    title={levelTooltip(key)}
+                                    activeClass={ax.chipActive}
+                                    idleClass={ax.chipIdle}
+                                    swatches={
+                                        <input
+                                            type="color"
+                                            value={levelColors[key]}
+                                            onChange={(e) => setLevelColor(key, e.target.value)}
+                                            title={tr('gex.level.color', { level: label })}
+                                            aria-label={tr('gex.level.color', { level: label })}
+                                            className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                        />
+                                    }
+                                >
+                                    {label}
+                                </ToggleChip>
                             );
                         })}
                     </div>
