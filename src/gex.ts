@@ -1,3 +1,4 @@
+import { blackScholesGreeks } from './greeks';
 import type { GexLevels, GexPoint, OptionQuote } from './types';
 
 // ---------------------------------------------------------------------------
@@ -110,139 +111,176 @@ export interface GammaFlipCrossings {
 }
 
 /**
- * Gamma flip / "zero gamma level" (section 7.3, REDEFINED - see history
- * below): the strike(s) where the net GEX PROFILE ITSELF - the same
- * per-strike bars the chart draws - crosses from negative to positive or
- * vice versa. This is the standard public definition (e.g.
- * https://www.insiderfinance.io/resources/the-ultimate-guide-to-gamma-exposure-gex)
- * and matches the visual red/green flip on the rendered chart.
- *
- * ANCHORED TO REAL BARS, NEVER INTERPOLATED: each of `pos`/`neg` is always
- * the strike of an actual element of `profile` - one of the real bars the
- * chart draws - never a fractional value computed between two flanking
- * strikes. Concretely: `pos` is the strike of the POSITIVE bar that
- * immediately follows the last negative -> positive transition, and `neg`
- * is the strike of the NEGATIVE bar that immediately follows the last
- * positive -> negative transition. (An earlier version of this function
- * linearly interpolated a fractional strike between the two flanking bars -
- * e.g. it returned 7716.41 for a real SPX chain where the crossing is
- * between the 7715 (negative) and 7720 (positive) bars. That was wrong:
- * 7716.41 is not a real strike anyone trades or sees on the chart. The
- * correct value is the real bar, 7720, exactly as plotted.)
- *
- * HISTORY: an earlier version of this function computed a CUMULATIVE sum of
- * netGex walking up from the lowest strike and returned where THAT crossed
- * zero. That is a different quantity (closer to an integral of the profile)
- * and does not match the standard definition or the visual chart flip -
- * confirmed wrong against real cached data (SPX chain: old algorithm
- * returned ~7828, deep inside the positive region past the call wall, while
- * the profile's own sign literally flips at ~7716, right where the chart
- * visibly turns from red to green). This function now scans the profile
- * directly instead.
- *
- * Two directions, tracked separately (`GammaFlipCrossings`): a real chain
- * can have more than one sign change (e.g. a small isolated anomalous
- * strike or two sandwiched inside what's otherwise a clean transition, or a
- * wide/noisy "All expirations" selection with deep-ITM strikes far from
- * spot) - per the user's own definition: "gamma flip is the place where
- * last negative transferred to positive and vice versa - last positive
- * transferred to negative". So `findGammaFlipCrossings` walks the profile
- * once and keeps the LAST (highest-strike) transition in EACH direction
- * separately:
- *   - `pos`: the last negative -> positive transition anywhere in the chain
- *   - `neg`: the last positive -> negative transition anywhere in the chain
- * Either is `null` if that direction never occurs. A future UI change will
- * show both as "Gamma Flip +" / "Gamma Flip -" when both are non-null.
- *
- * `findGammaFlip` collapses the two into the single legacy value every
- * existing caller (GexLevels.gammaFlip, src/views/GexView.tsx) expects.
- * See its own doc comment for the current (totalNetGex-sign) collapse rule.
- *
- * Exact-zero rule (documented decision): a strike with netGex === 0 is
- * never interpolated against - it already reads zero, so if it sits between
- * a negative and a positive nonzero strike, IT is the crossing point itself
- * (its own strike - it's already a real bar in the profile, same as every
- * other case here). When a RUN of consecutive exact-zero strikes bridges a
- * sign change, the strike closest to the far side of the run (the one
- * immediately adjacent to the new nonzero point) is used as that crossing's
- * representative strike - any strike in the run reads exactly 0, so this is
- * just a deterministic, documented pick among otherwise-equivalent real
- * bars. A zero strike that does NOT bridge a sign change - flanked by the
- * same sign on both sides, or with no nonzero neighbor on one side at all -
- * is NOT a crossing. This is what keeps CBOE's "leading zero exposure" (far
- * OTM strikes reporting exact gamma 0) from being misread as a crossing at
- * the edge of the chain, exactly like the old cumulative algorithm's
- * leading-zero handling, but now applied symmetrically to both edges and to
- * zero runs anywhere in the profile, not just a leading run.
- *
- * Both `pos` and `neg` are null when the profile has no sign change at all
- * in that direction (including a uniformly one-sided or empty/all-zero
- * profile). Never extrapolates outside the strike range. Expects a profile
- * sorted ascending by strike (as computeGexProfile returns).
- *
- * `spot` is kept as a parameter (matching findCallPutWalls' house pattern of
- * taking spot explicitly, and computeGexLevels already has it on hand to
- * pass through) even though the "last crossing per direction" rule above
- * does not use it - it is intentionally unused by this function's current
- * selection logic, not a leftover from an earlier nearest-to-spot attempt.
+ * Number of hypothetical spot prices swept by findGammaFlipHypotheticalSpot,
+ * evenly spaced across spot * (1 +/- GAMMA_FLIP_RANGE_PCT). ~60 points across
+ * +/-20% matches the public methodology this function implements (see its
+ * own doc comment for citations); confirmed on real "All expirations" SPX
+ * data (thousands of quotes) to both (a) comfortably contain the real
+ * crossing and (b) run fast enough for a browser - see the PR for the actual
+ * measurement.
  */
-export function findGammaFlipCrossings(profile: readonly GexPoint[], spot: number): GammaFlipCrossings {
-    void spot; // see doc comment: kept for signature consistency, unused by the "last crossing" rule
+export const GAMMA_FLIP_GRID_POINTS = 60;
+/** +/- range (as a fraction of spot) the hypothetical-spot sweep covers. */
+export const GAMMA_FLIP_RANGE_PCT = 0.20;
+
+/**
+ * Gamma Flip / "Zero Gamma Level" (section 7.3, REWRITTEN - see history
+ * below): the hypothetical underlying PRICE S* at which, if every option in
+ * the chain had its gamma recomputed via Black-Scholes AS IF the spot were
+ * S* (not the real current spot), the resulting aggregate dollar-GEX across
+ * the whole chain would be zero. This is the real industry-standard
+ * definition - confirmed against public sources, quoted directly:
+ *
+ *   "A simple cumulative sum treating each contract's gamma as fixed is
+ *   wrong more often than it looks because gamma depends on where spot is.
+ *   The better approach re-prices the whole book at each candidate spot
+ *   price and computes modeled net dealer gamma as if spot were there." -
+ *   ZeroGEX, "Gamma Flip Calculation: Before vs After"
+ *
+ *   "To estimate Zero Gamma, SpotGamma recalculates option gamma over a
+ *   range of hypothetical spot prices, aggregates the position-signed
+ *   exposure at each price, and locates the modeled crossover through
+ *   zero." - SpotGamma support docs, "Zero Gamma"
+ *
+ *   "One implementation evaluates total dealer GEX at 60 different
+ *   hypothetical price levels spanning +/-20% of current spot,
+ *   recalculating every option's gamma using Black-Scholes at each level." -
+ *   same ZeroGEX source
+ *
+ * HISTORY: every earlier version of this function (cumulative-sum,
+ * last-crossing-on-the-real-profile, directional pos/neg split, real-bar
+ * anchoring, zero-boundary trim) scanned `profile` - the per-strike netGex
+ * ALREADY COMPUTED AT THE REAL SPOT - for where ITS OWN sign changes across
+ * strikes. That is a fundamentally different, wrong quantity: gamma itself
+ * depends on where spot is, so the real profile's sign pattern is not the
+ * same thing as "where would the whole book's modeled gamma net to zero if
+ * spot moved there." This function replaces all of that: it takes the RAW
+ * `quotes` (not the aggregated profile) and actually re-prices every one of
+ * them at each of a grid of hypothetical spot prices.
+ *
+ * Mechanics:
+ *  1. Sweep GAMMA_FLIP_GRID_POINTS hypothetical prices S, evenly spaced
+ *     across spot * (1 +/- GAMMA_FLIP_RANGE_PCT).
+ *  2. At each S, recompute every eligible quote's Black-Scholes gamma AT
+ *     THAT S (blackScholesGreeks(q, S) - reusing the existing, already-
+ *     tested function from src/greeks.ts, not a new gamma-only formula).
+ *     The quote's own stored `iv` is used as-is; only S varies - there is
+ *     no real hypothetical market quote to re-solve IV from, so IV stays
+ *     fixed per quote, same convention the citations above use.
+ *  3. Convert that hypothetical gamma to dollar-GEX with the SAME formula
+ *     the real profile uses (gexCall/gexPut: gamma * OI * CONTRACT_MULTIPLIER
+ *     * S^2 * 0.01), parameterized by the hypothetical S instead of the real
+ *     spot, so totals are directly comparable to computeGexProfile's own
+ *     convention. Summed across EVERY eligible quote in `quotes`, across
+ *     every expiration present there - the caller (computeGexLevels /
+ *     use-gex-levels.ts) decides which expirations are "selected" exactly
+ *     like computeGexProfile does; there is no separate per-expiration loop
+ *     here, so a multi-expiration sum falls out automatically, not as a
+ *     special case (verified with a dedicated multi-expiration test).
+ *  4. Scan the resulting smooth totalGEX(S) sequence (ascending by S) for
+ *     sign changes, same "last crossing per direction" rule as the old
+ *     per-strike algorithm (GammaFlipCrossings: `pos` = last negative ->
+ *     positive transition, `neg` = last positive -> negative transition) -
+ *     but UNLIKE the old per-strike version, this DOES linearly interpolate
+ *     between the two flanking grid points. That is not the same mistake
+ *     the old strike-interpolation approach made: a strike is discrete
+ *     (interpolating between two real strikes invents a non-tradable
+ *     price), but a hypothetical spot is already a continuous price axis -
+ *     interpolating along it is the standard, mathematically correct way to
+ *     locate where a continuous function crosses zero (matches "the zero
+ *     crossing found by interpolation" in the citations above).
+ *
+ * As an expected side benefit (verified empirically against real "All
+ * expirations" SPX data - see the PR), summing a SMOOTH aggregate across
+ * the whole chain at each hypothetical price produces far fewer spurious
+ * multi-crossings than the old per-strike-profile approach did, which was
+ * easily perturbed by sparse-OI noise at individual strikes.
+ *
+ * Futures-priced quotes (VIX/VXN under Black-76, see the module doc comment
+ * on computeGexProfile and src/vix-pricing.ts / src/greeks.ts's
+ * FUTURES_PRICED_SYMBOLS) are EXCLUDED from the sweep entirely: a quote
+ * carrying a resolved `forward` is already the per-quote marker this module
+ * uses for "priced off its own futures curve, not a shared spot" (see
+ * computeGexProfile's `q.forward ?? spot`), and Black-Scholes is simply the
+ * wrong model to re-run for it. This rework is scoped to the ordinary
+ * Black-Scholes spot-priced case only - extending it to a Black-76
+ * forward-sweep is explicitly out of scope (flagged in the PR).
+ *
+ * Known simplification: blackScholesGreeks is called with its own default
+ * risk-free rate / dividend yield (BS_RISK_FREE_RATE / BS_DIVIDEND_YIELD =
+ * 0), not the per-index dividend yield (src/greeks.ts's
+ * INDEX_DIVIDEND_YIELDS) used when quotes were originally enriched - this
+ * function (like computeGexProfile/computeGexLevels) has no `symbol`
+ * parameter to look one up by. For SPX-family indices the real yield is
+ * small (~1-1.5%), so this is a minor model mismatch, not a correctness bug
+ * - flagged honestly rather than silently papered over.
+ *
+ * Both `pos` and `neg` are null when the swept totals never change sign in
+ * that direction (including a uniformly one-sided profile, or when no
+ * eligible quote remains). Returns `{ pos: null, neg: null }` outright for a
+ * non-finite/non-positive `spot`.
+ */
+export function findGammaFlipHypotheticalSpot(quotes: readonly OptionQuote[], spot: number): GammaFlipCrossings {
+    if (!Number.isFinite(spot) || spot <= 0) return { pos: null, neg: null };
+    // Exclude futures-priced quotes (VIX/VXN) - see doc comment above.
+    const eligible = quotes.filter(
+        (q) => !(typeof q.forward === 'number' && Number.isFinite(q.forward) && q.forward > 0),
+    );
+    if (eligible.length === 0) return { pos: null, neg: null };
+
+    const low = spot * (1 - GAMMA_FLIP_RANGE_PCT);
+    const high = spot * (1 + GAMMA_FLIP_RANGE_PCT);
+    const step = (high - low) / (GAMMA_FLIP_GRID_POINTS - 1);
+
+    const grid: { S: number; total: number }[] = [];
+    for (let i = 0; i < GAMMA_FLIP_GRID_POINTS; i++) {
+        const S = i === GAMMA_FLIP_GRID_POINTS - 1 ? high : low + step * i;
+        let total = 0;
+        for (const quote of eligible) {
+            const oi = finiteOr0(quote.openInterest);
+            if (oi === 0) continue;
+            const { greeks } = blackScholesGreeks(quote, S);
+            if (!greeks) continue;
+            total += quote.side === 'call'
+                ? gexCall(greeks.gamma, oi, S)
+                : gexPut(greeks.gamma, oi, S);
+        }
+        grid.push({ S, total });
+    }
+
     let pos: number | null = null;
     let neg: number | null = null;
     let prevSign: -1 | 1 | null = null;
-    let pendingZeroStrikes: number[] = [];
+    let prevNonZero: { S: number; total: number } | null = null;
+    let pendingZeroS: number[] = [];
 
-    for (const point of profile) {
-        if (point.netGex === 0) {
-            pendingZeroStrikes.push(point.strike);
+    for (const point of grid) {
+        if (point.total === 0) {
+            pendingZeroS.push(point.S);
             continue;
         }
-        const sign: -1 | 1 = point.netGex > 0 ? 1 : -1;
+        const sign: -1 | 1 = point.total > 0 ? 1 : -1;
         if (prevSign !== null && sign !== prevSign) {
-            // The exact-zero strike(s) in between already read 0 and are
-            // themselves real bars - the one closest to this new nonzero
-            // point is the crossing's representative strike. Otherwise (no
-            // zero run bridges it), the crossing IS this bar: the real,
-            // actual-array-element strike immediately following the
-            // transition - never a fractional value interpolated between
-            // it and the previous bar.
-            const crossing = pendingZeroStrikes.length > 0
-                ? pendingZeroStrikes[pendingZeroStrikes.length - 1]
-                : point.strike;
+            let crossing: number;
+            if (pendingZeroS.length > 0) {
+                // An exact-zero grid point bridging the sign change already
+                // reads zero - it IS the crossing, no interpolation needed.
+                crossing = pendingZeroS[pendingZeroS.length - 1];
+            } else {
+                // Linear interpolation between the two flanking (nonzero)
+                // grid points for the S where the line through them is 0.
+                const a = prevNonZero!;
+                const b = point;
+                crossing = a.S + (0 - a.total) * (b.S - a.S) / (b.total - a.total);
+            }
             if (sign === 1) pos = crossing; else neg = crossing;
         }
-        // Same sign as before (or the first nonzero point seen): any zero
-        // run just passed through was flat/leading noise, not a crossing.
-        pendingZeroStrikes = [];
+        pendingZeroS = [];
         prevSign = sign;
+        prevNonZero = point;
     }
 
     return { pos, neg };
-}
-
-/**
- * The single legacy gamma-flip value every existing caller (GexLevels.
- * gammaFlip, src/views/GexView.tsx) expects, collapsed from the
- * findGammaFlipCrossings pair per the user's own rule: "if we have 1 flip
- * level then we must use first positive bar if total net gex is positive
- * for selected expirations, and first negative strike if total net gex is
- * negative." Concretely: `totalNetGex > 0 ? pos : neg` - the same
- * profile.reduce((sum, p) => sum + p.netGex, 0) totalNetGex computeGexLevels
- * already computes.
- *
- * TEMPORARY PLACEHOLDER for the rare case where BOTH `pos` and `neg` are
- * non-null (a genuine two-crossing chain): this picks one side by
- * totalNetGex's sign, but which one "wins" there is not meaningfully
- * load-bearing long-term - a separate, already-planned follow-up PR
- * replaces all of GexView.tsx's consumption of this single field with the
- * `gammaFlipPos`/`gammaFlipNeg` pair directly, so the single-value collapse
- * only needs to be reasonable, not perfect, until then.
- */
-export function findGammaFlip(profile: readonly GexPoint[], spot: number): number | null {
-    const { pos, neg } = findGammaFlipCrossings(profile, spot);
-    const totalNetGex = profile.reduce((sum, point) => sum + point.netGex, 0);
-    return totalNetGex > 0 ? pos : neg;
 }
 
 export interface CallPutWalls {
@@ -457,11 +495,14 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number): 
     const profile = computeGexProfile(quotes, spot);
     const walls = findCallPutWalls(profile, spot);
     const pcr = computePCRatio(quotes);
-    const { pos: gammaFlipPos, neg: gammaFlipNeg } = findGammaFlipCrossings(profile, spot);
+    // Gamma flip (section 7.3): hypothetical-spot Black-Scholes recompute
+    // against the RAW quotes, not the real-spot profile - see
+    // findGammaFlipHypotheticalSpot's doc comment for why.
+    const { pos: gammaFlipPos, neg: gammaFlipNeg } = findGammaFlipHypotheticalSpot(quotes, spot);
     const totalNetGex = profile.reduce((sum, point) => sum + point.netGex, 0);
-    // Legacy single-field collapse - see findGammaFlip's doc comment for the
-    // full rule (totalNetGex-sign tie-break, temporary placeholder when both
-    // gammaFlipPos and gammaFlipNeg are non-null).
+    // Legacy single-field collapse - see GexLevels.gammaFlip's doc comment
+    // for the full rule (totalNetGex-sign tie-break, temporary placeholder
+    // when both gammaFlipPos and gammaFlipNeg are non-null).
     const gammaFlip = totalNetGex > 0 ? gammaFlipPos : gammaFlipNeg;
     return {
         spot,

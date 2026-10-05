@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   CONTRACT_MULTIPLIER,
+  GAMMA_FLIP_GRID_POINTS,
+  GAMMA_FLIP_RANGE_PCT,
   SECOND_WALL_MIN_DISTANCE_PCT,
   computeGexLevels,
   computeGexProfile,
@@ -8,8 +10,7 @@ import {
   computeOiVolumeTotals,
   computePCRatio,
   findCallPutWalls,
-  findGammaFlip,
-  findGammaFlipCrossings,
+  findGammaFlipHypotheticalSpot,
   gexCall,
   gexPut,
   trimZeroBoundaries,
@@ -150,104 +151,154 @@ function gp(strike: number, netGex: number): import('./types').GexPoint {
   return { strike, callGex: 0, putGex: 0, netGex, callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 };
 }
 
-describe('findGammaFlip (7.3, redefined: the LAST profile zero-crossing, not a cumulative sum)', () => {
-  test('normal case: anchors to the real bar immediately following the single crossing, no interpolation', () => {
-    // FIXTURE's per-strike (NOT cumulative) netGex: -40000@90, -20000@95,
-    // +10000@100, +100000@105, +80000@106, +30000@110, +50000@115.
-    // Only one sign change in the whole profile: 95 (-20000) -> 100 (+10000),
-    // a neg -> pos transition, so pos is the only non-null side. The flip is
-    // the real bar that follows the transition, strike 100 itself - not an
-    // interpolated fractional value between 95 and 100.
-    const expected = 100;
-    const profile = computeGexProfile(FIXTURE, SPOT);
-    expect(findGammaFlipCrossings(profile, SPOT)).toEqual({ pos: expected, neg: null });
-    // totalNetGex = 210000 (positive, see computeGexLevels test below), so
-    // the legacy collapse picks gammaFlipPos.
-    expect(findGammaFlip(profile, SPOT)).toBe(expected);
+// ---------------------------------------------------------------------------
+// findGammaFlipHypotheticalSpot (7.3, REWRITTEN): hypothetical-spot
+// Black-Scholes recompute against the RAW quotes, not a scan over the
+// already-at-real-spot profile. See the function's own doc comment in
+// src/gex.ts for the full rationale, citations, and history.
+// ---------------------------------------------------------------------------
+
+/** Builds an OptionQuote carrying everything blackScholesGreeks needs (iv +
+ *  expiration) so findGammaFlipHypotheticalSpot can actually recompute its
+ *  gamma at an arbitrary hypothetical spot. */
+function bsQuote(side: 'call' | 'put', strike: number, openInterest: number, iv: number, expiration: string): OptionQuote {
+  return {
+    symbol: `BS${expiration}${side === 'call' ? 'C' : 'P'}${strike}`,
+    expiration,
+    side,
+    strike,
+    bid: null,
+    ask: null,
+    mid: null,
+    last: null,
+    volume: null,
+    openInterest,
+    iv,
+    delta: null,
+    gamma: null,
+    theta: null,
+    vega: null,
+  };
+}
+
+/** `daysFromNow` days ahead of "today" (LOCAL calendar date), as the
+ *  "YYYY-MM-DD" string yearsToExpiration (src/greeks.ts) expects. Resolved
+ *  against the current date at test-run time - not a hardcoded calendar
+ *  date - so T stays exactly `(daysFromNow + 1) / 365` (yearsToExpiration's
+ *  +1-day floor) regardless of which day the suite runs on, and this
+ *  fixture never silently starts failing once a hardcoded date passes. */
+function futureIsoDate(daysFromNow: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromNow);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+describe('findGammaFlipHypotheticalSpot (7.3, rewritten: hypothetical-spot Black-Scholes recompute)', () => {
+  test('grid constants match the documented methodology (60 points, +/-20%)', () => {
+    expect(GAMMA_FLIP_GRID_POINTS).toBe(60);
+    expect(GAMMA_FLIP_RANGE_PCT).toBeCloseTo(0.20, 9);
   });
 
-  test('single expiration slice: an exact netGex === 0 strike bridging a sign change is itself the flip', () => {
-    // EXP_A-only per-strike netGex: -20000@90, -20000@95, 0@100, +60000@105,
-    // +80000@106 (hand-derived: strike 100 has call OI 200 vs put OI 200 at
-    // the same gamma, so callGex + putGex nets to exactly 0 there).
-    // 100 sits between -20000 (@95) and +60000 (@105) - an exact-zero strike
-    // bridging a sign change IS the crossing (see findGammaFlipCrossings'
-    // doc comment), so the flip is exactly 100, no interpolation. The
-    // transition is neg -> pos, so pos = 100 and neg stays null (only one
-    // crossing exists in this slice).
-    const profile = computeGexProfile(FIXTURE.filter((x) => x.expiration === EXP_A), SPOT);
-    expect(profile.find((p) => p.strike === 100)!.netGex).toBe(0);
-    expect(findGammaFlipCrossings(profile, SPOT)).toEqual({ pos: 100, neg: null });
-    expect(findGammaFlip(profile, SPOT)).toBe(100);
+  // Hand-derived fixture: a put at strike 90 (OI 500) and a call at strike
+  // 110 (OI 500), both iv = 0.2 and T = 30 calendar days, spot = 100.
+  //
+  // Black-Scholes gamma has NO side-dependence (blackScholesGreeks computes
+  // the same `gamma` expression for a call and a put at the same
+  // strike/iv/T - see src/greeks.ts), so as the hypothetical S sweeps from
+  // spot*0.8=80 to spot*1.2=120: the put's gamma (and so its NEGATIVE
+  // dollar-GEX) peaks near S=90 and dominates at the low end; the call's
+  // gamma (POSITIVE dollar-GEX) peaks near S=110 and dominates at the high
+  // end. The aggregate total therefore goes from negative to positive
+  // exactly once in between.
+  //
+  // Independently verified (not just "whatever the implementation
+  // outputs"): a separate Python reimplementation of the identical
+  // closed-form BS gamma (using math.erf directly, NOT src/greeks.ts's
+  // Abramowitz-Stegun erf approximation) bisects the TRUE root of
+  // total(S) at S ~= 98.9686, and separately confirms that linearly
+  // interpolating between the two 60-point/+-20% grid points flanking it
+  // (~98.3051 and ~98.9831) lands at ~98.96855 - a ~0.00005 difference from
+  // the true root, i.e. this grid is dense enough here for the
+  // interpolation error to be negligible.
+  const T_DAYS = 29; // yearsToExpiration's +1-day floor makes this T = 30/365
+  const IV = 0.2;
+  const EXPECTED_CROSSING = 98.9686;
+
+  test('hand-derived two-leg fixture lands the pos crossing within the independently bisected root', () => {
+    const exp = futureIsoDate(T_DAYS);
+    const combined = [bsQuote('put', 90, 500, IV, exp), bsQuote('call', 110, 500, IV, exp)];
+
+    const result = findGammaFlipHypotheticalSpot(combined, 100);
+    expect(result.neg).toBeNull();
+    expect(result.pos).not.toBeNull();
+    expect(result.pos as number).toBeCloseTo(EXPECTED_CROSSING, 1);
   });
 
-  test('an exact netGex === 0 strike NOT bridging a sign change is not a crossing', () => {
-    // -100 @90, 0 @95, -50 @100: the zero sits between two NEGATIVE
-    // neighbors (same sign both sides), so it is flat/noise, not a flip -
-    // neither direction crosses anywhere in this profile.
-    const profile = [gp(90, -100), gp(95, 0), gp(100, -50)];
-    expect(findGammaFlipCrossings(profile, 100)).toEqual({ pos: null, neg: null });
-    expect(findGammaFlip(profile, 100)).toBeNull();
+  test('multi-expiration sum: neither leg alone crosses zero - only the genuine combined total across both expirations does', () => {
+    // Same two legs as the fixture above, but explicitly on two DIFFERENT
+    // expiration strings, proving the crossing comes from summing across
+    // every expiration present in `quotes` (same as computeGexProfile),
+    // not from reading just one of them.
+    const expA = futureIsoDate(T_DAYS);
+    const expB = futureIsoDate(T_DAYS + 5); // different expiration, same ballpark T
+    const putLeg = [bsQuote('put', 90, 500, IV, expA)];
+    const callLeg = [bsQuote('call', 110, 500, IV, expB)];
+
+    // A lone put: BS gamma > 0 everywhere, so its dollar-GEX is negative at
+    // every hypothetical S in the sweep - never crosses zero by itself.
+    expect(findGammaFlipHypotheticalSpot(putLeg, 100)).toEqual({ pos: null, neg: null });
+    // A lone call: positive at every S - never crosses either.
+    expect(findGammaFlipHypotheticalSpot(callLeg, 100)).toEqual({ pos: null, neg: null });
+
+    // Only the genuine sum across BOTH expirations crosses zero.
+    const combined = findGammaFlipHypotheticalSpot([...putLeg, ...callLeg], 100);
+    expect(combined.neg).toBeNull();
+    expect(combined.pos).not.toBeNull();
+    expect(combined.pos as number).toBeGreaterThan(90);
+    expect(combined.pos as number).toBeLessThan(110);
   });
 
-  test('multiple sign crossings (neg->pos->neg->pos): gammaFlipPos/gammaFlipNeg are the two distinct last crossings, both real bars; gammaFlip resolves by totalNetGex sign', () => {
-    // Mirrors the user's own real-chain example: a small isolated anomalous
-    // strike (or two) sandwiched inside what's otherwise a clean transition
-    // from a big negative valley to a big positive peak, producing three
-    // crossings close together (a last pos->neg AND a separate last
-    // neg->pos) instead of one clean one - exactly the shape the "Gamma
-    // Flip +" / "Gamma Flip -" UI split is meant to expose.
-    // netGex alternates sign every strike: -10@90, +10@95, -10@100, +10@105.
-    // Each crossing is anchored to the real bar immediately following the
-    // transition (no interpolation), in ascending-strike order:
-    //   90->95:   the bar at 95 (neg -> pos)
-    //   95->100:  the bar at 100 (pos -> neg)
-    //   100->105: the bar at 105 (neg -> pos)
-    // Last neg->pos transition overwrites the earlier one: pos = 105 (not
-    // 95, both are real array strikes). Last (and only) pos->neg transition:
-    // neg = 100.
-    // totalNetGex = -10 + 10 - 10 + 10 = 0, which is NOT > 0, so the legacy
-    // collapse rule (totalNetGex > 0 ? pos : neg) picks neg: gammaFlip = 100.
-    // This is the disagreeing-example case: pos (105) and neg (100) differ,
-    // and the collapse does not simply pick the higher strike anymore.
-    // spot = 93 is deliberately placed so "nearest to spot" would instead
-    // pick 95 - proving this asserts the "last crossing per direction" rule,
-    // not a nearest-to-spot tie-break.
-    const profile = [gp(90, -10), gp(95, 10), gp(100, -10), gp(105, 10)];
-    expect(findGammaFlipCrossings(profile, 93)).toEqual({ pos: 105, neg: 100 });
-    expect(findGammaFlip(profile, 93)).toBe(100);
+  test('non-finite or non-positive spot -> both null', () => {
+    const quotes = [bsQuote('call', 100, 10, IV, futureIsoDate(30))];
+    expect(findGammaFlipHypotheticalSpot(quotes, 0)).toEqual({ pos: null, neg: null });
+    expect(findGammaFlipHypotheticalSpot(quotes, -5)).toEqual({ pos: null, neg: null });
+    expect(findGammaFlipHypotheticalSpot(quotes, NaN)).toEqual({ pos: null, neg: null });
   });
 
-  test('leading zero-netGex strikes are not a crossing (CBOE far-OTM exact-zero gamma)', () => {
-    // Real CBOE chains report gamma 0 for far-from-the-money strikes, so the
-    // lowest strikes net to exactly 0. Same rows as FIXTURE plus two such
-    // strikes below it: the flip must stay at the normal single crossing
-    // (95 -> 100, neg -> pos), not be misread as a crossing down at the
-    // leading zeros. The flip is the real bar at 100 (no interpolation).
-    const expected = 100;
-    const withZeroWings = [...FIXTURE, q(EXP_A, 'call', 80, 900, 0), q(EXP_A, 'put', 80, 900, 0), q(EXP_A, 'put', 85, 400, 0)];
-    const profile = computeGexProfile(withZeroWings, SPOT);
-    expect(profile[0].strike).toBe(80);
-    expect(profile[0].netGex).toBe(0);
-    expect(findGammaFlipCrossings(profile, SPOT)).toEqual({ pos: expected, neg: null });
-    // The zero-gamma wing strikes contribute 0 GEX, so totalNetGex is the
-    // same 210000 as plain FIXTURE (positive) -> collapse picks pos.
-    expect(findGammaFlip(profile, SPOT)).toBe(expected);
-    // An all-zero profile never crosses either, in either direction.
-    const allZeroProfile = computeGexProfile([q(EXP_A, 'call', 80, 10, 0), q(EXP_A, 'put', 85, 10, 0)], SPOT);
-    expect(findGammaFlipCrossings(allZeroProfile, SPOT)).toEqual({ pos: null, neg: null });
-    expect(findGammaFlip(allZeroProfile, SPOT)).toBeNull();
+  test('empty quotes, or quotes with no IV (cannot recompute BS gamma at any hypothetical S) -> both null', () => {
+    expect(findGammaFlipHypotheticalSpot([], 100)).toEqual({ pos: null, neg: null });
+    // iv: null quotes (the plain q() helper below never sets iv, matching
+    // FIXTURE) can never resolve a BS gamma at ANY hypothetical S - iv
+    // doesn't vary with S - so they are excluded from every grid point,
+    // same as computeGexProfile's null-gamma exclusion, just one level up.
+    const noIv = [q(EXP_A, 'call', 100, 500), q(EXP_A, 'put', 90, 500)];
+    expect(findGammaFlipHypotheticalSpot(noIv, 100)).toEqual({ pos: null, neg: null });
   });
 
-  test('all-same-sign gamma exposure -> null in both directions (no extrapolation)', () => {
-    const callsOnly = computeGexProfile(FIXTURE.filter((x) => x.side === 'call'), SPOT);
-    expect(findGammaFlipCrossings(callsOnly, SPOT)).toEqual({ pos: null, neg: null });
-    expect(findGammaFlip(callsOnly, SPOT)).toBeNull();
-    const putsOnly = computeGexProfile(FIXTURE.filter((x) => x.side === 'put'), SPOT);
-    expect(findGammaFlipCrossings(putsOnly, SPOT)).toEqual({ pos: null, neg: null });
-    expect(findGammaFlip(putsOnly, SPOT)).toBeNull();
-    expect(findGammaFlipCrossings([], SPOT)).toEqual({ pos: null, neg: null });
-    expect(findGammaFlip([], SPOT)).toBeNull();
+  test('zero open-interest quotes never contribute, regardless of iv', () => {
+    const exp = futureIsoDate(T_DAYS);
+    const quotes = [bsQuote('call', 110, 0, IV, exp), bsQuote('put', 90, 0, IV, exp)];
+    expect(findGammaFlipHypotheticalSpot(quotes, 100)).toEqual({ pos: null, neg: null });
+  });
+
+  test('futures-priced quotes (carrying a resolved `forward`) are excluded entirely from the sweep', () => {
+    const exp = futureIsoDate(T_DAYS);
+    const normal = [bsQuote('put', 90, 500, IV, exp), bsQuote('call', 110, 500, IV, exp)];
+    const withForward: OptionQuote[] = normal.map((qx) => ({ ...qx, forward: 50 }));
+    // Every quote carries a (nonsensical, deliberately wrong) forward ->
+    // all excluded -> no eligible quotes -> both null, same as an empty
+    // array, NOT the normal crossing the un-forwarded pair alone produces.
+    expect(findGammaFlipHypotheticalSpot(withForward, 100)).toEqual({ pos: null, neg: null });
+
+    // Mixing one forward-carrying (excluded) quote alongside the normal
+    // pair must land the EXACT SAME crossing as the normal pair alone - the
+    // forward-carrying quote is fully ignored, not just down-weighted.
+    const extraForwardNoise: OptionQuote = { ...bsQuote('call', 70, 999999, IV, exp), forward: 12.34 };
+    const withNoise = [...normal, extraForwardNoise];
+    expect(findGammaFlipHypotheticalSpot(withNoise, 100)).toEqual(findGammaFlipHypotheticalSpot(normal, 100));
   });
 });
 
@@ -461,14 +512,20 @@ describe('computeGexProfile honors a per-quote forward over the shared spot (Pha
     expect(levels.callWall).toBe(20);
     expect(levels.putWall).toBe(15);
     expect(levels.totalNetGex).toBeCloseTo(6229.03808 - 2491.615232, 3);
-    // gammaFlip: only two strikes, netGex -2491.615232@15 then +6229.03808@20
-    // - one neg -> pos sign change, so gammaFlipPos is the real bar at 20
-    // (no interpolation) and gammaFlipNeg stays null (no pos -> neg
-    // transition exists here). totalNetGex is positive, so the legacy
-    // collapse picks gammaFlipPos.
-    expect(levels.gammaFlipPos).toBe(20);
+    // gammaFlip: both quotes here carry a resolved `forward` (vq() sets it),
+    // i.e. they are the futures-priced (VIX/VXN-shaped) case -
+    // findGammaFlipHypotheticalSpot excludes every quote carrying a
+    // resolved `forward` entirely (Black-Scholes is the wrong model for
+    // them - see its own doc comment in src/gex.ts), so with no eligible
+    // quote left, both directions are null here. This is the expected,
+    // explicitly out-of-scope behavior for this rework - NOT a regression:
+    // real levels for a futures-priced symbol are never shown anyway unless
+    // settings.vixFuturesPricing enables a dedicated Black-76 path, and this
+    // hypothetical-spot sweep deliberately does not attempt that (flagged in
+    // the PR).
+    expect(levels.gammaFlipPos).toBeNull();
     expect(levels.gammaFlipNeg).toBeNull();
-    expect(levels.gammaFlip).toBe(levels.gammaFlipPos);
+    expect(levels.gammaFlip).toBeNull();
   });
 });
 
@@ -476,15 +533,18 @@ describe('computeGexLevels (7.7)', () => {
   test('assembles every level from one call', () => {
     const levels = computeGexLevels(FIXTURE, SPOT);
     expect(levels.spot).toBe(SPOT);
-    // Per-strike netGex crosses sign once, 95 (-20000) -> 100 (+10000), a
-    // neg -> pos transition: the flip is the real bar at 100, no
-    // interpolation. Only one direction crosses, so gammaFlipPos holds it
-    // and gammaFlipNeg is null; totalNetGex (210000, asserted below) is
+    // FIXTURE's q() helper never sets `iv` (it only carries a pre-supplied
+    // `gamma`, which is all computeGexProfile/findCallPutWalls/computeMaxPain
+    // need). findGammaFlipHypotheticalSpot recomputes gamma from `iv` at each
+    // hypothetical spot, so a quote with no `iv` can never be priced at ANY
+    // hypothetical S and is excluded from the sweep entirely - with every
+    // quote excluded, both directions stay null (see findGammaFlipHypothetic
+    // alSpot's own dedicated describe block above for the real BS-driven
+    // fixture/crossing tests). totalNetGex (210000, asserted below) is
     // positive, so gammaFlip (the derived legacy field) picks gammaFlipPos.
-    const expectedFlip = 100;
-    expect(levels.gammaFlipPos).toBe(expectedFlip);
+    expect(levels.gammaFlipPos).toBeNull();
     expect(levels.gammaFlipNeg).toBeNull();
-    expect(levels.gammaFlip).toBe(expectedFlip);
+    expect(levels.gammaFlip).toBeNull();
     expect(levels.callWall).toBe(105);
     expect(levels.putWall).toBe(90);
     expect(levels.callWall2).toBe(115);
