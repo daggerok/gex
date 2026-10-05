@@ -916,69 +916,122 @@ export const GexView: React.FC<GexViewProps> = ({
                 keeps them side by side whenever the viewport has room for
                 both and wraps each onto its own row once it doesn't - no
                 JS-measured breakpoint or hardcoded media query needed.
-                `grow shrink basis-[…]` (rather than the default `auto`
-                basis, which is each panel's full un-scrolled content width -
-                ~660px/~850px with all 5/6 buttons showing - and would only
-                let two panels share a row above ~1850px) gives the
-                WRAP DECISION a smaller "comfortable" width to pack against,
-                then grows each panel back out to fill any extra room on
-                the line - so a wide viewport still shows every button
-                unscrolled, a mid viewport may lean on each panel's own
-                `overflow-x-auto` button row before it wraps, and `min-w-`
-                is just the absolute floor. Metrics' own cap is `max-w-[50%]`
-                (relative to this row) - the user wants Metrics to never eat
-                more than half the shared row, so Key Levels always has at
-                least the other half before it needs to wrap or lean on its
-                own `overflow-x-auto`. `items-center` (not the flex-wrap
-                default `stretch`) is load-bearing: it keeps each panel's own
-                height independent of its sibling, so neither panel's
-                internal `overflow-x-auto` button row is forced to match the
-                other's height. Metrics stays left (plain source order, no
-                extra class) and Key Levels is just a normal flex sibling
-                right after it, in plain source order too - NOT pushed to the
-                row's right edge.
+                `justify-between` on this row (added here, matching
+                TabSwitcher.tsx's own `<div className="flex flex-wrap
+                items-center justify-between gap-2">` row - the Desk/GEX/
+                Chart pills pushed left, the Expirations form pushed right by
+                that SAME mechanism) sends Key Levels' outer box to the row's
+                right edge, leaving whatever width neither panel's own
+                content needs as a single gap between them - the same visual
+                rhythm as the Tabs row's own Tabs<->Expirations gap.
 
-                An earlier revision had Key Levels carry `ml-auto` (push all
-                free space to its own left) PLUS a fixed `max-w-[860px]` cap.
-                That combination was a bug, not a feature: whenever Metrics
-                used less than half the row (e.g. only 1-2 metrics toggled
-                on), `ml-auto` shoved Key Levels flush against the row's
-                right edge while its 860px cap still capped how wide it was
-                allowed to grow - so the leftover space between Metrics'
-                right edge and Key Levels' now-pushed-right left edge became
-                a dead, empty gap, and Key Levels' own chip row still had to
-                fall back on its internal `overflow-x-auto` scroll even
-                though there was clearly more total row width available than
-                860px. Removing `ml-auto` (Key Levels just sits where normal
-                flex flow puts it, right after Metrics, separated only by
-                this row's own `gap-2`) and dropping the fixed cap (Key
-                Levels' `grow` now consumes whatever width Metrics' own
-                `max-w-[50%]`-capped, shrink-to-fit sizing leaves behind)
-                fixes both halves at once: no artificial gap, and Key Levels
-                gets to show more of its chips unscrolled on a wide row,
-                falling back to its own `overflow-x-auto` only once the
-                genuinely-remaining space (not an arbitrary 860px) truly
-                isn't enough. The symbol/
-                spot/"delayed" info block that used to
-                trail after Key Levels here (last in source order) was
-                removed: the user found it redundant with TopBar's own ticker
-                input (always visible, every tab) and `spot` is now just
-                another toggleable/colorable Key Level (see
-                `ALL_LEVEL_KEYS`/`keyLevels`), its former "(est.)" badge
-                folded into that level's own sidebar row/tooltip instead of a
-                separate header span. The "delayed · {provider}" text
-                specifically has no replacement elsewhere on THIS tab - see
-                the PR description. ---- */}
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+                This only works because NEITHER panel carries Tailwind's
+                `grow` (flex-grow) - a `grow` child resolves its width BEFORE
+                `justify-content` ever runs (CSS Flexbox's "resolve flexible
+                lengths" step precedes main-axis alignment), so it eats 100%
+                of a line's free space on its own, leaving nothing for
+                `justify-between` to place as a gap; `grow` and
+                `justify-between` are mutually exclusive in practice, not
+                complementary (an earlier draft of this change kept `grow`
+                on Key Levels precisely on the theory that it could coexist
+                with the row's `justify-between` - confirmed wrong once
+                actually rendered, not just reasoned about from the CSS
+                spec - see Key Levels' own comment below).
+
+                Both panels share one base sizing philosophy instead: `shrink
+                basis-auto` (`min-w-` is just the absolute floor) - each
+                sizes to its own content's natural width rather than
+                stretching to fill the line, and `shrink` lets either
+                compress below that natural width if the viewport is
+                genuinely tight, with each panel's own internal scrollable
+                chip row as the fallback once even that isn't enough.
+                `items-center` (not the flex-wrap default `stretch`) is
+                load-bearing: it keeps each panel's own height independent of
+                its sibling, so neither panel's internal scroll row is forced
+                to match the other's height.
+
+                IMPORTANT: unlike a typical "selection" UI, toggling a metric
+                or level on/off does NOT change either panel's rendered
+                width - ALL 6 metric chips and ALL 7 level chips always
+                render (`GEX_METRICS`/`levelPanelKeys`, mapped
+                unconditionally below), with `on`/`selectedLevels` only
+                switching each chip's own active/idle fill. So Metrics'
+                natural content width is a constant ~708px and Key Levels'
+                is a constant ~972px, REGARDLESS of what's toggled - the
+                only thing that varies either panel's rendered width here is
+                the viewport, via each one's own `max-w-[…]` cap and
+                `shrink`. (An earlier draft of this comment described the
+                gap as shrinking/growing in response to how many levels were
+                toggled on - that doesn't happen, and has been corrected.)
+
+                Metrics' cap is `max-w-[50%]`; Key Levels' is `max-w-[45%]`
+                (see Key Levels' own comment for the exact reasoning) - NOT
+                symmetric, and that asymmetry is deliberate: Metrics' 50%
+                cap is a hard, pre-existing, user-requested ceiling ("never
+                eat more than half the row") that - given its ~708px
+                constant content - is actually REACHED at almost every row
+                width below ~1416px, i.e. nearly always. A naive symmetric
+                `max-w-[50%]` on Key Levels too would therefore mean BOTH
+                panels simultaneously sit at exactly half the row on most
+                real widths, and 50% + 50% + this row's own `gap-2` is
+                mathematically guaranteed to exceed 100% of the row by the
+                gap's width - forcing a wrap exactly at the widths where a
+                one-line, flush-right layout matters most. Verified live
+                (Playwright, 1440px, both panels' full default chip set):
+                a flat `max-w-[50%]` on Key Levels DID still wrap onto 2
+                lines, by about the gap's width - confirming this isn't
+                theoretical. `max-w-[45%]` instead leaves just enough margin
+                (verified live) for both panels plus the gap to fit on ONE
+                line, flush right, at every width tested down to 768px; only
+                below that (verified at 390px) do the two panels' `min-w`
+                floors (`260px`-ish/`300px`) together exceed the row
+                regardless of any cap, and it falls back to the same
+                documented wrap. This is INTENTIONALLY close to the layout
+                that existed before the immediately-prior PR's fix (Key
+                Levels sitting toward the row's right edge, with leftover
+                space as a gap), but reaches it differently, avoiding that
+                PR's actual bug: that earlier revision used a child
+                `ml-auto` PLUS a fixed `max-w-[860px]` cap - whenever Metrics
+                used less than half the row, `ml-auto` shoved Key Levels
+                flush right while its 860px cap still capped how wide it
+                could grow, so the leftover space between Metrics' right
+                edge and Key Levels' now-pushed-right left edge became a
+                dead, empty gap, and Key Levels' own chip row still had to
+                fall back on its internal scroll even though there was
+                clearly more total row width available than 860px. This
+                version has no child margin fighting a fixed px cap - one
+                `justify-between` on the shared row parent supplies the
+                positioning, and each panel's cap is a relative percentage
+                (scales with the viewport, never an arbitrary fixed px
+                number) chosen so the leftover space is a real, visible gap
+                between the two boxes, never a dead gap trapped behind one
+                of them.
+
+                The symbol/spot/"delayed" info block that used to trail
+                after Key Levels here (last in source order) was removed:
+                the user found it redundant with TopBar's own ticker input
+                (always visible, every tab) and `spot` is now just another
+                toggleable/colorable Key Level (see `ALL_LEVEL_KEYS`/
+                `keyLevels`), its former "(est.)" badge folded into that
+                level's own sidebar row/tooltip instead of a separate header
+                span. The "delayed · {provider}" text specifically has no
+                replacement elsewhere on THIS tab - see the PR description.
+                ---- */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 {/* max-w-[50%] (relative to this flex row - Key Levels below
-                    has no fixed-px cap of its own, see its own comment) is a
-                    CEILING, not a target: no `grow`, so this panel sizes to
-                    its own content (shrink-to-fit, `basis-auto`) and ends
-                    right after its last chip/Reset button, only hitting the
-                    50% cap if its own content (more metrics selected, longer
-                    labels) genuinely needs that much room. `shrink` still
-                    lets it compress below its natural width if the viewport
-                    is genuinely tight (its own `overflow-x-auto` chip row is
+                    carries a DIFFERENT, smaller cap, `max-w-[45%]` - see its
+                    own comment, and the row-level comment above, for why
+                    the two aren't symmetric) is a CEILING, not a target: no
+                    `grow`, so this panel sizes to its own content
+                    (shrink-to-fit, `basis-auto`) and ends right after its
+                    last chip/Reset button, only hitting the 50% cap when its
+                    own content genuinely needs that much room (note: ALL 6
+                    metric chips always render regardless of which are
+                    toggled on - see the row-level comment's "IMPORTANT" -
+                    so this panel's natural content width is effectively
+                    constant, not selection-dependent). `shrink` still lets
+                    it compress below its natural width if the viewport is
+                    genuinely tight (its own `overflow-x-auto` chip row is
                     the fallback once even that isn't enough) - `min-w-` is
                     just the absolute floor. Previously this also carried
                     `grow`, which stretched the panel to the 50% cap
@@ -986,13 +1039,16 @@ export const GexView: React.FC<GexViewProps> = ({
                     space, leaving a dead gap inside its own border while
                     squeezing Key Levels into whatever was left - removed.
 
-                    Key Levels (below) has NO fixed `max-w-[…]` cap of its
-                    own anymore, and no `ml-auto` either - it just `grow`s to
-                    fill whatever width Metrics doesn't use, sitting flush
-                    against it with only this row's plain `gap-2` in
-                    between. See Key Levels' own comment below for why the
-                    earlier `ml-auto` + `max-w-[860px]` combination was a
-                    bug, not a feature. */}
+                    Key Levels (below) follows this SAME shrink-to-fit
+                    philosophy (no `grow`) instead of stretching to consume
+                    whatever width Metrics leaves behind - the row's own
+                    `justify-between` (see the row-level comment above) is
+                    what pushes it to the right edge instead, with whichever
+                    panel's content is narrower naturally leaving the gap
+                    between them. See Key Levels' own comment below, and the
+                    row-level comment above, for why `grow` was removed from
+                    Key Levels in favor of this, and why its cap is `45%`
+                    rather than this panel's `50%`. */}
                 <div className={box + ' shrink basis-auto min-w-[260px] max-w-[50%]'} role="group" aria-label={tr('gex.metric.label')}>
                     <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.metric.label')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
@@ -1066,30 +1122,71 @@ export const GexView: React.FC<GexViewProps> = ({
                     - the sidebar's Key Levels card (below) keeps showing text
                     for every level regardless of this panel's state. A
                     flex-wrap sibling of the Metrics panel above (see the
-                    row-level comment) rather than its own separate row.
+                    row-level comment), positioned at the row's right edge by
+                    that row's own `justify-between` - NOT by `ml-auto` on
+                    this panel (the earlier, buggy approach - see the
+                    row-level comment for the full ml-auto+860px-cap
+                    history) and NOT by `grow` either: an earlier draft of
+                    THIS change kept `grow` here on the theory that it could
+                    coexist with the row's `justify-between` - it can't
+                    (flex-grow resolves before justify-content ever runs, so
+                    a `grow` item eats 100% of a line's free space itself,
+                    leaving nothing for `justify-between` to place as a gap -
+                    confirmed once actually rendered, not just reasoned
+                    about from the spec).
 
-                    No `ml-auto` and no fixed `max-w-[…]` (see the row-level
-                    comment above for why the earlier ml-auto+860px-cap
-                    combination was a bug): this panel is a plain in-flow
-                    sibling, right after Metrics, and `grow` lets it consume
-                    whatever width Metrics' own `max-w-[50%]`-capped,
-                    shrink-to-fit sizing leaves behind in the row (Metrics'
-                    own rendered width is constant regardless of which
-                    metrics are toggled ON - all 6 chips always render, only
-                    their active/idle fill changes - so "whatever's left" in
-                    practice just means "the rest of the row, whatever the
-                    viewport width happens to be") - naturally showing more
-                    chips unscrolled on a wide row instead of being stuck
-                    behind a fixed px ceiling. `basis-[600px]` is only the
-                    WRAP-DECISION width (same
-                    role as Metrics' `basis-auto` - see the row-level
-                    comment); once on a line with room to spare it grows past
-                    that freely. Its own `overflow-x-auto` chip row below
-                    remains the final fallback once even the full remaining
-                    row width genuinely isn't enough for every chip (e.g. a
-                    narrow viewport, or Metrics itself using most of the
-                    row). ---- */}
-                <div className={box + ' grow shrink basis-[600px] min-w-[300px]'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
+                    `shrink basis-auto min-w-[300px] max-w-[45%]` mirrors
+                    Metrics' own sizing philosophy (shrink-to-fit, capped,
+                    no `grow`) with ONE deliberate difference: the cap is
+                    `45%`, not Metrics' `50%`. ALL 7 level chips always
+                    render here too (same as Metrics' 6 - `on`/
+                    `selectedLevels` only toggles each chip's active/idle
+                    fill, not whether it renders, see `levelPanelKeys.map`
+                    below), so this panel's natural content width (~972px)
+                    is just as constant as Metrics' - it does NOT shrink
+                    when fewer levels are toggled on, and does not grow when
+                    more are. (A max-w-[50%] symmetric with Metrics - tried
+                    first - was reverted: Metrics' 50% cap is a hard,
+                    pre-existing ceiling that's actually reached at almost
+                    every row width below ~1416px, since Metrics' own
+                    constant content already exceeds half the row there; two
+                    panels BOTH capped at exactly 50% means 50% + 50% + this
+                    row's own `gap-2` mathematically exceeds 100% of the row
+                    by the gap's width, forcing an unwanted wrap exactly
+                    where a one-line, flush-right layout matters most -
+                    confirmed live, Playwright, 1440px: a flat 50% cap here
+                    still wrapped onto 2 lines. `45%` leaves just enough
+                    margin - verified live - for both panels plus the gap to
+                    stay on ONE line, flush right, at every width tested
+                    down to 768px; only below that (verified at 390px) do
+                    the two panels' `min-w` floors together exceed the row
+                    regardless of any cap, falling back to the same
+                    documented wrap - on that fallback line, this panel
+                    sits flush LEFT rather than right, since `justify-between`
+                    has no effect on a line with only one flex item; an
+                    accepted limitation of the genuinely-narrow case, not
+                    something this cap can fix.) `shrink` still lets this
+                    panel compress below its natural width when the viewport
+                    is tight, and its own scrollable chip row below is the
+                    final fallback once even that isn't enough - including,
+                    at the very widest tested viewport (1920px) with every
+                    metric AND every level active, a small amount of
+                    necessary scroll (6 of 7 chips visible unscrolled) since
+                    `45%` of even a 1920px row is still a little short of
+                    this panel's full ~972px natural content; accepted as
+                    the cost of keeping 1920/1440/1024/768 all flush-right
+                    and single-line, which matters more here than showing
+                    the full chip set unscrolled at the single most extreme
+                    combination of viewport-width and selection.
+
+                    The inner chip row (below) right-aligns the chips
+                    THEMSELVES within whatever width this panel ends up at,
+                    matching "right-aligned like Expirations" at the chip
+                    level too, not just the outer box - via a leading flex
+                    spacer, NOT `justify-end` (tried first, reverted - see
+                    that div's own comment for why `justify-end` is
+                    actually broken here, not just cosmetically confusing). ---- */}
+                <div className={box + ' shrink basis-auto min-w-[300px] max-w-[45%]'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
                     {/* whitespace-nowrap: "Key Levels" is two words and was
                         wrapping onto "Key"/"Levels" lines in tighter layouts
                         - force it onto one line regardless of how tight the
@@ -1101,8 +1198,47 @@ export const GexView: React.FC<GexViewProps> = ({
                         comment on that class): the user wants this one row's visible
                         scrollbar gone while staying scrollable (wheel/trackpad/touch/
                         drag) - scoped to Key Levels only, the Metrics panel's own
-                        scroll row above keeps its themed scrollbar unchanged. */}
+                        scroll row above keeps its themed scrollbar unchanged.
+
+                        Right-aligns the chips to this row's OWN right edge (matching
+                        "right-aligned like Expirations" at the chip level, not just
+                        the panel's outer box) via a leading, empty, `aria-hidden`
+                        spacer (`flex-1` = `flex: 1 1 0%`) as the FIRST child, NOT
+                        `justify-end` on this row itself - `justify-end` was tried
+                        first and reverted after finding (Playwright, 390px viewport,
+                        all 7 levels toggled on) that it doesn't degrade safely once
+                        the chips genuinely overflow: with `justify-content: flex-end`
+                        on an `overflow-x-auto` row, Chromium does not register the
+                        overflow at all once the chips (non-shrinking, `shrink-0`)
+                        exceed the row's width - `scrollWidth === clientWidth`
+                        measured equal - and renders the EARLIER chips in DOM order
+                        (Call Wall, Put Wall, Gamma Flip, Max Pain, Support 2 in that
+                        run) at negative x-coordinates, fully or partly off-screen to
+                        the left, with no way to reach them: wheel/trackpad/drag don't
+                        move it (nothing registers as scrollable), and setting
+                        `scrollLeft` programmatically - to 0, to the negative extreme,
+                        or to the positive extreme - was clamped straight back to 0
+                        every time. So this isn't a "confusing default to maybe
+                        correct with a scroll-position reset on mount" - a JS
+                        scroll-position fix CAN'T work here, because `scrollLeft` is
+                        provably stuck; those chips would be permanently unreachable,
+                        a real bug, not a rough edge. The spacer avoids the whole
+                        failure mode instead of papering over it: `flex-1`'s
+                        `flex-basis: 0%` contributes nothing to this row's own
+                        max-content width, so when the chips fit, the spacer's
+                        `flex-grow: 1` consumes the leftover space and visually
+                        pushes them flush right (identical end result to
+                        `justify-end` in the common case); when the chips don't fit,
+                        the spacer's `flex-shrink: 1` lets it collapse to 0 width
+                        (never negative) and gets out of the way entirely, leaving
+                        plain left-to-right, start-anchored overflow - the same
+                        ordinary, fully-scrollable behavior every other
+                        `overflow-x-auto` row in this file already relies on (e.g.
+                        the Metrics row above), with the first chip (lowest strike,
+                        e.g. Call Wall) visible at the start, same as a user
+                        scrolling a list would expect. */}
                     <div className="scrollbar-hidden flex items-center gap-2 overflow-x-auto">
+                        <div aria-hidden="true" className="flex-1" />
                         {levelPanelKeys.map((key) => {
                             const on = selectedLevels.includes(key);
                             const label = levelLabel(key);
