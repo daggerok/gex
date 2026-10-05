@@ -44,23 +44,32 @@ export const TabSwitcher: React.FC<{
     return (
         <nav aria-label={t('tabs.label')} className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                {/* py-[5px]: the shared <Pill/> (TopBar.tsx, also used for the
-                    CACHE/LIVE and language switches - its own padding stays
-                    untouched so those other usages are unaffected) renders
-                    noticeably SHORTER than the Expirations row's own
-                    bordered form (px-3 py-1.5, ExpirationChips/Load button at
-                    text-xs) - measured live (Playwright) at 28px vs 38px tall.
-                    This wrapper pads the tab-pill row out to the same 38px
-                    so the two rows read as one consistent height, without
-                    touching Pill's own classes (it's reused elsewhere with
-                    its original sizing). Scoped to TabSwitcher only. */}
-                <div className="shrink-0 py-[5px]">
+                {/* size="md": the shared <Pill/> (TopBar.tsx) defaults to a
+                    compact 28px-tall rendering sized for TopBar's own CACHE/
+                    LIVE and language switches - noticeably SHORTER than the
+                    Expirations row's own bordered form (px-3 py-1.5,
+                    ExpirationChips/Load button at text-xs, 38px tall).
+                    size="md" is an opt-in Pill variant (TopBar.tsx's own doc
+                    comment) that widens Pill's OUTER wrapper padding so its
+                    actual VISIBLE bordered box renders at 38px, matching the
+                    Expirations form's own box exactly - not an invisible
+                    `py-[…]` margin hack around an unchanged 28px Pill (an
+                    earlier version of this fix did exactly that: it matched
+                    the two rows' invisible bounding rects at 38px each, but
+                    the actual bordered PILL shape inside stayed 28px tall,
+                    floating in blank space - so the two rows still visibly
+                    read as different heights despite measuring equal,
+                    confirmed live via Playwright screenshot). `shrink-0`
+                    still keeps this panel from being squeezed by `flex-wrap`
+                    on the surrounding row. */}
+                <div className="shrink-0">
                     <Pill
                         value={value}
                         options={APP_TABS.map((k) => ({ k, l: t('tabs.' + k) }))}
                         onChange={(k) => onChange(k as AppTab)}
                         dark={dark}
                         accentActive={pillActive}
+                        size="md"
                     />
                 </div>
                 {endSlot}
