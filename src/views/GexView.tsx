@@ -1235,7 +1235,14 @@ export const GexView: React.FC<GexViewProps> = ({
                             </button>
                         </div>
                     </div>
-                    <div className="h-[360px] lg:h-[calc(100dvh-304px)] lg:min-h-[420px]">
+                    {/* select-none: dragging across the chart to zoom (onChartMouseDown/
+                        onChartMouseUp below) is a mousedown+drag+mouseup gesture over plain
+                        SVG <text> elements (axis ticks, Key Level labels) - without this,
+                        the browser's default text-selection drag kicks in at the same time,
+                        visibly highlighting those labels mid-drag. Scoped to just this chart
+                        container, not the whole page, so text elsewhere (inputs, sidebar
+                        values, etc.) stays normally selectable. */}
+                    <div className="h-[360px] lg:h-[calc(100dvh-304px)] lg:min-h-[420px] select-none">
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (
