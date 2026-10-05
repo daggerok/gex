@@ -484,9 +484,14 @@ export const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; sp
     }, [symbol, expKeyReset]);
 
     return (
-        <div style={{ ['--od-grid' as string]: odGrid }}>
+        /* `flex-1 min-h-0 flex flex-col`: this root claims exactly the remaining
+            vertical space inside DeskView's <main> (itself `h-full flex flex-col
+            min-h-0`, see that file's doc comment) instead of the scroll container
+            below guessing a `100dvh - Npx` offset - see `.table-container`'s own
+            comment just below for the bug this replaced. */
+        <div className="flex flex-1 min-h-0 flex-col" style={{ ['--od-grid' as string]: odGrid }}>
             {/* Controls ABOVE the desk (full width): count LEFT, toggle RIGHT. */}
-            <div className="mb-2 flex w-full items-center justify-between">
+            <div className="mb-2 flex w-full items-center justify-between shrink-0">
                 <span className="text-xs text-slate-400">
                     {sections.length} {sections.length === 1 ? t('chain.expirations') : t('chain.expirationsPlural')}
                 </span>
@@ -507,9 +512,34 @@ export const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; sp
             {/* Desk: full width, adaptive height. A DIV/grid layout (not a table)
                 so sticky headers stay opaque during scroll. Inner wrapper carries
                 the min-width so columns stay comfortable / scroll horizontally on
-                small screens. Height offset = chrome above the desk: TopBar +
-                TabSwitcher row (44px, since Phase 2) + controls + this toolbar. */}
-            <div ref={scrollRef} className="table-container w-full max-h-[calc(100dvh-254px)] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                small screens.
+                BUG FIX (confirmed live via Playwright + getBoundingClientRect,
+                measured at 390/768/1024/1440/1920px): this used to be
+                `max-h-[calc(100dvh-254px)]` - a hardcoded dvh offset whose own
+                comment said it budgeted ONLY the chrome ABOVE the desk (TopBar +
+                TabSwitcher's 44px tab row, true back in Phase 2/v0.9.48) and never
+                subtracted anything for what renders BELOW it (DeskView's own
+                `py-4` bottom padding + the page footer). Two measured
+                consequences: (1) that "254" went stale the moment v0.9.51 added
+                the shared expiration-picker+Load panel to TabSwitcher's row -
+                it wraps to 2 lines at common widths (measured nav height 100px
+                at 1024-1440px, 154.5px at 390px, vs. the ~44-63px the constant
+                assumed), so the desk was allowed to render TALLER than truly
+                fit in the remaining viewport; (2) even where the above-desk
+                estimate was close, the formula still never left room for the
+                ~16-40px below the desk - so loading any real chain tall enough
+                to hit this cap forced the WHOLE PAGE to scroll 44px (1024-
+                1440px) to 90px (390px) further than one viewport before the
+                footer (with its own correctly-tuned small padding) ever became
+                visible, instead of staying immediately visible the way it does
+                for an empty/short tab. `flex-1 min-h-0 overflow-auto` replaces
+                the guess with real flex layout: this container's height is
+                whatever space is ACTUALLY left after the sibling toolbar row
+                above (computed by the browser from the real DOM, not a
+                hand-maintained constant), so it can never again under- or
+                over-estimate at any breakpoint, and the footer stays correctly
+                anchored in both the short- and tall-content cases. */}
+            <div ref={scrollRef} className="table-container w-full flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 <div className="od-desk" style={{ minWidth: odMinWidth }}>
                     {sections.map((s, i) => (
                         <ExpirationSection
