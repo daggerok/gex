@@ -19,12 +19,15 @@
  * reads `gammaFlipPos`/`gammaFlipNeg` directly instead (see types.ts's
  * GexLevels doc comment) - it never selects the plain `gammaFlip` key.
  *
- * `callWall1_5`/`putWall1_5` ("Resistance 1.5"/"Support 1.5") sit between the
- * primary wall and the distance-filtered `callWall2`/`putWall2` both
- * conceptually and visually - one shade lighter than `callWall`/`putWall`,
- * one shade darker than `callWall2`/`putWall2` (see GEX_LEVEL_COLORS below).
+ * Resistance 1.5 / Support 1.5 (`callWall1_5`/`putWall1_5`) existed briefly
+ * between the primary wall and the distance-filtered `callWall2`/`putWall2`
+ * (one shade lighter than `callWall`/`putWall`, one shade darker than
+ * `callWall2`/`putWall2`) but were removed entirely - the user found them not
+ * working out after shipping them (see GexView.tsx's ALL_LEVEL_KEYS doc
+ * comment, and the corresponding math/field removal in src/gex.ts/
+ * src/types.ts, done in a separate PR).
  */
-export type GexLevelKey = 'callWall' | 'callWall1_5' | 'callWall2' | 'gammaFlip' | 'gammaFlipPos' | 'gammaFlipNeg' | 'putWall' | 'putWall1_5' | 'putWall2' | 'maxPain' | 'spot';
+export type GexLevelKey = 'callWall' | 'callWall2' | 'gammaFlip' | 'gammaFlipPos' | 'gammaFlipNeg' | 'putWall' | 'putWall2' | 'maxPain' | 'spot';
 
 export interface GexLevelColor {
     hex: string;
@@ -33,13 +36,11 @@ export interface GexLevelColor {
 
 export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
     callWall: { hex: '#22c55e', dot: 'bg-green-500' },      // green-500
-    callWall1_5: { hex: '#4ade80', dot: 'bg-green-400' },   // green-400 (Resistance 1.5 - one step lighter than callWall, one step darker than callWall2)
     callWall2: { hex: '#86efac', dot: 'bg-green-300' },     // green-300 (Resistance 2)
     gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' },    // violet-400 (legacy collapsed value - ChartView.tsx only)
     gammaFlipPos: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400 (last -> + crossing)
     gammaFlipNeg: { hex: '#7c3aed', dot: 'bg-violet-600' }, // violet-600 (last + -> crossing) - darker shade of the same hue, distinguishable from gammaFlipPos and from every other level color
     putWall: { hex: '#ef4444', dot: 'bg-red-500' },         // red-500
-    putWall1_5: { hex: '#f87171', dot: 'bg-red-400' },      // red-400 (Support 1.5 - one step lighter than putWall, one step darker than putWall2)
     putWall2: { hex: '#fca5a5', dot: 'bg-red-300' },        // red-300 (Support 2)
     maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },      // yellow-400
     spot: { hex: '#f59e0b', dot: 'bg-amber-500' },          // amber-500
@@ -146,12 +147,10 @@ export type LevelColorSet = Record<Exclude<GexLevelKey, 'gammaFlip'>, string>;
 /** Defaults mirror today's hardcoded GEX_LEVEL_COLORS hex values exactly. */
 export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
     callWall: GEX_LEVEL_COLORS.callWall.hex,
-    callWall1_5: GEX_LEVEL_COLORS.callWall1_5.hex,
     callWall2: GEX_LEVEL_COLORS.callWall2.hex,
     gammaFlipPos: GEX_LEVEL_COLORS.gammaFlipPos.hex,
     gammaFlipNeg: GEX_LEVEL_COLORS.gammaFlipNeg.hex,
     putWall: GEX_LEVEL_COLORS.putWall.hex,
-    putWall1_5: GEX_LEVEL_COLORS.putWall1_5.hex,
     putWall2: GEX_LEVEL_COLORS.putWall2.hex,
     maxPain: GEX_LEVEL_COLORS.maxPain.hex,
     spot: GEX_LEVEL_COLORS.spot.hex,
