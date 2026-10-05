@@ -26,6 +26,54 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.54 - Fix footer spacing on a tall/loaded Desk chain (reported w/
+ *          screenshot: footer sat flush at the viewport's bottom edge with
+ *          almost no visible gap below it, unlike the already-correct short-
+ *          content case):
+ *          - ROOT CAUSE (confirmed live via Playwright + getBoundingClientRect
+ *            at 390/768/1024/1440/1920px): ChainTable's scroll container used
+ *            a hardcoded `max-h-[calc(100dvh-254px)]`. That "254" budgeted
+ *            ONLY the chrome ABOVE the desk (true back when it was tuned in
+ *            v0.9.48 for a fixed 44px tab row) and never subtracted anything
+ *            for what renders BELOW it (DeskView's own `py-4` bottom padding +
+ *            the page footer). It had also gone stale above the desk too:
+ *            v0.9.51's shared expiration-picker+Load panel wraps to 2 lines at
+ *            common widths (measured nav height 100px at 1024-1440px, 154.5px
+ *            at 390px - both well past the ~44-63px the constant assumed).
+ *            Net effect: loading any chain tall enough to hit this cap forced
+ *            the WHOLE PAGE to scroll 44px (1024-1440px) to 90px (390px)
+ *            further than one viewport before the footer (with its own
+ *            correctly-tuned small padding, see AttributionFooter.tsx) ever
+ *            became visible - instead of staying immediately visible the way
+ *            it does on an empty/short tab. At the viewport's natural (un-
+ *            scrolled) position the footer was entirely below the fold.
+ *          - FIX: replaced the hardcoded dvh offset with real flex layout, so
+ *            the browser computes the remaining space instead of a hand-
+ *            maintained constant. Root `min-h-screen` -> `h-dvh` (a floor
+ *            alone never gives the flex chain below it a DEFINITE height to
+ *            redistribute - `flex-grow` only ever redistributes space already
+ *            bounded from above). The Desk-only chain (hidden tab wrapper ->
+ *            DeskView's `<main>` -> ChainTable's root -> `.table-container`)
+ *            now threads `flex-1 min-h-0` down to the scroll container, which
+ *            dropped the `max-h` calc for plain `flex-1 min-h-0 overflow-auto`.
+ *          - GOTCHA (found live measuring the GEX tab, two wrong attempts
+ *            before landing here): the shared tab-content wrapper can't
+ *            unconditionally carry `min-h-0` - that strips flex's default
+ *            `min-height: auto` protection for EVERY child uniformly, so it
+ *            also let GEX/Chart's own content (which has no `overflow-auto` of
+ *            its own by design) get shrunk below its real height, rendering
+ *            past/behind the footer instead of pushing it down. Fixed by
+ *            conditioning that wrapper's `min-h-0` on `activeTab === 'desk'`
+ *            (plus defensive `shrink-0` on the nav row and each tab-content
+ *            block) - GEX/Chart keep their pre-existing "just overflow the
+ *            page if too tall" behavior, only Desk opts into the shrink/clamp.
+ *          - VERIFIED live via Playwright (390/768/1024/1440/1920px): Desk
+ *            empty, Desk loaded (SPX, 15 expirations), GEX loaded, Chart
+ *            loaded, GEX/Chart empty - footer sits flush at the true page
+ *            bottom with its tuned small padding in every case, Desk's chain
+ *            table scrolls entirely internally (no more extra outer-page
+ *            scroll), and GEX/Chart still overflow the page normally when
+ *            their own content needs more than one viewport.
  * v0.9.53 - Footer scoped per tab (user request: show the TradingView/
  *          lightweight-charts attribution only where that library is
  *          actually used): AttributionFooter.tsx now renders only when
@@ -1272,8 +1320,22 @@ const App: React.FC = () => {
     const showTickerSuggestions = tickerSuggestionsOpen && (tickerSuggestionsLoading || tickerSuggestions.length > 0);
 
     // ---- Render ------------------------------------------------------------
+    // `h-dvh` (NOT `min-h-screen`): a `min-height` is only a FLOOR - it lets this
+    // root grow taller than the viewport for free, but never gives the flex
+    // chain below a DEFINITE height to redistribute. `flex-grow`/`flex-1` only
+    // ever redistributes space that's already bounded from above; with no real
+    // cap here, every nested `flex-1 min-h-0` down to ChainTable's own scroll
+    // container had nothing to clamp against, so `overflow-auto` never actually
+    // engaged (confirmed live: its clientHeight rendered equal to its full,
+    // uncapped content height, not the remaining viewport space) - the chain
+    // table just grew to fit ALL its rows and the whole page scrolled past one
+    // viewport instead of the table scrolling internally. `h-dvh` gives this
+    // root a true, dynamic-viewport-aware height (handles mobile browser
+    // chrome collapse the same way the old `100dvh` calc intended to), so
+    // every `flex-1 min-h-0` descendant now resolves a real pixel height and
+    // the innermost `overflow-auto` finally clamps correctly.
     return (
-        <div className="min-h-screen flex flex-col">
+        <div className="h-dvh flex flex-col">
             <TopBar
                 settings={settings}
                 provider={provider}
@@ -1323,8 +1385,47 @@ const App: React.FC = () => {
                 tab (e.g. Chart with no proxy running) instead of floating right under
                 a short content block - same visual anchor point as a tall tab like Desk
                 with real data loaded, where this div's own content already pushes the
-                footer there anyway. */}
-            <div className="flex-1">
+                footer there anyway.
+                `flex flex-col` makes this div an actual flex column (not just a flex
+                ITEM) so the Desk wrapper below can in turn use its own `flex-1
+                min-h-0` to claim exactly the remaining space after TabSwitcher's nav
+                row - see ChainTable.tsx's doc comment on `.table-container` for why
+                this replaced a hardcoded `100dvh - Npx` calc there.
+                `min-h-0` is applied HERE conditionally (only while Desk is the active
+                tab) - TWO prior attempts at this, both wrong, found live via
+                Playwright measuring the GEX tab:
+                  1. No `min-h-0` anywhere on this div: Desk's own `flex-1 min-h-0`
+                     chain (hidden wrapper -> `<main>` -> ChainTable) never got a
+                     DEFINITE height to size against (this div's automatic min-height
+                     was based on the hidden desk wrapper's full, un-clamped content),
+                     so ChainTable's `overflow-auto` never engaged at all - its
+                     `clientHeight` measured equal to its full, un-clamped
+                     `scrollHeight` (the whole multi-thousand-row chain), and the
+                     WHOLE PAGE scrolled past one viewport instead of the table
+                     scrolling internally.
+                  2. `min-h-0` unconditionally: fixed Desk, but `min-h-0` strips a
+                     flex item's default `min-height: auto` PROTECTION uniformly for
+                     EVERY child of this div, not just the one that wants to shrink -
+                     so it also let the root's flex layout shrink GEX/Chart's tab-
+                     content block below their own real content height (e.g.
+                     GexView's recharts panel + stacked sidebar at narrow widths,
+                     which have no `overflow-auto` of their own and were never meant
+                     to be clamped). Confirmed live: the footer ended up positioned
+                     at THIS div's artificially-shrunk height while GEX's actual
+                     content rendered past/over it.
+                Conditioning `min-h-0` on `activeTab === 'desk'` gives each tab
+                exactly what it needs: while Desk is active, the Desk-only wrapper's
+                OWN `min-h-0` (below) can shrink/size ChainTable correctly, and GEX/
+                Chart aren't even mounted so stripping protection here is moot; while
+                GEX/Chart are active, this div keeps its default `min-height: auto`,
+                so their real content height correctly protects them from being
+                shrunk (and the Desk wrapper is `display:none`, so its own `min-h-0`
+                contributes 0 to this div's automatic minimum either way). `shrink-0`
+                below on the nav wrapper and each tab-content block is additional,
+                redundant insurance against shrinking - only the Desk wrapper (next)
+                actually wants to be shrinkable. */}
+            <div className={`flex-1 flex flex-col ${activeTab === 'desk' ? 'min-h-0' : ''}`}>
+            <div className="shrink-0">
             <TabSwitcher
                 value={activeTab}
                 onChange={changeTab}
@@ -1374,11 +1475,20 @@ const App: React.FC = () => {
                     </form>
                 ) : null}
             />
+            </div>
 
             {/* Desk stays MOUNTED while another tab is shown (just hidden), so
                 ChainTable's local state (collapsed sections, active expiration,
-                scroll position) survives a tab round-trip. */}
-            <div hidden={activeTab !== 'desk'}>
+                scroll position) survives a tab round-trip.
+                `flex-1 min-h-0` (NOT a `display`-setting class like `flex`/`block` -
+                those would fight the `hidden` attribute's `display: none` at equal
+                specificity): while visible, this claims the remaining vertical space
+                in the flex column above so DeskView's <main> can resolve `h-full`
+                against a real pixel height, letting ChainTable size its own scroll
+                region via flex instead of a hardcoded dvh calc. While hidden,
+                `display: none` drops it from layout entirely as before - flex-1/
+                min-h-0 don't touch `display`, so they never override `hidden`. */}
+            <div hidden={activeTab !== 'desk'} className="flex-1 min-h-0">
                 <DeskView
                     settings={settings}
                     provider={provider}
@@ -1404,7 +1514,16 @@ const App: React.FC = () => {
                     hasRows={hasRows}
                 />
             </div>
+            {/* shrink-0: GEX has no internal scroll region of its own (unlike Desk's
+                ChainTable), so it must stay OUT of the flex column's default
+                flex-shrink:1 and just overflow the page naturally when its content
+                (chart + stacked sidebar at narrow widths) is taller than the
+                viewport - see this file's "GOTCHA" comment above `.shrink-0` on the
+                nav wrapper for the bug this fixes (confirmed live: without
+                shrink-0, GEX's own content was squeezed by the flex layout and
+                rendered past/behind the footer instead of pushing it down). */}
             {activeTab === 'gex' && (
+                <div className="shrink-0">
                 <Suspense fallback={null}>
                     <GexView
                         settings={settings}
@@ -1420,8 +1539,11 @@ const App: React.FC = () => {
                         setMetrics={changeGexMetrics}
                     />
                 </Suspense>
+                </div>
             )}
+            {/* shrink-0: same reasoning as GEX's wrapper just above. */}
             {activeTab === 'chart' && (
+                <div className="shrink-0">
                 <Suspense fallback={null}>
                     <ChartView
                         settings={settings}
@@ -1433,6 +1555,7 @@ const App: React.FC = () => {
                         setRange={setChartRange}
                     />
                 </Suspense>
+                </div>
             )}
             </div>
 

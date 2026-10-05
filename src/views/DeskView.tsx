@@ -51,8 +51,16 @@ export const DeskView: React.FC<DeskViewProps> = ({
         /* Width: comfortable centered column on phones/tablets, but on LARGE
             screens (laptops/desktops/TVs, lg: ≥1024px) go full-width so the
             option desk uses all the horizontal space instead of a narrow
-            column. See index.css for the matching container note. */
-        <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
+            column. See index.css for the matching container note.
+            `h-full flex flex-col min-h-0`: resolves against the parent wrapper's
+            flex-1-computed pixel height (main.tsx) and re-establishes a flex
+            column here so the ChainTable branch below can claim the remaining
+            space with its own `flex-1 min-h-0` instead of ChainTable guessing a
+            `100dvh - Npx` offset (see ChainTable.tsx's `.table-container` doc
+            comment for the bug this replaced). The onboarding/placeholder
+            branches intentionally do NOT get flex-1 - they stay natural
+            (centered, py-16) content, unchanged from before. */
+        <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6 h-full flex flex-col min-h-0">
             {/* ---- Controls: STEP 1 result (Cancel/spot) — the expiration
                 picker + Load button (STEP 2) now live in the shared panel in
                 main.tsx, in the same row as the Desk/GEX/Chart tab pills,
