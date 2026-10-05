@@ -151,16 +151,19 @@ function gp(strike: number, netGex: number): import('./types').GexPoint {
 }
 
 describe('findGammaFlip (7.3, redefined: the LAST profile zero-crossing, not a cumulative sum)', () => {
-  test('normal case: interpolates the single crossing of the netGex profile itself', () => {
+  test('normal case: anchors to the real bar immediately following the single crossing, no interpolation', () => {
     // FIXTURE's per-strike (NOT cumulative) netGex: -40000@90, -20000@95,
     // +10000@100, +100000@105, +80000@106, +30000@110, +50000@115.
     // Only one sign change in the whole profile: 95 (-20000) -> 100 (+10000),
-    // a neg -> pos transition, so pos is the only non-null side.
-    // flip = 95 + 5 * (0 - (-20000)) / (10000 - (-20000)) = 95 + 10/3
-    const expected = 95 + 5 * (20000 / 30000);
+    // a neg -> pos transition, so pos is the only non-null side. The flip is
+    // the real bar that follows the transition, strike 100 itself - not an
+    // interpolated fractional value between 95 and 100.
+    const expected = 100;
     const profile = computeGexProfile(FIXTURE, SPOT);
     expect(findGammaFlipCrossings(profile, SPOT)).toEqual({ pos: expected, neg: null });
-    expect(findGammaFlip(profile, SPOT)).toBeCloseTo(expected, 9);
+    // totalNetGex = 210000 (positive, see computeGexLevels test below), so
+    // the legacy collapse picks gammaFlipPos.
+    expect(findGammaFlip(profile, SPOT)).toBe(expected);
   });
 
   test('single expiration slice: an exact netGex === 0 strike bridging a sign change is itself the flip', () => {
@@ -187,7 +190,7 @@ describe('findGammaFlip (7.3, redefined: the LAST profile zero-crossing, not a c
     expect(findGammaFlip(profile, 100)).toBeNull();
   });
 
-  test('multiple sign crossings (neg->pos->neg->pos): gammaFlipPos/gammaFlipNeg are the two distinct last crossings, gammaFlip is the higher one', () => {
+  test('multiple sign crossings (neg->pos->neg->pos): gammaFlipPos/gammaFlipNeg are the two distinct last crossings, both real bars; gammaFlip resolves by totalNetGex sign', () => {
     // Mirrors the user's own real-chain example: a small isolated anomalous
     // strike (or two) sandwiched inside what's otherwise a clean transition
     // from a big negative valley to a big positive peak, producing three
@@ -195,22 +198,24 @@ describe('findGammaFlip (7.3, redefined: the LAST profile zero-crossing, not a c
     // neg->pos) instead of one clean one - exactly the shape the "Gamma
     // Flip +" / "Gamma Flip -" UI split is meant to expose.
     // netGex alternates sign every strike: -10@90, +10@95, -10@100, +10@105.
-    // Crossings (same interpolation formula, applied per-pair, in ascending-
-    // strike order):
-    //   90->95:   90 + 5*(0-(-10))/(10-(-10))   = 92.5  (neg -> pos)
-    //   95->100:  95 + 5*(0-10)/(-10-10)        = 97.5  (pos -> neg)
-    //   100->105: 100 + 5*(0-(-10))/(10-(-10))  = 102.5 (neg -> pos)
-    // Last neg->pos transition overwrites the earlier one: pos = 102.5 (not
-    // 92.5). Last (and only) pos->neg transition: neg = 97.5.
-    // gammaFlip = max(102.5, 97.5) = 102.5 - the later/terminal crossing,
-    // matching the chain ending positive (105 is +10).
+    // Each crossing is anchored to the real bar immediately following the
+    // transition (no interpolation), in ascending-strike order:
+    //   90->95:   the bar at 95 (neg -> pos)
+    //   95->100:  the bar at 100 (pos -> neg)
+    //   100->105: the bar at 105 (neg -> pos)
+    // Last neg->pos transition overwrites the earlier one: pos = 105 (not
+    // 95, both are real array strikes). Last (and only) pos->neg transition:
+    // neg = 100.
+    // totalNetGex = -10 + 10 - 10 + 10 = 0, which is NOT > 0, so the legacy
+    // collapse rule (totalNetGex > 0 ? pos : neg) picks neg: gammaFlip = 100.
+    // This is the disagreeing-example case: pos (105) and neg (100) differ,
+    // and the collapse does not simply pick the higher strike anymore.
     // spot = 93 is deliberately placed so "nearest to spot" would instead
-    // pick 92.5 (distance 0.5 vs 102.5's distance 9.5) - proving this
-    // asserts the corrected "last crossing per direction" rule, not a
-    // nearest-to-spot tie-break.
+    // pick 95 - proving this asserts the "last crossing per direction" rule,
+    // not a nearest-to-spot tie-break.
     const profile = [gp(90, -10), gp(95, 10), gp(100, -10), gp(105, 10)];
-    expect(findGammaFlipCrossings(profile, 93)).toEqual({ pos: 102.5, neg: 97.5 });
-    expect(findGammaFlip(profile, 93)).toBeCloseTo(102.5, 9);
+    expect(findGammaFlipCrossings(profile, 93)).toEqual({ pos: 105, neg: 100 });
+    expect(findGammaFlip(profile, 93)).toBe(100);
   });
 
   test('leading zero-netGex strikes are not a crossing (CBOE far-OTM exact-zero gamma)', () => {
@@ -218,14 +223,16 @@ describe('findGammaFlip (7.3, redefined: the LAST profile zero-crossing, not a c
     // lowest strikes net to exactly 0. Same rows as FIXTURE plus two such
     // strikes below it: the flip must stay at the normal single crossing
     // (95 -> 100, neg -> pos), not be misread as a crossing down at the
-    // leading zeros.
-    const expected = 95 + 5 * (20000 / 30000);
+    // leading zeros. The flip is the real bar at 100 (no interpolation).
+    const expected = 100;
     const withZeroWings = [...FIXTURE, q(EXP_A, 'call', 80, 900, 0), q(EXP_A, 'put', 80, 900, 0), q(EXP_A, 'put', 85, 400, 0)];
     const profile = computeGexProfile(withZeroWings, SPOT);
     expect(profile[0].strike).toBe(80);
     expect(profile[0].netGex).toBe(0);
     expect(findGammaFlipCrossings(profile, SPOT)).toEqual({ pos: expected, neg: null });
-    expect(findGammaFlip(profile, SPOT)).toBeCloseTo(expected, 9);
+    // The zero-gamma wing strikes contribute 0 GEX, so totalNetGex is the
+    // same 210000 as plain FIXTURE (positive) -> collapse picks pos.
+    expect(findGammaFlip(profile, SPOT)).toBe(expected);
     // An all-zero profile never crosses either, in either direction.
     const allZeroProfile = computeGexProfile([q(EXP_A, 'call', 80, 10, 0), q(EXP_A, 'put', 85, 10, 0)], SPOT);
     expect(findGammaFlipCrossings(allZeroProfile, SPOT)).toEqual({ pos: null, neg: null });
@@ -394,9 +401,11 @@ describe('computeGexProfile honors a per-quote forward over the shared spot (Pha
     expect(levels.putWall).toBe(15);
     expect(levels.totalNetGex).toBeCloseTo(6229.03808 - 2491.615232, 3);
     // gammaFlip: only two strikes, netGex -2491.615232@15 then +6229.03808@20
-    // - one neg -> pos sign change, so gammaFlipPos interpolates between them
-    // and gammaFlipNeg stays null (no pos -> neg transition exists here).
-    expect(levels.gammaFlipPos).not.toBeNull();
+    // - one neg -> pos sign change, so gammaFlipPos is the real bar at 20
+    // (no interpolation) and gammaFlipNeg stays null (no pos -> neg
+    // transition exists here). totalNetGex is positive, so the legacy
+    // collapse picks gammaFlipPos.
+    expect(levels.gammaFlipPos).toBe(20);
     expect(levels.gammaFlipNeg).toBeNull();
     expect(levels.gammaFlip).toBe(levels.gammaFlipPos);
   });
@@ -407,13 +416,14 @@ describe('computeGexLevels (7.7)', () => {
     const levels = computeGexLevels(FIXTURE, SPOT);
     expect(levels.spot).toBe(SPOT);
     // Per-strike netGex crosses sign once, 95 (-20000) -> 100 (+10000), a
-    // neg -> pos transition: flip = 95 + 5 * (0 - (-20000)) / (10000 - (-20000)) = 95 + 10/3.
-    // Only one direction crosses, so gammaFlipPos holds it and gammaFlipNeg
-    // is null; gammaFlip (the derived legacy field) equals the non-null one.
-    const expectedFlip = 95 + 5 * (20000 / 30000);
-    expect(levels.gammaFlipPos).toBeCloseTo(expectedFlip, 9);
+    // neg -> pos transition: the flip is the real bar at 100, no
+    // interpolation. Only one direction crosses, so gammaFlipPos holds it
+    // and gammaFlipNeg is null; totalNetGex (210000, asserted below) is
+    // positive, so gammaFlip (the derived legacy field) picks gammaFlipPos.
+    const expectedFlip = 100;
+    expect(levels.gammaFlipPos).toBe(expectedFlip);
     expect(levels.gammaFlipNeg).toBeNull();
-    expect(levels.gammaFlip).toBeCloseTo(expectedFlip, 9);
+    expect(levels.gammaFlip).toBe(expectedFlip);
     expect(levels.callWall).toBe(105);
     expect(levels.putWall).toBe(90);
     expect(levels.callWall2).toBe(115);

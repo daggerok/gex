@@ -280,11 +280,15 @@ export interface GexPoint {
 export interface GexLevels {
     spot: number;
     /**
-     * The last net-GEX zero-crossing overall (ascending by strike) - whichever
-     * of `gammaFlipPos` / `gammaFlipNeg` has the higher (later) strike, or the
-     * sole non-null one if only one direction crosses anywhere in the chain.
+     * The legacy single gamma-flip value, collapsed from `gammaFlipPos` /
+     * `gammaFlipNeg` by the sign of `totalNetGex`: positive total picks
+     * `gammaFlipPos`, non-positive picks `gammaFlipNeg` (either may be null).
      * Kept as a plain convenience field so existing consumers (src/views/
-     * GexView.tsx) keep compiling and working unchanged. See src/gex.ts's
+     * GexView.tsx) keep compiling and working unchanged. This is a TEMPORARY
+     * PLACEHOLDER for the rare case where both directional fields are
+     * non-null (a genuine two-crossing chain) - a separate, already-planned
+     * follow-up PR replaces GexView.tsx's consumption of this field with the
+     * `gammaFlipPos`/`gammaFlipNeg` pair directly. See src/gex.ts's
      * findGammaFlip/findGammaFlipCrossings doc comments for the full rule.
      */
     gammaFlip: number | null;
