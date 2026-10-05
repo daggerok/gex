@@ -283,7 +283,7 @@ export interface Settings {
      * Unrelated to per-metric chart COLORS, which persist separately via
      * gex-colors.ts's `gex.metricColors.v1` key.
      */
-    gexMetrics: ('netGex' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume')[];
+    gexMetrics: ('netGex' | 'absoluteGamma' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume')[];
 }
 
 // ============================================================================
@@ -298,6 +298,16 @@ export interface GexPoint {
     putGex: number;
     /** callGex + putGex. */
     netGex: number;
+    /**
+     * Absolute Gamma (AG): |callGex| + |putGex|, equivalently callGex -
+     * putGex since putGex is already <= 0. Total dollar-gamma "mass" at this
+     * strike regardless of direction - no cancellation between calls and
+     * puts, unlike netGex. "SpotGamma adds the absolute value of put gamma
+     * to the absolute value of call gamma" - SpotGamma support docs,
+     * "Absolute Gamma" (support.spotgamma.com). By construction absGamma >=
+     * |netGex| at every point (equality only when one side is zero).
+     */
+    absGamma: number;
     callOi: number;
     putOi: number;
     callVolume: number;

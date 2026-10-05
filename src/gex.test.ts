@@ -103,20 +103,37 @@ describe('computeGexProfile (7.2)', () => {
     const profile = computeGexProfile([...FIXTURE].reverse(), SPOT);
     expect(profile.map((p) => p.strike)).toEqual([90, 95, 100, 105, 106, 110, 115]);
     const expectedNet = [-40000, -20000, 10000, 100000, 80000, 30000, 50000];
+    // Absolute Gamma (AG) hand-derived from the same callOi/putOi this file's
+    // header comment already derives netGex from: callGex(K) = 100*callOi(K),
+    // putGex(K) = -100*putOi(K), so absGamma(K) = |callGex| + |putGex| =
+    // 100*(callOi(K) + putOi(K)) - NOT read back from the implementation.
+    //   90:  100*(100+500) =  60000      106: 100*(850+50)  =  90000
+    //   95:  100*(100+300) =  40000      110: 100*(350+50)  =  40000
+    //  100:  100*(300+200) =  50000      115: 100*(520+20)  =  54000
+    //  105:  100*(1100+100)= 120000
+    const expectedAbsGamma = [60000, 40000, 50000, 120000, 90000, 40000, 54000];
     profile.forEach((p, i) => {
       expect(p.netGex).toBeCloseTo(expectedNet[i], 6);
       expect(p.netGex).toBeCloseTo(p.callGex + p.putGex, 9);
       expect(p.putGex).toBeLessThanOrEqual(0);
+      expect(p.absGamma).toBeCloseTo(expectedAbsGamma[i], 6);
+      // Sanity invariant (holds by construction for every point, in any
+      // profile with mixed call/put activity): AG is the unsigned sum of
+      // both sides, netGex is their signed sum, so AG can never be smaller
+      // than |netGex| - equality only when one side is entirely 0.
+      expect(p.absGamma).toBeGreaterThanOrEqual(Math.abs(p.netGex));
     });
     const k105 = profile[3];
     expect(k105.callOi).toBe(1100);
     expect(k105.putOi).toBe(100);
     expect(k105.callGex).toBeCloseTo(110000, 6);
     expect(k105.putGex).toBeCloseTo(-10000, 6);
+    expect(k105.absGamma).toBeCloseTo(120000, 6); // 110000 + |-10000|
     expect(k105.callVolume).toBe(10); // EXP_B row has null volume -> 0
     const k90 = profile[0];
     expect(k90.putOi).toBe(500);
     expect(k90.putVolume).toBe(20);
+    expect(k90.absGamma).toBeCloseTo(60000, 6); // |10000| (call) + |-50000| (put)
   });
 
   test('single-expiration slice only sees its own contracts', () => {

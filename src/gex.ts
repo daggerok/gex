@@ -83,7 +83,7 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
         const ref = typeof q.forward === 'number' && Number.isFinite(q.forward) && q.forward > 0 ? q.forward : spot;
         let point = byStrike.get(q.strike);
         if (!point) {
-            point = { strike: q.strike, callGex: 0, putGex: 0, netGex: 0, callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 };
+            point = { strike: q.strike, callGex: 0, putGex: 0, netGex: 0, absGamma: 0, callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 };
             byStrike.set(q.strike, point);
         }
         const oi = finiteOr0(q.openInterest);
@@ -99,7 +99,14 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
         }
     }
     const profile = [...byStrike.values()].sort((a, b) => a.strike - b.strike);
-    for (const point of profile) point.netGex = point.callGex + point.putGex;
+    for (const point of profile) {
+        point.netGex = point.callGex + point.putGex;
+        // Absolute Gamma (AG, see GexPoint.absGamma's doc comment): callGex
+        // is already >= 0 and putGex already <= 0, so callGex - putGex is
+        // exactly |callGex| + |putGex| without a second independent sum that
+        // could drift from the values just accumulated above.
+        point.absGamma = point.callGex - point.putGex;
+    }
     return profile;
 }
 
