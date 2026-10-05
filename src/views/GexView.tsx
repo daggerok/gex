@@ -799,7 +799,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // already-loaded dates.
     if (!symbol) {
         return (
-            <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
+            <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
                 <div className={emptyBox}>{tr('gex.empty.noData')}</div>
             </main>
         );
@@ -817,7 +817,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // chain table) was always unaffected either way.
     if (isFuturesPriced && !levels) {
         return (
-            <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
+            <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
                 <div className={emptyBox}>{tr('gex.empty.futuresPriced', { symbol })}</div>
             </main>
         );
@@ -828,7 +828,7 @@ export const GexView: React.FC<GexViewProps> = ({
         : !chart ? tr('gex.empty.noGamma') : null;
 
     return (
-        <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
+        <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
             {/* ---- Controls: metric toggle + Key Levels toggle (expiration
                 picker + Load live in the shared panel in main.tsx, in the
                 same row as the Desk/GEX/Chart tab pills). Both panels are

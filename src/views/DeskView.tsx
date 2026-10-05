@@ -52,7 +52,7 @@ export const DeskView: React.FC<DeskViewProps> = ({
             screens (laptops/desktops/TVs, lg: ≥1024px) go full-width so the
             option desk uses all the horizontal space instead of a narrow
             column. See index.css for the matching container note. */
-        <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-8 2xl:px-16">
+        <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
             {/* ---- Controls: STEP 1 result (Cancel/spot) — the expiration
                 picker + Load button (STEP 2) now live in the shared panel in
                 main.tsx, in the same row as the Desk/GEX/Chart tab pills,
