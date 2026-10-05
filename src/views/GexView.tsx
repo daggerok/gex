@@ -23,18 +23,41 @@ import { fmt, fmtInt } from '../utils';
 export type GexMetric = 'netGex' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
 export const GEX_METRICS: GexMetric[] = ['netGex', 'callOi', 'putOi', 'callVolume', 'putVolume'];
 
-/** The 6 toggleable Key Levels (everything in GexLevels except `spot`, which
- *  is always drawn and isn't user-toggleable - see gex-colors.ts's LevelColorSet). */
-const ALL_LEVEL_KEYS: Array<Exclude<GexLevelKey, 'spot'>> = ['callWall', 'callWall2', 'gammaFlip', 'putWall', 'putWall2', 'maxPain'];
+/** GexView.tsx's own toggleable-level key: every GexLevelKey except `spot`
+ *  (always drawn, never toggleable) and the legacy collapsed `gammaFlip`
+ *  (ChartView.tsx-only - see gex-colors.ts's GexLevelKey doc comment; this
+ *  view reads gammaFlipPos/gammaFlipNeg directly and never selects it). */
+type ToggleableLevelKey = Exclude<GexLevelKey, 'spot' | 'gammaFlip'>;
 
-/** i18n key for each level's <ReferenceLine> label on the chart (distinct from
- *  gex.level.* - the sidebar text labels - so the two can read differently:
- *  the chart line stays short even when the sidebar label carries an
- *  "(R1)"/"(S1)" suffix). */
-const LEVEL_CHART_LABEL_KEY: Record<Exclude<GexLevelKey, 'spot'>, string> = {
+/** The 7 toggleable Key Levels (everything in GexLevels except `spot`/legacy
+ *  `gammaFlip` - see ToggleableLevelKey above; also gex-colors.ts's
+ *  LevelColorSet). `gammaFlipPos`/`gammaFlipNeg` each carry their own
+ *  selection + color state independently (see the `selectedLevels`/
+ *  `levelColors` comment below) even though the toggle/color panel usually
+ *  renders them as a single combined "Gamma Flip" entry - see
+ *  `gammaFlipPanelKeys` below. */
+const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall', 'putWall2', 'maxPain'];
+
+/** i18n key for each non-gamma-flip level's sidebar/toggle-panel label and
+ *  <ReferenceLine> chart label. Gamma Flip is handled separately (see
+ *  `levelLabel`/`levelChartLabel` below) since its label is adaptive:
+ *  plain "Gamma Flip" when only one of gammaFlipPos/gammaFlipNeg is non-null
+ *  for the current data, "Gamma Flip +"/"Gamma Flip -" when both are. */
+const LEVEL_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gammaFlipNeg'>, string> = {
+    callWall: 'gex.level.callWall',
+    callWall2: 'gex.level.resistance2',
+    putWall: 'gex.level.putWall',
+    putWall2: 'gex.level.support2',
+    maxPain: 'gex.level.maxPain',
+};
+
+/** Same as LEVEL_LABEL_KEY but for the <ReferenceLine> label on the chart
+ *  (distinct from gex.level.* - the sidebar/toggle-panel text labels - so the
+ *  two can read differently: the chart line stays short even when the
+ *  sidebar label carries an "(R1)"/"(S1)" suffix). */
+const LEVEL_CHART_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gammaFlipNeg'>, string> = {
     callWall: 'gex.chart.callWall',
     callWall2: 'gex.chart.resistance2',
-    gammaFlip: 'gex.chart.gammaFlip',
     putWall: 'gex.chart.putWall',
     putWall2: 'gex.chart.support2',
     maxPain: 'gex.chart.maxPain',
@@ -216,9 +239,9 @@ export const GexView: React.FC<GexViewProps> = ({
     // useState in main.tsx with no localStorage key); unlike metrics, there's
     // no "at least one must stay on" rule here - toggling every level off is
     // a valid (if unusual) choice, and Reset always brings all 6 back.
-    const [selectedLevels, setSelectedLevels] = useState<Array<Exclude<GexLevelKey, 'spot'>>>(() => [...ALL_LEVEL_KEYS]);
+    const [selectedLevels, setSelectedLevels] = useState<Array<ToggleableLevelKey>>(() => [...ALL_LEVEL_KEYS]);
     const [levelColors, setLevelColorsState] = useState<LevelColorSet>(() => loadLevelColors());
-    const setLevelColor = (key: Exclude<GexLevelKey, 'spot'>, value: string) => {
+    const setLevelColor = (key: ToggleableLevelKey, value: string) => {
         setLevelColorsState((prev) => {
             const next = { ...prev, [key]: value };
             saveLevelColors(next);
@@ -229,6 +252,42 @@ export const GexView: React.FC<GexViewProps> = ({
         setSelectedLevels([...ALL_LEVEL_KEYS]);
         setLevelColorsState(DEFAULT_LEVEL_COLORS);
         saveLevelColors(DEFAULT_LEVEL_COLORS);
+    };
+
+    // ---- Gamma Flip adaptive +/- labeling (Part 1) -------------------------
+    // gammaFlipPos/gammaFlipNeg are tracked as two fully independent
+    // toggleable/colorable keys (see ALL_LEVEL_KEYS above) so a user's
+    // per-direction preference survives a later reload whose data shape
+    // differs - but the overwhelmingly common case is only ONE of the two
+    // being non-null for the currently loaded data, and in that case showing
+    // a bare "Gamma Flip" (no "+"/"-": nothing to disambiguate) reads far
+    // better than a lone "Gamma Flip +" would. `bothGammaFlip` is true only
+    // for a genuine two-crossing chain, where both directional entries are
+    // shown side by side instead.
+    const bothGammaFlip = levels?.gammaFlipPos != null && levels?.gammaFlipNeg != null;
+    /** Which single key represents Gamma Flip when only one direction has a
+     *  value (or neither does, e.g. no data loaded yet - arbitrary pick,
+     *  moot since the value reads null either way). */
+    const soloGammaFlipKey: 'gammaFlipPos' | 'gammaFlipNeg' =
+        levels?.gammaFlipPos == null && levels?.gammaFlipNeg != null ? 'gammaFlipNeg' : 'gammaFlipPos';
+    /** Keys the Key Levels toggle/color panel actually renders for Gamma Flip
+     *  this render - one combined entry, or both directional entries. This is
+     *  the "dynamic based on current data" part; the sidebar card mirrors it
+     *  via the `keyLevels` array below. */
+    const gammaFlipPanelKeys: Array<'gammaFlipPos' | 'gammaFlipNeg'> = bothGammaFlip ? ['gammaFlipPos', 'gammaFlipNeg'] : [soloGammaFlipKey];
+    const levelPanelKeys: Array<ToggleableLevelKey> = ['callWall', 'callWall2', ...gammaFlipPanelKeys, 'putWall', 'putWall2', 'maxPain'];
+
+    const levelLabel = (key: ToggleableLevelKey): string => {
+        if (key === 'gammaFlipPos' || key === 'gammaFlipNeg') {
+            return bothGammaFlip ? tr(key === 'gammaFlipPos' ? 'gex.level.gammaFlipPos' : 'gex.level.gammaFlipNeg') : tr('gex.level.gammaFlip');
+        }
+        return tr(LEVEL_LABEL_KEY[key]);
+    };
+    const levelChartLabel = (key: ToggleableLevelKey): string => {
+        if (key === 'gammaFlipPos' || key === 'gammaFlipNeg') {
+            return bothGammaFlip ? tr(key === 'gammaFlipPos' ? 'gex.chart.gammaFlipPos' : 'gex.chart.gammaFlipNeg') : tr('gex.chart.gammaFlip');
+        }
+        return tr(LEVEL_CHART_LABEL_KEY[key]);
     };
 
     // ---- Zoom (section 8.1 part 2) ------------------------------------------
@@ -324,13 +383,19 @@ export const GexView: React.FC<GexViewProps> = ({
     const yTickFormatter = (v: number) => (yBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
     const xDomain = xZoom ?? chart?.domain ?? ([0, 1] as [number, number]);
 
-    const keyLevels: Array<{ key: GexLevelKey; label: string; value: number | null; optional?: boolean }> = [
-        { key: 'callWall', label: tr('gex.level.callWall'), value: levels?.callWall ?? null },
-        { key: 'callWall2', label: tr('gex.level.resistance2'), value: levels?.callWall2 ?? null, optional: true },
-        { key: 'gammaFlip', label: tr('gex.level.gammaFlip'), value: levels?.gammaFlip ?? null },
-        { key: 'putWall', label: tr('gex.level.putWall'), value: levels?.putWall ?? null },
-        { key: 'putWall2', label: tr('gex.level.support2'), value: levels?.putWall2 ?? null, optional: true },
-        { key: 'maxPain', label: tr('gex.level.maxPain'), value: levels?.maxPain ?? null },
+    // Sidebar Key Levels card: plain "Gamma Flip" row when only one direction
+    // has a value (the common case, same adaptive rule as the toggle panel
+    // above), two rows "Gamma Flip +"/"Gamma Flip -" when both do. Neither
+    // row is `optional` (unlike callWall2/putWall2): even with no data at all
+    // it still shows one placeholder "Gamma Flip" row reading "-", same as
+    // callWall/putWall/maxPain already do.
+    const keyLevels: Array<{ key: ToggleableLevelKey; label: string; value: number | null; optional?: boolean }> = [
+        { key: 'callWall', label: levelLabel('callWall'), value: levels?.callWall ?? null },
+        { key: 'callWall2', label: levelLabel('callWall2'), value: levels?.callWall2 ?? null, optional: true },
+        ...gammaFlipPanelKeys.map((key) => ({ key, label: levelLabel(key), value: levels?.[key] ?? null })),
+        { key: 'putWall', label: levelLabel('putWall'), value: levels?.putWall ?? null },
+        { key: 'putWall2', label: levelLabel('putWall2'), value: levels?.putWall2 ?? null, optional: true },
+        { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
     ];
 
     const box = 'flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5';
@@ -466,19 +531,21 @@ export const GexView: React.FC<GexViewProps> = ({
 
                 {/* ---- Key Levels toggle+color panel: same per-item
                     affordances as the metrics panel above (toggle button +
-                    color picker), one row per the 6 toggleable levels (Call
-                    Wall / Resistance 2 / Gamma Flip / Put Wall / Support 2 /
-                    Max Pain). Purely additive - the sidebar's Key Levels
-                    card (below) keeps showing all 6 as text regardless of
-                    this panel's state. A flex-wrap sibling of the Metrics
-                    panel above (see the row-level comment) rather than its
-                    own separate row. ---- */}
+                    color picker), one row per currently-rendered toggleable
+                    level (Call Wall / Resistance 2 / Gamma Flip [one row, or
+                    "+"/"-" as two rows when the loaded data has a genuine
+                    two-crossing chain - see `levelPanelKeys`/`bothGammaFlip`
+                    above] / Put Wall / Support 2 / Max Pain). Purely additive
+                    - the sidebar's Key Levels card (below) keeps showing text
+                    for every level regardless of this panel's state. A
+                    flex-wrap sibling of the Metrics panel above (see the
+                    row-level comment) rather than its own separate row. ---- */}
                 <div className={box + ' grow shrink basis-[600px] min-w-[300px] max-w-[860px]'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
                     <span className="text-xs text-slate-400">{tr('gex.sidebar.keyLevels')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
-                        {ALL_LEVEL_KEYS.map((key) => {
+                        {levelPanelKeys.map((key) => {
                             const on = selectedLevels.includes(key);
-                            const label = keyLevels.find((l) => l.key === key)?.label ?? key;
+                            const label = levelLabel(key);
                             return (
                                 <div key={key} className="flex shrink-0 items-center gap-1">
                                     <button
@@ -668,12 +735,13 @@ export const GexView: React.FC<GexViewProps> = ({
                                     {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
                                         <ReferenceArea x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
                                     )}
-                                    {/* All 6 Key Levels, gated independently on their own toggle
-                                        (selectedLevels) and drawn in their own configured color
-                                        (levelColors) - generalized from the old callWall/putWall-
-                                        only pair above. `levels?.[key]` reads the same computed
-                                        GexLevels field the sidebar's Key Levels card already shows
-                                        (src/gex.ts, rule R1) - this never recomputes anything. */}
+                                    {/* All 7 toggleable Key Level keys (gammaFlipPos/gammaFlipNeg
+                                        included independently - see ALL_LEVEL_KEYS above), gated
+                                        independently on their own toggle (selectedLevels) and drawn
+                                        in their own configured color (levelColors). `levels?.[key]`
+                                        reads the same computed GexLevels field the sidebar's Key
+                                        Levels card already shows (src/gex.ts, rule R1) - this never
+                                        recomputes anything. */}
                                     {ALL_LEVEL_KEYS.map((key) => {
                                         if (!selectedLevels.includes(key)) return null;
                                         const value = levels?.[key];
@@ -686,7 +754,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                 stroke={color}
                                                 strokeDasharray="2 4"
                                                 label={{
-                                                    value: tr(LEVEL_CHART_LABEL_KEY[key]),
+                                                    value: levelChartLabel(key),
                                                     position: 'insideTopRight',
                                                     fill: color,
                                                     fontSize: 10,
