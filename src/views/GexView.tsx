@@ -701,23 +701,46 @@ export const GexView: React.FC<GexViewProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [zoomResetKey]);
 
-    // Persist the live zoom state on every change, keyed to the symbol it
-    // was captured against (see ChartZoomState's doc comment). Cheap,
-    // synchronous, best-effort write - same pattern as gex-colors.ts's
-    // color persistence. Skipped with no ticker loaded (`symbol === ''`) -
-    // nothing meaningful to scope the zoom to yet.
-    useEffect(() => {
+    // Persist is called EXPLICITLY from each user-driven mutation below
+    // (resetZoom/zoomInY/zoomOutY/onChartMouseUp), NOT from a generic
+    // useEffect reacting to [symbol, xZoom, yZoomFactor]. A reactive effect
+    // was tried first and found to race the restore effect above under
+    // React 18 StrictMode's deliberate dev-only double-invocation of
+    // effects on mount (verified live: the restore effect's own setXZoom/
+    // setYZoomFactor calls, plus a save-effect re-running with the PRE-
+    // update closure values during that same double-invoke pass, clobbered
+    // the just-restored real data with stale defaults before the second
+    // pass re-read its own corruption back as "the persisted value").
+    // Calling saveChartZoom only from genuine user actions - never from an
+    // effect that also fires as a side effect of restoring on mount -
+    // removes the feedback loop entirely, regardless of how many times any
+    // effect is invoked. `symbol` is read from the surrounding closure
+    // (stable for the lifetime of a single click handler), guarded the same
+    // way the old effect was (skip when no ticker is loaded).
+    const persistZoom = (next: { xZoom?: [number, number] | null; yZoomFactor?: number }) => {
         if (!symbol) return;
-        saveChartZoom({ symbol, xZoom, yZoomFactor });
-    }, [symbol, xZoom, yZoomFactor]);
+        saveChartZoom({
+            symbol,
+            xZoom: next.xZoom !== undefined ? next.xZoom : xZoom,
+            yZoomFactor: next.yZoomFactor !== undefined ? next.yZoomFactor : yZoomFactor,
+        });
+    };
 
-    const resetZoom = () => { setXZoom(null); setYZoomFactor(1); };
-    const zoomInY = () => setYZoomFactor((f) => Math.max(f * 0.7, 0.1));
+    const resetZoom = () => { setXZoom(null); setYZoomFactor(1); persistZoom({ xZoom: null, yZoomFactor: 1 }); };
+    const zoomInY = () => setYZoomFactor((f) => {
+        const next = Math.max(f * 0.7, 0.1);
+        persistZoom({ yZoomFactor: next });
+        return next;
+    });
     // Ceiling of 10 (not 1): capping at 1 made "-" a no-op from the default
     // view (Math.min(1/0.7, 1) = 1, every time) - zoom OUT must be able to
     // go past the default Y range, not just undo a prior zoom-in back to it.
     // 10x mirrors zoomInY's own 0.1 floor (10x in, 10x out).
-    const zoomOutY = () => setYZoomFactor((f) => Math.min(f / 0.7, 10));
+    const zoomOutY = () => setYZoomFactor((f) => {
+        const next = Math.min(f / 0.7, 10);
+        persistZoom({ yZoomFactor: next });
+        return next;
+    });
     const isZoomed = xZoom != null || yZoomFactor !== 1;
 
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
@@ -729,7 +752,9 @@ export const GexView: React.FC<GexViewProps> = ({
     };
     const onChartMouseUp = () => {
         if (dragStart != null && dragEnd != null && dragStart !== dragEnd) {
-            setXZoom([Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd)]);
+            const next: [number, number] = [Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd)];
+            setXZoom(next);
+            persistZoom({ xZoom: next });
         }
         setDragStart(null);
         setDragEnd(null);
