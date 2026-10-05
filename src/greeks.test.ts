@@ -393,8 +393,8 @@ describe('vixFuturesPricing call-site parity', () => {
 
   test('every loader entry point that can enrich (getBulk/putBulk/loadMeta/loadExpiration) accepts vixFuturesPricing', () => {
     for (const sig of [
-      'export function getBulk(providerId: string, symbol: string, vixFuturesPricing: boolean = false)',
-      'export function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false)',
+      'export async function getBulk(providerId: string, symbol: string, vixFuturesPricing: boolean = false)',
+      'export async function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false)',
       'export async function loadMeta(provider: DataProvider, symbol: string, ctx: ProviderContext, vixFuturesPricing: boolean = false)',
       'export async function loadExpiration(provider: DataProvider, symbol: string, expiration: string, ctx: ProviderContext, vixFuturesPricing: boolean = false)',
     ]) {
