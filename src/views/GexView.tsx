@@ -3,7 +3,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, trimZeroBoundaries } from '../gex';
 import {
     DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
@@ -22,8 +22,21 @@ import { fmt, fmtInt } from '../utils';
 // ============================================================================
 
 /** GexPoint field plotted by the bars (metric toggle, section 8.1). */
-export type GexMetric = 'netGex' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
-export const GEX_METRICS: GexMetric[] = ['netGex', 'callOi', 'putOi', 'callVolume', 'putVolume'];
+export type GexMetric = 'netGex' | 'absoluteGamma' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
+/** 'absoluteGamma' (AG) sits right after 'netGex' - the user's own placement
+ *  request from when they first asked for a gamma-related metric - so the
+ *  Metrics panel's toggle order reads Net GEX, AG, Call OI, Put OI, Call
+ *  Volume, Put Volume. */
+export const GEX_METRICS: GexMetric[] = ['netGex', 'absoluteGamma', 'callOi', 'putOi', 'callVolume', 'putVolume'];
+
+/** The GexPoint (src/gex.ts/src/types.ts) field a metric plots. Identical to
+ *  the metric's own name for every metric except 'absoluteGamma', whose
+ *  value lives in GexPoint's `absGamma` field - that field keeps its shorter
+ *  math-layer name (matching callGex/putGex/netGex) while the toggle UI/
+ *  settings persistence spells the metric out in full for clarity. Used
+ *  anywhere a GexPoint field needs to be read generically by metric name
+ *  (trimZeroBoundaries' `keys`, the hover-tooltip's per-row value lookup).  */
+const metricDataKey = (m: GexMetric): keyof GexPoint => (m === 'absoluteGamma' ? 'absGamma' : m);
 
 /** GexView.tsx's own toggleable-level key: every GexLevelKey, including the
  *  plain collapsed `gammaFlip` - Gamma Flip is one ordinary toggleable/
@@ -43,15 +56,14 @@ type ToggleableLevelKey = GexLevelKey;
  *  `keyLevels` below), this array is just the base/reset order. */
 const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlip', 'putWall', 'putWall2', 'maxPain', 'spot'];
 
-/** Default ON selection (Part 2, revised): only Call Wall / Put Wall start
- *  OFF - they're redundant with just looking at the chart's own tallest bars.
- *  Resistance 2 / Support 2 start ON despite their current 2%-distance
- *  heuristic not being fully trusted yet (a redesign is deferred, not
- *  touching findCallPutWalls' math) - the user decided to keep them visible
- *  by default anyway. Gamma Flip and Max Pain start ON. Spot starts ON too -
- *  it's important reference info, same spirit as Gamma Flip/Max Pain
- *  defaulting on. */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlip', 'putWall2', 'maxPain', 'spot'];
+/** Default ON selection (revised again - the user narrowed this further
+ *  after seeing it live): only Resistance 2 / Support 2 / Gamma Flip start
+ *  ON. Call Wall / Put Wall stay OFF (redundant with just looking at the
+ *  chart's own tallest bars - unchanged from the earlier revision). Max
+ *  Pain and Spot now ALSO start OFF - the user wants a quieter default
+ *  view; both remain one click away in the Key Levels panel like every
+ *  other level. */
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlip', 'putWall2'];
 
 /** i18n key for each level's sidebar/toggle-panel label. */
 const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
@@ -164,8 +176,8 @@ function fmtSignedCompact(v: number): string {
  * (28px) clears recharts' own numeric X-axis tick labels (the "7,320" etc.
  * strike numbers already rendered just below the axis, ~18-20px tall at this
  * chart's 11px tick font) before the diagonal label starts, so the two don't
- * visually collide. The BarChart's own `margin.bottom` was widened (see its
- * usage site) to make room for this - a vertical <ReferenceLine>'s label is
+ * visually collide. The chart container's own `margin.bottom` was widened
+ * (see its usage site) to make room for this - a vertical <ReferenceLine>'s label is
  * rendered as a sibling layer of the plotted bars, not inside their clipped
  * group, so it is NOT clipped by the chart's own plot-area clipPath, but it
  * IS clipped by the SVG/<ResponsiveContainer>'s own bottom edge if the chart
@@ -300,15 +312,7 @@ const ToggleChip: React.FC<{
     idleClass: string;
     swatches: React.ReactNode;
     children: React.ReactNode;
-    /** Net GEX is the only chip with TWO color swatches (its signed +/-
-     *  halves) - the user wants those two stacked in their own row ABOVE the
-     *  label instead of inline after it, unlike every single-swatch chip
-     *  (every other metric, every Key Level), which keeps the original
-     *  inline (label, then swatch, same row) layout. Defaults to false
-     *  (inline) so every existing call site is unaffected; only the Net GEX
-     *  chip passes `true`. */
-    swatchesAbove?: boolean;
-}> = ({ on, onToggle, title, activeClass, idleClass, swatches, children, swatchesAbove = false }) => {
+}> = ({ on, onToggle, title, activeClass, idleClass, swatches, children }) => {
     const chipRef = useRef<HTMLDivElement>(null);
     const tipRef = useRef<HTMLDivElement>(null);
     const tooltipId = useId();
@@ -360,29 +364,19 @@ const ToggleChip: React.FC<{
             onFocus={show}
             onBlur={hide}
             className={
-                'relative flex shrink-0 cursor-pointer rounded-md border px-2 py-0.5 text-xs font-medium ' +
-                (swatchesAbove ? 'flex-col items-center gap-0.5 py-1' : 'items-center gap-1.5') + ' ' +
+                'relative flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ' +
                 (on ? activeClass : idleClass)
             }
         >
-            {/* DOM order mirrors visual order (row layout for the default
-                inline case, column layout for `swatchesAbove`) - every other
-                chip keeps the exact original "label, then swatch" order
-                (swatch reads to the RIGHT of the label in the normal
-                left-to-right row); only Net GEX (`swatchesAbove`) flips to
-                "swatches, then label" so the stacked column puts the two
-                color swatches on top and the label underneath. */}
-            {swatchesAbove && (
-                <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
-                    {swatches}
-                </span>
-            )}
+            {/* Every chip (including Net GEX's two signed +/- swatches) reads
+                "label, then swatch(es)" inline in one row - the user tried
+                stacking Net GEX's two swatches above its label in a separate
+                layout and reverted after seeing it live, wanting every chip
+                to look the same regardless of how many swatches it has. */}
             <span>{children}</span>
-            {!swatchesAbove && (
-                <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
-                    {swatches}
-                </span>
-            )}
+            <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
+                {swatches}
+            </span>
             {createPortal(
                 <div
                     ref={tipRef}
@@ -415,6 +409,47 @@ const ToggleChip: React.FC<{
         </div>
     );
 };
+
+// ---------------------------------------------------------------------------
+// Chart zoom persistence (xZoom/yZoomFactor survive a reload - same spirit as
+// main.tsx's activeTab/selectedExps/gexMetrics persistence, but scoped to
+// THIS chart specifically, so it lives here rather than in Settings/
+// settings-store.ts, same reasoning as gex-colors.ts's own dedicated-key
+// pattern for metric/level colors). `xZoom` is a STRIKE-PRICE range - utterly
+// meaningless for a different ticker with a different strike scale (SPX's
+// 7000s vs AAPL's 100s) - so the persisted blob carries its own `symbol` and
+// is only ever applied when it still matches the symbol currently loaded
+// (see the zoomResetKey effect below); a mismatch (reload with a different
+// ticker, or switching tickers mid-session) behaves exactly like today, a
+// plain reset to the default full-range/unzoomed view.
+// ---------------------------------------------------------------------------
+interface ChartZoomState {
+    symbol: string;
+    xZoom: [number, number] | null;
+    yZoomFactor: number;
+}
+
+const CHART_ZOOM_KEY = 'gex.chartZoom.v1';
+
+function loadChartZoom(): ChartZoomState | null {
+    try {
+        const raw = localStorage.getItem(CHART_ZOOM_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed.symbol !== 'string' || typeof parsed.yZoomFactor !== 'number') return null;
+        const xZoom = Array.isArray(parsed.xZoom) && parsed.xZoom.length === 2 && parsed.xZoom.every((v: unknown) => typeof v === 'number')
+            ? (parsed.xZoom as [number, number])
+            : null;
+        return { symbol: parsed.symbol, xZoom, yZoomFactor: parsed.yZoomFactor };
+    } catch {
+        return null;
+    }
+}
+
+/** Best-effort persist (same convention as gex-colors.ts's saveMetricColors/saveLevelColors). */
+function saveChartZoom(state: ChartZoomState): void {
+    try { localStorage.setItem(CHART_ZOOM_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+}
 
 export const GexView: React.FC<GexViewProps> = ({
     settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced,
@@ -453,7 +488,12 @@ export const GexView: React.FC<GexViewProps> = ({
     // only counts as zero when every one of `metrics`'s fields reads 0 there.
     const chart = useMemo(() => {
         if (!profile.length) return null;
-        const visible = trimZeroBoundaries(profile, metrics);
+        // metrics.map(metricDataKey): a metric name is usually its own
+        // GexPoint field, except 'absoluteGamma' (field `absGamma`) - so AG
+        // participates in the zero-boundary trim via its own field, exactly
+        // like every other metric (e.g. AG selected alone trims by its own
+        // leading/trailing zero strikes, same as netGex alone does today).
+        const visible = trimZeroBoundaries(profile, metrics.map(metricDataKey));
         if (!visible.length) return null; // pathological: all-zero across the current selection
         let gap = Infinity;
         for (let i = 1; i < visible.length; i++) gap = Math.min(gap, visible[i].strike - visible[i - 1].strike);
@@ -490,13 +530,32 @@ export const GexView: React.FC<GexViewProps> = ({
     // netGex is combined with an OI/Volume metric, the OI/Volume bars will
     // look small/flat next to netGex's much larger dollar-gamma magnitude.
     // That's an accepted, explicit tradeoff, not something normalized away.
-    const countMetrics = GEX_METRICS.filter((m) => m !== 'netGex' && metrics.includes(m)) as Array<Exclude<GexMetric, 'netGex'>>;
+    // 'absoluteGamma' (AG) is excluded from countMetrics/the shared bar axis
+    // entirely - it gets its own secondary Y axis and its own Area/filled-
+    // line rendering further down (hasAbsoluteGamma), deliberately NOT one
+    // of the Bar-based count metrics sharing yBase/yDomain with netGex/OI/
+    // Volume (it would also dominate that shared axis, since AG >= |netGex|
+    // at every strike by construction - see GexPoint.absGamma's doc comment).
+    const countMetrics = GEX_METRICS.filter((m) => m !== 'netGex' && m !== 'absoluteGamma' && metrics.includes(m)) as Array<Exclude<GexMetric, 'netGex' | 'absoluteGamma'>>;
     const hasNetGex = metrics.includes('netGex');
+    const hasAbsoluteGamma = metrics.includes('absoluteGamma');
     const isPutMetric = (m: GexMetric) => m === 'putOi' || m === 'putVolume';
     /** dataKey the <Bar> for a count metric actually plots - put metrics plot
      *  their negated mirror field, so the bar draws below zero (see `rows`). */
-    const barKeyFor = (m: Exclude<GexMetric, 'netGex'>) => (isPutMetric(m) ? `${m}Neg` : m);
+    const barKeyFor = (m: Exclude<GexMetric, 'netGex' | 'absoluteGamma'>) => (isPutMetric(m) ? `${m}Neg` : m);
+    /** Short label (chip body, Legend abbreviation) - "AG" for Absolute
+     *  Gamma, matching the reference tool's own abbreviation; the metric's
+     *  one plain name for everything else. */
     const metricLabel = (m: GexMetric) => tr('gex.metric.' + m);
+    /** Fuller label used wherever there's room to spell things out (chart
+     *  title, hover-tooltip rows) - every other metric already reads fully
+     *  via metricLabel; only Absolute Gamma has a distinct short ("AG") vs.
+     *  full ("Absolute Gamma") form. */
+    const metricLabelFull = (m: GexMetric) => (m === 'absoluteGamma' ? tr('gex.metric.absoluteGammaFull') : metricLabel(m));
+    /** Reads a chart row's value for a metric generically (see
+     *  metricDataKey's doc comment for why AG needs this instead of
+     *  `row[m]` directly). */
+    const metricValue = (m: GexMetric, row: Record<string, number>): number => row[metricDataKey(m)] ?? 0;
 
     // ---- Per-metric bar colors (user-customizable, persisted) --------------
     const [metricColors, setMetricColorsState] = useState<MetricColorSet>(() => loadMetricColors());
@@ -518,8 +577,15 @@ export const GexView: React.FC<GexViewProps> = ({
         setMetricColorsState(DEFAULT_METRIC_COLORS);
         saveMetricColors(DEFAULT_METRIC_COLORS);
     };
-    const fmtMetricValue = (m: GexMetric, v: number) => (m === 'netGex' ? `${fmtSignedCompact(v)} ${tr('gex.unit')}` : fmtInt(v));
-    const selectedLabels = metrics.map(metricLabel);
+    // AG is a dollar-gamma magnitude, same unit/scale as netGex (just
+    // unsigned - no cancellation between call/put) - formatted the same way
+    // (compact + the "$/1%" unit), not as a plain integer count like OI/Volume.
+    const fmtMetricValue = (m: GexMetric, v: number) => (
+        m === 'netGex' ? `${fmtSignedCompact(v)} ${tr('gex.unit')}`
+            : m === 'absoluteGamma' ? `${fmtCompact(v)} ${tr('gex.unit')}`
+                : fmtInt(v)
+    );
+    const selectedLabels = metrics.map(metricLabelFull);
     const chartTitle = metrics.length === 1
         ? tr('gex.chart.title', { metric: selectedLabels[0] })
         : tr('gex.chart.titleMulti', { metrics: selectedLabels.join(', ') });
@@ -606,8 +672,9 @@ export const GexView: React.FC<GexViewProps> = ({
     // cursor" isn't available with two Y axes without reaching into
     // recharts internals): `yZoomFactor` (1 = default) scales each axis'
     // natural (pre-zoom) domain around zero. Both reset whenever the loaded
-    // ticker or expiration selection changes, so a stale window never
-    // outlives the data it was drawn against.
+    // ticker or expiration selection changes (UNLESS a persisted zoom for
+    // THIS symbol is restored instead - see the effect below), so a stale
+    // window never outlives the data it was drawn against.
     const [xZoom, setXZoom] = useState<[number, number] | null>(null);
     const [yZoomFactor, setYZoomFactor] = useState(1);
     const [dragStart, setDragStart] = useState<number | null>(null);
@@ -615,15 +682,65 @@ export const GexView: React.FC<GexViewProps> = ({
 
     const zoomResetKey = `${symbol}|${selectedExps.join(',')}`;
     useEffect(() => {
-        setXZoom(null);
-        setYZoomFactor(1);
+        // Restore a persisted zoom ONLY when it was captured for this exact
+        // symbol (ChartZoomState's own doc comment above) - a reload with
+        // the same ticker still selected (main.tsx's own already-shipped
+        // ticker restore) brings the zoom back exactly as it was; a reload
+        // or in-session switch to a DIFFERENT ticker falls through to the
+        // same plain reset this effect always did.
+        const persisted = loadChartZoom();
+        if (persisted && persisted.symbol === symbol) {
+            setXZoom(persisted.xZoom);
+            setYZoomFactor(persisted.yZoomFactor);
+        } else {
+            setXZoom(null);
+            setYZoomFactor(1);
+        }
         setDragStart(null);
         setDragEnd(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [zoomResetKey]);
 
-    const resetZoom = () => { setXZoom(null); setYZoomFactor(1); };
-    const zoomInY = () => setYZoomFactor((f) => Math.max(f * 0.7, 0.1));
-    const zoomOutY = () => setYZoomFactor((f) => Math.min(f / 0.7, 1));
+    // Persist is called EXPLICITLY from each user-driven mutation below
+    // (resetZoom/zoomInY/zoomOutY/onChartMouseUp), NOT from a generic
+    // useEffect reacting to [symbol, xZoom, yZoomFactor]. A reactive effect
+    // was tried first and found to race the restore effect above under
+    // React 18 StrictMode's deliberate dev-only double-invocation of
+    // effects on mount (verified live: the restore effect's own setXZoom/
+    // setYZoomFactor calls, plus a save-effect re-running with the PRE-
+    // update closure values during that same double-invoke pass, clobbered
+    // the just-restored real data with stale defaults before the second
+    // pass re-read its own corruption back as "the persisted value").
+    // Calling saveChartZoom only from genuine user actions - never from an
+    // effect that also fires as a side effect of restoring on mount -
+    // removes the feedback loop entirely, regardless of how many times any
+    // effect is invoked. `symbol` is read from the surrounding closure
+    // (stable for the lifetime of a single click handler), guarded the same
+    // way the old effect was (skip when no ticker is loaded).
+    const persistZoom = (next: { xZoom?: [number, number] | null; yZoomFactor?: number }) => {
+        if (!symbol) return;
+        saveChartZoom({
+            symbol,
+            xZoom: next.xZoom !== undefined ? next.xZoom : xZoom,
+            yZoomFactor: next.yZoomFactor !== undefined ? next.yZoomFactor : yZoomFactor,
+        });
+    };
+
+    const resetZoom = () => { setXZoom(null); setYZoomFactor(1); persistZoom({ xZoom: null, yZoomFactor: 1 }); };
+    const zoomInY = () => setYZoomFactor((f) => {
+        const next = Math.max(f * 0.7, 0.1);
+        persistZoom({ yZoomFactor: next });
+        return next;
+    });
+    // Ceiling of 10 (not 1): capping at 1 made "-" a no-op from the default
+    // view (Math.min(1/0.7, 1) = 1, every time) - zoom OUT must be able to
+    // go past the default Y range, not just undo a prior zoom-in back to it.
+    // 10x mirrors zoomInY's own 0.1 floor (10x in, 10x out).
+    const zoomOutY = () => setYZoomFactor((f) => {
+        const next = Math.min(f / 0.7, 10);
+        persistZoom({ yZoomFactor: next });
+        return next;
+    });
     const isZoomed = xZoom != null || yZoomFactor !== 1;
 
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
@@ -635,7 +752,9 @@ export const GexView: React.FC<GexViewProps> = ({
     };
     const onChartMouseUp = () => {
         if (dragStart != null && dragEnd != null && dragStart !== dragEnd) {
-            setXZoom([Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd)]);
+            const next: [number, number] = [Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd)];
+            setXZoom(next);
+            persistZoom({ xZoom: next });
         }
         setDragStart(null);
         setDragEnd(null);
@@ -678,7 +797,19 @@ export const GexView: React.FC<GexViewProps> = ({
             }
         }
         if (posMax === 0 && negMax === 0) return [0, 1];
-        return [-negMax, posMax];
+        // 5% breathing-room padding above the max / below the min, so the
+        // tallest/most-negative bar doesn't visually touch the plot area's
+        // top/bottom edge. Padding is added PER SIDE, only on a side that
+        // actually has data (posMax/negMax > 0) - a positive-only selection
+        // (e.g. "Call OI" alone) keeps its zero baseline exactly at 0
+        // instead of gaining an empty padded strip below zero where no bar
+        // ever draws; a side with real extent gets the same proportional
+        // gap either way. Scales naturally with yZoomFactor since it's baked
+        // into yBase itself, before scaleAroundZero multiplies the whole
+        // domain - zooming in/out keeps the same proportional gap.
+        const padPos = posMax > 0 ? posMax * 0.05 : 0;
+        const padNeg = negMax > 0 ? negMax * 0.05 : 0;
+        return [-(negMax + padNeg), posMax + padPos];
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chart, hasNetGex, countMetrics.join(',')]);
 
@@ -687,6 +818,28 @@ export const GexView: React.FC<GexViewProps> = ({
     // whenever netGex is selected, or any put metric (now also negative) is.
     const yTickFormatter = (v: number) => (yBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
     const xDomain = xZoom ?? chart?.domain ?? ([0, 1] as [number, number]);
+
+    // ---- AG's own secondary Y axis (deliberate exception to the "one
+    // shared Y axis" rule above) ---------------------------------------------
+    // AG is always unsigned (absGamma >= 0 by construction) and, by
+    // construction, always >= |netGex| at every strike - sharing yBase/
+    // yDomain with the signed netGex/OI/Volume convention would either get
+    // clipped by that axis' much smaller range or force every other metric's
+    // bars down to a sliver next to AG's own larger magnitude. So AG gets its
+    // own independent [0, max] domain (plus the same 5%-headroom padding as
+    // yBase, scaled by the same yZoomFactor for a consistent feel when using
+    // the vertical zoom buttons) instead of any of yBase's signed/symmetry
+    // logic, which is specific to netGex/OI/Volume's convention and doesn't
+    // apply here.
+    const agBase = useMemo((): [number, number] => {
+        if (!chart) return [0, 1];
+        let max = 0;
+        for (const row of chart.rows) max = Math.max(max, row.absGamma ?? 0);
+        if (max === 0) return [0, 1];
+        return [0, max * 1.05];
+    }, [chart]);
+    const agDomain = scaleAroundZero(agBase, yZoomFactor);
+    const agTickFormatter = (v: number) => fmtCompact(v);
 
     // Sidebar Key Levels card: one plain "Gamma Flip" row, same as every
     // other non-optional level (callWall/putWall/maxPain) - not `optional`,
@@ -818,16 +971,21 @@ export const GexView: React.FC<GexViewProps> = ({
                 the PR description. ---- */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
                 {/* max-w-[50%] (relative to this flex row, not a fixed px
-                    cap like Key Levels' own max-w-[860px] below) - the user
-                    wants Metrics to never eat more than half the shared row,
-                    so Key Levels always has at least the other half to work
-                    with before it needs to wrap or fall back to its own
-                    internal overflow-x-auto scroll. A flex item's
-                    percentage max-width resolves against its flex
-                    container's own (definite) width, not the viewport, so
-                    this stays correct regardless of how wide the page's
-                    own gutter/max-w-none ends up being. */}
-                <div className={box + ' grow shrink basis-[460px] min-w-[260px] max-w-[50%]'} role="group" aria-label={tr('gex.metric.label')}>
+                    cap like Key Levels' own max-w-[860px] below) is a
+                    CEILING, not a target: no `grow`, so this panel sizes to
+                    its own content (shrink-to-fit, `basis-auto`) and ends
+                    right after its last chip/Reset button, only hitting the
+                    50% cap if its own content (more metrics selected, longer
+                    labels) genuinely needs that much room. `shrink` still
+                    lets it compress below its natural width if the viewport
+                    is genuinely tight (its own `overflow-x-auto` chip row is
+                    the fallback once even that isn't enough) - `min-w-` is
+                    just the absolute floor. Previously this also carried
+                    `grow`, which stretched the panel to the 50% cap
+                    regardless of whether its own buttons needed that much
+                    space, leaving a dead gap inside its own border while
+                    squeezing Key Levels into whatever was left - removed. */}
+                <div className={box + ' shrink basis-auto min-w-[260px] max-w-[50%]'} role="group" aria-label={tr('gex.metric.label')}>
                     <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.metric.label')}</span>
                     <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
                         {GEX_METRICS.map((m) => {
@@ -843,13 +1001,6 @@ export const GexView: React.FC<GexViewProps> = ({
                                     title={tr('gex.metric.tooltip.' + m)}
                                     activeClass={ax.chipActive}
                                     idleClass={ax.chipIdle}
-                                    // Net GEX is the only metric with TWO swatches (signed +/-
-                                    // halves) - stack them in their own row above the label
-                                    // instead of inline after it (the user found two swatches
-                                    // inline, after the label, too cramped/unclear on which
-                                    // swatch was which); every other metric keeps one swatch
-                                    // inline, unchanged.
-                                    swatchesAbove={m === 'netGex'}
                                     // Per-metric bar color pickers. Net GEX needs two (its
                                     // signed pos/neg stacked halves); the 4 OI/Volume metrics
                                     // get one each. Dependency-free <input type="color">,
@@ -879,8 +1030,8 @@ export const GexView: React.FC<GexViewProps> = ({
                                             type="color"
                                             value={metricColors[m]}
                                             onChange={(e) => setMetricColor(m, e.target.value)}
-                                            title={tr('gex.metric.color', { metric: metricLabel(m) })}
-                                            aria-label={tr('gex.metric.color', { metric: metricLabel(m) })}
+                                            title={tr('gex.metric.color', { metric: metricLabelFull(m) })}
+                                            aria-label={tr('gex.metric.color', { metric: metricLabelFull(m) })}
                                             className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                         />
                                     )}
@@ -916,7 +1067,12 @@ export const GexView: React.FC<GexViewProps> = ({
                         Metrics label above, even though "Metrics" is a single
                         word that can't actually wrap). */}
                     <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.sidebar.keyLevels')}</span>
-                    <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
+                    {/* scrollbar-hidden (NOT themed-scroll - see index.css's own doc
+                        comment on that class): the user wants this one row's visible
+                        scrollbar gone while staying scrollable (wheel/trackpad/touch/
+                        drag) - scoped to Key Levels only, the Metrics panel's own
+                        scroll row above keeps its themed scrollbar unchanged. */}
+                    <div className="scrollbar-hidden flex items-center gap-2 overflow-x-auto">
                         {levelPanelKeys.map((key) => {
                             const on = selectedLevels.includes(key);
                             const label = levelLabel(key);
@@ -1054,7 +1210,20 @@ export const GexView: React.FC<GexViewProps> = ({
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart
+                                {/* ComposedChart, not BarChart: recharts 3.x's <Area> component
+                                    explicitly refuses to render (returns null, see its own
+                                    source comment: "nothing stopping us... except for
+                                    historical reasons") unless the surrounding container's
+                                    chartName is 'AreaChart' or 'ComposedChart' - <Bar>/
+                                    <ReferenceLine>/<ReferenceArea> carry no such restriction,
+                                    so switching the container is a no-op for everything else
+                                    already here. Both wrappers share the exact same
+                                    defaultTooltipEventType ('axis'), which is what our custom
+                                    <Tooltip content> relies on - verified live (Playwright)
+                                    that AG's filled area actually renders once this changed
+                                    (it silently mounted zero DOM output under <BarChart>,
+                                    despite registering a Legend entry). */}
+                                <ComposedChart
                                     data={chart.rows}
                                     // bottom: 110 (widened from 8) makes room for the Key Level
                                     // diagonal labels now hanging BELOW the X axis (see
@@ -1073,23 +1242,77 @@ export const GexView: React.FC<GexViewProps> = ({
                                     onMouseUp={onChartMouseUp}
                                 >
                                     <CartesianGrid stroke="#94a3b8" strokeOpacity={0.15} vertical={false} />
+                                    {/* tickCount raised from recharts' default of 5 to a denser
+                                        10 (X) / 8 (Y) - these are CANDIDATE counts, not a
+                                        guaranteed final count: recharts' default
+                                        `interval="preserveEnd"` already measures each tick
+                                        label's real rendered size against the axis' actual
+                                        pixel width (minTickGap, default 5px) every render and
+                                        drops whichever candidates would collide - so raising
+                                        tickCount alone both (a) reads denser at the default
+                                        full-range view and (b) automatically adapts to the
+                                        current zoom: `domain={xDomain}` already reflects
+                                        `xZoom` when dragging to zoom in, so a narrower zoomed
+                                        domain has more real pixel width per candidate tick and
+                                        more of them survive the collision check, while a wide
+                                        unzoomed domain still only shows as many as fit without
+                                        overlapping. Verified live at full range, a moderate
+                                        zoom, and a very tight zoom - see the PR. */}
                                     <XAxis
                                         dataKey="strike"
                                         type="number"
                                         domain={xDomain}
                                         allowDataOverflow
+                                        tickCount={10}
                                         tick={{ fill: '#94a3b8', fontSize: 11 }}
                                         stroke="#94a3b8"
                                         tickFormatter={(v: number) => fmt(v, v % 1 === 0 ? 0 : 1)}
                                     />
-                                    <YAxis
-                                        domain={yDomain}
-                                        allowDataOverflow
-                                        tick={{ fill: '#94a3b8', fontSize: 11 }}
-                                        stroke="#94a3b8"
-                                        width={64}
-                                        tickFormatter={yTickFormatter}
-                                    />
+                                    {/* axisLine/tickLine hidden on both Y axes (left/primary and
+                                        right/AG) - visually minimal, floating tick VALUES only,
+                                        no axis line or tick marks. Left-axis numbers already
+                                        right-align by default (orientation="left" -> recharts'
+                                        own getTickTextAnchor gives textAnchor="end"); right-axis
+                                        (AG) numbers already left-align by default
+                                        (orientation="right" -> textAnchor="start") - both read as
+                                        "pointing into" the plot area with no extra tick-anchor
+                                        prop needed, verified live. Only rendered while something
+                                        actually plots against it (hasNetGex/countMetrics) -
+                                        selecting AG alone (no Bar uses the primary axis) hides
+                                        this axis instead of showing a meaningless default [0,1]
+                                        scale next to real data on the AG axis. */}
+                                    {(hasNetGex || countMetrics.length > 0) && (
+                                        <YAxis
+                                            domain={yDomain}
+                                            allowDataOverflow
+                                            tickCount={8}
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fill: '#94a3b8', fontSize: 11 }}
+                                            stroke="#94a3b8"
+                                            width={64}
+                                            tickFormatter={yTickFormatter}
+                                        />
+                                    )}
+                                    {/* AG's own secondary axis (see agBase/agDomain above) - only
+                                        rendered while AG is selected, orientation="right" so it
+                                        reads as visually distinct from the primary (left) axis
+                                        every other metric shares. */}
+                                    {hasAbsoluteGamma && (
+                                        <YAxis
+                                            yAxisId="ag"
+                                            orientation="right"
+                                            domain={agDomain}
+                                            allowDataOverflow
+                                            tickCount={6}
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tick={{ fill: metricColors.absoluteGamma, fontSize: 11 }}
+                                            stroke={metricColors.absoluteGamma}
+                                            width={64}
+                                            tickFormatter={agTickFormatter}
+                                        />
+                                    )}
                                     <Tooltip
                                         cursor={{ fill: '#94a3b8', fillOpacity: 0.12 }}
                                         content={({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: Record<string, number> }> }) => {
@@ -1105,7 +1328,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                                 style={{ background: m === 'netGex' ? colorFor('netGex', row.netGex >= 0 ? 'pos' : 'neg') : colorFor(m) }}
                                                                 aria-hidden="true"
                                                             />
-                                                            {metricLabel(m)}: {fmtMetricValue(m, row[m])}
+                                                            {metricLabelFull(m)}: {fmtMetricValue(m, metricValue(m, row))}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -1133,6 +1356,26 @@ export const GexView: React.FC<GexViewProps> = ({
                                     {countMetrics.map((m) => (
                                         <Bar key={m} dataKey={barKeyFor(m)} name={metricLabel(m)} fill={metricColors[m]} isAnimationActive={false} />
                                     ))}
+                                    {/* AG (design decision, see agBase/agDomain above): rendered
+                                        as a filled <Area>, not a <Bar> like every other metric -
+                                        matches the reference tool's filled look - composed into
+                                        this same <ComposedChart> container (see its own doc
+                                        comment above for why Area specifically needs that
+                                        container, not <BarChart>) and bound to its own
+                                        `yAxisId="ag"` secondary axis rather than the shared
+                                        primary one. */}
+                                    {hasAbsoluteGamma && (
+                                        <Area
+                                            yAxisId="ag"
+                                            dataKey="absGamma"
+                                            name={metricLabelFull('absoluteGamma')}
+                                            stroke={metricColors.absoluteGamma}
+                                            fill={metricColors.absoluteGamma}
+                                            fillOpacity={0.18}
+                                            strokeWidth={2}
+                                            isAnimationActive={false}
+                                        />
+                                    )}
                                     {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
                                         <ReferenceArea x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
                                     )}
@@ -1185,7 +1428,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                             );
                                         });
                                     })()}
-                                </BarChart>
+                                </ComposedChart>
                             </ResponsiveContainer>
                         )}
                     </div>

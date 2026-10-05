@@ -80,6 +80,11 @@ export const GEX_METRIC_COLORS: Record<'callOi' | 'putOi' | 'callVolume' | 'putV
 export interface MetricColorSet {
     netGexPos: string;
     netGexNeg: string;
+    /** Absolute Gamma (AG) - single unsigned series, its own secondary Y
+     *  axis, rendered as a filled area rather than bars (GexView.tsx). A
+     *  blue not already used by any other metric/level, so AG's area reads
+     *  as visually distinct from every signed call(green)/put(red) bar. */
+    absoluteGamma: string;
     callOi: string;
     putOi: string;
     callVolume: string;
@@ -90,6 +95,7 @@ export interface MetricColorSet {
 export const DEFAULT_METRIC_COLORS: MetricColorSet = {
     netGexPos: GEX_BAR_COLORS.call,
     netGexNeg: GEX_BAR_COLORS.put,
+    absoluteGamma: '#3b82f6', // blue-500
     callOi: GEX_METRIC_COLORS.callOi,
     putOi: GEX_METRIC_COLORS.putOi,
     callVolume: GEX_METRIC_COLORS.callVolume,
