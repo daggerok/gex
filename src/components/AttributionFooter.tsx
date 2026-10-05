@@ -20,15 +20,29 @@ export const NOTICE_LINE_1 = 'TradingView Lightweight Charts™';
 export const NOTICE_LINE_2 = 'Copyright (с) 2025 TradingView, Inc.';
 export const NOTICE_URL = 'https://www.tradingview.com/';
 
-// pb-4 lg:pb-6 (NOT the original pb-1): measured live (Playwright) against
-// the page's own px-4/lg:px-6 side gutter (24px at lg) - the footer's old
-// pb-1 (4px) bottom inset was a clear outlier next to that, reading as a
-// cramped bottom edge next to visibly roomier left/right margins. Matching
-// the same px-4/lg:px-6 SCALE here (so it tracks the same breakpoint) gives
-// the page a consistent, uniform frame on all three visible sides (left,
-// right, bottom) instead of a tighter bottom.
+// pb-[3.5px] lg:pb-[11.5px] (NOT a plain pb-4/lg:pb-6 match to the side
+// gutter's own px-4/lg:px-6 SCALE - that was tried first and overcorrected):
+// the TARGET is the TOTAL bottom whitespace (this footer's own padding-top
+// (none) + its text's own line-height/height + padding-bottom) reading the
+// same small size as the side gutter (16px / 24px at lg), not a sum of the
+// text's own height PLUS a side-gutter-sized padding stacked on top of it.
+// Measured live (Playwright, footer padding temporarily zeroed): this
+// footer's own single-line text height is ~12.5px regardless of breakpoint
+// (text-[10px] leading-tight) - so padding-bottom alone needs to supply only
+// the REMAINDER up to the gutter size (16 - 12.5 = 3.5px; 24 - 12.5 = 11.5px
+// at lg), not the full 16px/24px gutter value itself stacked after the text.
+// A plain pb-4/lg:pb-6 (same px-4/lg:px-6 SCALE as the side gutter) was tried
+// first and measured ~37px/~29px total at desktop/narrow widths - roughly
+// DOUBLE the 24px/16px side gutter it was meant to match - because it added
+// the gutter-sized padding ON TOP of the text's own height instead of
+// accounting for it. Known remaining limitation: at very narrow viewports
+// (~390px and below) the attribution text itself wraps onto a second line
+// (~25px tall) - the total necessarily exceeds the 16px gutter there since
+// there's no room to shrink the legally-required notice text further; this
+// pb value still minimizes the overshoot rather than adding more on top of
+// it, same reasoning as the single-line case.
 export const AttributionFooter: React.FC = () => (
-    <footer className="mx-auto w-full max-w-3xl px-4 pb-4 text-center text-[10px] leading-tight text-slate-400 lg:max-w-none lg:px-6 lg:pb-6">
+    <footer className="mx-auto w-full max-w-3xl px-4 pb-[3.5px] text-center text-[10px] leading-tight text-slate-400 lg:max-w-none lg:px-6 lg:pb-[11.5px]">
         {NOTICE_LINE_1} &middot; {NOTICE_LINE_2}{' '}
         <a href={NOTICE_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-200">
             {NOTICE_URL}

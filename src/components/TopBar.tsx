@@ -16,7 +16,24 @@ import { SettingsPanel } from './SettingsPanel';
  *   [ left: brand "GEX" ] ................ [ API dropdown | theme | gear ]
  */
 
-/** Segmented control — same visual language as fundamentals header pills. */
+/** Segmented control — same visual language as fundamentals header pills.
+ *  `size` ('sm', the default) keeps every existing caller (the CACHE/LIVE
+ *  toggle, language switch, dark/light, color theme - all in THIS file,
+ *  TopBar's own compact row) pixel-identical. `size="md"` is an opt-in,
+ *  additive variant for TabSwitcher's tab-pill usage ONLY: it widens the
+ *  OUTER wrapper's own padding (`p-0.5` -> `p-[7px]`, +5px top/+5px bottom)
+ *  so the Pill's own VISIBLE bordered/filled box - not just an invisible
+ *  margin around it - renders at 38px tall, matching the Expirations row's
+ *  own bordered-box height exactly (border(2) + p-[7px](14) + button
+ *  py-1(8) + text-sm/leading-none line height(14) = 38). An earlier fix
+ *  (TabSwitcher's own `py-[5px]` wrapper div, since removed) padded only the
+ *  invisible OUTER bounding box to 38px while the Pill's actual bordered
+ *  shape inside it stayed 28px tall - the two rows' bounding rects measured
+ *  equal, but the two VISIBLE boxes people actually see next to each other
+ *  did not (confirmed live via Playwright: pillInner 28px tall vs the
+ *  Expirations form's own 38px tall border box, screenshot showed the
+ *  mismatch plainly) - this `size` prop fixes the VISIBLE box itself
+ *  instead of padding around it. */
 export type PillOption = string | { k: string; l: string };
 export const Pill = ({
     value,
@@ -26,6 +43,7 @@ export const Pill = ({
     title,
     accentActive,
     disabled,
+    size = 'sm',
 }: {
     value: string;
     options: PillOption[];
@@ -35,12 +53,22 @@ export const Pill = ({
     /** Active fill classes, e.g. "bg-indigo-600 text-white shadow-sm" */
     accentActive: string;
     disabled?: boolean;
+    size?: 'sm' | 'md';
 }) => (
     <div
         title={title}
+        // `rounded-lg p-0.5 border` stays LITERAL and unconditional (header-
+        // parity.test.ts source-matches this exact substring against the
+        // fundamentals reference design) - `size="md"`'s wider padding is
+        // layered on top as a trailing `!p-[7px]` (Tailwind's `!` important
+        // modifier) rather than swapped in by conditionally omitting
+        // `p-0.5`, so the override is unconditionally correct regardless of
+        // Tailwind's generated utility order, not reliant on `p-[7px]`
+        // happening to win a plain same-specificity cascade tie against
+        // `p-0.5`.
         className={`flex-shrink-0 flex items-center rounded-lg p-0.5 border ${
             dark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
-        } ${disabled ? 'opacity-50' : ''}`}
+        } ${disabled ? 'opacity-50' : ''} ${size === 'md' ? '!p-[7px]' : ''}`}
     >
         {options.map((opt) => {
             const k = typeof opt === 'string' ? opt : opt.k;
