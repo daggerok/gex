@@ -10,14 +10,12 @@
 // ---------------------------------------------------------------------------
 
 /**
- * `gammaFlip` (the single legacy collapsed value, GexLevels.gammaFlip) is kept
- * here alongside its two directional replacements - `gammaFlipPos` (last
- * negative -> positive crossing) / `gammaFlipNeg` (last positive -> negative
- * crossing) - purely for ChartView.tsx (the Chart tab's lightweight-charts
- * price lines), which still reads the collapsed field unchanged. GexView.tsx
- * (the GEX tab) was retired off `gammaFlip`/`GexLevels.gammaFlip` entirely and
- * reads `gammaFlipPos`/`gammaFlipNeg` directly instead (see types.ts's
- * GexLevels doc comment) - it never selects the plain `gammaFlip` key.
+ * `gammaFlip` is the single collapsed Gamma Flip value (GexLevels.gammaFlip),
+ * used by BOTH ChartView.tsx (the Chart tab's lightweight-charts price lines)
+ * AND GexView.tsx (the GEX tab's toggleable/colorable Key Levels panel) - a
+ * short-lived adaptive gammaFlipPos/gammaFlipNeg dual-display mechanism in
+ * GexView.tsx was removed; Gamma Flip is now one plain Key Level everywhere,
+ * same as Call Wall/Put Wall/Max Pain.
  *
  * Resistance 1.5 / Support 1.5 (`callWall1_5`/`putWall1_5`) existed briefly
  * between the primary wall and the distance-filtered `callWall2`/`putWall2`
@@ -27,7 +25,7 @@
  * comment, and the corresponding math/field removal in src/gex.ts/
  * src/types.ts, done in a separate PR).
  */
-export type GexLevelKey = 'callWall' | 'callWall2' | 'gammaFlip' | 'gammaFlipPos' | 'gammaFlipNeg' | 'putWall' | 'putWall2' | 'maxPain' | 'spot';
+export type GexLevelKey = 'callWall' | 'callWall2' | 'gammaFlip' | 'putWall' | 'putWall2' | 'maxPain' | 'spot';
 
 export interface GexLevelColor {
     hex: string;
@@ -35,15 +33,13 @@ export interface GexLevelColor {
 }
 
 export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
-    callWall: { hex: '#22c55e', dot: 'bg-green-500' },      // green-500
-    callWall2: { hex: '#86efac', dot: 'bg-green-300' },     // green-300 (Resistance 2)
-    gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' },    // violet-400 (legacy collapsed value - ChartView.tsx only)
-    gammaFlipPos: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400 (last -> + crossing)
-    gammaFlipNeg: { hex: '#7c3aed', dot: 'bg-violet-600' }, // violet-600 (last + -> crossing) - darker shade of the same hue, distinguishable from gammaFlipPos and from every other level color
-    putWall: { hex: '#ef4444', dot: 'bg-red-500' },         // red-500
-    putWall2: { hex: '#fca5a5', dot: 'bg-red-300' },        // red-300 (Support 2)
-    maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },      // yellow-400
-    spot: { hex: '#f59e0b', dot: 'bg-amber-500' },          // amber-500
+    callWall: { hex: '#22c55e', dot: 'bg-green-500' },   // green-500
+    callWall2: { hex: '#86efac', dot: 'bg-green-300' },  // green-300 (Resistance 2)
+    gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400
+    putWall: { hex: '#ef4444', dot: 'bg-red-500' },      // red-500
+    putWall2: { hex: '#fca5a5', dot: 'bg-red-300' },     // red-300 (Support 2)
+    maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },   // yellow-400
+    spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
 };
 
 /** Bar fills for the GEX tab: call-side (positive) vs put-side (negative).
@@ -124,32 +120,26 @@ export function saveMetricColors(colors: MetricColorSet): void {
 
 // ---------------------------------------------------------------------------
 // USER-CUSTOMIZABLE PER-LEVEL CHART COLORS (GEX tab Key Levels toggle+color
-// panel). Exact same pattern as MetricColorSet above, one key short of
-// GEX_LEVEL_COLORS: the legacy collapsed `gammaFlip` key is ChartView.tsx-only
-// (GexView.tsx's toggle panel never renders a plain "gammaFlip" entry, only
-// gammaFlipPos/gammaFlipNeg - see gex-colors.ts's GexLevelKey doc comment) -
-// that one is intentionally excluded here. `spot` WAS excluded too (it used
-// to always be drawn, un-toggleable) but is now a toggleable/colorable Key
-// Level exactly like the other 9 - it's the reference point every other
-// level's position is read relative to, which is reason enough to let the
-// user show/hide and recolor it the same way. Both gammaFlipPos and
-// gammaFlipNeg always get their own stored color/selection state, even though
-// GexView.tsx only ever shows ONE combined "Gamma Flip" entry in the toggle
-// panel when just one of the two is non-null for the current data - this way
-// a user's per-direction preference carries over correctly if the data later
-// shifts shape (e.g. a reload with a genuine two-crossing chain). A dedicated
+// panel). Exact same pattern as MetricColorSet above, covering every
+// GexLevelKey including the plain `gammaFlip` entry: GexView.tsx treats
+// Gamma Flip as one ordinary toggleable/colorable Key Level now (the earlier
+// gammaFlipPos/gammaFlipNeg dual-display mechanism was removed), so it needs
+// its own persisted color/selection state exactly like every other level.
+// `spot` WAS excluded too (it used to always be drawn, un-toggleable) but is
+// now a toggleable/colorable Key Level like the rest - it's the reference
+// point every other level's position is read relative to, which is reason
+// enough to let the user show/hide and recolor it the same way. A dedicated
 // localStorage key (not METRIC_COLORS_KEY) keeps this independent of the
 // metric-color blob, same reasoning as that key's own comment above.
 // ---------------------------------------------------------------------------
 
-export type LevelColorSet = Record<Exclude<GexLevelKey, 'gammaFlip'>, string>;
+export type LevelColorSet = Record<GexLevelKey, string>;
 
 /** Defaults mirror today's hardcoded GEX_LEVEL_COLORS hex values exactly. */
 export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
     callWall: GEX_LEVEL_COLORS.callWall.hex,
     callWall2: GEX_LEVEL_COLORS.callWall2.hex,
-    gammaFlipPos: GEX_LEVEL_COLORS.gammaFlipPos.hex,
-    gammaFlipNeg: GEX_LEVEL_COLORS.gammaFlipNeg.hex,
+    gammaFlip: GEX_LEVEL_COLORS.gammaFlip.hex,
     putWall: GEX_LEVEL_COLORS.putWall.hex,
     putWall2: GEX_LEVEL_COLORS.putWall2.hex,
     maxPain: GEX_LEVEL_COLORS.maxPain.hex,
