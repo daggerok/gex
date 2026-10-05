@@ -29,14 +29,17 @@ export const GEX_METRICS: GexMetric[] = ['netGex', 'callOi', 'putOi', 'callVolum
  *  view reads gammaFlipPos/gammaFlipNeg directly and never selects it). */
 type ToggleableLevelKey = Exclude<GexLevelKey, 'spot' | 'gammaFlip'>;
 
-/** The 7 toggleable Key Levels (everything in GexLevels except `spot`/legacy
+/** The 9 toggleable Key Levels (everything in GexLevels except `spot`/legacy
  *  `gammaFlip` - see ToggleableLevelKey above; also gex-colors.ts's
  *  LevelColorSet). `gammaFlipPos`/`gammaFlipNeg` each carry their own
  *  selection + color state independently (see the `selectedLevels`/
  *  `levelColors` comment below) even though the toggle/color panel usually
  *  renders them as a single combined "Gamma Flip" entry - see
- *  `gammaFlipPanelKeys` below. */
-const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall', 'putWall2', 'maxPain'];
+ *  `gammaFlipPanelKeys` below. `callWall1_5`/`putWall1_5` ("Resistance 1.5"/
+ *  "Support 1.5") sit between the primary wall and the distance-filtered
+ *  `callWall2`/`putWall2`, matching their conceptual position (src/gex.ts's
+ *  findCallPutWalls doc comment). */
+const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall1_5', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall', 'putWall1_5', 'putWall2', 'maxPain'];
 
 /** Default ON selection (Part 2, revised): only Call Wall / Put Wall start
  *  OFF - they're redundant with just looking at the chart's own tallest bars.
@@ -44,8 +47,10 @@ const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFli
  *  heuristic not being fully trusted yet (a redesign is deferred, not
  *  touching findCallPutWalls' math) - the user decided to keep them visible
  *  by default anyway. Gamma Flip (both directional keys - whichever applies
- *  to the loaded data) and Max Pain start ON. */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall2', 'maxPain'];
+ *  to the loaded data) and Max Pain start ON. Resistance 1.5 / Support 1.5
+ *  also start ON - the user is actively curious to see these (unlike
+ *  Call Wall/Put Wall, which are redundant with the chart's own bars). */
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall1_5', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall1_5', 'putWall2', 'maxPain'];
 
 /** i18n key for each non-gamma-flip level's sidebar/toggle-panel label and
  *  <ReferenceLine> chart label. Gamma Flip is handled separately (see
@@ -54,8 +59,10 @@ const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlipPo
  *  for the current data, "Gamma Flip +"/"Gamma Flip -" when both are. */
 const LEVEL_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gammaFlipNeg'>, string> = {
     callWall: 'gex.level.callWall',
+    callWall1_5: 'gex.level.resistance1_5',
     callWall2: 'gex.level.resistance2',
     putWall: 'gex.level.putWall',
+    putWall1_5: 'gex.level.support1_5',
     putWall2: 'gex.level.support2',
     maxPain: 'gex.level.maxPain',
 };
@@ -66,8 +73,10 @@ const LEVEL_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gamm
  *  sidebar label carries an "(R1)"/"(S1)" suffix). */
 const LEVEL_CHART_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gammaFlipNeg'>, string> = {
     callWall: 'gex.chart.callWall',
+    callWall1_5: 'gex.chart.resistance1_5',
     callWall2: 'gex.chart.resistance2',
     putWall: 'gex.chart.putWall',
+    putWall1_5: 'gex.chart.support1_5',
     putWall2: 'gex.chart.support2',
     maxPain: 'gex.chart.maxPain',
 };
@@ -77,10 +86,12 @@ const LEVEL_CHART_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' |
  *  case uses the directional tooltips instead (see `levelTooltip` below). */
 const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
     callWall: 'gex.level.tooltip.callWall',
+    callWall1_5: 'gex.level.tooltip.resistance1_5',
     callWall2: 'gex.level.tooltip.resistance2',
     gammaFlipPos: 'gex.level.tooltip.gammaFlipPos',
     gammaFlipNeg: 'gex.level.tooltip.gammaFlipNeg',
     putWall: 'gex.level.tooltip.putWall',
+    putWall1_5: 'gex.level.tooltip.support1_5',
     putWall2: 'gex.level.tooltip.support2',
     maxPain: 'gex.level.tooltip.maxPain',
 };
@@ -350,7 +361,10 @@ export const GexView: React.FC<GexViewProps> = ({
      *  the "dynamic based on current data" part; the sidebar card mirrors it
      *  via the `keyLevels` array below. */
     const gammaFlipPanelKeys: Array<'gammaFlipPos' | 'gammaFlipNeg'> = bothGammaFlip ? ['gammaFlipPos', 'gammaFlipNeg'] : [soloGammaFlipKey];
-    const levelPanelKeys: Array<ToggleableLevelKey> = ['callWall', 'callWall2', ...gammaFlipPanelKeys, 'putWall', 'putWall2', 'maxPain'];
+    // Fixed logical UI order (NOT price-sorted - see the sidebar Card's
+    // separate price-descending sort below, which is display-only and reads
+    // from its own `keyLevels` array, not this one).
+    const levelPanelKeys: Array<ToggleableLevelKey> = ['callWall', 'callWall1_5', 'callWall2', ...gammaFlipPanelKeys, 'putWall', 'putWall1_5', 'putWall2', 'maxPain'];
 
     const levelLabel = (key: ToggleableLevelKey): string => {
         if (key === 'gammaFlipPos' || key === 'gammaFlipNeg') {
@@ -479,14 +493,22 @@ export const GexView: React.FC<GexViewProps> = ({
     // Sidebar Key Levels card: plain "Gamma Flip" row when only one direction
     // has a value (the common case, same adaptive rule as the toggle panel
     // above), two rows "Gamma Flip +"/"Gamma Flip -" when both do. Neither
-    // row is `optional` (unlike callWall2/putWall2): even with no data at all
-    // it still shows one placeholder "Gamma Flip" row reading "-", same as
-    // callWall/putWall/maxPain already do.
+    // row is `optional` (unlike callWall2/putWall2/callWall1_5/putWall1_5):
+    // even with no data at all it still shows one placeholder "Gamma Flip"
+    // row reading "-", same as callWall/putWall/maxPain already do.
+    //
+    // Built in a fixed logical order here (matching levelPanelKeys' order);
+    // the sidebar Card below re-sorts its OWN rendering by strike price
+    // descending (see `.sort()` at the JSX usage site) - this array's build
+    // order is otherwise unused for display purposes, only for feeding that
+    // sort.
     const keyLevels: Array<{ key: ToggleableLevelKey; label: string; value: number | null; optional?: boolean }> = [
         { key: 'callWall', label: levelLabel('callWall'), value: levels?.callWall ?? null },
+        { key: 'callWall1_5', label: levelLabel('callWall1_5'), value: levels?.callWall1_5 ?? null, optional: true },
         { key: 'callWall2', label: levelLabel('callWall2'), value: levels?.callWall2 ?? null, optional: true },
         ...gammaFlipPanelKeys.map((key) => ({ key, label: levelLabel(key), value: levels?.[key] ?? null })),
         { key: 'putWall', label: levelLabel('putWall'), value: levels?.putWall ?? null },
+        { key: 'putWall1_5', label: levelLabel('putWall1_5'), value: levels?.putWall1_5 ?? null, optional: true },
         { key: 'putWall2', label: levelLabel('putWall2'), value: levels?.putWall2 ?? null, optional: true },
         { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
     ];
@@ -728,8 +750,20 @@ export const GexView: React.FC<GexViewProps> = ({
                         <Row label={tr('gex.sidebar.regime')} value={tr('gex.regime.' + regime)} />
                     </Card>
                     <Card title={tr('gex.sidebar.keyLevels')}>
+                        {/* Display-only reordering: the sidebar text card reads
+                            top-to-bottom by strike price, descending - NOT the
+                            fixed logical order `keyLevels` was built in above
+                            (that order still drives the toggle+color panel via
+                            the separate `levelPanelKeys` array, untouched by
+                            this sort). A null-valued row (Resistance/Support
+                            1.5/2 not applicable, or Gamma Flip with no
+                            crossing) has no real price to sort by, so every
+                            null row sinks to the bottom, below every row with
+                            a real value - Array#sort is stable, so nulls keep
+                            their relative order among themselves. */}
                         {keyLevels
                             .filter((l) => !(l.optional && l.value == null))
+                            .sort((a, b) => (a.value == null ? 1 : b.value == null ? -1 : b.value - a.value))
                             .map((l) => (
                                 <Row key={l.key} label={l.label} value={l.value != null ? fmt(l.value) : na} dot={GEX_LEVEL_COLORS[l.key].dot} />
                             ))}
@@ -843,7 +877,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
                                         <ReferenceArea x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
                                     )}
-                                    {/* All 7 toggleable Key Level keys (gammaFlipPos/gammaFlipNeg
+                                    {/* All 9 toggleable Key Level keys (gammaFlipPos/gammaFlipNeg
                                         included independently - see ALL_LEVEL_KEYS above), gated
                                         independently on their own toggle (selectedLevels) and drawn
                                         in their own configured color (levelColors). `levels?.[key]`
