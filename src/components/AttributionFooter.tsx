@@ -21,7 +21,7 @@ export const NOTICE_LINE_2 = 'Copyright (с) 2025 TradingView, Inc.';
 export const NOTICE_URL = 'https://www.tradingview.com/';
 
 export const AttributionFooter: React.FC = () => (
-    <footer className="mx-auto w-full max-w-3xl px-4 pb-2 text-[11px] leading-4 text-slate-400 lg:max-w-none lg:px-8 2xl:px-16">
+    <footer className="mx-auto w-full max-w-3xl px-4 pb-1 text-center text-[10px] leading-tight text-slate-400 lg:max-w-none lg:px-6">
         {NOTICE_LINE_1} &middot; {NOTICE_LINE_2}{' '}
         <a href={NOTICE_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-200">
             {NOTICE_URL}
