@@ -1072,11 +1072,16 @@ export const GexView: React.FC<GexViewProps> = ({
                     comment above for why the earlier ml-auto+860px-cap
                     combination was a bug): this panel is a plain in-flow
                     sibling, right after Metrics, and `grow` lets it consume
-                    whatever width Metrics' own `max-w-[50%]`-capped sizing
-                    leaves behind in the row - so it naturally gets more room
-                    to show chips unscrolled the fewer metrics are toggled
-                    on, instead of being stuck behind a fixed px ceiling.
-                    `basis-[600px]` is only the WRAP-DECISION width (same
+                    whatever width Metrics' own `max-w-[50%]`-capped,
+                    shrink-to-fit sizing leaves behind in the row (Metrics'
+                    own rendered width is constant regardless of which
+                    metrics are toggled ON - all 6 chips always render, only
+                    their active/idle fill changes - so "whatever's left" in
+                    practice just means "the rest of the row, whatever the
+                    viewport width happens to be") - naturally showing more
+                    chips unscrolled on a wide row instead of being stuck
+                    behind a fixed px ceiling. `basis-[600px]` is only the
+                    WRAP-DECISION width (same
                     role as Metrics' `basis-auto` - see the row-level
                     comment); once on a line with room to spare it grows past
                     that freely. Its own `overflow-x-auto` chip row below
@@ -1268,7 +1273,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                 >
                                     <CartesianGrid stroke="#94a3b8" strokeOpacity={0.15} vertical={false} />
                                     {/* tickCount raised from recharts' default of 5 to a denser
-                                        10 (X) / 8 (Y) - these are CANDIDATE counts, not a
+                                        20 (X, doubled again from an earlier 10 - the user
+                                        wanted roughly twice as many grid levels on the X axis)
+                                        / 8 (Y) - these are CANDIDATE counts, not a
                                         guaranteed final count: recharts' default
                                         `interval="preserveEnd"` already measures each tick
                                         label's real rendered size against the axis' actual
@@ -1288,7 +1295,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         type="number"
                                         domain={xDomain}
                                         allowDataOverflow
-                                        tickCount={10}
+                                        tickCount={20}
                                         tick={{ fill: '#94a3b8', fontSize: 11 }}
                                         stroke="#94a3b8"
                                         tickFormatter={(v: number) => fmt(v, v % 1 === 0 ? 0 : 1)}
@@ -1371,7 +1378,22 @@ export const GexView: React.FC<GexViewProps> = ({
                                         bars, which only draw up to the plot's own top margin) was
                                         simpler than trying to out-position it from the bottom. */}
                                     <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
-                                    {hasNetGex && <ReferenceLine y={0} stroke="#94a3b8" />}
+                                    {/* Plain horizontal zero-line label - unlike the Key Levels'
+                                        diagonal below-axis labels (renderRotatedLevelLabel), this
+                                        one line has nowhere else to collide: it sits on its own
+                                        horizontal row at y=0, so a simple inline recharts `label`
+                                        reads fine. `insideTopRight` keeps it clear of both the
+                                        left-axis tick values (which right-align just outside the
+                                        plot area, not inside it) and the Legend (moved to
+                                        verticalAlign="top", see above - the label sits well below
+                                        that, right at the zero line itself). */}
+                                    {hasNetGex && (
+                                        <ReferenceLine
+                                            y={0}
+                                            stroke="#94a3b8"
+                                            label={{ value: tr('gex.chart.zeroLine'), position: 'insideTopRight', fill: '#94a3b8', fontSize: 10 }}
+                                        />
+                                    )}
                                     {hasNetGex && (
                                         <>
                                             <Bar dataKey="pos" stackId="net" name={`${tr('gex.metric.netGex')} (+)`} fill={metricColors.netGexPos} isAnimationActive={false} />
