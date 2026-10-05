@@ -259,6 +259,53 @@ export function computePCRatio(quotes: readonly OptionQuote[]): { byOi: number |
  * quotes carry per-expiration forwards, the caller passes a forward instead
  * (src/use-gex-levels.ts) - this function itself does not need to know which.
  */
+/**
+ * Trim the all-zero boundary strikes off each edge of a profile-like array,
+ * independently per edge (GEX tab chart display, section 8.1 part 3 - NOT
+ * part of the GEX math itself, just how much of it the chart draws). A
+ * strike counts as "zero" only when every one of the given `keys` reads 0
+ * there - normally whichever metrics are currently selected on the chart, so
+ * toggling a metric on/off changes which fields count and can move the trim.
+ *
+ * Per edge: find the outermost strike (closest to either end) where at least
+ * one of `keys` is non-zero, then keep exactly ONE further all-zero strike
+ * beyond it as a single boundary/edge marker, and drop everything past that.
+ *
+ * Example (SPX, right edge): if 8175 is the first strike where every
+ * selected metric reads 0 and stays 0 all the way out, 8175 is kept as the
+ * last visible strike and everything past it is cut. Mirror case on the left
+ * edge: if 7025 is the lowest strike with a non-zero value, the single
+ * all-zero strike immediately below 7025 is kept and nothing further down.
+ *
+ * `points` must already be sorted ascending by strike (as computeGexProfile
+ * returns). Fewer than 2 points, or no `keys`, is returned unchanged (nothing
+ * meaningful to trim). A profile that is all-zero across `keys` returns an
+ * empty array - the pathological/empty case the caller renders as "no data"
+ * rather than a dead zero-padded chart.
+ */
+export function trimZeroBoundaries<T extends { strike: number }>(
+    points: readonly T[],
+    keys: readonly (keyof T)[],
+): T[] {
+    if (points.length < 2 || keys.length === 0) return [...points];
+    const isZero = (p: T) => keys.every((k) => {
+        const v = p[k];
+        return typeof v !== 'number' || v === 0;
+    });
+    let firstNonZero = -1;
+    for (let i = 0; i < points.length; i++) {
+        if (!isZero(points[i])) { firstNonZero = i; break; }
+    }
+    if (firstNonZero === -1) return []; // everything zero across the selected keys
+    let lastNonZero = points.length - 1;
+    for (let i = points.length - 1; i >= 0; i--) {
+        if (!isZero(points[i])) { lastNonZero = i; break; }
+    }
+    const start = Math.max(0, firstNonZero - 1);
+    const end = Math.min(points.length - 1, lastNonZero + 1);
+    return points.slice(start, end + 1);
+}
+
 export function computeGexLevels(quotes: readonly OptionQuote[], spot: number): GexLevels {
     const profile = computeGexProfile(quotes, spot);
     const walls = findCallPutWalls(profile, spot);

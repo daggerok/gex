@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { computeGexProfile, computeOiVolumeTotals, computePCRatio } from '../gex';
+import { computeGexProfile, computeOiVolumeTotals, computePCRatio, trimZeroBoundaries } from '../gex';
 import {
     DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadMetricColors, saveMetricColors, type GexLevelKey, type MetricColorSet,
 } from '../gex-colors';
@@ -21,14 +21,6 @@ import { fmt, fmtInt } from '../utils';
 /** GexPoint field plotted by the bars (metric toggle, section 8.1). */
 export type GexMetric = 'netGex' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
 export const GEX_METRICS: GexMetric[] = ['netGex', 'callOi', 'putOi', 'callVolume', 'putVolume'];
-
-/**
- * Display-only strike window around spot for the bar chart (not GEX math):
- * full chains (SPY: strikes from ~0.2x to ~2x spot) would squeeze the bars
- * that matter into a few pixels. The window is widened to always include the
- * call/put walls, and ignored when it would leave nothing to draw.
- */
-const CHART_STRIKE_WINDOW_PCT = 0.15;
 
 export interface GexViewProps {
     settings: Settings;
@@ -115,16 +107,18 @@ export const GexView: React.FC<GexViewProps> = ({
         ? 'text-green-600 dark:text-green-400'
         : net < 0 ? 'text-red-600 dark:text-red-400' : undefined;
 
-    // ---- Chart data (display only: windowing + splitting sign for colors) ----
+    // ---- Chart data (display only: zero-boundary trimming + splitting sign
+    // for colors). No more spot-percentage windowing (removed) - the chart
+    // now shows the FULL range of real data for the selected expirations by
+    // default; drilling into a sub-range is what xZoom/yZoomFactor are for.
+    // The only trimming left is per-edge: drop all-zero strikes beyond a
+    // single boundary marker on each side (trimZeroBoundaries, src/gex.ts),
+    // evaluated against whichever metrics are currently selected - a strike
+    // only counts as zero when every one of `metrics`'s fields reads 0 there.
     const chart = useMemo(() => {
         if (!profile.length) return null;
-        let visible = profile;
-        if (effSpot != null) {
-            const lo = Math.min(effSpot * (1 - CHART_STRIKE_WINDOW_PCT), levels?.putWall ?? Infinity, levels?.callWall ?? Infinity);
-            const hi = Math.max(effSpot * (1 + CHART_STRIKE_WINDOW_PCT), levels?.putWall ?? -Infinity, levels?.callWall ?? -Infinity);
-            const inWindow = profile.filter((p) => p.strike >= lo && p.strike <= hi);
-            if (inWindow.length) visible = inWindow;
-        }
+        const visible = trimZeroBoundaries(profile, metrics);
+        if (!visible.length) return null; // pathological: all-zero across the current selection
         let gap = Infinity;
         for (let i = 1; i < visible.length; i++) gap = Math.min(gap, visible[i].strike - visible[i - 1].strike);
         const pad = Number.isFinite(gap) && gap > 0 ? gap : Math.max(1, visible[0].strike * 0.01);
@@ -147,7 +141,7 @@ export const GexView: React.FC<GexViewProps> = ({
             putVolumeNeg: -p.putVolume,
         }));
         return { rows, domain: [minK - pad, maxK + pad] as [number, number] };
-    }, [profile, effSpot, levels]);
+    }, [profile, effSpot, metrics]);
 
     // ---- Multi-metric selection --------------------------------------------
     // netGex keeps its signed pos/neg stacked treatment. The 4 OI/Volume
