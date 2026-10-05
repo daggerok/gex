@@ -111,6 +111,57 @@ function fmtSignedCompact(v: number): string {
     return (v > 0 ? '+' : v < 0 ? '-' : '') + fmtCompact(v);
 }
 
+/**
+ * Custom <ReferenceLine> label renderer (Part 3): rotates a Key Level's chart
+ * label 45deg so it reads bottom-left to top-right, anchored a few px below
+ * the top of the plot area - replacing the old plain horizontal label that
+ * was manually stacked down from the top (`dy: 14 * index`) to avoid
+ * overlapping its siblings.
+ *
+ * recharts hands a vertical <ReferenceLine>'s label render function a
+ * `viewBox` whose `x` is this line's own pixel column and whose `y` is the
+ * top of the whole plot area (see recharts' ReferenceLine.getVerticalLineEndPoints
+ * + Label's CartesianLabelContextProvider: a vertical line's rect is
+ * {x: coord, y: plotTop, width: 0, height: plotHeight}). Anchoring at
+ * (viewBox.x, viewBox.y + a small inset) keeps every label near the chart's
+ * top edge regardless of each level's own strike - different strikes land at
+ * different pixel columns, so rotating each label around its OWN anchor is
+ * what keeps them apart now, instead of the old per-index vertical offset
+ * (two levels at the same strike/column still separate along the diagonal
+ * text's own length). `offsetIndex` adds a per-drawn-level vertical nudge -
+ * found to be genuinely needed (not just a rare edge case), verified live:
+ * SPX's own Max Pain/Support 2/Spot/Resistance 2 strikes land close enough
+ * together that a nudge keeps their diagonal labels from running into each
+ * other near the chart's top edge. 40px of inset clears the always-on,
+ * never-offset Spot label's own row; 22px per index gives each subsequent
+ * label its own diagonal "lane" alongside its neighbors. Still not perfect
+ * at the extreme: verified live that a genuine two-crossing SPX chain can
+ * put gammaFlipPos/gammaFlipNeg only ~15 strike points apart (out of an
+ * ~1850-point chart) - close enough that even this offset plus the shorter
+ * "Flip +"/"Flip -" chart wording (see levelChartLabel below) still leaves
+ * their labels partially touching, though both remain individually
+ * readable. Accepted as an honest limitation rather than chased further.
+ *
+ * The rotation sign is `-45`, not `+45`: verified live with a Playwright
+ * screenshot (see the PR) that this is the sign which actually reads
+ * bottom-left-to-top-right in SVG's/recharts' y-down coordinate system -
+ * `+45` produces the mirrored top-left-to-bottom-right diagonal instead.
+ */
+function renderRotatedLevelLabel(color: string, text: string, offsetIndex = 0) {
+    return (props: { viewBox?: { x?: number; y?: number } }) => {
+        const vx = props.viewBox?.x;
+        const vy = props.viewBox?.y;
+        if (vx == null || vy == null) return <React.Fragment />;
+        const x = vx + 4;
+        const y = vy + 40 + offsetIndex * 22;
+        return (
+            <text x={x} y={y} transform={`rotate(-45 ${x} ${y})`} fill={color} fontSize={10} textAnchor="start">
+                {text}
+            </text>
+        );
+    };
+}
+
 const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
     <section>
         <h3 className="mb-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
@@ -294,6 +345,17 @@ export const GexView: React.FC<GexViewProps> = ({
         }
         return tr(LEVEL_LABEL_KEY[key]);
     };
+    // The dual-entry chart label ("Flip +"/"Flip -") is deliberately SHORTER
+    // than the sidebar/toggle-panel label ("Gamma Flip +"/"Gamma Flip -") -
+    // same short-on-chart/fuller-in-sidebar split this file already has for
+    // Call Wall (R1)/Put Wall (S1) (see LEVEL_CHART_LABEL_KEY's doc comment).
+    // Verified live (Playwright, SPX "All expirations") that a genuine
+    // two-crossing chain can land gammaFlipPos/gammaFlipNeg only ~15 strike
+    // points apart - at that distance even a generous per-index vertical
+    // offset (see renderRotatedLevelLabel) can't keep two FULL "Gamma Flip +"/
+    // "Gamma Flip -" diagonal labels from overlapping, so the chart case
+    // specifically gets the shorter wording; the sidebar/toggle panel have
+    // much more horizontal room and keep the fuller one.
     const levelChartLabel = (key: ToggleableLevelKey): string => {
         if (key === 'gammaFlipPos' || key === 'gammaFlipNeg') {
             return bothGammaFlip ? tr(key === 'gammaFlipPos' ? 'gex.chart.gammaFlipPos' : 'gex.chart.gammaFlipNeg') : tr('gex.chart.gammaFlip');
@@ -753,27 +815,34 @@ export const GexView: React.FC<GexViewProps> = ({
                                         reads the same computed GexLevels field the sidebar's Key
                                         Levels card already shows (src/gex.ts, rule R1) - this never
                                         recomputes anything. */}
-                                    {ALL_LEVEL_KEYS.map((key) => {
-                                        if (!selectedLevels.includes(key)) return null;
-                                        const value = levels?.[key];
-                                        if (value == null) return null;
-                                        const color = levelColors[key];
-                                        return (
-                                            <ReferenceLine
-                                                key={key}
-                                                x={value}
-                                                stroke={color}
-                                                strokeDasharray="2 4"
-                                                label={{
-                                                    value: levelChartLabel(key),
-                                                    position: 'insideTopRight',
-                                                    fill: color,
-                                                    fontSize: 10,
-                                                    dy: 14 * (ALL_LEVEL_KEYS.indexOf(key) + 1),
-                                                }}
-                                            />
-                                        );
-                                    })}
+                                    {(() => {
+                                        // Only the levels actually drawn this render get an
+                                        // offsetIndex (see renderRotatedLevelLabel's doc comment) -
+                                        // computed here instead of ALL_LEVEL_KEYS.indexOf so hidden/
+                                        // null levels don't burn an index for no reason.
+                                        let drawnIndex = -1;
+                                        return ALL_LEVEL_KEYS.map((key) => {
+                                            if (!selectedLevels.includes(key)) return null;
+                                            const value = levels?.[key];
+                                            if (value == null) return null;
+                                            drawnIndex += 1;
+                                            const color = levelColors[key];
+                                            return (
+                                                <ReferenceLine
+                                                    key={key}
+                                                    x={value}
+                                                    stroke={color}
+                                                    strokeDasharray="2 4"
+                                                    label={renderRotatedLevelLabel(color, levelChartLabel(key), drawnIndex)}
+                                                />
+                                            );
+                                        });
+                                    })()}
+                                    {/* Spot stays a plain horizontal label (not rotated like the
+                                        Key Levels above): it's the one always-on reference every
+                                        other line is read relative to, not a toggleable Key Level,
+                                        and keeping it upright keeps it visually distinct even when
+                                        a rotated Key Level label happens to land nearby. */}
                                     {effSpot != null && (
                                         <ReferenceLine
                                             x={effSpot}
