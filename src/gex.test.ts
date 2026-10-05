@@ -257,11 +257,21 @@ describe('findCallPutWalls (7.4)', () => {
     // callWall = 105 (+100000). Next-highest positive is 106 (+80000), but
     // |106-105| = 1 < 2, so callWall2 = 115 (+50000) instead.
     // putWall = 90 (-40000); putWall2 = 95 (-20000), |95-90| = 5 >= 2.
+    // callWall1_5 (no distance restriction): second-largest-by-magnitude
+    // positive strike overall, ranked 105(100000) > 106(80000) > 115(50000)
+    // > 110(30000) > 100(10000) -> 106 (differs from callWall2's 115: the
+    // distance rule skipped 106, the magnitude-only rule does not).
+    // putWall1_5: only two negative strikes exist (90:-40000, 95:-20000), so
+    // the second-largest-by-magnitude is 95 - same value as putWall2 here
+    // (an expected coincidence, not a bug: see the dedicated describe block
+    // below for a case where putWall1_5 differs from putWall2).
     expect(findCallPutWalls(computeGexProfile(FIXTURE, SPOT), SPOT)).toEqual({
       callWall: 105,
       putWall: 90,
       callWall2: 115,
       putWall2: 95,
+      callWall1_5: 106,
+      putWall1_5: 95,
     });
   });
 
@@ -269,12 +279,21 @@ describe('findCallPutWalls (7.4)', () => {
     // EXP_A nets: 90:-20000, 95:-20000, 100:0, 105:+60000, 106:+80000.
     // callWall 106; only other positive is 105 (distance 1) -> callWall2 null.
     // 90 and 95 tie at -20000 -> putWall 90, putWall2 95.
+    // callWall1_5 (no distance restriction): only two positive strikes exist
+    // (105:+60000, 106:+80000), so the second-largest-by-magnitude is 105 -
+    // non-null here even though callWall2 is null for this same slice, which
+    // is exactly the gap this level is meant to surface.
+    // putWall1_5: same tie as putWall2 (90 and 95 both at -20000; ascending
+    // iteration + strict `>` picks 90 for putWall, then 95 as the next
+    // distinct-ranked strike) -> 95.
     const profile = computeGexProfile(FIXTURE.filter((x) => x.expiration === EXP_A), SPOT);
     expect(findCallPutWalls(profile, SPOT)).toEqual({
       callWall: 106,
       putWall: 90,
       callWall2: null,
       putWall2: 95,
+      callWall1_5: 105,
+      putWall1_5: 95,
     });
   });
 
@@ -283,7 +302,49 @@ describe('findCallPutWalls (7.4)', () => {
     const walls = findCallPutWalls(callsOnly, SPOT);
     expect(walls.putWall).toBeNull();
     expect(walls.putWall2).toBeNull();
+    expect(walls.putWall1_5).toBeNull();
     expect(walls.callWall).toBe(105); // 1100 calls is the biggest call strike
+  });
+});
+
+describe('findCallPutWalls: callWall1_5 / putWall1_5 (the second-largest-by-magnitude same-sign strike, with NO minimum-distance restriction from the primary wall - unlike callWall2/putWall2)', () => {
+  test('fewer than 2 positive-netGex strikes -> callWall1_5 null; 2+ negative -> putWall1_5 non-null', () => {
+    // Only one positive strike (100:+30) exists at all, so there is no
+    // "second-largest" candidate -> callWall1_5 is null (not just
+    // distance-excluded - there is nothing else to pick). Two negative
+    // strikes exist (90:-200, 95:-50); the largest-magnitude is 90, so the
+    // second-largest-by-magnitude is 95 -> putWall1_5 = 95.
+    const profile = [gp(90, -200), gp(95, -50), gp(100, 30)];
+    const walls = findCallPutWalls(profile, 100);
+    expect(walls.callWall).toBe(100);
+    expect(walls.callWall1_5).toBeNull();
+    expect(walls.callWall2).toBeNull(); // only one positive strike, self-excluded by the distance rule too
+    expect(walls.putWall).toBe(90);
+    expect(walls.putWall1_5).toBe(95);
+  });
+
+  test('fewer than 2 negative-netGex strikes -> putWall1_5 null; 2+ positive -> callWall1_5 non-null, differing from callWall2 when distance-excluded', () => {
+    // Two positive strikes (95:+30, 100:+80); the largest-magnitude is 100,
+    // so the second-largest-by-magnitude is 95 -> callWall1_5 = 95. Spot is
+    // 100 here (min distance = 0.02*100 = 2), and |95-100| = 5 >= 2, so
+    // callWall2 also happens to be 95 in this particular profile (both
+    // levels can legitimately agree - see the FIXTURE test above for a case
+    // where they differ). Only one negative strike (90:-200) exists ->
+    // putWall1_5 is null (nothing else to pick), even though putWall2 is
+    // also null for the same single-strike reason.
+    const profile = [gp(90, -200), gp(95, 30), gp(100, 80)];
+    const walls = findCallPutWalls(profile, 100);
+    expect(walls.callWall).toBe(100);
+    expect(walls.callWall1_5).toBe(95);
+    expect(walls.putWall).toBe(90);
+    expect(walls.putWall1_5).toBeNull();
+    expect(walls.putWall2).toBeNull();
+  });
+
+  test('empty profile -> both null', () => {
+    const walls = findCallPutWalls([], 100);
+    expect(walls.callWall1_5).toBeNull();
+    expect(walls.putWall1_5).toBeNull();
   });
 });
 
@@ -428,6 +489,13 @@ describe('computeGexLevels (7.7)', () => {
     expect(levels.putWall).toBe(90);
     expect(levels.callWall2).toBe(115);
     expect(levels.putWall2).toBe(95);
+    // callWall1_5/putWall1_5: see findCallPutWalls' own FIXTURE test above
+    // for the full hand-derivation - 106 is the second-largest-by-magnitude
+    // positive strike (differs from callWall2's 115, proving the
+    // no-distance-restriction behavior is real); 95 is the second-largest-
+    // by-magnitude negative strike (coincides with putWall2 here).
+    expect(levels.callWall1_5).toBe(106);
+    expect(levels.putWall1_5).toBe(95);
     expect(levels.maxPain).toBe(100);
     expect(levels.pcRatioOi).toBeCloseTo(1220 / 3320, 12);
     expect(levels.pcRatioVolume).toBeCloseTo(0.5, 12);
@@ -445,6 +513,8 @@ describe('computeGexLevels (7.7)', () => {
       putWall: null,
       callWall2: null,
       putWall2: null,
+      callWall1_5: null,
+      putWall1_5: null,
       maxPain: null,
       pcRatioOi: null,
       pcRatioVolume: null,

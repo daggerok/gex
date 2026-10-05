@@ -29,14 +29,17 @@ export const GEX_METRICS: GexMetric[] = ['netGex', 'callOi', 'putOi', 'callVolum
  *  view reads gammaFlipPos/gammaFlipNeg directly and never selects it). */
 type ToggleableLevelKey = Exclude<GexLevelKey, 'spot' | 'gammaFlip'>;
 
-/** The 7 toggleable Key Levels (everything in GexLevels except `spot`/legacy
+/** The 9 toggleable Key Levels (everything in GexLevels except `spot`/legacy
  *  `gammaFlip` - see ToggleableLevelKey above; also gex-colors.ts's
  *  LevelColorSet). `gammaFlipPos`/`gammaFlipNeg` each carry their own
  *  selection + color state independently (see the `selectedLevels`/
  *  `levelColors` comment below) even though the toggle/color panel usually
  *  renders them as a single combined "Gamma Flip" entry - see
- *  `gammaFlipPanelKeys` below. */
-const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall', 'putWall2', 'maxPain'];
+ *  `gammaFlipPanelKeys` below. `callWall1_5`/`putWall1_5` ("Resistance 1.5"/
+ *  "Support 1.5") sit between the primary wall and the distance-filtered
+ *  `callWall2`/`putWall2`, matching their conceptual position (src/gex.ts's
+ *  findCallPutWalls doc comment). */
+const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall1_5', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall', 'putWall1_5', 'putWall2', 'maxPain'];
 
 /** Default ON selection (Part 2, revised): only Call Wall / Put Wall start
  *  OFF - they're redundant with just looking at the chart's own tallest bars.
@@ -44,8 +47,10 @@ const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFli
  *  heuristic not being fully trusted yet (a redesign is deferred, not
  *  touching findCallPutWalls' math) - the user decided to keep them visible
  *  by default anyway. Gamma Flip (both directional keys - whichever applies
- *  to the loaded data) and Max Pain start ON. */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall2', 'maxPain'];
+ *  to the loaded data) and Max Pain start ON. Resistance 1.5 / Support 1.5
+ *  also start ON - the user is actively curious to see these (unlike
+ *  Call Wall/Put Wall, which are redundant with the chart's own bars). */
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall1_5', 'callWall2', 'gammaFlipPos', 'gammaFlipNeg', 'putWall1_5', 'putWall2', 'maxPain'];
 
 /** i18n key for each non-gamma-flip level's sidebar/toggle-panel label and
  *  <ReferenceLine> chart label. Gamma Flip is handled separately (see
@@ -54,8 +59,10 @@ const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlipPo
  *  for the current data, "Gamma Flip +"/"Gamma Flip -" when both are. */
 const LEVEL_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gammaFlipNeg'>, string> = {
     callWall: 'gex.level.callWall',
+    callWall1_5: 'gex.level.resistance1_5',
     callWall2: 'gex.level.resistance2',
     putWall: 'gex.level.putWall',
+    putWall1_5: 'gex.level.support1_5',
     putWall2: 'gex.level.support2',
     maxPain: 'gex.level.maxPain',
 };
@@ -66,8 +73,10 @@ const LEVEL_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gamm
  *  sidebar label carries an "(R1)"/"(S1)" suffix). */
 const LEVEL_CHART_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' | 'gammaFlipNeg'>, string> = {
     callWall: 'gex.chart.callWall',
+    callWall1_5: 'gex.chart.resistance1_5',
     callWall2: 'gex.chart.resistance2',
     putWall: 'gex.chart.putWall',
+    putWall1_5: 'gex.chart.support1_5',
     putWall2: 'gex.chart.support2',
     maxPain: 'gex.chart.maxPain',
 };
@@ -77,10 +86,12 @@ const LEVEL_CHART_LABEL_KEY: Record<Exclude<ToggleableLevelKey, 'gammaFlipPos' |
  *  case uses the directional tooltips instead (see `levelTooltip` below). */
 const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
     callWall: 'gex.level.tooltip.callWall',
+    callWall1_5: 'gex.level.tooltip.resistance1_5',
     callWall2: 'gex.level.tooltip.resistance2',
     gammaFlipPos: 'gex.level.tooltip.gammaFlipPos',
     gammaFlipNeg: 'gex.level.tooltip.gammaFlipNeg',
     putWall: 'gex.level.tooltip.putWall',
+    putWall1_5: 'gex.level.tooltip.support1_5',
     putWall2: 'gex.level.tooltip.support2',
     maxPain: 'gex.level.tooltip.maxPain',
 };
@@ -136,37 +147,40 @@ function fmtSignedCompact(v: number): string {
  * top of the whole plot area (see recharts' ReferenceLine.getVerticalLineEndPoints
  * + Label's CartesianLabelContextProvider: a vertical line's rect is
  * {x: coord, y: plotTop, width: 0, height: plotHeight}). Anchoring at
- * (viewBox.x, viewBox.y + a small inset) keeps every label near the chart's
+ * (viewBox.x, viewBox.y + a FIXED inset) keeps every label near the chart's
  * top edge regardless of each level's own strike - different strikes land at
  * different pixel columns, so rotating each label around its OWN anchor is
- * what keeps them apart now, instead of the old per-index vertical offset
- * (two levels at the same strike/column still separate along the diagonal
- * text's own length). `offsetIndex` adds a per-drawn-level vertical nudge -
- * found to be genuinely needed (not just a rare edge case), verified live:
- * SPX's own Max Pain/Support 2/Spot/Resistance 2 strikes land close enough
- * together that a nudge keeps their diagonal labels from running into each
- * other near the chart's top edge. 40px of inset clears the always-on,
- * never-offset Spot label's own row; 22px per index gives each subsequent
- * label its own diagonal "lane" alongside its neighbors. Still not perfect
- * at the extreme: verified live that a genuine two-crossing SPX chain can
- * put gammaFlipPos/gammaFlipNeg only ~15 strike points apart (out of an
- * ~1850-point chart) - close enough that even this offset plus the shorter
- * "Flip +"/"Flip -" chart wording (see levelChartLabel below) still leaves
- * their labels partially touching, though both remain individually
- * readable. Accepted as an honest limitation rather than chased further.
+ * what keeps them apart, via each label's own X position, not a vertical
+ * offset.
+ *
+ * EVERY label starts at the exact same y (`viewBox.y + 40`, no per-level
+ * stagger) - a deliberate user requirement: "they all must be above the
+ * chart area, so starting symbol will be always on the same level for all
+ * labels". An earlier version added a per-drawn-level vertical nudge
+ * (`offsetIndex * 22`) to reduce overlap between labels whose strikes land
+ * close together (e.g. SPX's own Max Pain/Support 2/Resistance 2 strikes);
+ * that staggering was removed per the above requirement - only the X
+ * position (each level's own strike) and the -45deg rotation now keep
+ * labels apart. Known, accepted consequence: two levels whose strikes sit
+ * very close together (e.g. a genuine two-crossing chain putting
+ * gammaFlipPos/gammaFlipNeg only ~15 strike points apart out of an
+ * ~1850-point chart) will have their same-baseline diagonal labels overlap
+ * more than the old staggered version did - still individually readable,
+ * just closer together. This is an honest limitation, not a bug: the user
+ * explicitly chose one shared baseline over the old anti-overlap stagger.
  *
  * The rotation sign is `-45`, not `+45`: verified live with a Playwright
  * screenshot (see the PR) that this is the sign which actually reads
  * bottom-left-to-top-right in SVG's/recharts' y-down coordinate system -
  * `+45` produces the mirrored top-left-to-bottom-right diagonal instead.
  */
-function renderRotatedLevelLabel(color: string, text: string, offsetIndex = 0) {
+function renderRotatedLevelLabel(color: string, text: string) {
     return (props: { viewBox?: { x?: number; y?: number } }) => {
         const vx = props.viewBox?.x;
         const vy = props.viewBox?.y;
         if (vx == null || vy == null) return <React.Fragment />;
         const x = vx + 4;
-        const y = vy + 40 + offsetIndex * 22;
+        const y = vy + 40;
         return (
             <text x={x} y={y} transform={`rotate(-45 ${x} ${y})`} fill={color} fontSize={10} textAnchor="start">
                 {text}
@@ -193,6 +207,57 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
         <span className={`font-medium tabular-nums ${valueClass ?? 'text-slate-800 dark:text-slate-100'}`}>{value}</span>
     </div>
 );
+
+/**
+ * One toggleable chip combining a show/hide toggle AND its color swatch(es)
+ * into a single visual unit (Metrics panel + Key Levels panel): clicking the
+ * chip's body (label) toggles the metric/level on/off, clicking the nested
+ * color swatch opens the native color picker instead, without also
+ * triggering the toggle.
+ *
+ * A real `<button>` can't contain an `<input type="color">` - interactive
+ * content isn't allowed inside `<button>` per the HTML spec, and support for
+ * it is inconsistent across browsers even though some render it anyway - so
+ * the toggle itself is a `<div role="button">` with equivalent keyboard
+ * semantics (`tabIndex`, `aria-pressed`, Enter/Space via onKeyDown) instead
+ * of a literal `<button>`. `swatches` (the actual `<input type="color">`(s) -
+ * one for most metrics/levels, two for Net GEX's signed pos/neg halves) is
+ * wrapped in its own span that stops click/mousedown propagation, so
+ * interacting with the swatch never bubbles up to the outer toggle handler.
+ */
+const ToggleChip: React.FC<{
+    on: boolean;
+    onToggle: () => void;
+    title: string;
+    activeClass: string;
+    idleClass: string;
+    swatches: React.ReactNode;
+    children: React.ReactNode;
+}> = ({ on, onToggle, title, activeClass, idleClass, swatches, children }) => {
+    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+        }
+    };
+    const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+    return (
+        <div
+            role="button"
+            tabIndex={0}
+            aria-pressed={on}
+            title={title}
+            onClick={onToggle}
+            onKeyDown={onKeyDown}
+            className={'flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? activeClass : idleClass)}
+        >
+            <span>{children}</span>
+            <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
+                {swatches}
+            </span>
+        </div>
+    );
+};
 
 export const GexView: React.FC<GexViewProps> = ({
     settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced,
@@ -350,7 +415,10 @@ export const GexView: React.FC<GexViewProps> = ({
      *  the "dynamic based on current data" part; the sidebar card mirrors it
      *  via the `keyLevels` array below. */
     const gammaFlipPanelKeys: Array<'gammaFlipPos' | 'gammaFlipNeg'> = bothGammaFlip ? ['gammaFlipPos', 'gammaFlipNeg'] : [soloGammaFlipKey];
-    const levelPanelKeys: Array<ToggleableLevelKey> = ['callWall', 'callWall2', ...gammaFlipPanelKeys, 'putWall', 'putWall2', 'maxPain'];
+    // Fixed logical UI order (NOT price-sorted - see the sidebar Card's
+    // separate price-descending sort below, which is display-only and reads
+    // from its own `keyLevels` array, not this one).
+    const levelPanelKeys: Array<ToggleableLevelKey> = ['callWall', 'callWall1_5', 'callWall2', ...gammaFlipPanelKeys, 'putWall', 'putWall1_5', 'putWall2', 'maxPain'];
 
     const levelLabel = (key: ToggleableLevelKey): string => {
         if (key === 'gammaFlipPos' || key === 'gammaFlipNeg') {
@@ -364,11 +432,13 @@ export const GexView: React.FC<GexViewProps> = ({
     // Call Wall (R1)/Put Wall (S1) (see LEVEL_CHART_LABEL_KEY's doc comment).
     // Verified live (Playwright, SPX "All expirations") that a genuine
     // two-crossing chain can land gammaFlipPos/gammaFlipNeg only ~15 strike
-    // points apart - at that distance even a generous per-index vertical
-    // offset (see renderRotatedLevelLabel) can't keep two FULL "Gamma Flip +"/
-    // "Gamma Flip -" diagonal labels from overlapping, so the chart case
-    // specifically gets the shorter wording; the sidebar/toggle panel have
-    // much more horizontal room and keep the fuller one.
+    // points apart - at that distance even the shorter wording can't fully
+    // keep two FULL "Gamma Flip +"/"Gamma Flip -" diagonal labels from
+    // overlapping now that every label shares one fixed baseline (see
+    // renderRotatedLevelLabel's doc comment - no per-level vertical offset
+    // any more), so the chart case specifically gets the shorter wording;
+    // the sidebar/toggle panel have much more horizontal room and keep the
+    // fuller one.
     const levelChartLabel = (key: ToggleableLevelKey): string => {
         if (key === 'gammaFlipPos' || key === 'gammaFlipNeg') {
             return bothGammaFlip ? tr(key === 'gammaFlipPos' ? 'gex.chart.gammaFlipPos' : 'gex.chart.gammaFlipNeg') : tr('gex.chart.gammaFlip');
@@ -479,14 +549,22 @@ export const GexView: React.FC<GexViewProps> = ({
     // Sidebar Key Levels card: plain "Gamma Flip" row when only one direction
     // has a value (the common case, same adaptive rule as the toggle panel
     // above), two rows "Gamma Flip +"/"Gamma Flip -" when both do. Neither
-    // row is `optional` (unlike callWall2/putWall2): even with no data at all
-    // it still shows one placeholder "Gamma Flip" row reading "-", same as
-    // callWall/putWall/maxPain already do.
+    // row is `optional` (unlike callWall2/putWall2/callWall1_5/putWall1_5):
+    // even with no data at all it still shows one placeholder "Gamma Flip"
+    // row reading "-", same as callWall/putWall/maxPain already do.
+    //
+    // Built in a fixed logical order here (matching levelPanelKeys' order);
+    // the sidebar Card below re-sorts its OWN rendering by strike price
+    // descending (see `.sort()` at the JSX usage site) - this array's build
+    // order is otherwise unused for display purposes, only for feeding that
+    // sort.
     const keyLevels: Array<{ key: ToggleableLevelKey; label: string; value: number | null; optional?: boolean }> = [
         { key: 'callWall', label: levelLabel('callWall'), value: levels?.callWall ?? null },
+        { key: 'callWall1_5', label: levelLabel('callWall1_5'), value: levels?.callWall1_5 ?? null, optional: true },
         { key: 'callWall2', label: levelLabel('callWall2'), value: levels?.callWall2 ?? null, optional: true },
         ...gammaFlipPanelKeys.map((key) => ({ key, label: levelLabel(key), value: levels?.[key] ?? null })),
         { key: 'putWall', label: levelLabel('putWall'), value: levels?.putWall ?? null },
+        { key: 'putWall1_5', label: levelLabel('putWall1_5'), value: levels?.putWall1_5 ?? null, optional: true },
         { key: 'putWall2', label: levelLabel('putWall2'), value: levels?.putWall2 ?? null, optional: true },
         { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
     ];
@@ -576,25 +654,22 @@ export const GexView: React.FC<GexViewProps> = ({
                         {GEX_METRICS.map((m) => {
                             const on = metrics.includes(m);
                             return (
-                                <div key={m} className="flex shrink-0 items-center gap-1">
-                                    <button
-                                        type="button"
-                                        // Independently togglable (not radio buttons); the last
-                                        // remaining selected metric can't be turned off, so the
-                                        // chart is never empty.
-                                        onClick={() => setMetrics(on ? (metrics.length > 1 ? metrics.filter((x) => x !== m) : metrics) : [...metrics, m])}
-                                        aria-pressed={on}
-                                        title={tr('gex.metric.tooltip.' + m)}
-                                        className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? ax.chipActive : ax.chipIdle)}
-                                    >
-                                        {tr('gex.metric.' + m)}
-                                    </button>
-                                    {/* Per-metric bar color pickers. Net GEX needs two (its
-                                        signed pos/neg stacked halves); the 4 OI/Volume metrics
-                                        get one each. Dependency-free <input type="color">,
-                                        always visible (not gated on `on`) so a color can be
-                                        set up before toggling the metric on. */}
-                                    {m === 'netGex' ? (
+                                <ToggleChip
+                                    key={m}
+                                    on={on}
+                                    // Independently togglable (not radio buttons); the last
+                                    // remaining selected metric can't be turned off, so the
+                                    // chart is never empty.
+                                    onToggle={() => setMetrics(on ? (metrics.length > 1 ? metrics.filter((x) => x !== m) : metrics) : [...metrics, m])}
+                                    title={tr('gex.metric.tooltip.' + m)}
+                                    activeClass={ax.chipActive}
+                                    idleClass={ax.chipIdle}
+                                    // Per-metric bar color pickers. Net GEX needs two (its
+                                    // signed pos/neg stacked halves); the 4 OI/Volume metrics
+                                    // get one each. Dependency-free <input type="color">,
+                                    // always visible (not gated on `on`) so a color can be
+                                    // set up before toggling the metric on.
+                                    swatches={m === 'netGex' ? (
                                         <>
                                             <input
                                                 type="color"
@@ -602,7 +677,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                 onChange={(e) => setMetricColor('netGexPos', e.target.value)}
                                                 title={tr('gex.metric.colorNetGexPos')}
                                                 aria-label={tr('gex.metric.colorNetGexPos')}
-                                                className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                                className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                             />
                                             <input
                                                 type="color"
@@ -610,7 +685,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                 onChange={(e) => setMetricColor('netGexNeg', e.target.value)}
                                                 title={tr('gex.metric.colorNetGexNeg')}
                                                 aria-label={tr('gex.metric.colorNetGexNeg')}
-                                                className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                                className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                             />
                                         </>
                                     ) : (
@@ -620,10 +695,12 @@ export const GexView: React.FC<GexViewProps> = ({
                                             onChange={(e) => setMetricColor(m, e.target.value)}
                                             title={tr('gex.metric.color', { metric: metricLabel(m) })}
                                             aria-label={tr('gex.metric.color', { metric: metricLabel(m) })}
-                                            className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                            className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                         />
                                     )}
-                                </div>
+                                >
+                                    {tr('gex.metric.' + m)}
+                                </ToggleChip>
                             );
                         })}
                     </div>
@@ -654,25 +731,26 @@ export const GexView: React.FC<GexViewProps> = ({
                             const on = selectedLevels.includes(key);
                             const label = levelLabel(key);
                             return (
-                                <div key={key} className="flex shrink-0 items-center gap-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => setSelectedLevels(on ? selectedLevels.filter((x) => x !== key) : [...selectedLevels, key])}
-                                        aria-pressed={on}
-                                        title={levelTooltip(key)}
-                                        className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? ax.chipActive : ax.chipIdle)}
-                                    >
-                                        {label}
-                                    </button>
-                                    <input
-                                        type="color"
-                                        value={levelColors[key]}
-                                        onChange={(e) => setLevelColor(key, e.target.value)}
-                                        title={tr('gex.level.color', { level: label })}
-                                        aria-label={tr('gex.level.color', { level: label })}
-                                        className="h-5 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
-                                    />
-                                </div>
+                                <ToggleChip
+                                    key={key}
+                                    on={on}
+                                    onToggle={() => setSelectedLevels(on ? selectedLevels.filter((x) => x !== key) : [...selectedLevels, key])}
+                                    title={levelTooltip(key)}
+                                    activeClass={ax.chipActive}
+                                    idleClass={ax.chipIdle}
+                                    swatches={
+                                        <input
+                                            type="color"
+                                            value={levelColors[key]}
+                                            onChange={(e) => setLevelColor(key, e.target.value)}
+                                            title={tr('gex.level.color', { level: label })}
+                                            aria-label={tr('gex.level.color', { level: label })}
+                                            className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                        />
+                                    }
+                                >
+                                    {label}
+                                </ToggleChip>
                             );
                         })}
                     </div>
@@ -728,8 +806,20 @@ export const GexView: React.FC<GexViewProps> = ({
                         <Row label={tr('gex.sidebar.regime')} value={tr('gex.regime.' + regime)} />
                     </Card>
                     <Card title={tr('gex.sidebar.keyLevels')}>
+                        {/* Display-only reordering: the sidebar text card reads
+                            top-to-bottom by strike price, descending - NOT the
+                            fixed logical order `keyLevels` was built in above
+                            (that order still drives the toggle+color panel via
+                            the separate `levelPanelKeys` array, untouched by
+                            this sort). A null-valued row (Resistance/Support
+                            1.5/2 not applicable, or Gamma Flip with no
+                            crossing) has no real price to sort by, so every
+                            null row sinks to the bottom, below every row with
+                            a real value - Array#sort is stable, so nulls keep
+                            their relative order among themselves. */}
                         {keyLevels
                             .filter((l) => !(l.optional && l.value == null))
+                            .sort((a, b) => (a.value == null ? 1 : b.value == null ? -1 : b.value - a.value))
                             .map((l) => (
                                 <Row key={l.key} label={l.label} value={l.value != null ? fmt(l.value) : na} dot={GEX_LEVEL_COLORS[l.key].dot} />
                             ))}
@@ -843,7 +933,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
                                         <ReferenceArea x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
                                     )}
-                                    {/* All 7 toggleable Key Level keys (gammaFlipPos/gammaFlipNeg
+                                    {/* All 9 toggleable Key Level keys (gammaFlipPos/gammaFlipNeg
                                         included independently - see ALL_LEVEL_KEYS above), gated
                                         independently on their own toggle (selectedLevels) and drawn
                                         in their own configured color (levelColors). `levels?.[key]`
@@ -851,16 +941,14 @@ export const GexView: React.FC<GexViewProps> = ({
                                         Levels card already shows (src/gex.ts, rule R1) - this never
                                         recomputes anything. */}
                                     {(() => {
-                                        // Only the levels actually drawn this render get an
-                                        // offsetIndex (see renderRotatedLevelLabel's doc comment) -
-                                        // computed here instead of ALL_LEVEL_KEYS.indexOf so hidden/
-                                        // null levels don't burn an index for no reason.
-                                        let drawnIndex = -1;
+                                        // Every drawn label shares the exact same baseline y
+                                        // (see renderRotatedLevelLabel's doc comment) - only each
+                                        // level's own strike (x position) and the -45deg rotation
+                                        // keep labels apart, no per-drawn-level vertical offset.
                                         return ALL_LEVEL_KEYS.map((key) => {
                                             if (!selectedLevels.includes(key)) return null;
                                             const value = levels?.[key];
                                             if (value == null) return null;
-                                            drawnIndex += 1;
                                             const color = levelColors[key];
                                             return (
                                                 <ReferenceLine
@@ -868,7 +956,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                     x={value}
                                                     stroke={color}
                                                     strokeDasharray="2 4"
-                                                    label={renderRotatedLevelLabel(color, levelChartLabel(key), drawnIndex)}
+                                                    label={renderRotatedLevelLabel(color, levelChartLabel(key))}
                                                 />
                                             );
                                         });
