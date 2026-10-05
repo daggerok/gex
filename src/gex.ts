@@ -250,6 +250,8 @@ export interface CallPutWalls {
     putWall: number | null;
     callWall2: number | null;
     putWall2: number | null;
+    callWall1_5: number | null;
+    putWall1_5: number | null;
 }
 
 /**
@@ -260,6 +262,20 @@ export interface CallPutWalls {
  *  - callWall2 / putWall2: same, restricted to strikes at least
  *    SECOND_WALL_MIN_DISTANCE_PCT * spot away from the primary wall (an
  *    unsourced heuristic, see the constant's comment)
+ *  - callWall1_5 / putWall1_5: the strike with the SECOND-largest magnitude
+ *    among same-sign strikes, ranked purely by |netGex| - NO minimum-distance
+ *    restriction from callWall/putWall at all (unlike callWall2/putWall2).
+ *    Motivation (a real SPX gap the user found): the 2%-distance rule on
+ *    callWall2/putWall2 can skip a strike that is large in magnitude but
+ *    happens to sit close to the primary wall, instead surfacing a much
+ *    weaker but more distant strike. callWall1_5/putWall1_5 surface that
+ *    "real strong nearby runner-up" as its OWN level, sitting conceptually
+ *    between the primary wall and the distance-filtered second wall. This can
+ *    legitimately coincide with callWall2/putWall2 (when the actual
+ *    2nd-ranked-by-magnitude strike already happens to be far enough from the
+ *    primary wall) - that's expected, not a bug. Like SECOND_WALL_MIN_DISTANCE_PCT,
+ *    this is this app's own invented convention, not an industry standard.
+ *    Null when fewer than 2 same-sign strikes exist.
  * Ties on netGex resolve to the lowest strike (first in ascending order).
  *
  * `spot` here is just "the reference price the 2%-distance rule measures
@@ -284,6 +300,25 @@ export function findCallPutWalls(profile: readonly GexPoint[], spot: number): Ca
         }
         return best ? best.strike : null;
     };
+    // callWall1_5 / putWall1_5: same ascending-iteration + strict `>` tie
+    // convention as `pick` above (and computeMaxPain), but tracking the two
+    // largest-magnitude same-sign strikes instead of just one, and with NO
+    // awayFrom/minDistance gate at all.
+    const pickSecondByMagnitude = (sign: 1 | -1): number | null => {
+        let first: GexPoint | null = null;
+        let second: GexPoint | null = null;
+        for (const point of profile) {
+            const signed = sign * point.netGex;
+            if (!(signed > 0)) continue;
+            if (first === null || signed > sign * first.netGex) {
+                second = first;
+                first = point;
+            } else if (second === null || signed > sign * second.netGex) {
+                second = point;
+            }
+        }
+        return second ? second.strike : null;
+    };
     const callWall = pick(1, null);
     const putWall = pick(-1, null);
     return {
@@ -291,6 +326,8 @@ export function findCallPutWalls(profile: readonly GexPoint[], spot: number): Ca
         putWall,
         callWall2: callWall === null ? null : pick(1, callWall),
         putWall2: putWall === null ? null : pick(-1, putWall),
+        callWall1_5: pickSecondByMagnitude(1),
+        putWall1_5: pickSecondByMagnitude(-1),
     };
 }
 
