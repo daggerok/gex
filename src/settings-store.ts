@@ -419,7 +419,64 @@ export const DEFAULT_SETTINGS: Settings = {
     // default — nothing reads this yet, so flipping it has zero effect
     // until Phase 2 wires it into the enrichment path.
     vixFuturesPricing: false,
+    // Persisted UI-state (see types.ts's Settings fields doc + main.tsx's
+    // boot/restore effect). These three defaults are IDENTICAL to the
+    // hardcoded initial values main.tsx used before this feature existed
+    // ('desk' tab, no expirations selected, Net GEX only) — so a brand-new
+    // user (no persisted blob at all) gets byte-for-byte the same first load.
+    activeTab: 'desk',
+    selectedExps: [],
+    gexMetrics: ['netGex'],
 };
+
+// ---------------------------------------------------------------------------
+// Valid-value lists for the two literal-union Settings fields above, used
+// ONLY to sanitize a loaded blob (see loadSettings below). These intentionally
+// duplicate components/TabSwitcher.tsx's `AppTab`/`APP_TABS` and
+// views/GexView.tsx's `GexMetric`/`GEX_METRICS` rather than importing them:
+//  - GexView.tsx is React.lazy-loaded by main.tsx specifically so recharts
+//    (~500 KB) stays out of the initial bundle; a static import from this
+//    eagerly-loaded module would pull GexView.tsx (and recharts) back into
+//    the main bundle, defeating that code-split.
+//  - Keeping this module free of component/view imports avoids a circular
+//    import (TabSwitcher.tsx already imports `ColorThemeId` from types.ts).
+// Keep these two arrays in sync by hand if those enums ever change.
+// ---------------------------------------------------------------------------
+const APP_TAB_VALUES: readonly string[] = ['desk', 'gex', 'chart'];
+const GEX_METRIC_VALUES: readonly string[] = ['netGex', 'callOi', 'putOi', 'callVolume', 'putVolume'];
+
+/** Sanitize a loaded `activeTab`: any value outside the known tabs (missing,
+ *  wrong type, stale/removed tab name) falls back to the default ('desk'). */
+export function sanitizeActiveTab(v: unknown): Settings['activeTab'] {
+    return typeof v === 'string' && APP_TAB_VALUES.includes(v)
+        ? (v as Settings['activeTab'])
+        : DEFAULT_SETTINGS.activeTab;
+}
+
+/** Sanitize a loaded `selectedExps`: non-array -> empty (never crash); any
+ *  non-string entries are dropped. An empty RESULT is left as-is (not forced
+ *  back to a default) — the user can legitimately have zero expirations
+ *  selected (the "None" toggle). Whether a stale-but-well-typed expiration
+ *  string still exists for the restored ticker is a DATA-dependent question
+ *  this function can't answer; main.tsx's restore effect intersects this
+ *  against the freshly fetched expirations list once it has one. */
+export function sanitizeSelectedExps(v: unknown): string[] {
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
+/** Sanitize a loaded `gexMetrics`: non-array, or any entry naming a metric
+ *  outside GEX_METRIC_VALUES (e.g. a removed/renamed metric), is dropped.
+ *  Unlike selectedExps, an EMPTY result after filtering falls back to the
+ *  default (['netGex']) rather than staying empty: GexView.tsx's own toggle
+ *  UI never allows the user to deselect the last remaining metric (see its
+ *  toggle handler — `metrics.length > 1` guards every removal), so a
+ *  filtered-to-empty array is itself evidence of a corrupted/stale blob, not
+ *  a legitimate state the real UI could ever produce. */
+export function sanitizeGexMetrics(v: unknown): Settings['gexMetrics'] {
+    if (!Array.isArray(v)) return [...DEFAULT_SETTINGS.gexMetrics];
+    const filtered = v.filter((m): m is Settings['gexMetrics'][number] => typeof m === 'string' && GEX_METRIC_VALUES.includes(m));
+    return filtered.length > 0 ? filtered : [...DEFAULT_SETTINGS.gexMetrics];
+}
 
 /** Fresh settings object with the current host default (not a shared mutable ref). */
 export function freshDefaultSettings(): Settings {
@@ -445,6 +502,9 @@ export function loadSettings(): Settings {
                 calls: { ...DEFAULT_SETTINGS.deskColumns.calls, ...((parsed.deskColumns as any)?.calls || {}) },
                 puts: { ...DEFAULT_SETTINGS.deskColumns.puts, ...((parsed.deskColumns as any)?.puts || {}) },
             },
+            activeTab: sanitizeActiveTab(parsed.activeTab),
+            selectedExps: sanitizeSelectedExps(parsed.selectedExps),
+            gexMetrics: sanitizeGexMetrics(parsed.gexMetrics),
         };
         // Drop removed providers (marketdata, dolthub, …) → fall back to host default.
         if (!PROVIDERS.some((p) => p.id === merged.providerId)) {
@@ -459,4 +519,19 @@ export function loadSettings(): Settings {
 /** Persist settings to localStorage (best-effort; ignores quota errors). */
 export function saveSettings(s: Settings): void {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+}
+
+/**
+ * Whether a settings blob was ALREADY persisted before this call (i.e. this
+ * is not a brand-new user's very first visit). This is the boot-time "is
+ * there something to restore" check main.tsx's restore effect gates on: a
+ * brand-new user's `lastTicker` is indistinguishable in VALUE from a
+ * returning user's (both could legitimately be the default 'AAPL'), so the
+ * only reliable signal is whether the SETTINGS_KEY record exists at all. Must
+ * be read before anything in this session has a chance to write a fresh
+ * record (main.tsx calls this once, synchronously, in the same lazy-init
+ * pass as its first `loadSettings()` call).
+ */
+export function hasPersistedSettings(): boolean {
+    try { return localStorage.getItem(SETTINGS_KEY) != null; } catch { return false; }
 }

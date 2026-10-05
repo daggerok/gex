@@ -256,6 +256,34 @@ export interface Settings {
      * existing users until it is actually wired up.
      */
     vixFuturesPricing: boolean;
+
+    // -- Persisted UI-state (cross-reload restore; see main.tsx's boot/
+    // restore effect and settings-store.ts's loadSettings) ------------------
+    /**
+     * Active content tab below TopBar (components/TabSwitcher.tsx's
+     * `AppTab`). Duplicated here as a literal union instead of importing
+     * `AppTab` to avoid a circular import with that component module; keep
+     * the two in sync by hand. Defaults to 'desk', matching the original
+     * (pre-persistence) behavior of every page load starting on Desk.
+     */
+    activeTab: 'desk' | 'gex' | 'chart';
+    /**
+     * Persisted shared Desk/GEX expiration-chip selection (main.tsx's
+     * `selectedExps`). Restored on boot but always intersected against the
+     * freshly re-fetched expirations for the restored ticker — a stale
+     * selection may name expirations that no longer exist — so this is
+     * read-through-sanitized at load time (non-string entries dropped) but
+     * NOT data-validated here; main.tsx does the data-dependent part.
+     */
+    selectedExps: string[];
+    /**
+     * Persisted GEX tab metric toggle (views/GexView.tsx's `GexMetric[]`).
+     * Duplicated as a literal union here for the same circular-import reason
+     * as `activeTab` above — keep in sync with GexView.tsx's `GEX_METRICS`.
+     * Unrelated to per-metric chart COLORS, which persist separately via
+     * gex-colors.ts's `gex.metricColors.v1` key.
+     */
+    gexMetrics: ('netGex' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume')[];
 }
 
 // ============================================================================

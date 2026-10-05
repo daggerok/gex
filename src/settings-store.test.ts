@@ -7,8 +7,13 @@ import {
     cacheTotalBytes,
     CACHE_MAX_BYTES,
     clearCacheData,
+    DEFAULT_SETTINGS,
     fmtBytes,
+    hasPersistedSettings,
     pickEvictionKeys,
+    sanitizeActiveTab,
+    sanitizeGexMetrics,
+    sanitizeSelectedExps,
     type CacheIndex,
 } from './settings-store';
 
@@ -131,5 +136,88 @@ describe('cache functions fail safely when IndexedDB is unavailable', () => {
 
     test('clearCacheData resolves without throwing', async () => {
         await expect(clearCacheData()).resolves.toBeUndefined();
+    });
+});
+
+// ----------------------------------------------------------------------------
+// PERSISTED UI-STATE (activeTab / selectedExps / gexMetrics) — defaults and
+// the defensive sanitizers loadSettings() runs a parsed blob's fields
+// through. These are pure functions (no localStorage/IndexedDB involved) so,
+// unlike the cache round trip above, they're fully testable in this
+// DOM-less environment.
+// ----------------------------------------------------------------------------
+
+describe('DEFAULT_SETTINGS persisted UI-state fields', () => {
+    test('match the pre-persistence hardcoded defaults byte-for-byte', () => {
+        // These three values are exactly what main.tsx hardcoded before this
+        // feature existed ('desk' tab, no expirations selected, Net GEX
+        // only) — a brand-new user (nothing in localStorage) must see the
+        // identical first load.
+        expect(DEFAULT_SETTINGS.activeTab).toBe('desk');
+        expect(DEFAULT_SETTINGS.selectedExps).toEqual([]);
+        expect(DEFAULT_SETTINGS.gexMetrics).toEqual(['netGex']);
+    });
+});
+
+describe('sanitizeActiveTab', () => {
+    test('passes through each known tab', () => {
+        expect(sanitizeActiveTab('desk')).toBe('desk');
+        expect(sanitizeActiveTab('gex')).toBe('gex');
+        expect(sanitizeActiveTab('chart')).toBe('chart');
+    });
+
+    test('falls back to the default for garbage, missing, or wrong-type values', () => {
+        expect(sanitizeActiveTab(undefined)).toBe('desk');
+        expect(sanitizeActiveTab(null)).toBe('desk');
+        expect(sanitizeActiveTab('not-a-tab')).toBe('desk');
+        expect(sanitizeActiveTab(42)).toBe('desk');
+        expect(sanitizeActiveTab({ tab: 'gex' })).toBe('desk');
+    });
+});
+
+describe('sanitizeSelectedExps', () => {
+    test('passes through a well-typed string array unchanged', () => {
+        expect(sanitizeSelectedExps(['2026-01-16', '2026-02-20'])).toEqual(['2026-01-16', '2026-02-20']);
+    });
+
+    test('drops non-string entries but keeps the rest (tolerant of partial garbage)', () => {
+        expect(sanitizeSelectedExps(['2026-01-16', 42, null, '2026-02-20'])).toEqual(['2026-01-16', '2026-02-20']);
+    });
+
+    test('falls back to an empty array for non-array input (never crashes)', () => {
+        expect(sanitizeSelectedExps(undefined)).toEqual([]);
+        expect(sanitizeSelectedExps('2026-01-16')).toEqual([]);
+        expect(sanitizeSelectedExps({ exp: '2026-01-16' })).toEqual([]);
+    });
+
+    test('an empty array stays empty (deselecting everything via "None" is legitimate)', () => {
+        expect(sanitizeSelectedExps([])).toEqual([]);
+    });
+});
+
+describe('sanitizeGexMetrics', () => {
+    test('passes through a well-typed metrics array unchanged', () => {
+        expect(sanitizeGexMetrics(['callVolume', 'putVolume'])).toEqual(['callVolume', 'putVolume']);
+    });
+
+    test('drops entries naming a metric outside GEX_METRICS (e.g. a removed/renamed one)', () => {
+        expect(sanitizeGexMetrics(['callVolume', 'totallyMadeUpMetric', 'putOi'])).toEqual(['callVolume', 'putOi']);
+    });
+
+    test('falls back to the default when every entry is invalid (filtered-to-empty is evidence of corruption, not a legitimate state — GexView never allows deselecting the last metric)', () => {
+        expect(sanitizeGexMetrics(['bogus1', 'bogus2'])).toEqual(['netGex']);
+        expect(sanitizeGexMetrics([])).toEqual(['netGex']);
+    });
+
+    test('falls back to the default for non-array input (never crashes)', () => {
+        expect(sanitizeGexMetrics(undefined)).toEqual(['netGex']);
+        expect(sanitizeGexMetrics('netGex')).toEqual(['netGex']);
+        expect(sanitizeGexMetrics(null)).toEqual(['netGex']);
+    });
+});
+
+describe('hasPersistedSettings', () => {
+    test('resolves safely (false) when localStorage is unavailable, same fail-safe contract as the cache functions above', () => {
+        expect(hasPersistedSettings()).toBe(false);
     });
 });
