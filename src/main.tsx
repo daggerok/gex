@@ -1047,7 +1047,7 @@ const App: React.FC = () => {
     // offered as a GEX choice; any such not-yet-loaded expiration in the
     // shared `selectedExps` simply contributes no quotes (quotesByExp[exp] ??
     // [] in useGexLevels), it does not error.
-    const [gexMetric, setGexMetric] = useState<GexMetric>('netGex');
+    const [gexMetrics, setGexMetrics] = useState<GexMetric[]>(['netGex']);
     // GexLevels computed ONCE here for the GEX tab's selection and shared by
     // the GEX and Chart tabs (plan 7.7 / 8.2) - no view recomputes them.
     const gex = useGexLevels(spot, spotIsEstimated, gexQuotesByExp, selectedExps, meta?.symbol ?? '', settings.vixFuturesPricing);
@@ -1149,8 +1149,8 @@ const App: React.FC = () => {
                         expirations={gexExpirations}
                         selectedExps={selectedExps}
                         setSelectedExps={setSelectedExps}
-                        metric={gexMetric}
-                        setMetric={setGexMetric}
+                        metrics={gexMetrics}
+                        setMetrics={setGexMetrics}
                     />
                 </Suspense>
             )}

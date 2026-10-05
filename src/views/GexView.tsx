@@ -1,10 +1,10 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ExpirationChips } from '../components/ExpirationChips';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio } from '../gex';
-import { GEX_BAR_COLORS, GEX_LEVEL_COLORS, type GexLevelKey } from '../gex-colors';
+import { GEX_BAR_COLORS, GEX_LEVEL_COLORS, GEX_METRIC_COLORS, type GexLevelKey } from '../gex-colors';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
 import type { DataProvider, GexLevels, GexPoint, OptionQuote, Settings } from '../types';
@@ -53,8 +53,9 @@ export interface GexViewProps {
     /** This tab's OWN expiration selection (independent of Desk). */
     selectedExps: string[];
     setSelectedExps: (exps: string[]) => void;
-    metric: GexMetric;
-    setMetric: (metric: GexMetric) => void;
+    /** Non-empty; defaults to ['netGex'] (main.tsx), matching the old single-select default. */
+    metrics: GexMetric[];
+    setMetrics: (metrics: GexMetric[]) => void;
 }
 
 /** 2140000000 -> "2.14B" (absolute value, 2 decimals, K/M/B/T suffix). */
@@ -90,7 +91,7 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
 
 export const GexView: React.FC<GexViewProps> = ({
     settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced, expirations,
-    selectedExps, setSelectedExps, metric, setMetric,
+    selectedExps, setSelectedExps, metrics, setMetrics,
 }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(settings.colorTheme);
@@ -130,19 +131,107 @@ export const GexView: React.FC<GexViewProps> = ({
         const pad = Number.isFinite(gap) && gap > 0 ? gap : Math.max(1, visible[0].strike * 0.01);
         const minK = Math.min(visible[0].strike, effSpot ?? Infinity);
         const maxK = Math.max(visible[visible.length - 1].strike, effSpot ?? -Infinity);
+        // Every GexPoint field is carried through (not just the selected
+        // metrics) so toggling metrics on/off never needs to recompute rows -
+        // only which Bars/axes get rendered below changes.
         const rows = visible.map((p) => ({
-            strike: p.strike,
+            ...p,
             pos: Math.max(p.netGex, 0),
             neg: Math.min(p.netGex, 0),
-            value: p[metric],
-            point: p,
         }));
         return { rows, domain: [minK - pad, maxK + pad] as [number, number] };
-    }, [profile, effSpot, levels, metric]);
+    }, [profile, effSpot, levels]);
 
-    const metricColor = metric === 'callOi' || metric === 'callVolume' ? GEX_BAR_COLORS.call : GEX_BAR_COLORS.put;
-    const metricLabel = tr('gex.metric.' + metric);
-    const fmtMetric = (v: number) => (metric === 'netGex' ? `${fmtSignedCompact(v)} ${tr('gex.unit')}` : fmtInt(v));
+    // ---- Multi-metric selection (section 8.1 redesign) ----------------------
+    // netGex keeps its signed pos/neg stacked treatment; the 4 OI/Volume
+    // metrics render as grouped (non-stacked) bars on their own axis, since
+    // they're unsigned raw contract counts roughly comparable to each other
+    // but on a wildly different scale from netGex's dollar-gamma values.
+    const countMetrics = GEX_METRICS.filter((m) => m !== 'netGex' && metrics.includes(m)) as Array<Exclude<GexMetric, 'netGex'>>;
+    const hasNetGex = metrics.includes('netGex');
+    const hasCount = countMetrics.length > 0;
+    const metricLabel = (m: GexMetric) => tr('gex.metric.' + m);
+    const fmtMetricValue = (m: GexMetric, v: number) => (m === 'netGex' ? `${fmtSignedCompact(v)} ${tr('gex.unit')}` : fmtInt(v));
+    const selectedLabels = metrics.map(metricLabel);
+    const chartTitle = metrics.length === 1
+        ? tr('gex.chart.title', { metric: selectedLabels[0] })
+        : tr('gex.chart.titleMulti', { metrics: selectedLabels.join(', ') });
+
+    // ---- Zoom (section 8.1 part 2) ------------------------------------------
+    // recharts 3.9 has no built-in rectangular zoom, so horizontal zoom
+    // follows recharts' own documented drag-to-select recipe: mousedown/
+    // mousemove/mouseup on the chart track a strike range (via activeLabel,
+    // the dataKey value under the cursor - works regardless of how many Y
+    // axes are in play), shown live with a ReferenceArea, and committed to
+    // `xZoom` on mouseup (overriding the auto-windowed `chart.domain`).
+    // Vertical zoom uses simple +/- buttons instead (per-axis "value under
+    // cursor" isn't available with two Y axes without reaching into
+    // recharts internals): `yZoomFactor` (1 = default) scales each axis'
+    // natural (pre-zoom) domain around zero. Both reset whenever the loaded
+    // ticker or expiration selection changes, so a stale window never
+    // outlives the data it was drawn against.
+    const [xZoom, setXZoom] = useState<[number, number] | null>(null);
+    const [yZoomFactor, setYZoomFactor] = useState(1);
+    const [dragStart, setDragStart] = useState<number | null>(null);
+    const [dragEnd, setDragEnd] = useState<number | null>(null);
+
+    const zoomResetKey = `${symbol}|${selectedExps.join(',')}`;
+    useEffect(() => {
+        setXZoom(null);
+        setYZoomFactor(1);
+        setDragStart(null);
+        setDragEnd(null);
+    }, [zoomResetKey]);
+
+    const resetZoom = () => { setXZoom(null); setYZoomFactor(1); };
+    const zoomInY = () => setYZoomFactor((f) => Math.max(f * 0.7, 0.1));
+    const zoomOutY = () => setYZoomFactor((f) => Math.min(f / 0.7, 1));
+    const isZoomed = xZoom != null || yZoomFactor !== 1;
+
+    const onChartMouseDown = (state: { activeLabel?: string | number }) => {
+        if (typeof state?.activeLabel === 'number') { setDragStart(state.activeLabel); setDragEnd(state.activeLabel); }
+    };
+    const onChartMouseMove = (state: { activeLabel?: string | number }) => {
+        if (dragStart == null) return;
+        if (typeof state?.activeLabel === 'number') setDragEnd(state.activeLabel);
+    };
+    const onChartMouseUp = () => {
+        if (dragStart != null && dragEnd != null && dragStart !== dragEnd) {
+            setXZoom([Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd)]);
+        }
+        setDragStart(null);
+        setDragEnd(null);
+    };
+
+    const scaleAroundZero = ([lo, hi]: [number, number], factor: number): [number, number] => [lo * factor, hi * factor];
+
+    const countBase = useMemo((): [number, number] => {
+        if (!chart || !hasCount) return [0, 1];
+        let max = 0;
+        for (const row of chart.rows) for (const m of countMetrics) max = Math.max(max, row[m] ?? 0);
+        return [0, max || 1];
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [chart, hasCount, countMetrics.join(',')]);
+
+    const netGexBase = useMemo((): [number, number] => {
+        if (!chart || !hasNetGex) return [-1, 1];
+        let max = 0;
+        for (const row of chart.rows) max = Math.max(max, Math.abs(row.pos), Math.abs(row.neg));
+        return [-(max || 1), max || 1];
+    }, [chart, hasNetGex]);
+
+    const countDomain = scaleAroundZero(countBase, yZoomFactor);
+    const netGexDomain = scaleAroundZero(netGexBase, yZoomFactor);
+
+    // Two Y axes only when both groups are shown at once (dollar-gamma vs
+    // raw contract counts don't share a scale); otherwise a single left axis,
+    // exactly like the old single-metric chart.
+    const leftAxisId = 'left';
+    const rightAxisId = 'right';
+    const netGexAxisId = hasCount ? rightAxisId : leftAxisId;
+    const leftDomain = hasCount ? countDomain : netGexDomain;
+    const leftTickFormatter = (v: number) => (hasCount ? fmtCompact(v) : fmtSignedCompact(v));
+    const xDomain = xZoom ?? chart?.domain ?? ([0, 1] as [number, number]);
 
     const keyLevels: Array<{ key: GexLevelKey; label: string; value: number | null; optional?: boolean }> = [
         { key: 'callWall', label: tr('gex.level.callWall'), value: levels?.callWall ?? null },
@@ -202,17 +291,23 @@ export const GexView: React.FC<GexViewProps> = ({
                 <div className={box} role="group" aria-label={tr('gex.metric.label')}>
                     <span className="text-xs text-slate-400">{tr('gex.metric.label')}</span>
                     <div className="themed-scroll flex items-center gap-1 overflow-x-auto">
-                        {GEX_METRICS.map((m) => (
-                            <button
-                                key={m}
-                                type="button"
-                                onClick={() => setMetric(m)}
-                                aria-pressed={metric === m}
-                                className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (metric === m ? ax.chipActive : ax.chipIdle)}
-                            >
-                                {tr('gex.metric.' + m)}
-                            </button>
-                        ))}
+                        {GEX_METRICS.map((m) => {
+                            const on = metrics.includes(m);
+                            return (
+                                <button
+                                    key={m}
+                                    type="button"
+                                    // Independently togglable (not radio buttons); the last
+                                    // remaining selected metric can't be turned off, so the
+                                    // chart is never empty.
+                                    onClick={() => setMetrics(on ? (metrics.length > 1 ? metrics.filter((x) => x !== m) : metrics) : [...metrics, m])}
+                                    aria-pressed={on}
+                                    className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (on ? ax.chipActive : ax.chipIdle)}
+                                >
+                                    {tr('gex.metric.' + m)}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
                 <div className="flex items-baseline gap-2">
@@ -272,50 +367,119 @@ export const GexView: React.FC<GexViewProps> = ({
 
                 {/* ---- Main chart ---- */}
                 <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3">
-                    <h3 className="mb-2 text-xs text-slate-500 dark:text-slate-400">{tr('gex.chart.title', { metric: metricLabel })}</h3>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-xs text-slate-500 dark:text-slate-400">{chartTitle}</h3>
+                        <div className="flex items-center gap-1 text-xs text-slate-400">
+                            <span className="hidden sm:inline">{tr('gex.zoom.hint')}</span>
+                            <button
+                                type="button"
+                                onClick={zoomOutY}
+                                title={tr('gex.zoom.yOut')}
+                                className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 font-medium hover:border-slate-400 dark:hover:border-slate-500"
+                            >
+                                −
+                            </button>
+                            <button
+                                type="button"
+                                onClick={zoomInY}
+                                title={tr('gex.zoom.yIn')}
+                                className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 font-medium hover:border-slate-400 dark:hover:border-slate-500"
+                            >
+                                +
+                            </button>
+                            <button
+                                type="button"
+                                onClick={resetZoom}
+                                disabled={!isZoomed}
+                                className={
+                                    'shrink-0 rounded-md border px-2 py-0.5 font-medium ' +
+                                    (isZoomed ? ax.chipIdle : 'border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600')
+                                }
+                            >
+                                {tr('gex.zoom.reset')}
+                            </button>
+                        </div>
+                    </div>
                     <div className="h-[360px] lg:h-[calc(100dvh-304px)] lg:min-h-[420px]">
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={chart.rows} margin={{ top: 24, right: 16, bottom: 8, left: 8 }} stackOffset="sign" barCategoryGap="15%">
+                                <BarChart
+                                    data={chart.rows}
+                                    margin={{ top: 24, right: hasCount && hasNetGex ? 48 : 16, bottom: 8, left: 8 }}
+                                    stackOffset="sign"
+                                    barCategoryGap="15%"
+                                    onMouseDown={onChartMouseDown}
+                                    onMouseMove={onChartMouseMove}
+                                    onMouseUp={onChartMouseUp}
+                                >
                                     <CartesianGrid stroke="#94a3b8" strokeOpacity={0.15} vertical={false} />
                                     <XAxis
                                         dataKey="strike"
                                         type="number"
-                                        domain={chart.domain}
+                                        domain={xDomain}
                                         allowDataOverflow
                                         tick={{ fill: '#94a3b8', fontSize: 11 }}
                                         stroke="#94a3b8"
                                         tickFormatter={(v: number) => fmt(v, v % 1 === 0 ? 0 : 1)}
                                     />
                                     <YAxis
+                                        yAxisId={leftAxisId}
+                                        domain={leftDomain}
+                                        allowDataOverflow
                                         tick={{ fill: '#94a3b8', fontSize: 11 }}
                                         stroke="#94a3b8"
                                         width={64}
-                                        tickFormatter={(v: number) => (metric === 'netGex' ? fmtSignedCompact(v) : fmtCompact(v))}
+                                        tickFormatter={leftTickFormatter}
                                     />
+                                    {hasCount && hasNetGex && (
+                                        <YAxis
+                                            yAxisId={rightAxisId}
+                                            orientation="right"
+                                            domain={netGexDomain}
+                                            allowDataOverflow
+                                            tick={{ fill: '#94a3b8', fontSize: 11 }}
+                                            stroke="#94a3b8"
+                                            width={64}
+                                            tickFormatter={fmtSignedCompact}
+                                        />
+                                    )}
                                     <Tooltip
                                         cursor={{ fill: '#94a3b8', fillOpacity: 0.12 }}
-                                        content={({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: unknown }> }) => {
-                                            const row = active && payload && payload[0] ? payload[0].payload as { strike: number; value: number } | undefined : null;
+                                        content={({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: Record<string, number> }> }) => {
+                                            const row = active && payload && payload[0] ? payload[0].payload : null;
                                             if (!row) return null;
                                             return (
                                                 <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs shadow">
                                                     <div className="text-slate-500 dark:text-slate-400">{tr('chain.strike')} {fmt(row.strike)}</div>
-                                                    <div className="font-semibold text-slate-800 dark:text-slate-100">{metricLabel}: {fmtMetric(row.value)}</div>
+                                                    {metrics.map((m) => (
+                                                        <div key={m} className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
+                                                            <span
+                                                                className="inline-block h-2 w-2 shrink-0 rounded-full"
+                                                                style={{ background: m === 'netGex' ? (row.netGex >= 0 ? GEX_BAR_COLORS.call : GEX_BAR_COLORS.put) : GEX_METRIC_COLORS[m as Exclude<GexMetric, 'netGex'>] }}
+                                                                aria-hidden="true"
+                                                            />
+                                                            {metricLabel(m)}: {fmtMetricValue(m, row[m])}
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             );
                                         }}
                                     />
-                                    {metric === 'netGex' && <ReferenceLine y={0} stroke="#94a3b8" />}
-                                    {metric === 'netGex' ? (
+                                    <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
+                                    {hasNetGex && <ReferenceLine y={0} yAxisId={netGexAxisId} stroke="#94a3b8" />}
+                                    {hasNetGex && (
                                         <>
-                                            <Bar dataKey="pos" stackId="net" fill={GEX_BAR_COLORS.call} isAnimationActive={false} />
-                                            <Bar dataKey="neg" stackId="net" fill={GEX_BAR_COLORS.put} isAnimationActive={false} />
+                                            <Bar yAxisId={netGexAxisId} dataKey="pos" stackId="net" name={`${tr('gex.metric.netGex')} (+)`} fill={GEX_BAR_COLORS.call} isAnimationActive={false} />
+                                            <Bar yAxisId={netGexAxisId} dataKey="neg" stackId="net" name={`${tr('gex.metric.netGex')} (−)`} fill={GEX_BAR_COLORS.put} isAnimationActive={false} />
                                         </>
-                                    ) : (
-                                        <Bar dataKey="value" fill={metricColor} isAnimationActive={false} />
+                                    )}
+                                    {countMetrics.map((m) => (
+                                        <Bar key={m} yAxisId={leftAxisId} dataKey={m} name={metricLabel(m)} fill={GEX_METRIC_COLORS[m]} isAnimationActive={false} />
+                                    ))}
+                                    {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
+                                        <ReferenceArea yAxisId={leftAxisId} x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
                                     )}
                                     {levels?.callWall != null && (
                                         <ReferenceLine
