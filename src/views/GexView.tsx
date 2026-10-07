@@ -267,8 +267,69 @@ const coloredTick = (colorOf: (v: number) => string, format: (v: number) => stri
     );
 };
 
-/** Small square zoom button (+ / -). */
-const ZOOM_BTN = 'shrink-0 rounded-md border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 px-1.5 py-0.5 font-medium hover:border-slate-400 dark:hover:border-slate-500';
+/**
+ * Hover/focus tooltip for the small icon buttons (same look as the chip tooltips): the
+ * explanation is rendered through a portal to <body> with `position: fixed`, so no
+ * `overflow` ancestor clips it. The hover handlers live on a wrapping span, not on the
+ * button, because a disabled <button> receives no mouse events and its tooltip (what
+ * the button would do once enabled) would never show. The native `title` is left off on
+ * purpose, it would pop up a second, duplicate tooltip.
+ */
+const Tip: React.FC<{ text: string; side?: 'below' | 'left'; children: React.ReactNode }> = ({ text, side = 'below', children }) => {
+    const wrapRef = useRef<HTMLSpanElement>(null);
+    const tipRef = useRef<HTMLDivElement>(null);
+    const tooltipId = useId();
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState({ top: 0, left: 0, placement: 'bottom' as 'top' | 'bottom' | 'left' });
+    const show = () => {
+        const el = wrapRef.current;
+        if (el) {
+            const r = el.getBoundingClientRect();
+            if (side === 'left') {
+                // the vertical zoom column sits at the right edge: open to its left, centered on the button
+                setPos({ top: r.top + r.height / 2, left: r.left - 8, placement: 'left' });
+                setOpen(true);
+                return;
+            }
+            const half = (tipRef.current?.offsetWidth ?? 0) / 2;
+            const left = Math.min(Math.max(r.left + r.width / 2, half + 8), window.innerWidth - half - 8);
+            const tipH = tipRef.current?.offsetHeight ?? 0;
+            // below the button by default (they sit near the top of the chart), above when there is no room below
+            const placement: 'top' | 'bottom' = r.bottom + 8 + tipH > window.innerHeight ? 'top' : 'bottom';
+            setPos({ top: placement === 'bottom' ? r.bottom + 8 : r.top - 8, left, placement });
+        }
+        setOpen(true);
+    };
+    return (
+        <span ref={wrapRef} className="inline-flex" onMouseEnter={show} onMouseLeave={() => setOpen(false)} onFocus={show} onBlur={() => setOpen(false)} aria-describedby={tooltipId}>
+            {children}
+            {createPortal(
+                <div
+                    ref={tipRef}
+                    id={tooltipId}
+                    role="tooltip"
+                    style={{ top: pos.top, left: pos.left, transform: pos.placement === 'left' ? 'translate(-100%, -50%)' : `translate(-50%, ${pos.placement === 'top' ? '-100%' : '0%'})` }}
+                    className={
+                        'pointer-events-none fixed z-50 w-56 max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] leading-snug text-slate-100 shadow-lg ' +
+                        'transition-opacity duration-150 ease-out dark:border-slate-600 ' +
+                        (open ? 'opacity-100' : 'opacity-0')
+                    }
+                >
+                    {text}
+                </div>,
+                document.body,
+            )}
+        </span>
+    );
+};
+
+/** Small borderless zoom button (+ / - / reset emoji). */
+const ZOOM_BTN = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium leading-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 disabled:cursor-default';
+
+/** The plus and minus emoji are black glyphs: invert them in the dark theme so they stay readable. */
+const ZOOM_GLYPH = 'dark:[filter:invert(1)]';
+const plusGlyph = <span className={ZOOM_GLYPH} aria-hidden="true">➕</span>;
+const minusGlyph = <span className={ZOOM_GLYPH} aria-hidden="true">➖</span>;
 
 /** Compact sidebar table: centered heading, tight rows (the user prefers this
  *  over rows stretched to fill the height). */
@@ -1336,30 +1397,32 @@ export const GexView: React.FC<GexViewProps> = ({
                             <span className="hidden text-xs text-slate-400 sm:inline">{tr('gex.zoom.hint')}</span>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-slate-400">
-                            <button type="button" onClick={() => zoomX('out')} title={tr('gex.zoom.xOut')} aria-label={tr('gex.zoom.xOut')} className={ZOOM_BTN}>➖</button>
-                            <button
-                                type="button"
-                                onClick={() => setXZoomAndPersist(null)}
-                                disabled={xZoom == null}
-                                title={tr('gex.zoom.resetH')}
-                                aria-label={tr('gex.zoom.resetH')}
-                                className={ZOOM_BTN + (xZoom == null ? ' opacity-40' : '')}
-                            >
-                                🔄
-                            </button>
-                            <button type="button" onClick={() => zoomX('in')} title={tr('gex.zoom.xIn')} aria-label={tr('gex.zoom.xIn')} className={ZOOM_BTN}>➕</button>
+                            <Tip text={tr('gex.zoom.xOut')}><button type="button" onClick={() => zoomX('out')} aria-label={tr('gex.zoom.xOut')} className={ZOOM_BTN}>{minusGlyph}</button></Tip>
+                            <Tip text={tr('gex.zoom.resetH')}>
+                                <button
+                                    type="button"
+                                    onClick={() => setXZoomAndPersist(null)}
+                                    disabled={xZoom == null}
+                                                                    aria-label={tr('gex.zoom.resetH')}
+                                    className={ZOOM_BTN + (xZoom == null ? ' opacity-40' : '')}
+                                >
+                                    🔄
+                                </button>
+                            </Tip>
+                            <Tip text={tr('gex.zoom.xIn')}><button type="button" onClick={() => zoomX('in')} aria-label={tr('gex.zoom.xIn')} className={ZOOM_BTN}>{plusGlyph}</button></Tip>
                         </div>
                         <div className="flex justify-end">
-                            <button
-                                type="button"
-                                onClick={resetZoom}
-                                disabled={!isZoomed}
-                                title={tr('gex.zoom.reset')}
-                                aria-label={tr('gex.zoom.reset')}
-                                className={ZOOM_BTN + (isZoomed ? '' : ' opacity-40')}
-                            >
-                                🔃
-                            </button>
+                            <Tip text={tr('gex.zoom.reset')}>
+                                <button
+                                    type="button"
+                                    onClick={resetZoom}
+                                    disabled={!isZoomed}
+                                                                    aria-label={tr('gex.zoom.reset')}
+                                    className={ZOOM_BTN + (isZoomed ? '' : ' opacity-40')}
+                                >
+                                    🔃
+                                </button>
+                            </Tip>
                         </div>
                     </div>
                     {/* select-none: dragging across the chart to zoom (onChartMouseDown/
@@ -1374,18 +1437,19 @@ export const GexView: React.FC<GexViewProps> = ({
                             x (reset the value axis), - (zoom out). */}
                         {chart && !chartMessage && (
                             <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-1 text-xs">
-                                <button type="button" onClick={zoomInY} title={tr('gex.zoom.yIn')} aria-label={tr('gex.zoom.yIn')} className={ZOOM_BTN}>➕</button>
-                                <button
-                                    type="button"
-                                    onClick={resetVZoom}
-                                    disabled={yZoomFactor === 1}
-                                    title={tr('gex.zoom.resetV')}
-                                    aria-label={tr('gex.zoom.resetV')}
-                                    className={ZOOM_BTN + (yZoomFactor === 1 ? ' opacity-40' : '')}
-                                >
-                                    🔄
-                                </button>
-                                <button type="button" onClick={zoomOutY} title={tr('gex.zoom.yOut')} aria-label={tr('gex.zoom.yOut')} className={ZOOM_BTN}>➖</button>
+                                <Tip text={tr('gex.zoom.yIn')} side="left"><button type="button" onClick={zoomInY} aria-label={tr('gex.zoom.yIn')} className={ZOOM_BTN}>{plusGlyph}</button></Tip>
+                                <Tip text={tr('gex.zoom.resetV')} side="left">
+                                    <button
+                                        type="button"
+                                        onClick={resetVZoom}
+                                        disabled={yZoomFactor === 1}
+                                                                            aria-label={tr('gex.zoom.resetV')}
+                                        className={ZOOM_BTN + (yZoomFactor === 1 ? ' opacity-40' : '')}
+                                    >
+                                        🔄
+                                    </button>
+                                </Tip>
+                                <Tip text={tr('gex.zoom.yOut')} side="left"><button type="button" onClick={zoomOutY} aria-label={tr('gex.zoom.yOut')} className={ZOOM_BTN}>{minusGlyph}</button></Tip>
                             </div>
                         )}
                         {chartMessage || !chart ? (
