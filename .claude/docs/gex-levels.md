@@ -44,7 +44,7 @@ absGamma        = callGex - putGex      (= |callGex| + |putGex|)
 - `callWall2` = among strikes with `netGex > 0` that are ABOVE `callWall` by at least `minDistance`, the one with the highest `netGex`. Null if none qualify or `callWall` is null
 - `putWall2` = among strikes with `netGex < 0` that are BELOW `putWall` by at least `minDistance`, the most negative. Null if none qualify
 - `minDistance` comes from `secondWallMinDistance(symbol, spot)`: the per-symbol rule in `SECOND_WALL_DISTANCE_BY_SYMBOL` if present (`{ usd: 3 }` is a flat price, `{ pct: 0.004 }` is a fraction of spot), otherwise `SECOND_WALL_MIN_DISTANCE_PCT * spot` with `SECOND_WALL_MIN_DISTANCE_PCT = 0.02`. Symbol lookup is case-insensitive
-- Current overrides: `SPY: { usd: 3 }`. SPX and everything else use the 2% default
+- Current overrides: `SPY: { usd: 3 }`, `SPX: { pct: 0.01 }`. Everything else uses the 2% default
 - To tune a symbol, add one row to `SECOND_WALL_DISTANCE_BY_SYMBOL`, nothing else changes. The comparison is `>=`, so a strike exactly `minDistance` away qualifies
 
 There are no citations. The repo says so in four places:

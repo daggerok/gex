@@ -4,6 +4,10 @@ Newest first inside each section. PR numbers are from `daggerok/gex`. Add a date
 
 ## GEX levels
 
+### SPX second-wall distance set to 1% of spot (2026-10-07)
+
+- `SECOND_WALL_DISTANCE_BY_SYMBOL.SPX = { pct: 0.01 }` in `src/gex.ts`, so Range High / Range Low on SPX must be at least 1% of spot away from the Call Wall / Put Wall instead of the 2% default (at spot 6000: 60 points instead of 120). Other symbols are unchanged. The user's wording was "increase SPX to 1%", read as "use 1% for SPX"
+
 ### Resistance 2 / Support 2 renamed Range High / Range Low (2026-10-07)
 
 - Display names only (en `Range High` / `Range Low`, ru `Верх диапазона` / `Низ диапазона`, the `(R2)` / `(S2)` suffixes dropped) in the Key Levels sidebar, the toggle panel and the chart labels. Code identifiers, i18n keys (`gex.level.resistance2`, `gex.chart.support2`, ...), `callWall2` / `putWall2` and the rule itself are unchanged. Older entries below keep the old names as history
