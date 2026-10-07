@@ -312,7 +312,7 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; children: React.Rea
                     style={{ top: pos.top, left: pos.left, transform: pos.placement === 'left' ? 'translate(-100%, -50%)' : `translate(-50%, ${pos.placement === 'top' ? '-100%' : '0%'})` }}
                     className={
                         'pointer-events-none fixed z-50 w-max max-w-[calc(100vw-16px)] whitespace-nowrap rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-100 shadow-lg ' +
-                        'transition-opacity duration-150 ease-out dark:border-slate-600 ' +
+                        'transition-opacity duration-200 ease-out dark:border-slate-600 ' +
                         (open ? 'opacity-100' : 'opacity-0')
                     }
                 >
@@ -403,7 +403,7 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
  * below). `title`'s explanatory text is often a full sentence or two (see
  * LEVEL_TOOLTIP_KEY's i18n strings), and the OS-rendered native `title`
  * tooltip can't be animated - there is no CSS hook into it at all - so a
- * small custom tooltip renders the same text with a fade/slide-in transition
+ * small custom tooltip renders the same text with a fade-in/fade-out transition
  * instead.
  *
  * PORTAL, NOT A PLAIN `group-hover` SIBLING: both the Metrics row and the Key
@@ -423,7 +423,7 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
  * portal: Tailwind's `group-hover`/`group-focus-within` selectors need real
  * DOM ancestry and can't reach across a portal boundary, so visibility here
  * is plain React state (`open`, set on mouse/focus enter+leave) rather than
- * a CSS pseudo-class - the fade/slide is still pure CSS (`transition-*`
+ * a CSS pseudo-class - the fade is still pure CSS (`transition-*`
  * classes reacting to that state), just driven by a class toggle instead of
  * `:hover`.
  *
@@ -529,20 +529,13 @@ const ToggleChip: React.FC<{
                     style={{
                         top: pos.top,
                         left: pos.left,
-                        // Both the placement flip (-100%/0%, above vs below the
-                        // chip) and the small reveal slide (a few px toward the
-                        // chip while hidden, 0 once open) live in this ONE
-                        // inline `transform` - an inline `style.transform`
-                        // always wins over a Tailwind `translate-*` utility
-                        // class for the same property (inline style beats any
-                        // stylesheet rule), so the slide can't be a separate
-                        // conditional className alongside this or it would
-                        // simply be overridden and never apply.
-                        transform: `translate(-50%, calc(${pos.placement === 'top' ? '-100%' : '0%'} + ${open ? '0px' : pos.placement === 'top' ? '4px' : '-4px'}))`,
+                        // Placement only (above vs below the chip). The tooltip no longer
+                        // slides: it just fades in and out (opacity transition below).
+                        transform: `translate(-50%, ${pos.placement === 'top' ? '-100%' : '0%'})`,
                     }}
                     className={
                         'pointer-events-none fixed z-50 w-64 max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] leading-snug text-slate-100 shadow-lg ' +
-                        'transition-[opacity,transform] duration-150 ease-out dark:border-slate-600 ' +
+                        'transition-opacity duration-200 ease-out dark:border-slate-600 ' +
                         (open ? 'opacity-100' : 'opacity-0')
                     }
                 >
