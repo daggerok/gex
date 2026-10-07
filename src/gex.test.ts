@@ -14,6 +14,7 @@ import {
   findNetGexLevels,
   findSumNetGexLevels,
   pcRatioByStrike,
+  pointAtPrice,
   SUM_NET_GEX_SHARE,
   findGammaFlipHypotheticalSpot,
   gexCall,
@@ -692,5 +693,26 @@ describe('pcRatioByStrike: put/call ratios of one strike', () => {
 
   test('empty strike -> both null', () => {
     expect(pcRatioByStrike({ callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 })).toEqual({ byOi: null, byVolume: null });
+  });
+});
+
+describe('pointAtPrice: the profile row a level maps to', () => {
+  const row = (strike: number) => ({ strike, netGex: strike } as unknown as Parameters<typeof pointAtPrice>[0][number]);
+  const profile = [row(100), row(105), row(110)];
+
+  test('a price on a strike is exact', () => {
+    expect(pointAtPrice(profile, 105)).toEqual({ point: profile[1], exact: true });
+  });
+
+  test('a price between strikes maps to the nearest one, not exact', () => {
+    expect(pointAtPrice(profile, 107)).toEqual({ point: profile[1], exact: false });
+    expect(pointAtPrice(profile, 108.5)).toEqual({ point: profile[2], exact: false });
+  });
+
+  test('a tie goes to the lower strike, outside the range clamps to the edge, empty is null', () => {
+    expect(pointAtPrice(profile, 102.5)?.point.strike).toBe(100);
+    expect(pointAtPrice(profile, 50)?.point.strike).toBe(100);
+    expect(pointAtPrice(profile, 999)?.point.strike).toBe(110);
+    expect(pointAtPrice([], 100)).toBeNull();
   });
 });

@@ -478,6 +478,19 @@ export function computeMaxPain(quotes: readonly OptionQuote[]): number | null {
     return best;
 }
 
+/** The profile row a level price maps to: the strike itself when the price is
+ *  on a strike (exact), otherwise the nearest strike (ties go to the lower
+ *  one), e.g. for Spot or a Gamma Flip that falls between strikes. Null for an
+ *  empty profile. Used by the Values table to show what a level means on its
+ *  strike. */
+export function pointAtPrice(profile: readonly GexPoint[], price: number): { point: GexPoint; exact: boolean } | null {
+    let best: GexPoint | null = null;
+    for (const p of profile) {
+        if (best === null || Math.abs(p.strike - price) < Math.abs(best.strike - price)) best = p;
+    }
+    return best ? { point: best, exact: Math.abs(best.strike - price) < 1e-6 } : null;
+}
+
 /** Put/call ratios of ONE strike: puts divided by calls, by open interest and by
  *  volume. Each is null when the call side is 0 (no meaningful ratio). Plain
  *  ratio of the strike's own sums, same definition as computePCRatio's totals. */
