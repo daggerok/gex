@@ -44,7 +44,7 @@ absGamma        = callGex - putGex      (= |callGex| + |putGex|)
 - `callWall2` = among strikes with `netGex > 0` that are ABOVE `callWall` by at least `minDistance`, the one with the highest `netGex`. Null if none qualify or `callWall` is null
 - `putWall2` = among strikes with `netGex < 0` that are BELOW `putWall` by at least `minDistance`, the most negative. Null if none qualify
 - `minDistance` comes from `secondWallMinDistance(symbol, spot)`: the per-symbol rule in `SECOND_WALL_DISTANCE_BY_SYMBOL` if present (`{ usd: 3 }` is a flat price, `{ pct: 0.004 }` is a fraction of spot), otherwise `SECOND_WALL_MIN_DISTANCE_PCT * spot` with `SECOND_WALL_MIN_DISTANCE_PCT = 0.02`. Symbol lookup is case-insensitive
-- Current overrides: `SPY: { usd: 3 }`, `SPX: { pct: 0.03 }`. Everything else uses the 2% default
+- Current overrides: `SPY: { usd: 3 }`. Everything else, SPX included, uses the 3% default (was 2% until 2026-10-07). Specific per-symbol rows are added later on top of this generic default
 - To tune a symbol, add one row to `SECOND_WALL_DISTANCE_BY_SYMBOL`, nothing else changes. The comparison is `>=`, so a strike exactly `minDistance` away qualifies
 
 There are no citations. The repo says so in four places:
@@ -54,7 +54,7 @@ There are no citations. The repo says so in four places:
 - `src/gex.ts` doc comment on the constant (the per-symbol mapping is just as unsourced, it only lets the user tune the heuristic): "ORIGINAL, UNSOURCED heuristic: no public standard for a 'second wall' exists"
 - UI tooltips `gex.level.tooltip.resistance2` / `support2` in `src/i18n.tsx`: "this app's own heuristic, not an industry standard - treat it as a rough secondary marker, not a precise level"
 
-Known weakness: a fixed 2% behaves very differently on $1 strike spacing (SPY) than on $2.50 or $5 spacing (small caps), which is why the per-symbol mapping exists. The default is still meant to be tuned once seen on real chains
+Known weakness: a fixed percentage (2% originally, 3% now) behaves very differently on $1 strike spacing (SPY) than on $2.50 or $5 spacing (small caps), which is why the per-symbol mapping exists. The default is still meant to be tuned once seen on real chains
 
 `spot` for the distance rule: the true spot, except for VIX/VXN where `useGexLevels` passes the nearest selected expiration's forward (strikes live in futures-space there)
 

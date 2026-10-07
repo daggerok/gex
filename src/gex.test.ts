@@ -89,7 +89,7 @@ const FIXTURE: OptionQuote[] = [
 describe('gex constants + per-contract formula (7.1)', () => {
   test('named constants match the spec', () => {
     expect(CONTRACT_MULTIPLIER).toBe(100);
-    expect(SECOND_WALL_MIN_DISTANCE_PCT).toBe(0.02);
+    expect(SECOND_WALL_MIN_DISTANCE_PCT).toBe(0.03);
   });
 
   test('gexCall = gamma * OI * 100 * spot^2 * 0.01, gexPut is its negation', () => {
@@ -331,9 +331,11 @@ describe('second walls: direction and per-symbol distance', () => {
     });
   });
 
-  test('default 2% of spot (15.5) skips 790 and lands on 803', () => {
-    // minDistance = 0.02 * 775.83 = 15.5166 -> only strikes >= 802.52 qualify -> 803.
-    expect(findCallPutWalls(profile, 775.83).callWall2).toBe(803);
+  test('default 3% of spot (23.27) skips 790 and 803, nothing above qualifies -> null', () => {
+    // minDistance = 0.03 * 775.83 = 23.2749 -> only strikes >= 810.27 qualify, none in the profile.
+    expect(findCallPutWalls(profile, 775.83).callWall2).toBeNull();
+    // A strike at 812 (+10) is beyond the threshold and is picked.
+    expect(findCallPutWalls([...profile, pt(812, 10)], 775.83).callWall2).toBe(812);
   });
 
   test('distance equal to the threshold qualifies (>=)', () => {
@@ -346,14 +348,8 @@ describe('second walls: direction and per-symbol distance', () => {
     expect(secondWallMinDistance('SPY', 775.83)).toBe(3);
     expect(secondWallMinDistance('spy', 775.83)).toBe(3);
     expect(secondWallMinDistance('SPX', 7000)).toBeCloseTo(210, 9);
-    expect(secondWallMinDistance(null, 100)).toBeCloseTo(2, 9);
-    expect(secondWallMinDistance(undefined, 100)).toBeCloseTo(2, 9);
-  });
-
-  test('SPX uses a 3% of spot distance, other index-like symbols keep the 2% default', () => {
-    expect(secondWallMinDistance('SPX', 6000)).toBeCloseTo(180, 9);
-    expect(secondWallMinDistance('spx', 6000)).toBeCloseTo(180, 9);
-    expect(secondWallMinDistance('NDX', 6000)).toBeCloseTo(120, 9);
+    expect(secondWallMinDistance(null, 100)).toBeCloseTo(3, 9);
+    expect(secondWallMinDistance(undefined, 100)).toBeCloseTo(3, 9);
   });
 
   test('a pct rule scales with spot', () => {

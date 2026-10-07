@@ -30,7 +30,7 @@ import { estimateSpot } from './utils';
  * own forward) are in play. computeGexProfile already uses each quote's OWN
  * `forward` in place of the shared `spot` argument (src/gex.ts), so this
  * value only matters as (a) the fallback for any quote lacking a `forward`
- * and (b) the anchor for findCallPutWalls' 2%-distance rule - for those, the
+ * and (b) the anchor for findCallPutWalls' %-of-spot distance rule - for those, the
  * nearest SELECTED expiration's own forward is the more meaningful reference
  * price (strikes live in futures-space for these symbols), not the true spot
  * VIX index level. Walks selected expirations nearest (lexicographically
