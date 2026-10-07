@@ -346,10 +346,23 @@ export interface GexLevels {
     gammaFlipNeg: number | null;
     callWall: number | null;
     putWall: number | null;
-    /** "Range High" - null if none qualifies. */
+    /** "Call Wall 2" - null if none qualifies. */
     callWall2: number | null;
-    /** "Range Low" - null if none qualifies. */
+    /** "Put Wall 2" - null if none qualifies. */
     putWall2: number | null;
+    /**
+     * "Gamma Range High": the strike, going from spot to the right, where the
+     * running sum of positive netGex (strikes >= spot) first reaches
+     * GAMMA_RANGE_SHARE of that side's total. Null when there is no positive
+     * netGex at or above spot. Original, unsourced heuristic.
+     */
+    gammaRangeHigh: number | null;
+    /**
+     * "Gamma Range Low": the mirror image, going from spot to the left over
+     * negative netGex (strikes <= spot, magnitudes summed). Null when there
+     * is no negative netGex at or below spot.
+     */
+    gammaRangeLow: number | null;
     maxPain: number | null;
     pcRatioOi: number | null;
     pcRatioVolume: number | null;

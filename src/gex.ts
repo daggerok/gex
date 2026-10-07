@@ -363,9 +363,9 @@ export interface CallPutWalls {
  *  - callWall: strike with the maximum netGex among netGex > 0
  *  - putWall: strike with the minimum netGex among netGex < 0
  *  - callWall2: the strongest netGex > 0 strike ABOVE callWall and at least
- *    `minDistance` away from it (Range High must sit above the Call Wall)
+ *    `minDistance` away from it (Call Wall 2 must sit above the Call Wall)
  *  - putWall2: the strongest netGex < 0 strike BELOW putWall and at least
- *    `minDistance` away from it (Range Low must sit below the Put Wall)
+ *    `minDistance` away from it (Put Wall 2 must sit below the Put Wall)
  * Ties on netGex resolve to the lowest strike (first in ascending order).
  *
  * `minDistance` is in price units; the default is SECOND_WALL_MIN_DISTANCE_PCT
@@ -407,6 +407,50 @@ export function findCallPutWalls(
         callWall2: callWall === null ? null : pick(1, callWall),
         putWall2: putWall === null ? null : pick(-1, putWall),
     };
+}
+
+/**
+ * Share of one side's total |netGex| that the Gamma Range levels enclose.
+ * ORIGINAL, UNSOURCED heuristic (user-chosen 75%): no public standard defines
+ * such a level. Tunable constant, not an established rule.
+ */
+export const GAMMA_RANGE_SHARE = 0.75;
+
+export interface GammaRange {
+    gammaRangeHigh: number | null;
+    gammaRangeLow: number | null;
+}
+
+/**
+ * Gamma Range (original heuristic, see GAMMA_RANGE_SHARE). Starting at the
+ * center (spot) and moving right, sum the POSITIVE netGex of strikes >= spot;
+ * the first strike where the running sum is >= share * (that side's total
+ * positive netGex) is gammaRangeHigh. Moving left from spot over NEGATIVE
+ * netGex of strikes <= spot (magnitudes) gives gammaRangeLow the same way.
+ * Only the side that is scanned counts toward its total, so a positive
+ * cluster below spot never makes the high level unreachable. The profile
+ * already reflects the selected expirations. Null when a side has no mass.
+ */
+export function findGammaRange(
+    profile: readonly GexPoint[],
+    spot: number,
+    share: number = GAMMA_RANGE_SHARE,
+): GammaRange {
+    const scan = (sign: 1 | -1): number | null => {
+        const side = profile
+            .filter((p) => sign * p.netGex > 0 && sign * (p.strike - spot) >= 0)
+            .sort((a, b) => sign * (a.strike - b.strike));
+        const total = side.reduce((sum, p) => sum + sign * p.netGex, 0);
+        if (!(total > 0)) return null;
+        const target = share * total;
+        let running = 0;
+        for (const p of side) {
+            running += sign * p.netGex;
+            if (running >= target) return p.strike;
+        }
+        return side[side.length - 1].strike;
+    };
+    return { gammaRangeHigh: scan(1), gammaRangeLow: scan(-1) };
 }
 
 /**
@@ -550,6 +594,7 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
         gammaFlipPos,
         gammaFlipNeg,
         ...walls,
+        ...findGammaRange(profile, spot),
         maxPain: computeMaxPain(quotes),
         pcRatioOi: pcr.byOi,
         pcRatioVolume: pcr.byVolume,

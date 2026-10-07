@@ -17,7 +17,7 @@ Applies on EVERY change, not only algorithm changes
 
 ## Honesty about sources
 
-Every GEX number is a model approximation, not measured dealer positioning. For each level state in its doc comment and in `gex-levels.md` either the source with a direct quote and where it came from, or that the rule is an original heuristic. Do not present an invented rule as an industry standard. The UI tooltips for Range High and Range Low already say so, keep them in sync with the rule
+Every GEX number is a model approximation, not measured dealer positioning. For each level state in its doc comment and in `gex-levels.md` either the source with a direct quote and where it came from, or that the rule is an original heuristic. Do not present an invented rule as an industry standard. The UI tooltips for Call Wall 2 and Put Wall 2 already say so, keep them in sync with the rule
 
 ## Reference check
 

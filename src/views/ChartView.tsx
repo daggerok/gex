@@ -44,6 +44,8 @@ const LEVEL_LINES: Array<{ key: Exclude<GexLevelKey, 'spot'>; label: string; sec
     { key: 'gammaFlip', label: 'gex.level.gammaFlip' },
     { key: 'putWall', label: 'gex.level.putWall' },
     { key: 'putWall2', label: 'gex.level.support2', secondary: true },
+    { key: 'gammaRangeHigh', label: 'gex.level.gammaRangeHigh', secondary: true },
+    { key: 'gammaRangeLow', label: 'gex.level.gammaRangeLow', secondary: true },
     { key: 'maxPain', label: 'gex.level.maxPain' },
 ];
 

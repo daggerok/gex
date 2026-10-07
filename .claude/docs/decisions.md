@@ -4,6 +4,12 @@ Newest first inside each section. PR numbers are from `daggerok/gex`. Add a date
 
 ## GEX levels
 
+### Gamma Range High / Low added, Range High / Low renamed Call Wall 2 / Put Wall 2 (2026-10-07)
+
+- New levels `gammaRangeHigh` / `gammaRangeLow` (`findGammaRange`, `GAMMA_RANGE_SHARE = 0.75`): from spot to the right the strike where the running positive `netGex` reaches 75% of the positive total at or above spot, from spot to the left the same over negative `netGex`. Computed from the profile of the selected expirations, same for every ticker, no per-symbol table. Chosen by the user so the levels need no per-ticker tuning. Original heuristic, tooltips say so
+- The previous display names "Range High" / "Range Low" (themselves renamed from Resistance 2 / Support 2 earlier the same day) became "Call Wall 2" / "Put Wall 2" (ru: "Стена коллов 2" / "Стена путов 2") so the word "range" belongs to the new levels. Identifiers (`callWall2`, `putWall2`), i18n keys and the distance rule are unchanged
+- New levels start ON by default together with Call Wall 2, Put Wall 2 and Gamma Flip. Colors: cyan-400 (high), pink-400 (low). Verified live with Playwright on SPY (cache): Gamma Range High 778.00, Gamma Range Low 760.00, both listed in the sidebar, the toggle panel and as chart lines
+
 ### Range High / Range Low default distance raised from 2% to 3% of spot (2026-10-07)
 
 - `SECOND_WALL_MIN_DISTANCE_PCT` is now `0.03` in `src/gex.ts`, applies to every symbol without a row in `SECOND_WALL_DISTANCE_BY_SYMBOL` (SPX included, a short-lived `SPX: { pct: 0.03 }` row from the same day was dropped as redundant). `SPY: { usd: 3 }` stays. Tooltips in en and ru say 3%. The user wants to see the levels further out for now and will add specific per-symbol rows on top of the generic default later. On the 2026-10-05 SPY snapshot the SPY row is unaffected
