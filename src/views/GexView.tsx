@@ -324,24 +324,34 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; children: React.Rea
     );
 };
 
-/** Reset icon: two arrows chasing each other in a circle (like a sync symbol). Inline SVG
- *  painted with `currentColor`, so it follows the theme instead of being a boxed emoji. */
-const ResetIcon: React.FC = () => (
-    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" className="block">
-        <path d="M5.6 9.6 A7 7 0 0 1 18.8 10.4" fill="none" stroke="currentColor" strokeWidth="2" />
-        <path d="M18.4 14.4 A7 7 0 0 1 5.2 13.6" fill="none" stroke="currentColor" strokeWidth="2" />
-        <polygon points="15.6,10 22,10 18.8,13.8" fill="currentColor" />
-        <polygon points="2,14 8.4,14 5.2,10.2" fill="currentColor" />
-    </svg>
+/** One icon set for every zoom button: heavy inline SVG strokes and solid heads painted with
+ *  `currentColor`, so all of them share one style and follow the theme (the emoji did neither:
+ *  some rendered in colored squares, the plus and minus were black on the dark theme). */
+type ZoomIconKind = 'plus' | 'minus' | 'reset' | 'left' | 'right' | 'up' | 'down';
+const ZOOM_ICON_SHAPES: Record<ZoomIconKind, React.ReactNode> = {
+    plus: <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.6" />,
+    minus: <path d="M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.6" />,
+    // two arrows chasing each other in a circle (a sync symbol)
+    reset: (
+        <>
+            <path d="M5.6 9.6 A7 7 0 0 1 18.8 10.4" fill="none" stroke="currentColor" strokeWidth="2" />
+            <path d="M18.4 14.4 A7 7 0 0 1 5.2 13.6" fill="none" stroke="currentColor" strokeWidth="2" />
+            <polygon points="15.6,10 22,10 18.8,13.8" fill="currentColor" />
+            <polygon points="2,14 8.4,14 5.2,10.2" fill="currentColor" />
+        </>
+    ),
+    left: (<><path d="M20 12H9" fill="none" stroke="currentColor" strokeWidth="2.6" /><polygon points="3,12 11,5.5 11,18.5" fill="currentColor" /></>),
+    right: (<><path d="M4 12h11" fill="none" stroke="currentColor" strokeWidth="2.6" /><polygon points="21,12 13,5.5 13,18.5" fill="currentColor" /></>),
+    up: (<><path d="M12 20V9" fill="none" stroke="currentColor" strokeWidth="2.6" /><polygon points="12,3 5.5,11 18.5,11" fill="currentColor" /></>),
+    down: (<><path d="M12 4v11" fill="none" stroke="currentColor" strokeWidth="2.6" /><polygon points="12,21 5.5,13 18.5,13" fill="currentColor" /></>),
+};
+const ZoomIcon: React.FC<{ kind: ZoomIconKind }> = ({ kind }) => (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" className="block">{ZOOM_ICON_SHAPES[kind]}</svg>
 );
 
-/** Small borderless zoom button (+ / - / reset emoji). */
+/** Small borderless zoom button holding a ZoomIcon. */
 const ZOOM_BTN = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium leading-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 disabled:cursor-default';
 
-/** The plus and minus emoji are black glyphs: invert them in the dark theme so they stay readable. */
-const ZOOM_GLYPH = 'dark:[filter:invert(1)]';
-const plusGlyph = <span className={ZOOM_GLYPH} aria-hidden="true">➕</span>;
-const minusGlyph = <span className={ZOOM_GLYPH} aria-hidden="true">➖</span>;
 
 /** Compact sidebar table: centered heading, tight rows (the user prefers this
  *  over rows stretched to fill the height). */
@@ -1437,10 +1447,10 @@ export const GexView: React.FC<GexViewProps> = ({
                                     aria-label={tr('gex.zoom.panLeft')}
                                     className={ZOOM_BTN + (!xZoom || !chart || !canPanRange(xZoom, chart.domain, -1) ? ' opacity-40' : '')}
                                 >
-                                    ⬅️
+                                    <ZoomIcon kind="left" />
                                 </button>
                             </Tip>
-                            <Tip text={tr('gex.zoom.xOut')}><button type="button" onClick={() => zoomX('out')} aria-label={tr('gex.zoom.xOut')} className={ZOOM_BTN}>{minusGlyph}</button></Tip>
+                            <Tip text={tr('gex.zoom.xOut')}><button type="button" onClick={() => zoomX('out')} aria-label={tr('gex.zoom.xOut')} className={ZOOM_BTN}><ZoomIcon kind="minus" /></button></Tip>
                             <Tip text={tr('gex.zoom.resetH')}>
                                 <button
                                     type="button"
@@ -1449,10 +1459,10 @@ export const GexView: React.FC<GexViewProps> = ({
                                                                     aria-label={tr('gex.zoom.resetH')}
                                     className={ZOOM_BTN + (xZoom == null ? ' opacity-40' : '')}
                                 >
-                                    <ResetIcon />
+                                    <ZoomIcon kind="reset" />
                                 </button>
                             </Tip>
-                            <Tip text={tr('gex.zoom.xIn')}><button type="button" onClick={() => zoomX('in')} aria-label={tr('gex.zoom.xIn')} className={ZOOM_BTN}>{plusGlyph}</button></Tip>
+                            <Tip text={tr('gex.zoom.xIn')}><button type="button" onClick={() => zoomX('in')} aria-label={tr('gex.zoom.xIn')} className={ZOOM_BTN}><ZoomIcon kind="plus" /></button></Tip>
                             <Tip text={tr('gex.zoom.panRight')}>
                                 <button
                                     type="button"
@@ -1461,7 +1471,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     aria-label={tr('gex.zoom.panRight')}
                                     className={ZOOM_BTN + (!xZoom || !chart || !canPanRange(xZoom, chart.domain, 1) ? ' opacity-40' : '')}
                                 >
-                                    ➡️
+                                    <ZoomIcon kind="right" />
                                 </button>
                             </Tip>
                         </div>
@@ -1474,7 +1484,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                                     aria-label={tr('gex.zoom.reset')}
                                     className={ZOOM_BTN + (isZoomed ? '' : ' opacity-40')}
                                 >
-                                    <ResetIcon />
+                                    <ZoomIcon kind="reset" />
                                 </button>
                             </Tip>
                         </div>
@@ -1499,10 +1509,10 @@ export const GexView: React.FC<GexViewProps> = ({
                                         aria-label={tr('gex.zoom.panUp')}
                                         className={ZOOM_BTN + (yZoomFactor >= 1 || yPan >= 1 ? ' opacity-40' : '')}
                                     >
-                                        ⬆️
+                                        <ZoomIcon kind="up" />
                                     </button>
                                 </Tip>
-                                <Tip text={tr('gex.zoom.yIn')} side="left"><button type="button" onClick={zoomInY} aria-label={tr('gex.zoom.yIn')} className={ZOOM_BTN}>{plusGlyph}</button></Tip>
+                                <Tip text={tr('gex.zoom.yIn')} side="left"><button type="button" onClick={zoomInY} aria-label={tr('gex.zoom.yIn')} className={ZOOM_BTN}><ZoomIcon kind="plus" /></button></Tip>
                                 <Tip text={tr('gex.zoom.resetV')} side="left">
                                     <button
                                         type="button"
@@ -1511,10 +1521,10 @@ export const GexView: React.FC<GexViewProps> = ({
                                                                             aria-label={tr('gex.zoom.resetV')}
                                         className={ZOOM_BTN + (yZoomFactor === 1 ? ' opacity-40' : '')}
                                     >
-                                        <ResetIcon />
+                                        <ZoomIcon kind="reset" />
                                     </button>
                                 </Tip>
-                                <Tip text={tr('gex.zoom.yOut')} side="left"><button type="button" onClick={zoomOutY} aria-label={tr('gex.zoom.yOut')} className={ZOOM_BTN}>{minusGlyph}</button></Tip>
+                                <Tip text={tr('gex.zoom.yOut')} side="left"><button type="button" onClick={zoomOutY} aria-label={tr('gex.zoom.yOut')} className={ZOOM_BTN}><ZoomIcon kind="minus" /></button></Tip>
                                 <Tip text={tr('gex.zoom.panDown')} side="left">
                                     <button
                                         type="button"
@@ -1523,7 +1533,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         aria-label={tr('gex.zoom.panDown')}
                                         className={ZOOM_BTN + (yZoomFactor >= 1 || yPan <= -1 ? ' opacity-40' : '')}
                                     >
-                                        ⬇️
+                                        <ZoomIcon kind="down" />
                                     </button>
                                 </Tip>
                             </div>
