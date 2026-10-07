@@ -907,7 +907,7 @@ export const GexView: React.FC<GexViewProps> = ({
         : !chart ? tr('gex.empty.noGamma') : null;
 
     return (
-        <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
+        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-4 lg:max-w-none lg:px-6">
             {/* ---- Controls: metric toggle + Key Levels toggle (expiration
                 picker + Load live in the shared panel in main.tsx). One
                 flex-wrap row, `justify-between`, `items-center` so each
@@ -1117,7 +1117,7 @@ export const GexView: React.FC<GexViewProps> = ({
                 </div>
             )}
 
-            <div className="flex flex-col gap-4 lg:flex-row">
+            <div className="flex flex-col gap-4 lg:flex-1 lg:flex-row">
                 {/* ---- Sidebar: exactly 4 cards ---- */}
                 <aside className="flex w-full flex-col gap-4 lg:w-[300px] lg:shrink-0">
                     <Card title={tr('gex.sidebar.oiVolume')}>
@@ -1204,7 +1204,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         visibly highlighting those labels mid-drag. Scoped to just this chart
                         container, not the whole page, so text elsewhere (inputs, sidebar
                         values, etc.) stays normally selectable. */}
-                    <div className="h-[360px] lg:h-[calc(100dvh-304px)] lg:min-h-[420px] select-none">
+                    <div className="h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none">
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (

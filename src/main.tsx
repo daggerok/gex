@@ -1514,7 +1514,12 @@ const App: React.FC = () => {
                     hasRows={hasRows}
                 />
             </div>
-            {/* shrink-0: GEX has no internal scroll region of its own (unlike Desk's
+            {/* `grow` + flex-col (2026-10-07): the wrapper takes the leftover height so
+                GexView's <main> (flex-1) and its chart (flex-1, min-h-[420px]) fill the
+                space down to the footer on every viewport, the footer sits at the same
+                place as on Desk and Chart. With `shrink-0` kept, a taller-than-viewport
+                GEX still overflows the page naturally instead of being squeezed.
+                shrink-0: GEX has no internal scroll region of its own (unlike Desk's
                 ChainTable), so it must stay OUT of the flex column's default
                 flex-shrink:1 and just overflow the page naturally when its content
                 (chart + stacked sidebar at narrow widths) is taller than the
@@ -1523,7 +1528,7 @@ const App: React.FC = () => {
                 shrink-0, GEX's own content was squeezed by the flex layout and
                 rendered past/behind the footer instead of pushing it down). */}
             {activeTab === 'gex' && (
-                <div className="shrink-0">
+                <div className="flex shrink-0 grow flex-col">
                 <Suspense fallback={null}>
                     <GexView
                         settings={settings}
