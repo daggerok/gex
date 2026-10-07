@@ -4,15 +4,16 @@ import { canPanRange, panRange, stepPan, viewDomain } from './zoom-pan';
 const base: [number, number] = [0, 100];
 
 describe('panRange', () => {
-  test('moves by a quarter of the visible width', () => {
-    expect(panRange([40, 60], base, 1)).toEqual([45, 65]);
-    expect(panRange([40, 60], base, -1)).toEqual([35, 55]);
+  test('moves by exactly one step (one strike), whatever the visible width', () => {
+    expect(panRange([40, 60], base, 1, 1)).toEqual([41, 61]);
+    expect(panRange([40, 60], base, -1, 1)).toEqual([39, 59]);
+    expect(panRange([10, 90], base, 1, 5)).toEqual([15, 95]);
   });
 
   test('is clamped to the data range and keeps its width', () => {
-    expect(panRange([2, 22], base, -1)).toEqual([0, 20]);
-    expect(panRange([78, 98], base, 1)).toEqual([80, 100]);
-    expect(panRange([0, 20], base, -1)).toEqual([0, 20]);
+    expect(panRange([0.5, 20.5], base, -1, 1)).toEqual([0, 20]);
+    expect(panRange([79.5, 99.5], base, 1, 1)).toEqual([80, 100]);
+    expect(panRange([0, 20], base, -1, 1)).toEqual([0, 20]);
   });
 });
 

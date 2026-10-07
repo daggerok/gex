@@ -1,15 +1,11 @@
 // Pure helpers for panning the GEX chart while it is zoomed. No React, no DOM,
 // unit-tested in zoom-pan.test.ts.
 
-/** Fraction of the visible range a single arrow click moves the view. */
-export const PAN_STEP = 0.25;
-
-/** Moves the visible strike range `[a, b]` by `dir * PAN_STEP` of its width, clamped so it
- *  never leaves the full data range `base`. Returns the same range when it cannot move. */
-export function panRange(range: [number, number], base: [number, number], dir: -1 | 1): [number, number] {
+/** Moves the visible strike range `[a, b]` by `step` price units (one strike) in `dir`, clamped
+ *  so it never leaves the full data range `base`. Returns the same range when it cannot move. */
+export function panRange(range: [number, number], base: [number, number], dir: -1 | 1, step: number): [number, number] {
     const [a, b] = range;
-    const width = b - a;
-    let shift = dir * width * PAN_STEP;
+    let shift = dir * step;
     if (a + shift < base[0]) shift = base[0] - a;
     if (b + shift > base[1]) shift = base[1] - b;
     return [a + shift, b + shift];
