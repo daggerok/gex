@@ -216,7 +216,6 @@ export const translations: Record<Language, Record<string, string>> = {
         'tabs.stub.gex': 'GEX view coming soon.',
         'tabs.stub.chart': 'Chart view coming soon.',
 
-        'footer.github': 'View source on GitHub',
 
         'gex.na': '-',
         'gex.unit': '$/1%',
@@ -539,7 +538,6 @@ export const translations: Record<Language, Record<string, string>> = {
         'tabs.stub.gex': 'Экран GEX скоро появится.',
         'tabs.stub.chart': 'Экран графика скоро появится.',
 
-        'footer.github': 'Исходный код на GitHub',
 
         'gex.na': '-',
         'gex.unit': '$/1%',
