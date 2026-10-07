@@ -1145,6 +1145,21 @@ const App: React.FC = () => {
         }
     }, [provider, settings, meta, selectedExps]);
 
+    // Bulk providers (CACHE/CBOE/NASDAQ) already hold the whole chain in memory, so
+    // loading the selected expirations costs nothing: do it whenever the selection
+    // changes instead of waiting for the Load button. Desk and GEX then always show
+    // the same data, whichever tab the selection was made on, and nothing has to be
+    // loaded twice. Lazy providers (YAHOO) fetch per expiration over the network and
+    // keep the explicit Load button, which loads the shared `expData` for BOTH tabs.
+    const loadChainRef = useRef(loadChain);
+    loadChainRef.current = loadChain;
+    useEffect(() => {
+        if (provider.mode !== 'bulk' || !meta || selectedExps.length === 0) return;
+        expAbort.current?.abort();
+        void loadChainRef.current();
+        // loadChain itself is read through the ref: it is recreated on every settings change.
+    }, [provider, meta, selectedExps]);
+
     /** Toggle one expiration in the multi-select, then focus the Load button so
      *  pressing Enter immediately loads (no need to click Load). Persists the
      *  resulting selection into Settings (selectedExps) so a reload restores it. */
