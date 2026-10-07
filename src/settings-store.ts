@@ -426,7 +426,7 @@ export const DEFAULT_SETTINGS: Settings = {
     // user (no persisted blob at all) gets byte-for-byte the same first load.
     activeTab: 'desk',
     selectedExps: [],
-    gexMetrics: ['netGex'],
+    gexMetrics: ['netGex', 'absoluteGamma'],
 };
 
 // ---------------------------------------------------------------------------

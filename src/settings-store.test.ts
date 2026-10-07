@@ -155,7 +155,7 @@ describe('DEFAULT_SETTINGS persisted UI-state fields', () => {
         // identical first load.
         expect(DEFAULT_SETTINGS.activeTab).toBe('desk');
         expect(DEFAULT_SETTINGS.selectedExps).toEqual([]);
-        expect(DEFAULT_SETTINGS.gexMetrics).toEqual(['netGex']);
+        expect(DEFAULT_SETTINGS.gexMetrics).toEqual(['netGex', 'absoluteGamma']);
     });
 });
 
@@ -205,14 +205,14 @@ describe('sanitizeGexMetrics', () => {
     });
 
     test('falls back to the default when every entry is invalid (filtered-to-empty is evidence of corruption, not a legitimate state — GexView never allows deselecting the last metric)', () => {
-        expect(sanitizeGexMetrics(['bogus1', 'bogus2'])).toEqual(['netGex']);
-        expect(sanitizeGexMetrics([])).toEqual(['netGex']);
+        expect(sanitizeGexMetrics(['bogus1', 'bogus2'])).toEqual(['netGex', 'absoluteGamma']);
+        expect(sanitizeGexMetrics([])).toEqual(['netGex', 'absoluteGamma']);
     });
 
     test('falls back to the default for non-array input (never crashes)', () => {
-        expect(sanitizeGexMetrics(undefined)).toEqual(['netGex']);
-        expect(sanitizeGexMetrics('netGex')).toEqual(['netGex']);
-        expect(sanitizeGexMetrics(null)).toEqual(['netGex']);
+        expect(sanitizeGexMetrics(undefined)).toEqual(['netGex', 'absoluteGamma']);
+        expect(sanitizeGexMetrics('netGex')).toEqual(['netGex', 'absoluteGamma']);
+        expect(sanitizeGexMetrics(null)).toEqual(['netGex', 'absoluteGamma']);
     });
 });
 

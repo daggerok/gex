@@ -63,7 +63,7 @@ const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaF
  *  Pain and Spot now ALSO start OFF - the user wants a quieter default
  *  view; both remain one click away in the Key Levels panel like every
  *  other level. */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['netGexPlus', 'gammaFlip', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus'];
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = [...ALL_LEVEL_KEYS];
 
 /** i18n key for each level's sidebar/toggle-panel label. */
 const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
@@ -600,7 +600,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // Metrics-panel "Reset" (distinct from the chart header's "Reset zoom"):
     // back to the original default selection (Net GEX only) and default colors.
     const resetMetricsPanel = () => {
-        setMetrics(['netGex']);
+        setMetrics(['netGex', 'absoluteGamma']);
         setMetricColorsState(DEFAULT_METRIC_COLORS);
         saveMetricColors(DEFAULT_METRIC_COLORS);
     };
@@ -1312,38 +1312,34 @@ export const GexView: React.FC<GexViewProps> = ({
                                         selecting AG alone (no Bar uses the primary axis) hides
                                         this axis instead of showing a meaningless default [0,1]
                                         scale next to real data on the AG axis. */}
-                                    {(hasNetGex || countMetrics.length > 0) && (
-                                        <YAxis
-                                            domain={yDomain}
-                                            allowDataOverflow
-                                            tickCount={8}
-                                            axisLine={false}
-                                            tickLine={false}
-                                            tick={{ fill: '#94a3b8', fontSize: 11 }}
-                                            stroke="#94a3b8"
-                                            width={64}
-                                            tickFormatter={yTickFormatter}
-                                        />
-                                    )}
+                                    <YAxis
+                                        domain={yDomain}
+                                        allowDataOverflow
+                                        tickCount={8}
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={hasNetGex || countMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 11 } : false}
+                                        stroke="#94a3b8"
+                                        width={64}
+                                        tickFormatter={yTickFormatter}
+                                    />
                                     {/* AG's own secondary axis (see agBase/agDomain above) - only
                                         rendered while AG is selected, orientation="right" so it
                                         reads as visually distinct from the primary (left) axis
                                         every other metric shares. */}
-                                    {hasAbsoluteGamma && (
-                                        <YAxis
-                                            yAxisId="ag"
-                                            orientation="right"
-                                            domain={agDomain}
-                                            allowDataOverflow
-                                            tickCount={6}
-                                            axisLine={false}
-                                            tickLine={false}
-                                            tick={{ fill: metricColors.absoluteGamma, fontSize: 11 }}
-                                            stroke={metricColors.absoluteGamma}
-                                            width={64}
-                                            tickFormatter={agTickFormatter}
-                                        />
-                                    )}
+                                    <YAxis
+                                        yAxisId="ag"
+                                        orientation="right"
+                                        domain={agDomain}
+                                        allowDataOverflow
+                                        tickCount={6}
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={hasAbsoluteGamma ? { fill: metricColors.absoluteGamma, fontSize: 11 } : false}
+                                        stroke={metricColors.absoluteGamma}
+                                        width={64}
+                                        tickFormatter={agTickFormatter}
+                                    />
                                     <Tooltip
                                         cursor={{ fill: '#94a3b8', fillOpacity: 0.12 }}
                                         content={({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: Record<string, number> }> }) => {
@@ -1419,6 +1415,10 @@ export const GexView: React.FC<GexViewProps> = ({
                                             fill={metricColors.absoluteGamma}
                                             fillOpacity={0.18}
                                             strokeWidth={2}
+                                            // recharts layers: Area 100 < Bar 300 < Line/ReferenceLine
+                                            // 400. 350 draws AG on top of the GEX bars but below the
+                                            // level lines.
+                                            zIndex={350}
                                             isAnimationActive={false}
                                         />
                                     )}
