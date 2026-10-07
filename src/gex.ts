@@ -38,38 +38,38 @@ export const CONTRACT_MULTIPLIER = 100;
 
 /**
  * Minimum distance from the primary wall, as a fraction of spot, for a strike
- * to qualify as the "second wall" (callWall2 / putWall2).
+ * to qualify as the "second wall" (netGexPlus / netGexMinus).
  * ORIGINAL, UNSOURCED heuristic: no public standard for a "second wall" exists.
  * It only makes the behavior deterministic and documented. Treat it as a
  * tunable constant, not an established rule - at a fixed 3% (2% before 2026-10-07) it behaves very
  * differently on $1 strike spacing than on $2.50/$5 spacing (plan section 17
  * item 6).
  */
-export const SECOND_WALL_MIN_DISTANCE_PCT = 0.03;
+export const NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT = 0.03;
 
 /**
  * Minimum distance between the primary wall and its second wall, either as a
  * fraction of spot (`pct`, 0.004 = 0.4%) or as an absolute price (`usd`).
  */
-export type SecondWallDistance = { pct: number } | { usd: number };
+export type NetGexPlusMinusDistance = { pct: number } | { usd: number };
 
 /**
  * Per-symbol override of the second-wall distance. Symbols not listed here
- * use SECOND_WALL_MIN_DISTANCE_PCT. Keys are upper-case root symbols. A fixed
+ * use NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT. Keys are upper-case root symbols. A fixed
  * percentage is far too wide for SPY ($1 strikes, ~$23 at 3% of spot 775) - the second
  * wall then lands on a negligible strike far from the real cluster - so SPY
  * uses a flat $3. Add a row here to tune another symbol, nothing else needs
  * to change.
  */
-export const SECOND_WALL_DISTANCE_BY_SYMBOL: Readonly<Record<string, SecondWallDistance>> = {
+export const NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL: Readonly<Record<string, NetGexPlusMinusDistance>> = {
     SPY: { usd: 3 },
 };
 
 /** Resolved minimum second-wall distance in price units for `symbol` at `spot`. */
-export function secondWallMinDistance(symbol: string | null | undefined, spot: number): number {
-    const rule = symbol ? SECOND_WALL_DISTANCE_BY_SYMBOL[symbol.toUpperCase()] : undefined;
+export function netGexPlusMinusMinDistance(symbol: string | null | undefined, spot: number): number {
+    const rule = symbol ? NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL[symbol.toUpperCase()] : undefined;
     if (rule && 'usd' in rule) return rule.usd;
-    return (rule ? rule.pct : SECOND_WALL_MIN_DISTANCE_PCT) * spot;
+    return (rule ? rule.pct : NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT) * spot;
 }
 
 /** GEX of a call position: gamma * OI * multiplier * spot^2 * 0.01 (section 7.1). */
@@ -351,25 +351,25 @@ export function findGammaFlipHypotheticalSpot(quotes: readonly OptionQuote[], sp
     return { pos, neg };
 }
 
-export interface CallPutWalls {
-    callWall: number | null;
-    putWall: number | null;
-    callWall2: number | null;
-    putWall2: number | null;
+export interface NetGexLevels {
+    maxNetGex: number | null;
+    minNetGex: number | null;
+    netGexPlus: number | null;
+    netGexMinus: number | null;
 }
 
 /**
- * Call/put walls (section 7.4).
- *  - callWall: strike with the maximum netGex among netGex > 0
- *  - putWall: strike with the minimum netGex among netGex < 0
- *  - callWall2: the strongest netGex > 0 strike ABOVE callWall and at least
- *    `minDistance` away from it (Call Wall 2 must sit above the Call Wall)
- *  - putWall2: the strongest netGex < 0 strike BELOW putWall and at least
- *    `minDistance` away from it (Put Wall 2 must sit below the Put Wall)
+ * Call/Min Net GEXs (section 7.4).
+ *  - maxNetGex: strike with the maximum netGex among netGex > 0
+ *  - minNetGex: strike with the minimum netGex among netGex < 0
+ *  - netGexPlus: the strongest netGex > 0 strike ABOVE maxNetGex and at least
+ *    `minDistance` away from it (Net GEX+ must sit above the Max Net GEX)
+ *  - netGexMinus: the strongest netGex < 0 strike BELOW minNetGex and at least
+ *    `minDistance` away from it (Net GEX- must sit below the Min Net GEX)
  * Ties on netGex resolve to the lowest strike (first in ascending order).
  *
- * `minDistance` is in price units; the default is SECOND_WALL_MIN_DISTANCE_PCT
- * * spot. Callers with a symbol use secondWallMinDistance() to apply the
+ * `minDistance` is in price units; the default is NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT
+ * * spot. Callers with a symbol use netGexPlusMinusMinDistance() to apply the
  * per-symbol override. The distance rule is an unsourced heuristic, see the
  * constant's comment.
  *
@@ -383,11 +383,11 @@ export interface CallPutWalls {
  * reference price makes the distance threshold meaningful; the true spot VIX
  * index is still shown separately in the UI).
  */
-export function findCallPutWalls(
+export function findNetGexLevels(
     profile: readonly GexPoint[],
     spot: number,
-    minDistance: number = SECOND_WALL_MIN_DISTANCE_PCT * spot,
-): CallPutWalls {
+    minDistance: number = NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT * spot,
+): NetGexLevels {
     const pick = (sign: 1 | -1, beyond: number | null): number | null => {
         let best: GexPoint | null = null;
         for (const point of profile) {
@@ -399,13 +399,13 @@ export function findCallPutWalls(
         }
         return best ? best.strike : null;
     };
-    const callWall = pick(1, null);
-    const putWall = pick(-1, null);
+    const maxNetGex = pick(1, null);
+    const minNetGex = pick(-1, null);
     return {
-        callWall,
-        putWall,
-        callWall2: callWall === null ? null : pick(1, callWall),
-        putWall2: putWall === null ? null : pick(-1, putWall),
+        maxNetGex,
+        minNetGex,
+        netGexPlus: maxNetGex === null ? null : pick(1, maxNetGex),
+        netGexMinus: minNetGex === null ? null : pick(-1, minNetGex),
     };
 }
 
@@ -414,28 +414,28 @@ export function findCallPutWalls(
  * ORIGINAL, UNSOURCED heuristic (user-chosen 75%): no public standard defines
  * such a level. Tunable constant, not an established rule.
  */
-export const GAMMA_RANGE_SHARE = 0.75;
+export const SUM_NET_GEX_SHARE = 0.75;
 
-export interface GammaRange {
-    gammaRangeHigh: number | null;
-    gammaRangeLow: number | null;
+export interface SumNetGexLevels {
+    sumNetGexPlus: number | null;
+    sumNetGexMinus: number | null;
 }
 
 /**
- * Gamma Range (original heuristic, see GAMMA_RANGE_SHARE). Starting at the
+ * Gamma Range (original heuristic, see SUM_NET_GEX_SHARE). Starting at the
  * center (spot) and moving right, sum the POSITIVE netGex of strikes >= spot;
  * the first strike where the running sum is >= share * (that side's total
- * positive netGex) is gammaRangeHigh. Moving left from spot over NEGATIVE
- * netGex of strikes <= spot (magnitudes) gives gammaRangeLow the same way.
+ * positive netGex) is sumNetGexPlus. Moving left from spot over NEGATIVE
+ * netGex of strikes <= spot (magnitudes) gives sumNetGexMinus the same way.
  * Only the side that is scanned counts toward its total, so a positive
  * cluster below spot never makes the high level unreachable. The profile
  * already reflects the selected expirations. Null when a side has no mass.
  */
-export function findGammaRange(
+export function findSumNetGexLevels(
     profile: readonly GexPoint[],
     spot: number,
-    share: number = GAMMA_RANGE_SHARE,
-): GammaRange {
+    share: number = SUM_NET_GEX_SHARE,
+): SumNetGexLevels {
     const scan = (sign: 1 | -1): number | null => {
         const side = profile
             .filter((p) => sign * p.netGex > 0 && sign * (p.strike - spot) >= 0)
@@ -450,7 +450,7 @@ export function findGammaRange(
         }
         return side[side.length - 1].strike;
     };
-    return { gammaRangeHigh: scan(1), gammaRangeLow: scan(-1) };
+    return { sumNetGexPlus: scan(1), sumNetGexMinus: scan(-1) };
 }
 
 /**
@@ -522,7 +522,7 @@ export function computePCRatio(quotes: readonly OptionQuote[]): { byOi: number |
  * profile, then gamma flip, walls, max pain and put/call ratios.
  *
  * `spot` is the reference price computeGexProfile falls back to for any quote
- * without its own `forward`, and the anchor findCallPutWalls' second-wall
+ * without its own `forward`, and the anchor findNetGexLevels' second-wall
  * distance rule measures from (see both functions' doc comments). For the
  * SPX-family path this is the true spot; for a futures-priced symbol whose
  * quotes carry per-expiration forwards, the caller passes a forward instead
@@ -577,7 +577,7 @@ export function trimZeroBoundaries<T extends { strike: number }>(
 
 export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, symbol?: string | null): GexLevels {
     const profile = computeGexProfile(quotes, spot);
-    const walls = findCallPutWalls(profile, spot, secondWallMinDistance(symbol, spot));
+    const walls = findNetGexLevels(profile, spot, netGexPlusMinusMinDistance(symbol, spot));
     const pcr = computePCRatio(quotes);
     // Gamma flip (section 7.3): hypothetical-spot Black-Scholes recompute
     // against the RAW quotes, not the real-spot profile - see
@@ -594,7 +594,7 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
         gammaFlipPos,
         gammaFlipNeg,
         ...walls,
-        ...findGammaRange(profile, spot),
+        ...findSumNetGexLevels(profile, spot),
         maxPain: computeMaxPain(quotes),
         pcRatioOi: pcr.byOi,
         pcRatioVolume: pcr.byVolume,

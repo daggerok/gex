@@ -344,25 +344,25 @@ export interface GexLevels {
      * both are non-null.
      */
     gammaFlipNeg: number | null;
-    callWall: number | null;
-    putWall: number | null;
-    /** "Call Wall 2" - null if none qualifies. */
-    callWall2: number | null;
-    /** "Put Wall 2" - null if none qualifies. */
-    putWall2: number | null;
+    maxNetGex: number | null;
+    minNetGex: number | null;
+    /** "Net GEX+" - null if none qualifies. */
+    netGexPlus: number | null;
+    /** "Net GEX-" - null if none qualifies. */
+    netGexMinus: number | null;
     /**
-     * "Gamma Range High": the strike, going from spot to the right, where the
+     * "75% Sum Net GEX+": the strike, going from spot to the right, where the
      * running sum of positive netGex (strikes >= spot) first reaches
-     * GAMMA_RANGE_SHARE of that side's total. Null when there is no positive
+     * SUM_NET_GEX_SHARE of that side's total. Null when there is no positive
      * netGex at or above spot. Original, unsourced heuristic.
      */
-    gammaRangeHigh: number | null;
+    sumNetGexPlus: number | null;
     /**
-     * "Gamma Range Low": the mirror image, going from spot to the left over
+     * "75% Sum Net GEX-": the mirror image, going from spot to the left over
      * negative netGex (strikes <= spot, magnitudes summed). Null when there
      * is no negative netGex at or below spot.
      */
-    gammaRangeLow: number | null;
+    sumNetGexMinus: number | null;
     maxPain: number | null;
     pcRatioOi: number | null;
     pcRatioVolume: number | null;

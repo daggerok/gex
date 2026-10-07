@@ -39,13 +39,13 @@ const LEVEL_AUTOSCALE_PAD_PCT = 0.25;
 
 /** Price-line order and labels match the GEX tab's Key Levels card. */
 const LEVEL_LINES: Array<{ key: Exclude<GexLevelKey, 'spot'>; label: string; secondary?: boolean }> = [
-    { key: 'callWall', label: 'gex.level.callWall' },
-    { key: 'callWall2', label: 'gex.level.resistance2', secondary: true },
+    { key: 'maxNetGex', label: 'gex.level.maxNetGex' },
+    { key: 'netGexPlus', label: 'gex.level.netGexPlus', secondary: true },
     { key: 'gammaFlip', label: 'gex.level.gammaFlip' },
-    { key: 'putWall', label: 'gex.level.putWall' },
-    { key: 'putWall2', label: 'gex.level.support2', secondary: true },
-    { key: 'gammaRangeHigh', label: 'gex.level.gammaRangeHigh', secondary: true },
-    { key: 'gammaRangeLow', label: 'gex.level.gammaRangeLow', secondary: true },
+    { key: 'minNetGex', label: 'gex.level.minNetGex' },
+    { key: 'netGexMinus', label: 'gex.level.netGexMinus', secondary: true },
+    { key: 'sumNetGexPlus', label: 'gex.level.sumNetGexPlus', secondary: true },
+    { key: 'sumNetGexMinus', label: 'gex.level.sumNetGexMinus', secondary: true },
     { key: 'maxPain', label: 'gex.level.maxPain' },
 ];
 

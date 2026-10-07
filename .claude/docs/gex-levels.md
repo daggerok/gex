@@ -7,9 +7,9 @@ Code: `src/gex.ts` (pure functions), called once through `src/use-gex-levels.ts`
 | Level | Sourced? |
 |---|---|
 | GEX per contract, sign convention | Public convention (SpotGamma-style), a model approximation |
-| Call Wall, Put Wall | Max / min per-strike netGex, standard definition |
-| Gamma Range High, Gamma Range Low | NO - original heuristic (75% of one side's net GEX counted from spot outward), no public standard exists |
-| Call Wall 2, Put Wall 2 | NO - original heuristic (direction rule plus distance threshold), no public standard exists |
+| Max Net GEX, Min Net GEX | Max / min per-strike netGex, standard definition |
+| 75% Sum Net GEX+, 75% Sum Net GEX- | NO - original heuristic (75% of one side's net GEX counted from spot outward), no public standard exists |
+| Net GEX+, Net GEX- | NO - original heuristic (direction rule plus distance threshold), no public standard exists |
 | Gamma Flip | Yes - SpotGamma "Zero Gamma" docs and ZeroGEX, quoted below |
 | Absolute Gamma | Yes - SpotGamma support docs, quoted below |
 | Max Pain | Standard, uncontested formula |
@@ -32,37 +32,37 @@ absGamma        = callGex - putGex      (= |callGex| + |putGex|)
 - Quotes with null gamma are excluded. NASDAQ has no greeks, so those quotes get Black-Scholes greeks from `enrichQuoteWithModelGreeks` first
 - Per-quote reference price is `q.forward ?? spot`, `forward` is only set for VIX/VXN (see `architecture.md`)
 
-## Call Wall and Put Wall (Resistance 1 / Support 1)
+## Max Net GEX and Min Net GEX
 
-- `callWall` = strike with the maximum `netGex` among strikes where `netGex > 0`, null if none
-- `putWall` = strike with the minimum (most negative) `netGex` among strikes where `netGex < 0`, null if none
+- `maxNetGex` = strike with the maximum `netGex` among strikes where `netGex > 0`, null if none
+- `minNetGex` = strike with the minimum (most negative) `netGex` among strikes where `netGex < 0`, null if none
 - Ties resolve to the lowest strike
 
-## Gamma Range High and Gamma Range Low (UNSOURCED)
+## 75% Sum Net GEX+ and 75% Sum Net GEX- (UNSOURCED)
 
-`findGammaRange(profile, spot, share = GAMMA_RANGE_SHARE)` in `src/gex.ts`, `GAMMA_RANGE_SHARE = 0.75`:
+`findSumNetGexLevels(profile, spot, share = SUM_NET_GEX_SHARE)` in `src/gex.ts`, `SUM_NET_GEX_SHARE = 0.75`:
 
-- `gammaRangeHigh`: start at spot (the center) and move right. Sum the POSITIVE `netGex` of strikes `>= spot` in ascending order. The first strike where the running sum is `>= share *` (total positive `netGex` of that side) is the level. Null if that side has no positive mass
-- `gammaRangeLow`: the mirror image, move left from spot over NEGATIVE `netGex` of strikes `<= spot` in descending order, magnitudes summed. Null if that side has no negative mass
+- `sumNetGexPlus`: start at spot (the center) and move right. Sum the POSITIVE `netGex` of strikes `>= spot` in ascending order. The first strike where the running sum is `>= share *` (total positive `netGex` of that side) is the level. Null if that side has no positive mass
+- `sumNetGexMinus`: the mirror image, move left from spot over NEGATIVE `netGex` of strikes `<= spot` in descending order, magnitudes summed. Null if that side has no negative mass
 - The profile is built from the selected expirations, so the levels move with the expiration selection. Only the scanned side counts toward its own total, so a positive cluster below spot never makes the high level unreachable. The comparison is `>=`
 - Source: none, an original heuristic chosen by the user (75% of one side's net GEX). Tooltips say so. Do not present it as a standard
 
-## Call Wall 2 and Put Wall 2 (UNSOURCED)
+## Net GEX+ and Net GEX- (UNSOURCED)
 
-`findCallPutWalls(profile, spot, minDistance)` in `src/gex.ts`:
+`findNetGexLevels(profile, spot, minDistance)` in `src/gex.ts`:
 
-- `callWall2` = among strikes with `netGex > 0` that are ABOVE `callWall` by at least `minDistance`, the one with the highest `netGex`. Null if none qualify or `callWall` is null
-- `putWall2` = among strikes with `netGex < 0` that are BELOW `putWall` by at least `minDistance`, the most negative. Null if none qualify
-- `minDistance` comes from `secondWallMinDistance(symbol, spot)`: the per-symbol rule in `SECOND_WALL_DISTANCE_BY_SYMBOL` if present (`{ usd: 3 }` is a flat price, `{ pct: 0.004 }` is a fraction of spot), otherwise `SECOND_WALL_MIN_DISTANCE_PCT * spot` with `SECOND_WALL_MIN_DISTANCE_PCT = 0.02`. Symbol lookup is case-insensitive
+- `netGexPlus` = among strikes with `netGex > 0` that are ABOVE `maxNetGex` by at least `minDistance`, the one with the highest `netGex`. Null if none qualify or `maxNetGex` is null
+- `netGexMinus` = among strikes with `netGex < 0` that are BELOW `minNetGex` by at least `minDistance`, the most negative. Null if none qualify
+- `minDistance` comes from `netGexPlusMinusMinDistance(symbol, spot)`: the per-symbol rule in `NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL` if present (`{ usd: 3 }` is a flat price, `{ pct: 0.004 }` is a fraction of spot), otherwise `NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT * spot` with `NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT = 0.02`. Symbol lookup is case-insensitive
 - Current overrides: `SPY: { usd: 3 }`. Everything else, SPX included, uses the 3% default (was 2% until 2026-10-07). Specific per-symbol rows are added later on top of this generic default
-- To tune a symbol, add one row to `SECOND_WALL_DISTANCE_BY_SYMBOL`, nothing else changes. The comparison is `>=`, so a strike exactly `minDistance` away qualifies
+- To tune a symbol, add one row to `NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL`, nothing else changes. The comparison is `>=`, so a strike exactly `minDistance` away qualifies
 
 There are no citations. The repo says so in four places:
 
 - Original implementation plan (now `spec-gex-app.md`, original text in git history) section 7.4: "this 2%-of-spot distance rule for 'wall 2' is an ORIGINAL, UNSOURCED heuristic (no public standard exists for a 'second wall')"
 - same plan, section 17 item 6: "has NO public source - it does not exist as a standard concept anywhere researched. It is this plan's own invented tie-break rule so the behavior is at least deterministic and documented"
 - `src/gex.ts` doc comment on the constant (the per-symbol mapping is just as unsourced, it only lets the user tune the heuristic): "ORIGINAL, UNSOURCED heuristic: no public standard for a 'second wall' exists"
-- UI tooltips `gex.level.tooltip.resistance2` / `support2` in `src/i18n.tsx`: "this app's own heuristic, not an industry standard - treat it as a rough secondary marker, not a precise level"
+- UI tooltips `gex.level.tooltip.netGexPlus` / `netGexMinus` in `src/i18n.tsx`: "this app's own heuristic, not an industry standard - treat it as a rough secondary marker, not a precise level"
 
 Known weakness: a fixed percentage (2% originally, 3% now) behaves very differently on $1 strike spacing (SPY) than on $2.50 or $5 spacing (small caps), which is why the per-symbol mapping exists. The default is still meant to be tuned once seen on real chains
 

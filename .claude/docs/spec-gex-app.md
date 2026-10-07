@@ -46,7 +46,7 @@ Spec per function, formulas and sources in `gex-levels.md`:
 ### 8.1 GEX tab
 
 - Sidebar: OI Volume card (total call and put OI), GEX Analysis card (Total Net GEX formatted like `+2.14B $/1%`, Regime label: Positive gamma if total > 0, Negative if < 0, Neutral if 0 or data missing), Key Levels card, P/C Ratio card (by OI, by volume). Stacks above the chart on narrow screens
-- Level colors identical to the Chart tab: Call Wall and Resistance green family, Put Wall and Support red family, Gamma Flip purple, Max Pain amber. Source of truth is `src/gex-colors.ts`
+- Level colors identical to the Chart tab: Max Net GEX and Resistance green family, Min Net GEX and Support red family, Gamma Flip purple, Max Pain amber. Source of truth is `src/gex-colors.ts`
 - Expiration chips reuse the Desk component, All/None toggle. Default selection on this tab is the nearest single expiration, because GEX concentrates in near-dated options and an all-expirations default is noisy
 - Metric toggles: Net GEX (default), Absolute Gamma, Call OI, Put OI, Call Volume, Put Volume. Net GEX is signed, the others unsigned
 - Chart: recharts `BarChart`, x axis is strike, reference lines for spot and enabled key levels, drag to zoom, axes trimmed to the real data range (`trimZeroBoundaries`, display only)

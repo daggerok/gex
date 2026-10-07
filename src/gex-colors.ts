@@ -15,17 +15,17 @@
  * AND GexView.tsx (the GEX tab's toggleable/colorable Key Levels panel) - a
  * short-lived adaptive gammaFlipPos/gammaFlipNeg dual-display mechanism in
  * GexView.tsx was removed; Gamma Flip is now one plain Key Level everywhere,
- * same as Call Wall/Put Wall/Max Pain.
+ * same as Max Net GEX/Min Net GEX/Max Pain.
  *
- * Resistance 1.5 / Support 1.5 (`callWall1_5`/`putWall1_5`) existed briefly
- * between the primary wall and the distance-filtered `callWall2`/`putWall2`
- * (one shade lighter than `callWall`/`putWall`, one shade darker than
- * `callWall2`/`putWall2`) but were removed entirely - the user found them not
+ * Resistance 1.5 / Support 1.5 (`maxNetGex1_5`/`minNetGex1_5`) existed briefly
+ * between the primary wall and the distance-filtered `netGexPlus`/`netGexMinus`
+ * (one shade lighter than `maxNetGex`/`minNetGex`, one shade darker than
+ * `netGexPlus`/`netGexMinus`) but were removed entirely - the user found them not
  * working out after shipping them (see GexView.tsx's ALL_LEVEL_KEYS doc
  * comment, and the corresponding math/field removal in src/gex.ts/
  * src/types.ts, done in a separate PR).
  */
-export type GexLevelKey = 'callWall' | 'callWall2' | 'gammaFlip' | 'putWall' | 'putWall2' | 'gammaRangeHigh' | 'gammaRangeLow' | 'maxPain' | 'spot';
+export type GexLevelKey = 'maxNetGex' | 'netGexPlus' | 'gammaFlip' | 'minNetGex' | 'netGexMinus' | 'sumNetGexPlus' | 'sumNetGexMinus' | 'maxPain' | 'spot';
 
 export interface GexLevelColor {
     hex: string;
@@ -33,13 +33,13 @@ export interface GexLevelColor {
 }
 
 export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
-    callWall: { hex: '#22c55e', dot: 'bg-green-500' },   // green-500
-    callWall2: { hex: '#86efac', dot: 'bg-green-300' },  // green-300 (Call Wall 2)
+    maxNetGex: { hex: '#22c55e', dot: 'bg-green-500' },   // green-500
+    netGexPlus: { hex: '#86efac', dot: 'bg-green-300' },  // green-300 (Net GEX+)
     gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400
-    putWall: { hex: '#ef4444', dot: 'bg-red-500' },      // red-500
-    putWall2: { hex: '#fca5a5', dot: 'bg-red-300' },     // red-300 (Put Wall 2)
-    gammaRangeHigh: { hex: '#22d3ee', dot: 'bg-cyan-400' },  // cyan-400
-    gammaRangeLow: { hex: '#f472b6', dot: 'bg-pink-400' },   // pink-400
+    minNetGex: { hex: '#ef4444', dot: 'bg-red-500' },      // red-500
+    netGexMinus: { hex: '#fca5a5', dot: 'bg-red-300' },     // red-300 (Net GEX-)
+    sumNetGexPlus: { hex: '#22d3ee', dot: 'bg-cyan-400' },  // cyan-400
+    sumNetGexMinus: { hex: '#f472b6', dot: 'bg-pink-400' },   // pink-400
     maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },   // yellow-400
     spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
 };
@@ -57,13 +57,13 @@ export const GEX_BAR_COLORS = {
  * convention as GEX_BAR_COLORS), with OI the solid shade and Volume the
  * lighter shade so the two are distinguishable when both are shown at once -
  * reuses the exact green-300/red-300 already defined above for
- * callWall2/putWall2, instead of inventing new colors.
+ * netGexPlus/netGexMinus, instead of inventing new colors.
  */
 export const GEX_METRIC_COLORS: Record<'callOi' | 'putOi' | 'callVolume' | 'putVolume', string> = {
-    callOi: GEX_LEVEL_COLORS.callWall.hex,       // green-500
-    callVolume: GEX_LEVEL_COLORS.callWall2.hex,  // green-300
-    putOi: GEX_LEVEL_COLORS.putWall.hex,         // red-500
-    putVolume: GEX_LEVEL_COLORS.putWall2.hex,    // red-300
+    callOi: GEX_LEVEL_COLORS.maxNetGex.hex,       // green-500
+    callVolume: GEX_LEVEL_COLORS.netGexPlus.hex,  // green-300
+    putOi: GEX_LEVEL_COLORS.minNetGex.hex,         // red-500
+    putVolume: GEX_LEVEL_COLORS.netGexMinus.hex,    // red-300
 };
 
 // ---------------------------------------------------------------------------
@@ -145,18 +145,44 @@ export type LevelColorSet = Record<GexLevelKey, string>;
 
 /** Defaults mirror today's hardcoded GEX_LEVEL_COLORS hex values exactly. */
 export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
-    callWall: GEX_LEVEL_COLORS.callWall.hex,
-    callWall2: GEX_LEVEL_COLORS.callWall2.hex,
+    maxNetGex: GEX_LEVEL_COLORS.maxNetGex.hex,
+    netGexPlus: GEX_LEVEL_COLORS.netGexPlus.hex,
     gammaFlip: GEX_LEVEL_COLORS.gammaFlip.hex,
-    putWall: GEX_LEVEL_COLORS.putWall.hex,
-    putWall2: GEX_LEVEL_COLORS.putWall2.hex,
-    gammaRangeHigh: GEX_LEVEL_COLORS.gammaRangeHigh.hex,
-    gammaRangeLow: GEX_LEVEL_COLORS.gammaRangeLow.hex,
+    minNetGex: GEX_LEVEL_COLORS.minNetGex.hex,
+    netGexMinus: GEX_LEVEL_COLORS.netGexMinus.hex,
+    sumNetGexPlus: GEX_LEVEL_COLORS.sumNetGexPlus.hex,
+    sumNetGexMinus: GEX_LEVEL_COLORS.sumNetGexMinus.hex,
     maxPain: GEX_LEVEL_COLORS.maxPain.hex,
     spot: GEX_LEVEL_COLORS.spot.hex,
 };
 
 export const LEVEL_COLORS_KEY = 'gex.levelColors.v1';
+
+/** Level keys renamed on 2026-10-07 (callWall -> maxNetGex, ...): colors saved
+ *  under an old key are carried over to the new one so users keep their picks. */
+export const LEGACY_LEVEL_COLOR_KEYS: Readonly<Record<string, GexLevelKey>> = {
+    callWall: 'maxNetGex',
+    putWall: 'minNetGex',
+    callWall2: 'netGexPlus',
+    putWall2: 'netGexMinus',
+    gammaRangeHigh: 'sumNetGexPlus',
+    gammaRangeLow: 'sumNetGexMinus',
+};
+
+/** Merges saved colors over the defaults, mapping legacy keys to their new names
+ *  (a value saved under the new key wins over one under the legacy key). */
+export function mergeLevelColors(parsed: unknown): LevelColorSet {
+    const out: LevelColorSet = { ...DEFAULT_LEVEL_COLORS };
+    if (!parsed || typeof parsed !== 'object') return out;
+    const saved = parsed as Record<string, unknown>;
+    for (const [oldKey, newKey] of Object.entries(LEGACY_LEVEL_COLOR_KEYS)) {
+        if (typeof saved[oldKey] === 'string') out[newKey] = saved[oldKey] as string;
+    }
+    for (const key of Object.keys(DEFAULT_LEVEL_COLORS) as GexLevelKey[]) {
+        if (typeof saved[key] === 'string') out[key] = saved[key] as string;
+    }
+    return out;
+}
 
 /** Load custom level colors from localStorage, merged over the defaults
  *  (forward-compatible, same convention as loadMetricColors). */
@@ -164,8 +190,7 @@ export function loadLevelColors(): LevelColorSet {
     try {
         const raw = localStorage.getItem(LEVEL_COLORS_KEY);
         if (!raw) return { ...DEFAULT_LEVEL_COLORS };
-        const parsed = JSON.parse(raw);
-        return { ...DEFAULT_LEVEL_COLORS, ...parsed };
+        return mergeLevelColors(JSON.parse(raw));
     } catch {
         return { ...DEFAULT_LEVEL_COLORS };
     }

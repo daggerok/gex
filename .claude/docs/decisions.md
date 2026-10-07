@@ -4,6 +4,13 @@ Newest first inside each section. PR numbers are from `daggerok/gex`. Add a date
 
 ## GEX levels
 
+### Levels renamed after what they are, identifiers included (2026-10-07)
+
+- Display names (en and ru, the same text in both because they are technical terms): Call Wall (R1) -> `Max Net GEX`, Put Wall (S1) -> `Min Net GEX`, Call Wall 2 -> `Net GEX+`, Put Wall 2 -> `Net GEX-`, Gamma Range High / Low -> `75% Sum Net GEX+` / `75% Sum Net GEX-`
+- Identifiers and i18n keys: `callWall` -> `maxNetGex`, `putWall` -> `minNetGex`, `callWall2` -> `netGexPlus`, `putWall2` -> `netGexMinus`, `gammaRangeHigh` / `gammaRangeLow` -> `sumNetGexPlus` / `sumNetGexMinus` (and `gex.level.resistance2` -> `gex.level.netGexPlus`, `...support2` -> `...netGexMinus`). Functions and constants: `findCallPutWalls` -> `findNetGexLevels`, `CallPutWalls` -> `NetGexLevels`, `findGammaRange` -> `findSumNetGexLevels`, `GAMMA_RANGE_SHARE` -> `SUM_NET_GEX_SHARE`, `SECOND_WALL_MIN_DISTANCE_PCT` / `SECOND_WALL_DISTANCE_BY_SYMBOL` / `secondWallMinDistance` -> `NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT` / `NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL` / `netGexPlusMinusMinDistance`
+- The rules are unchanged. Reason: the old names (walls, resistance, support, range) suggested a market meaning the formulas do not claim, the new names say exactly what is computed. `netGexPos` / `netGexNeg` stay as the bar colors of the Net GEX metric, hence `netGexPlus` / `netGexMinus` for the levels
+- Custom level colors saved in localStorage under the old keys are carried over by `mergeLevelColors` (`LEGACY_LEVEL_COLOR_KEYS` in `src/gex-colors.ts`), a value under the new key wins. Entries below keep the old names as history
+
 ### Levels on the same price share one chart label (2026-10-07)
 
 - `src/level-labels.ts` (`groupLevelLabels`, `labelLayout`, `MAX_INLINE_LABEL_CHARS = 26`): selected levels with the same price (equal to 1e-6) get ONE label on the first of them, each name in its own color. Joined with " + " on one line when it is at most 26 characters, otherwise one level per line (stacked in the rotated frame so the lines do not overlap). Every level still draws its own dashed line, same-price lines may sit on top of each other, the user does not mind

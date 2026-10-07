@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { computeGexLevels, computeGexProfile, findCallPutWalls } from './gex';
+import { computeGexLevels, computeGexProfile, findNetGexLevels } from './gex';
 import { yearsToExpiration } from './greeks';
 import type { OptionQuote } from './types';
 import { black76Greeks, black76Price, enrichFuturesPricedQuotes } from './vix-pricing';
@@ -154,7 +154,7 @@ describe('GEX for a multi-expiration VIX chain (Phase 3, section 9)', () => {
     expect(t18B).toBeGreaterThan(0);
   });
 
-  test('computeGexLevels / findCallPutWalls on the combined chain: walls and gamma flip are sane, not NaN/blended garbage', () => {
+  test('computeGexLevels / findNetGexLevels on the combined chain: walls and gamma flip are sane, not NaN/blended garbage', () => {
     const rawA = chain(expA, FA, SIGMA_A, strikes, R, CALL_OI, PUT_OI);
     const rawB = chain(expB, FB, SIGMA_B, strikes, R, CALL_OI, PUT_OI);
     const combined = enrichFuturesPricedQuotes([...rawA, ...rawB], R);
@@ -176,11 +176,11 @@ describe('GEX for a multi-expiration VIX chain (Phase 3, section 9)', () => {
     // everywhere", and this assertion would catch the NaN case outright.)
     expect(Number.isFinite(levels.totalNetGex)).toBe(true);
     expect(levels.totalNetGex).toBeGreaterThan(0);
-    expect(levels.callWall).not.toBeNull();
-    expect(levels.putWall).toBeNull(); // no strike is net-negative
+    expect(levels.maxNetGex).not.toBeNull();
+    expect(levels.minNetGex).toBeNull(); // no strike is net-negative
 
-    const walls = findCallPutWalls(computeGexProfile(combined, FA), FA);
-    expect(walls.callWall).not.toBeNull();
-    expect(Number.isFinite(walls.callWall!)).toBe(true);
+    const walls = findNetGexLevels(computeGexProfile(combined, FA), FA);
+    expect(walls.maxNetGex).not.toBeNull();
+    expect(Number.isFinite(walls.maxNetGex!)).toBe(true);
   });
 });

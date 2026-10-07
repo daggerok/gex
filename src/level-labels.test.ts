@@ -5,9 +5,9 @@ const item = (key: string, value: number, text: string): LevelLabelItem => ({ ke
 
 describe('groupLevelLabels', () => {
   test('levels on the same price share one group, order inside a group is the input order', () => {
-    const groups = groupLevelLabels([item('callWall2', 778, 'Call Wall 2'), item('spot', 775.83, 'Spot'), item('gammaRangeHigh', 778, 'Gamma Range High')]);
+    const groups = groupLevelLabels([item('netGexPlus', 778, 'Net GEX+'), item('spot', 775.83, 'Spot'), item('sumNetGexPlus', 778, '75% Sum Net GEX+')]);
     expect(groups.map((g) => [g.value, g.items.map((i) => i.key)])).toEqual([
-      [778, ['callWall2', 'gammaRangeHigh']],
+      [778, ['netGexPlus', 'sumNetGexPlus']],
       [775.83, ['spot']],
     ]);
   });
@@ -31,10 +31,10 @@ describe('labelLayout', () => {
     expect(labelLayout({ value: 1, items: [item('a', 1, 'Spot'), item('b', 1, 'Max Pain')] })).toBe('inline');
   });
 
-  test('"Call Wall 2 + Gamma Range High" (30 chars) is stacked', () => {
-    const joined = 'Call Wall 2 + Gamma Range High';
+  test('"Net GEX+ + 75% Sum Net GEX+" (30 chars) is stacked', () => {
+    const joined = 'Net GEX+ + 75% Sum Net GEX+';
     expect(joined.length).toBeGreaterThan(MAX_INLINE_LABEL_CHARS);
-    expect(labelLayout({ value: 1, items: [item('a', 1, 'Call Wall 2'), item('b', 1, 'Gamma Range High')] })).toBe('stacked');
+    expect(labelLayout({ value: 1, items: [item('a', 1, 'Net GEX+'), item('b', 1, '75% Sum Net GEX+')] })).toBe('stacked');
   });
 
   test('the boundary is inclusive: exactly MAX_INLINE_LABEL_CHARS stays inline, one more stacks', () => {
