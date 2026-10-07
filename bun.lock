@@ -24,7 +24,7 @@
         "@types/react-dom": "19.2.3",
         "ncp": "2.0.0",
         "npm-run-all": "4.1.5",
-        "papaparse": "5.5.4",
+        "papaparse": "5.7.0",
         "parcel": "2.16.4",
         "pm2": "7.0.3",
         "rimraf": "6.1.3",
@@ -732,7 +732,7 @@
 
     "package-json-from-dist": ["package-json-from-dist@1.0.1", "", {}, "sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw=="],
 
-    "papaparse": ["papaparse@5.5.4", "", {}, "sha512-SwzWD9gl/ElwYLCI0nUja1mFJzjq2D8ziShfNBa7zCHzkOozeOGDwHWQ+tvCzEZcewecWZ5U7kUopDnG+DFYEQ=="],
+    "papaparse": ["papaparse@5.7.0", "", {}, "sha512-qBGxg/7Q3Kl9Wfhrz2Z74UnvnHTXLNG6jmKJFeBvP2+y4lV7So+7SR62+Zd47JvdrCkX+nDcnr0ObPzek/+6RA=="],
 
     "parcel": ["parcel@2.16.4", "", { "dependencies": { "@parcel/config-default": "2.16.4", "@parcel/core": "2.16.4", "@parcel/diagnostic": "2.16.4", "@parcel/events": "2.16.4", "@parcel/feature-flags": "2.16.4", "@parcel/fs": "2.16.4", "@parcel/logger": "2.16.4", "@parcel/package-manager": "2.16.4", "@parcel/reporter-cli": "2.16.4", "@parcel/reporter-dev-server": "2.16.4", "@parcel/reporter-tracer": "2.16.4", "@parcel/utils": "2.16.4", "chalk": "^4.1.2", "commander": "^12.1.0", "get-port": "^4.2.0" }, "bin": { "parcel": "lib/bin.js" } }, "sha512-RQlrqs4ujYNJpTQi+dITqPKNhRWEqpjPd1YBcGp50Wy3FcJHpwu0/iRm7XWz2dKU/Bwp2qCcVYPIeEDYi2uOUw=="],
 
