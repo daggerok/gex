@@ -4,6 +4,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, trimZeroBoundaries } from '../gex';
 import {
     DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
@@ -206,7 +207,7 @@ function fmtSignedCompact(v: number): string {
  * reads correctly (last character at the axis tick, trailing down-left),
  * not assumed from the transform math alone.
  */
-function renderRotatedLevelLabel(color: string, text: string) {
+function renderRotatedLevelLabel(group: LevelLabelGroup) {
     return (props: { viewBox?: { x?: number; y?: number; height?: number } }) => {
         const vx = props.viewBox?.x;
         const vy = props.viewBox?.y;
@@ -215,10 +216,31 @@ function renderRotatedLevelLabel(color: string, text: string) {
         const BOTTOM_GAP = 28; // clears recharts' own numeric X-axis tick labels below the axis line
         const x = vx + 4;
         const y = vy + vh + BOTTOM_GAP;
+        // Levels on the same price share one label (see level-labels.ts): one line
+        // "A + B" when it is short enough, otherwise one level per line, each in
+        // its own color. The extra lines are offset in the ROTATED frame, so they
+        // stack perpendicular to the text direction and never overlap.
+        const LINE_HEIGHT = 12;
+        if (labelLayout(group) === 'inline') {
+            return (
+                <text x={x} y={y} transform={`rotate(-45 ${x} ${y})`} fontSize={10} textAnchor="end">
+                    {group.items.map((item, i) => (
+                        <React.Fragment key={item.key}>
+                            {i > 0 && <tspan fill="#94a3b8">{LEVEL_LABEL_SEPARATOR}</tspan>}
+                            <tspan fill={item.color}>{item.text}</tspan>
+                        </React.Fragment>
+                    ))}
+                </text>
+            );
+        }
         return (
-            <text x={x} y={y} transform={`rotate(-45 ${x} ${y})`} fill={color} fontSize={10} textAnchor="end">
-                {text}
-            </text>
+            <g transform={`rotate(-45 ${x} ${y})`}>
+                {group.items.map((item, i) => (
+                    <text key={item.key} x={x} y={y + i * LINE_HEIGHT} fill={item.color} fontSize={10} textAnchor="end">
+                        {item.text}
+                    </text>
+                ))}
+            </g>
         );
     };
 }
@@ -1436,18 +1458,27 @@ export const GexView: React.FC<GexViewProps> = ({
                                         // (see renderRotatedLevelLabel's doc comment) - only each
                                         // level's own strike (x position) and the -45deg rotation
                                         // keep labels apart, no per-drawn-level vertical offset.
-                                        return ALL_LEVEL_KEYS.map((key) => {
-                                            if (!selectedLevels.includes(key)) return null;
+                                        // Levels that share a price (e.g. Call Wall 2 and Gamma
+                                        // Range High both at 778) are drawn as separate lines but
+                                        // get ONE merged label on the first of them, so labels
+                                        // never clash and every level stays visible.
+                                        const drawn: LevelLabelItem[] = [];
+                                        for (const key of ALL_LEVEL_KEYS) {
+                                            if (!selectedLevels.includes(key)) continue;
                                             const value = levels?.[key];
-                                            if (value == null) return null;
-                                            const color = levelColors[key];
+                                            if (value == null) continue;
+                                            drawn.push({ key, value, text: levelChartLabel(key), color: levelColors[key] });
+                                        }
+                                        const groups = groupLevelLabels(drawn);
+                                        return drawn.map((item) => {
+                                            const group = groups.find((g) => g.items[0].key === item.key);
                                             return (
                                                 <ReferenceLine
-                                                    key={key}
-                                                    x={value}
-                                                    stroke={color}
+                                                    key={item.key}
+                                                    x={item.value}
+                                                    stroke={item.color}
                                                     strokeDasharray="2 4"
-                                                    label={renderRotatedLevelLabel(color, levelChartLabel(key))}
+                                                    label={group ? renderRotatedLevelLabel(group) : undefined}
                                                 />
                                             );
                                         });

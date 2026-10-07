@@ -4,6 +4,12 @@ Newest first inside each section. PR numbers are from `daggerok/gex`. Add a date
 
 ## GEX levels
 
+### Levels on the same price share one chart label (2026-10-07)
+
+- `src/level-labels.ts` (`groupLevelLabels`, `labelLayout`, `MAX_INLINE_LABEL_CHARS = 26`): selected levels with the same price (equal to 1e-6) get ONE label on the first of them, each name in its own color. Joined with " + " on one line when it is at most 26 characters, otherwise one level per line (stacked in the rotated frame so the lines do not overlap). Every level still draws its own dashed line, same-price lines may sit on top of each other, the user does not mind
+- Why: with the new Gamma Range levels, Call Wall 2 and Gamma Range High both landed on 778 on the SPY snapshot and their rotated labels printed on top of each other
+- Verified live with Playwright: SPY shows "Call Wall 2" over "Gamma Range High" (30 characters, stacked), AAPL with all levels on shows "Put Wall + Gamma Range Low" (inline)
+
 ### Gamma Range High / Low added, Range High / Low renamed Call Wall 2 / Put Wall 2 (2026-10-07)
 
 - New levels `gammaRangeHigh` / `gammaRangeLow` (`findGammaRange`, `GAMMA_RANGE_SHARE = 0.75`): from spot to the right the strike where the running positive `netGex` reaches 75% of the positive total at or above spot, from spot to the left the same over negative `netGex`. Computed from the profile of the selected expirations, same for every ticker, no per-symbol table. Chosen by the user so the levels need no per-ticker tuning. Original heuristic, tooltips say so
