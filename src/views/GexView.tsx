@@ -3,7 +3,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, trimZeroBoundaries } from '../gex';
 import {
@@ -1407,37 +1407,20 @@ export const GexView: React.FC<GexViewProps> = ({
                                         `yAxisId="ag"` secondary axis rather than the shared
                                         primary one. */}
                                     {hasAbsoluteGamma && (
-                                        <>
-                                            {/* AG is two series on purpose (recharts layers: Area 100 <
-                                                Bar 300 < Line/ReferenceLine 400): the translucent FILL
-                                                stays at the default Area layer, under the GEX bars, so the
-                                                bars are not tinted, and only the border LINE is lifted
-                                                above the bars with zIndex 350 (below the level lines).
-                                                The Area is hidden from the legend, the Line carries the
-                                                legend entry. */}
-                                            <Area
-                                                yAxisId="ag"
-                                                dataKey="absGamma"
-                                                name={metricLabelFull('absoluteGamma')}
-                                                stroke="none"
-                                                fill={metricColors.absoluteGamma}
-                                                fillOpacity={0.18}
-                                                legendType="none"
-                                                isAnimationActive={false}
-                                            />
-                                            <Line
-                                                yAxisId="ag"
-                                                dataKey="absGamma"
-                                                name={metricLabelFull('absoluteGamma')}
-                                                type="linear"
-                                                stroke={metricColors.absoluteGamma}
-                                                strokeWidth={2}
-                                                dot={false}
-                                                activeDot={false}
-                                                zIndex={350}
-                                                isAnimationActive={false}
-                                            />
-                                        </>
+                                        <Area
+                                            yAxisId="ag"
+                                            dataKey="absGamma"
+                                            name={metricLabelFull('absoluteGamma')}
+                                            stroke={metricColors.absoluteGamma}
+                                            fill={metricColors.absoluteGamma}
+                                            fillOpacity={0.18}
+                                            strokeWidth={2}
+                                            // recharts layers: Area 100 < Bar 300 < Line/ReferenceLine
+                                            // 400. 350 draws AG on top of the GEX bars but below the
+                                            // level lines.
+                                            zIndex={350}
+                                            isAnimationActive={false}
+                                        />
                                     )}
                                     {dragStart != null && dragEnd != null && dragStart !== dragEnd && (
                                         <ReferenceArea x1={dragStart} x2={dragEnd} strokeOpacity={0.3} fill="#6366f1" fillOpacity={0.15} />
