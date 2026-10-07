@@ -1,6 +1,6 @@
 version: 2
 updates:
-  - package-ecosystem: "bun"
+  - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "monthly"
@@ -17,7 +17,9 @@ updates:
       include: "scope"
 
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/uv"
     schedule:
       interval: "monthly"
     commit-message:
