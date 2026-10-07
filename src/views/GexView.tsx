@@ -1270,19 +1270,21 @@ export const GexView: React.FC<GexViewProps> = ({
                         P/C Ratio cards: every total in one place, each row with the
                         color of the matching chart series (custom colors included). */}
                     <Card title={tr('gex.sidebar.metrics')}>
-                        {/* Regime first, then one total per metric in the SAME order as the
-                            metric toggles above the chart (GEX_METRICS): Net GEX, AG, Call OI,
-                            Put OI, Call Volume, Put Volume, P/C OI, P/C Volume. */}
-                        <Row
-                            label={tr('gex.sidebar.regime')}
-                            value={tr('gex.regime.' + regime)}
-                            dotColor={regime === 'negative' ? metricColors.netGexNeg : regime === 'positive' ? metricColors.netGexPos : AXIS_NEUTRAL}
-                        />
+                        {/* Total Net GEX first, then Regime, then one total per metric in the
+                            order of the metric toggles above the chart (GEX_METRICS): AG, Call
+                            OI, Put OI, Call Volume, Put Volume, P/C OI, P/C Volume. */}
                         <Row
                             label={tr('gex.sidebar.totalNetGex')}
                             value={levels && profile.length ? `${fmtSignedCompact(levels.totalNetGex)} ${tr('gex.unit')}` : na}
                             valueClass={netClass}
                             dotColor={net < 0 ? metricColors.netGexNeg : metricColors.netGexPos}
+                        />
+                        {/* Regime value: green for positive gamma, red for negative, grey for neutral */}
+                        <Row
+                            label={tr('gex.sidebar.regime')}
+                            value={tr('gex.regime.' + regime)}
+                            valueClass={regime === 'positive' ? 'text-green-600 dark:text-green-400' : regime === 'negative' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}
+                            dotColor={regime === 'negative' ? metricColors.netGexNeg : regime === 'positive' ? metricColors.netGexPos : AXIS_NEUTRAL}
                         />
                         <Row
                             label={tr('gex.sidebar.totalAg')}
