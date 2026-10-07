@@ -1,6 +1,5 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import React from 'react';
-import { useI18n } from '../i18n';
 
 // ---------------------------------------------------------------------------
 // Attribution for lightweight-charts, rendered below the active view ONLY ON
@@ -67,11 +66,10 @@ export const REPO_URL = 'https://github.com/daggerok/gex';
  * the page's bottom whitespace.
  */
 export const RepoFooter: React.FC = () => {
-    const { t } = useI18n();
     return (
         <footer className="mx-auto w-full max-w-3xl px-4 pb-[3.5px] text-center text-[10px] leading-tight text-slate-400 lg:max-w-none lg:px-6 lg:pb-[11.5px]">
             <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-200">
-                {t('footer.github')}
+                daggerok &copy; {new Date().getFullYear()}
             </a>
         </footer>
     );
