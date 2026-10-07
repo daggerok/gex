@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
-import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, trimZeroBoundaries } from '../gex';
+import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
     DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
     type GexLevelKey, type LevelColorSet, type MetricColorSet,
@@ -1258,18 +1258,23 @@ export const GexView: React.FC<GexViewProps> = ({
                         color of the matching chart series (custom colors included). */}
                     <Card title={tr('gex.sidebar.metrics')}>
                         <Row
+                            label={tr('gex.sidebar.regime')}
+                            value={tr('gex.regime.' + regime)}
+                            dotColor={regime === 'negative' ? metricColors.netGexNeg : regime === 'positive' ? metricColors.netGexPos : '#94a3b8'}
+                        />
+                        <Row
+                            label={tr('gex.sidebar.totalAg')}
+                            value={profile.length ? `${fmtCompact(sumAbsGamma(profile))} ${tr('gex.unit')}` : na}
+                            dotColor={metricColors.absoluteGamma}
+                        />
+                        <Row label={tr('gex.sidebar.pcRatioOi')} value={pcr.byOi != null ? fmt(pcr.byOi) : na} dotColor={metricColors.pcRatioOi} />
+                        <Row label={tr('gex.sidebar.pcRatioVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} dotColor={metricColors.pcRatioVolume} />
+                        <Row
                             label={tr('gex.sidebar.totalNetGex')}
                             value={levels && profile.length ? `${fmtSignedCompact(levels.totalNetGex)} ${tr('gex.unit')}` : na}
                             valueClass={netClass}
                             dotColor={net < 0 ? metricColors.netGexNeg : metricColors.netGexPos}
                         />
-                        <Row
-                            label={tr('gex.sidebar.regime')}
-                            value={tr('gex.regime.' + regime)}
-                            dotColor={regime === 'negative' ? metricColors.netGexNeg : regime === 'positive' ? metricColors.netGexPos : '#94a3b8'}
-                        />
-                        <Row label={tr('gex.sidebar.pcRatioOi')} value={pcr.byOi != null ? fmt(pcr.byOi) : na} dotColor={metricColors.pcRatioOi} />
-                        <Row label={tr('gex.sidebar.pcRatioVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} dotColor={metricColors.pcRatioVolume} />
                         <Row label={tr('gex.sidebar.totalCallOi')} value={fmtInt(totals.callOi)} dotColor={metricColors.callOi} />
                         <Row label={tr('gex.sidebar.totalCallVolume')} value={fmtInt(totals.callVolume)} dotColor={metricColors.callVolume} />
                         <Row label={tr('gex.sidebar.totalPutOi')} value={fmtInt(totals.putOi)} dotColor={metricColors.putOi} />
@@ -1667,15 +1672,26 @@ export const GexView: React.FC<GexViewProps> = ({
                     </div>
                 </section>
 
-                {/* ---- Values: what every level means on its own strike. A bottom
-                    bar that expands UPWARD: the table opens above the "Values"
-                    button, the same button collapses it back down. Closed by
-                    default (the chart keeps the height), the choice is remembered. ---- */}
+                {/* ---- Values: what every level means on its own strike. One table
+                    anchored at the bottom whose centered first row "Values" is the
+                    toggle: closed, only that row shows; open, the rows slide in below
+                    it and the whole table grows upward from the bottom edge. The
+                    state is remembered in localStorage. ---- */}
                 {valueRows.length > 0 && (
-                    <section className="flex flex-col">
-                        {valuesOpen && (
-                            <div className="mb-2 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
-                                <table className="w-full whitespace-nowrap text-sm tabular-nums">
+                    <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+                        <button
+                            type="button"
+                            aria-expanded={valuesOpen}
+                            onClick={toggleValues}
+                            className={'flex w-full items-center justify-center gap-2 rounded-lg px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 ' + HEADING_CLASS}
+                        >
+                            <span aria-hidden="true" className="text-xs">{valuesOpen ? '▼' : '▲'}</span>
+                            {tr('gex.values.title')}
+                        </button>
+                        <div className={'grid transition-[grid-template-rows] duration-300 ease-out ' + (valuesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+                            <div className="overflow-hidden">
+                                <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-700">
+                                    <table className="w-full whitespace-nowrap text-sm tabular-nums">
                                     <thead>
                                         <tr className="border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
                                             <th className="px-3 py-1.5 text-left font-medium">{tr('gex.values.level')}</th>
@@ -1714,17 +1730,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                         ))}
                                     </tbody>
                                 </table>
+                                </div>
                             </div>
-                        )}
-                        <button
-                            type="button"
-                            aria-expanded={valuesOpen}
-                            onClick={toggleValues}
-                            className={'mx-auto flex items-center gap-2 rounded-md px-3 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 ' + HEADING_CLASS}
-                        >
-                            <span aria-hidden="true" className="text-xs">{valuesOpen ? '▼' : '▲'}</span>
-                            {tr('gex.values.title')}
-                        </button>
+                        </div>
                     </section>
                 )}
                 </div>

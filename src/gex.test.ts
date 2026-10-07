@@ -15,6 +15,7 @@ import {
   findSumNetGexLevels,
   pcRatioByStrike,
   pointAtPrice,
+  sumAbsGamma,
   SUM_NET_GEX_SHARE,
   findGammaFlipHypotheticalSpot,
   gexCall,
@@ -714,5 +715,18 @@ describe('pointAtPrice: the profile row a level maps to', () => {
     expect(pointAtPrice(profile, 50)?.point.strike).toBe(100);
     expect(pointAtPrice(profile, 999)?.point.strike).toBe(110);
     expect(pointAtPrice([], 100)).toBeNull();
+  });
+});
+
+describe('sumAbsGamma: total Absolute Gamma of the profile', () => {
+  const row = (netGex: number, absGamma: number) => ({ strike: 1, netGex, absGamma } as unknown as Parameters<typeof sumAbsGamma>[0][number]);
+
+  test('sums |callGex| + |putGex| over all strikes with no call/put cancellation', () => {
+    // net +30 and -30 cancel to 0, absolute gamma 50 + 70 = 120 does not
+    expect(sumAbsGamma([row(30, 50), row(-30, 70)])).toBe(120);
+  });
+
+  test('empty profile -> 0', () => {
+    expect(sumAbsGamma([])).toBe(0);
   });
 });

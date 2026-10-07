@@ -478,6 +478,13 @@ export function computeMaxPain(quotes: readonly OptionQuote[]): number | null {
     return best;
 }
 
+/** Total Absolute Gamma: the sum of |callGex| + |putGex| over every strike of the
+ *  profile (the selected expirations). No call/put cancellation, unlike the total
+ *  Net GEX. */
+export function sumAbsGamma(profile: readonly GexPoint[]): number {
+    return profile.reduce((sum, p) => sum + p.absGamma, 0);
+}
+
 /** The profile row a level price maps to: the strike itself when the price is
  *  on a strike (exact), otherwise the nearest strike (ties go to the lower
  *  one), e.g. for Spot or a Gamma Flip that falls between strikes. Null for an
