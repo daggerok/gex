@@ -4,6 +4,10 @@ Newest first inside each section. PR numbers are from `daggerok/gex`. Add a date
 
 ## GEX levels
 
+### Resistance 2 / Support 2 renamed Range High / Range Low (2026-10-07)
+
+- Display names only (en `Range High` / `Range Low`, ru `Верх диапазона` / `Низ диапазона`, the `(R2)` / `(S2)` suffixes dropped) in the Key Levels sidebar, the toggle panel and the chart labels. Code identifiers, i18n keys (`gex.level.resistance2`, `gex.chart.support2`, ...), `callWall2` / `putWall2` and the rule itself are unchanged. Older entries below keep the old names as history
+
 ### Second walls: directional, with a per-symbol distance (2026-10-07)
 
 - Bug seen on SPY (cache snapshot 2026-10-05, spot 775.83): Resistance 2 showed 771, which is below both the call wall (787) and spot. The old rule only required `|strike - wall| >= 2% of spot`, so it could pick a strike on the wrong side of the wall. Support 2 had the mirror problem (the old test fixture even expected `putWall2 = 95` above `putWall = 90`)

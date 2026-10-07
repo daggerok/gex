@@ -363,9 +363,9 @@ export interface CallPutWalls {
  *  - callWall: strike with the maximum netGex among netGex > 0
  *  - putWall: strike with the minimum netGex among netGex < 0
  *  - callWall2: the strongest netGex > 0 strike ABOVE callWall and at least
- *    `minDistance` away from it (Resistance 2 must sit above Resistance 1)
+ *    `minDistance` away from it (Range High must sit above the Call Wall)
  *  - putWall2: the strongest netGex < 0 strike BELOW putWall and at least
- *    `minDistance` away from it (Support 2 must sit below Support 1)
+ *    `minDistance` away from it (Range Low must sit below the Put Wall)
  * Ties on netGex resolve to the lowest strike (first in ascending order).
  *
  * `minDistance` is in price units; the default is SECOND_WALL_MIN_DISTANCE_PCT

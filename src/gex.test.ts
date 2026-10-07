@@ -323,7 +323,7 @@ describe('second walls: direction and per-symbol distance', () => {
     pt(788, 37), pt(789, 20), pt(790, 90), pt(793, 36), pt(803, 50),
   ];
 
-  test('Resistance 2 must be above the call wall, Support 2 below the put wall', () => {
+  test('Range High must be above the call wall, Range Low below the put wall', () => {
     // callWall 787. With minDistance 3: strikes >= 790 -> 790 (+90) beats 793 (+36) and 803 (+50).
     // putWall 767 (-500). Below it only 745 (-100) -> putWall2 745.
     expect(findCallPutWalls(profile, 775.83, 3)).toEqual({
@@ -366,7 +366,7 @@ describe('findCallPutWalls (7.4)', () => {
     // callWall = 105 (+100000). Next-highest positive is 106 (+80000), but
     // |106-105| = 1 < 2, so callWall2 = 115 (+50000) instead.
     // putWall = 90 (-40000); the only other negative strike is 95, which is
-    // ABOVE the put wall, so putWall2 = null (Support 2 must sit below Support 1).
+    // ABOVE the put wall, so putWall2 = null (Range Low must sit below the Put Wall).
     expect(findCallPutWalls(computeGexProfile(FIXTURE, SPOT), SPOT)).toEqual({
       callWall: 105,
       putWall: 90,
