@@ -251,17 +251,23 @@ function renderRotatedLevelLabel(group: LevelLabelGroup) {
     };
 }
 
-const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-    <section>
-        <h3 className="mb-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
-        <div className="space-y-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 px-3 py-2.5">
+/** Heading style shared by the sidebar cards and the chart title. */
+const HEADING_CLASS = 'text-base font-semibold text-slate-800 dark:text-slate-100';
+
+/** `rows` is the card's row count: cards share the sidebar's free height in
+ *  proportion to it (flexGrow) and spread their rows evenly, so the sidebar
+ *  fills the same height as the chart instead of leaving an empty strip. */
+const Card: React.FC<{ title: string; rows: number; children: React.ReactNode }> = ({ title, rows, children }) => (
+    <section className="flex flex-col" style={{ flexGrow: rows }}>
+        <h3 className={'mb-2 ' + HEADING_CLASS}>{title}</h3>
+        <div className="flex flex-1 flex-col justify-between gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 px-4 py-3">
             {children}
         </div>
     </section>
 );
 
 const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: string; dotColor?: string }> = ({ label, value, valueClass, dot, dotColor }) => (
-    <div className="flex items-center justify-between gap-3 text-xs">
+    <div className="flex items-center justify-between gap-3 text-sm">
         <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
             {dot && <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" />}
             {dotColor && <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: dotColor }} aria-hidden="true" />}
@@ -1207,11 +1213,11 @@ export const GexView: React.FC<GexViewProps> = ({
 
             <div className="flex flex-col gap-4 lg:flex-1 lg:flex-row">
                 {/* ---- Sidebar: Metrics table + Levels ---- */}
-                <aside className="flex w-full flex-col gap-4 lg:w-[300px] lg:shrink-0">
+                <aside className="flex w-full flex-col gap-5 lg:w-[320px] lg:shrink-0">
                     {/* One Metrics table instead of the old OI Volume / GEX Analysis /
                         P/C Ratio cards: every total in one place, each row with the
                         color of the matching chart series (custom colors included). */}
-                    <Card title={tr('gex.sidebar.metrics')}>
+                    <Card title={tr('gex.sidebar.metrics')} rows={8}>
                         <Row
                             label={tr('gex.sidebar.totalNetGex')}
                             value={levels && profile.length ? `${fmtSignedCompact(levels.totalNetGex)} ${tr('gex.unit')}` : na}
@@ -1230,7 +1236,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         <Row label={tr('gex.sidebar.totalPutOi')} value={fmtInt(totals.putOi)} dotColor={metricColors.putOi} />
                         <Row label={tr('gex.sidebar.totalPutVolume')} value={fmtInt(totals.putVolume)} dotColor={metricColors.putVolume} />
                     </Card>
-                    <Card title={tr('gex.sidebar.keyLevels')}>
+                    <Card title={tr('gex.sidebar.keyLevels')} rows={9}>
                         {/* Display-only reordering: the sidebar text card reads
                             top-to-bottom by strike price, descending - NOT the
                             fixed logical order `keyLevels` was built in above
@@ -1259,7 +1265,7 @@ export const GexView: React.FC<GexViewProps> = ({
                 {/* ---- Main chart ---- */}
                 <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="text-xs text-slate-500 dark:text-slate-400">{chartTitle}</h3>
+                        <h3 className={HEADING_CLASS}>{chartTitle}</h3>
                         <div className="flex items-center gap-1 text-xs text-slate-400">
                             <span className="hidden sm:inline">{tr('gex.zoom.hint')}</span>
                             <button
@@ -1359,7 +1365,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         domain={xDomain}
                                         allowDataOverflow
                                         tickCount={20}
-                                        tick={{ fill: '#94a3b8', fontSize: 11 }}
+                                        tick={{ fill: '#94a3b8', fontSize: 12 }}
                                         stroke="#94a3b8"
                                         tickFormatter={(v: number) => fmt(v, v % 1 === 0 ? 0 : 1)}
                                     />
@@ -1382,7 +1388,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickCount={8}
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={hasNetGex || countMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 11 } : false}
+                                        tick={hasNetGex || countMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 12 } : false}
                                         stroke="#94a3b8"
                                         width={64}
                                         tickFormatter={yTickFormatter}
@@ -1399,7 +1405,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickCount={6}
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={hasAbsoluteGamma ? { fill: metricColors.absoluteGamma, fontSize: 11 } : false}
+                                        tick={hasAbsoluteGamma ? { fill: metricColors.absoluteGamma, fontSize: 12 } : false}
                                         stroke={metricColors.absoluteGamma}
                                         width={64}
                                         tickFormatter={agTickFormatter}
@@ -1415,7 +1421,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickCount={6}
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={countMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 11 } : false}
+                                        tick={countMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 12 } : false}
                                         stroke="#94a3b8"
                                         width={56}
                                         tickFormatter={cntTickFormatter}
@@ -1428,7 +1434,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickCount={6}
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={ratioMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 11 } : false}
+                                        tick={ratioMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 12 } : false}
                                         stroke="#94a3b8"
                                         width={40}
                                         tickFormatter={(v: number) => fmt(v)}
