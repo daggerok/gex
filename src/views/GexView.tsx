@@ -254,13 +254,15 @@ function renderRotatedLevelLabel(group: LevelLabelGroup) {
 /** Heading style shared by the sidebar cards and the chart title. */
 const HEADING_CLASS = 'text-base font-semibold text-slate-800 dark:text-slate-100';
 
-/** `rows` is the card's row count: cards share the sidebar's free height in
- *  proportion to it (flexGrow) and spread their rows evenly, so the sidebar
- *  fills the same height as the chart instead of leaving an empty strip. */
-const Card: React.FC<{ title: string; rows: number; children: React.ReactNode }> = ({ title, rows, children }) => (
-    <section className="flex flex-col" style={{ flexGrow: rows }}>
-        <h3 className={'mb-2 ' + HEADING_CLASS}>{title}</h3>
-        <div className="flex flex-1 flex-col justify-between gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 px-4 py-3">
+/** Small square zoom button (+ / -). */
+const ZOOM_BTN = 'shrink-0 rounded-md border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 px-1.5 py-0.5 font-medium hover:border-slate-400 dark:hover:border-slate-500';
+
+/** Compact sidebar table: centered heading, tight rows (the user prefers this
+ *  over rows stretched to fill the height). */
+const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+    <section>
+        <h3 className={'mb-1.5 text-center ' + HEADING_CLASS}>{title}</h3>
+        <div className="space-y-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 px-3 py-2.5">
             {children}
         </div>
     </section>
@@ -801,6 +803,21 @@ export const GexView: React.FC<GexViewProps> = ({
         persistZoom({ yZoomFactor: next });
         return next;
     });
+    const resetVZoom = () => { setYZoomFactor(1); persistZoom({ yZoomFactor: 1 }); };
+    // Horizontal (strike axis) zoom buttons: zoom in/out around the middle of the
+    // current range by the same 0.7 step as the vertical ones. Zooming out past
+    // the full data range returns to the default view (xZoom = null).
+    const setXZoomAndPersist = (next: [number, number] | null) => { setXZoom(next); persistZoom({ xZoom: next }); };
+    const zoomX = (dir: 'in' | 'out') => {
+        const base = chart?.domain;
+        if (!base) return;
+        const [a, b] = xZoom ?? base;
+        const mid = (a + b) / 2;
+        const baseRange = base[1] - base[0];
+        const range = dir === 'in' ? Math.max((b - a) * 0.7, baseRange * 0.02) : (b - a) / 0.7;
+        if (range >= baseRange) { setXZoomAndPersist(null); return; }
+        setXZoomAndPersist([mid - range / 2, mid + range / 2]);
+    };
     const isZoomed = xZoom != null || yZoomFactor !== 1;
 
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
@@ -959,6 +976,17 @@ export const GexView: React.FC<GexViewProps> = ({
         { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
     ];
 
+    // Values panel open/closed: per-viewer convenience, remembered in localStorage
+    // (reads and writes are guarded, the panel works without storage).
+    const VALUES_OPEN_KEY = 'gex.valuesOpen.v1';
+    const [valuesOpen, setValuesOpen] = useState<boolean>(() => {
+        try { return localStorage.getItem(VALUES_OPEN_KEY) === '1'; } catch { return false; }
+    });
+    const toggleValues = () => setValuesOpen((open) => {
+        const next = !open;
+        try { localStorage.setItem(VALUES_OPEN_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+        return next;
+    });
     // Values table rows: every level that has a price, highest price first (same
     // order as the Levels card), mapped to the profile row of its strike (nearest
     // strike when the level is not on one - Spot, Gamma Flip).
@@ -1224,11 +1252,11 @@ export const GexView: React.FC<GexViewProps> = ({
 
             <div className="flex flex-col gap-4 lg:flex-1 lg:flex-row">
                 {/* ---- Sidebar: Metrics table + Levels ---- */}
-                <aside className="flex w-full flex-col gap-5 lg:w-[320px] lg:shrink-0">
+                <aside className="flex w-full flex-col gap-4 lg:w-[320px] lg:shrink-0">
                     {/* One Metrics table instead of the old OI Volume / GEX Analysis /
                         P/C Ratio cards: every total in one place, each row with the
                         color of the matching chart series (custom colors included). */}
-                    <Card title={tr('gex.sidebar.metrics')} rows={8}>
+                    <Card title={tr('gex.sidebar.metrics')}>
                         <Row
                             label={tr('gex.sidebar.totalNetGex')}
                             value={levels && profile.length ? `${fmtSignedCompact(levels.totalNetGex)} ${tr('gex.unit')}` : na}
@@ -1247,7 +1275,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         <Row label={tr('gex.sidebar.totalPutOi')} value={fmtInt(totals.putOi)} dotColor={metricColors.putOi} />
                         <Row label={tr('gex.sidebar.totalPutVolume')} value={fmtInt(totals.putVolume)} dotColor={metricColors.putVolume} />
                     </Card>
-                    <Card title={tr('gex.sidebar.keyLevels')} rows={9}>
+                    <Card title={tr('gex.sidebar.keyLevels')}>
                         {/* Display-only reordering: the sidebar text card reads
                             top-to-bottom by strike price, descending - NOT the
                             fixed logical order `keyLevels` was built in above
@@ -1276,38 +1304,26 @@ export const GexView: React.FC<GexViewProps> = ({
                 {/* ---- Main chart ---- */}
                 <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <h3 className={HEADING_CLASS}>{chartTitle}</h3>
-                        <div className="flex items-center gap-1 text-xs text-slate-400">
-                            <span className="hidden sm:inline">{tr('gex.zoom.hint')}</span>
-                            <button
-                                type="button"
-                                onClick={zoomOutY}
-                                title={tr('gex.zoom.yOut')}
-                                className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 font-medium hover:border-slate-400 dark:hover:border-slate-500"
-                            >
-                                −
-                            </button>
-                            <button
-                                type="button"
-                                onClick={zoomInY}
-                                title={tr('gex.zoom.yIn')}
-                                className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 font-medium hover:border-slate-400 dark:hover:border-slate-500"
-                            >
-                                +
-                            </button>
+                    <div className="mb-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <button
                                 type="button"
                                 onClick={resetZoom}
                                 disabled={!isZoomed}
                                 className={
-                                    'shrink-0 rounded-md border px-2 py-0.5 font-medium ' +
+                                    'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' +
                                     (isZoomed ? ax.chipIdle : 'border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600')
                                 }
                             >
                                 {tr('gex.zoom.reset')}
                             </button>
+                            <h3 className={HEADING_CLASS}>{chartTitle}</h3>
                         </div>
+                        <div className="flex items-center gap-1 text-xs text-slate-400">
+                            <button type="button" onClick={zoomOutY} title={tr('gex.zoom.yOut')} className={ZOOM_BTN}>−</button>
+                            <button type="button" onClick={zoomInY} title={tr('gex.zoom.yIn')} className={ZOOM_BTN}>+</button>
+                        </div>
+                        <span className="hidden text-right text-xs text-slate-400 sm:inline">{tr('gex.zoom.hint')}</span>
                     </div>
                     {/* select-none: dragging across the chart to zoom (onChartMouseDown/
                         onChartMouseUp below) is a mousedown+drag+mouseup gesture over plain
@@ -1316,7 +1332,26 @@ export const GexView: React.FC<GexViewProps> = ({
                         visibly highlighting those labels mid-drag. Scoped to just this chart
                         container, not the whole page, so text elsewhere (inputs, sidebar
                         values, etc.) stays normally selectable. */}
-                    <div className="h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none">
+                    <div className="relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none">
+                        {/* Right-middle zoom cluster: horizontal zoom (+ above -) and
+                            Reset VZoom below them. The vertical zoom -/+ live in the header. */}
+                        {chart && !chartMessage && (
+                            <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 flex-col items-stretch gap-1 text-xs">
+                                <button type="button" onClick={() => zoomX('in')} title={tr('gex.zoom.xIn')} className={ZOOM_BTN}>+</button>
+                                <button type="button" onClick={() => zoomX('out')} title={tr('gex.zoom.xOut')} className={ZOOM_BTN}>−</button>
+                                <button
+                                    type="button"
+                                    onClick={resetVZoom}
+                                    disabled={yZoomFactor === 1}
+                                    className={
+                                        'rounded-md border px-1.5 py-0.5 text-[11px] font-medium ' +
+                                        (yZoomFactor !== 1 ? ax.chipIdle : 'border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600')
+                                    }
+                                >
+                                    {tr('gex.zoom.resetV')}
+                                </button>
+                            </div>
+                        )}
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (
@@ -1632,51 +1667,64 @@ export const GexView: React.FC<GexViewProps> = ({
                     </div>
                 </section>
 
-                {/* ---- Values: what every level means on its own strike ---- */}
+                {/* ---- Values: what every level means on its own strike. A bottom
+                    bar that expands UPWARD: the table opens above the "Values"
+                    button, the same button collapses it back down. Closed by
+                    default (the chart keeps the height), the choice is remembered. ---- */}
                 {valueRows.length > 0 && (
-                    <section>
-                        <h3 className={'mb-2 ' + HEADING_CLASS}>{tr('gex.values.title')}</h3>
-                        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
-                            <table className="w-full whitespace-nowrap text-sm tabular-nums">
-                                <thead>
-                                    <tr className="border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
-                                        <th className="px-3 py-2 text-left font-medium">{tr('gex.values.level')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.values.strike')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.metric.netGex')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.metric.absoluteGamma')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.metric.callOi')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.metric.putOi')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.metric.callVolume')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.metric.putVolume')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.metric.pcRatioOi')}</th>
-                                        <th className="px-3 py-2 text-right font-medium">{tr('gex.metric.pcRatioVolume')}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {valueRows.map((r) => (
-                                        <tr key={r.key} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 text-slate-800 dark:text-slate-100">
-                                            <td className="px-3 py-1.5 text-left">
-                                                <span className="flex items-center gap-2">
-                                                    <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: levelColors[r.key] }} aria-hidden="true" />
-                                                    {r.label}
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-1.5 text-right" title={r.exact ? undefined : tr('gex.values.nearest')}>
-                                                {fmt(r.point.strike)}{r.exact ? '' : ' ≈'}
-                                            </td>
-                                            <td className={'px-3 py-1.5 text-right ' + (r.point.netGex > 0 ? 'text-green-600 dark:text-green-400' : r.point.netGex < 0 ? 'text-red-600 dark:text-red-400' : '')}>{fmtSignedCompact(r.point.netGex)}</td>
-                                            <td className="px-3 py-1.5 text-right">{fmtCompact(r.point.absGamma)}</td>
-                                            <td className="px-3 py-1.5 text-right">{fmtInt(r.point.callOi)}</td>
-                                            <td className="px-3 py-1.5 text-right">{fmtInt(r.point.putOi)}</td>
-                                            <td className="px-3 py-1.5 text-right">{fmtInt(r.point.callVolume)}</td>
-                                            <td className="px-3 py-1.5 text-right">{fmtInt(r.point.putVolume)}</td>
-                                            <td className="px-3 py-1.5 text-right">{r.pc.byOi != null ? fmt(r.pc.byOi) : na}</td>
-                                            <td className="px-3 py-1.5 text-right">{r.pc.byVolume != null ? fmt(r.pc.byVolume) : na}</td>
+                    <section className="flex flex-col">
+                        {valuesOpen && (
+                            <div className="mb-2 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+                                <table className="w-full whitespace-nowrap text-sm tabular-nums">
+                                    <thead>
+                                        <tr className="border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+                                            <th className="px-3 py-1.5 text-left font-medium">{tr('gex.values.level')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.values.strike')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.netGex')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.absoluteGamma')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.callOi')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.putOi')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.callVolume')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.putVolume')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.pcRatioOi')}</th>
+                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.pcRatioVolume')}</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody>
+                                        {valueRows.map((r) => (
+                                            <tr key={r.key} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 text-slate-800 dark:text-slate-100">
+                                                <td className="px-3 py-0.5 text-left">
+                                                    <span className="flex items-center gap-2">
+                                                        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: levelColors[r.key] }} aria-hidden="true" />
+                                                        {r.label}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-0.5 text-right" title={r.exact ? undefined : tr('gex.values.nearest')}>
+                                                    {fmt(r.point.strike)}{r.exact ? '' : ' ≈'}
+                                                </td>
+                                                <td className={'px-3 py-0.5 text-right ' + (r.point.netGex > 0 ? 'text-green-600 dark:text-green-400' : r.point.netGex < 0 ? 'text-red-600 dark:text-red-400' : '')}>{fmtSignedCompact(r.point.netGex)}</td>
+                                                <td className="px-3 py-0.5 text-right">{fmtCompact(r.point.absGamma)}</td>
+                                                <td className="px-3 py-0.5 text-right">{fmtInt(r.point.callOi)}</td>
+                                                <td className="px-3 py-0.5 text-right">{fmtInt(r.point.putOi)}</td>
+                                                <td className="px-3 py-0.5 text-right">{fmtInt(r.point.callVolume)}</td>
+                                                <td className="px-3 py-0.5 text-right">{fmtInt(r.point.putVolume)}</td>
+                                                <td className="px-3 py-0.5 text-right">{r.pc.byOi != null ? fmt(r.pc.byOi) : na}</td>
+                                                <td className="px-3 py-0.5 text-right">{r.pc.byVolume != null ? fmt(r.pc.byVolume) : na}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        <button
+                            type="button"
+                            aria-expanded={valuesOpen}
+                            onClick={toggleValues}
+                            className={'mx-auto flex items-center gap-2 rounded-md px-3 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 ' + HEADING_CLASS}
+                        >
+                            <span aria-hidden="true" className="text-xs">{valuesOpen ? '▼' : '▲'}</span>
+                            {tr('gex.values.title')}
+                        </button>
                     </section>
                 )}
                 </div>
