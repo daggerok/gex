@@ -4,7 +4,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { canPanRange, panRange, stepPan, viewDomain } from '../zoom-pan';
+import { canPanRange, clickStep, panRange, zoomRange } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
@@ -548,7 +548,7 @@ const ToggleChip: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
-// Chart zoom persistence (xZoom/yZoomFactor survive a reload - same spirit as
+// Chart zoom persistence (xZoom survives a reload - same spirit as
 // main.tsx's activeTab/selectedExps/gexMetrics persistence, but scoped to
 // THIS chart specifically, so it lives here rather than in Settings/
 // settings-store.ts, same reasoning as gex-colors.ts's own dedicated-key
@@ -563,9 +563,6 @@ const ToggleChip: React.FC<{
 interface ChartZoomState {
     symbol: string;
     xZoom: [number, number] | null;
-    yZoomFactor: number;
-    /** Value-axis pan in [-1, 1] (see zoom-pan.ts viewDomain), 0 when absent (older saves). */
-    yPan?: number;
 }
 
 const CHART_ZOOM_KEY = 'gex.chartZoom.v1';
@@ -575,12 +572,11 @@ function loadChartZoom(): ChartZoomState | null {
         const raw = localStorage.getItem(CHART_ZOOM_KEY);
         if (!raw) return null;
         const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed.symbol !== 'string' || typeof parsed.yZoomFactor !== 'number') return null;
+        if (!parsed || typeof parsed.symbol !== 'string') return null;
         const xZoom = Array.isArray(parsed.xZoom) && parsed.xZoom.length === 2 && parsed.xZoom.every((v: unknown) => typeof v === 'number')
             ? (parsed.xZoom as [number, number])
             : null;
-        const yPan = typeof parsed.yPan === 'number' && parsed.yPan >= -1 && parsed.yPan <= 1 ? parsed.yPan : 0;
-        return { symbol: parsed.symbol, xZoom, yZoomFactor: parsed.yZoomFactor, yPan };
+        return { symbol: parsed.symbol, xZoom };
     } catch {
         return null;
     }
@@ -621,7 +617,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // ---- Chart data (display only: zero-boundary trimming + splitting sign
     // for colors). No more spot-percentage windowing (removed) - the chart
     // now shows the FULL range of real data for the selected expirations by
-    // default; drilling into a sub-range is what xZoom/yZoomFactor are for.
+    // default; drilling into a sub-range is what xZoom is for.
     // The only trimming left is per-edge: drop all-zero strikes beyond a
     // single boundary marker on each side (trimZeroBoundaries, src/gex.ts),
     // evaluated against whichever metrics are currently selected - a strike
@@ -663,7 +659,7 @@ export const GexView: React.FC<GexViewProps> = ({
             pcRatioOiPlot: (() => { const r = pcRatioByStrike(p).byOi; return r == null ? null : Math.min(r, RATIO_PLOT_CAP); })(),
             pcRatioVolumePlot: (() => { const r = pcRatioByStrike(p).byVolume; return r == null ? null : Math.min(r, RATIO_PLOT_CAP); })(),
         }));
-        // strikeStep: the smallest gap between two visible strikes = "one strike", the step of the pan arrows
+        // strikeStep: the smallest gap between two visible strikes = "one strike", the zoom-in floor is 4 of them
         return { rows, domain: [minK - pad, maxK + pad] as [number, number], strikeStep: pad };
     }, [profile, effSpot, metrics]);
 
@@ -829,16 +825,12 @@ export const GexView: React.FC<GexViewProps> = ({
     // the dataKey value under the cursor - works regardless of how many Y
     // axes are in play), shown live with a ReferenceArea, and committed to
     // `xZoom` on mouseup (overriding the auto-windowed `chart.domain`).
-    // Vertical zoom uses simple +/- buttons instead (per-axis "value under
-    // cursor" isn't available with two Y axes without reaching into
-    // recharts internals): `yZoomFactor` (1 = default) scales each axis'
-    // natural (pre-zoom) domain around zero. Both reset whenever the loaded
+    // The +/- buttons zoom the strike range by 1% of the full range per side per click
+    // (zoomRange, clickStep), the arrows move it by the same 1%. There is no vertical zoom. It resets whenever the loaded
     // ticker or expiration selection changes (UNLESS a persisted zoom for
     // THIS symbol is restored instead - see the effect below), so a stale
     // window never outlives the data it was drawn against.
     const [xZoom, setXZoom] = useState<[number, number] | null>(null);
-    const [yZoomFactor, setYZoomFactor] = useState(1);
-    const [yPan, setYPan] = useState(0);
     const [dragStart, setDragStart] = useState<number | null>(null);
     const [dragEnd, setDragEnd] = useState<number | null>(null);
 
@@ -853,12 +845,8 @@ export const GexView: React.FC<GexViewProps> = ({
         const persisted = loadChartZoom();
         if (persisted && persisted.symbol === symbol) {
             setXZoom(persisted.xZoom);
-            setYZoomFactor(persisted.yZoomFactor);
-            setYPan(persisted.yPan ?? 0);
         } else {
             setXZoom(null);
-            setYZoomFactor(1);
-            setYPan(0);
         }
         setDragStart(null);
         setDragEnd(null);
@@ -866,8 +854,8 @@ export const GexView: React.FC<GexViewProps> = ({
     }, [zoomResetKey]);
 
     // Persist is called EXPLICITLY from each user-driven mutation below
-    // (resetZoom/zoomInY/zoomOutY/onChartMouseUp), NOT from a generic
-    // useEffect reacting to [symbol, xZoom, yZoomFactor]. A reactive effect
+    // (zoomX/panX/the reset button/onChartMouseUp), NOT from a generic
+    // useEffect reacting to [symbol, xZoom]. A reactive effect
     // was tried first and found to race the restore effect above under
     // React 18 StrictMode's deliberate dev-only double-invocation of
     // effects on mount (verified live: the restore effect's own setXZoom/
@@ -881,45 +869,25 @@ export const GexView: React.FC<GexViewProps> = ({
     // effect is invoked. `symbol` is read from the surrounding closure
     // (stable for the lifetime of a single click handler), guarded the same
     // way the old effect was (skip when no ticker is loaded).
-    const persistZoom = (next: { xZoom?: [number, number] | null; yZoomFactor?: number; yPan?: number }) => {
+    const persistZoom = (next: { xZoom?: [number, number] | null }) => {
         if (!symbol) return;
         saveChartZoom({
             symbol,
             xZoom: next.xZoom !== undefined ? next.xZoom : xZoom,
-            yZoomFactor: next.yZoomFactor !== undefined ? next.yZoomFactor : yZoomFactor,
-            yPan: next.yPan !== undefined ? next.yPan : yPan,
         });
     };
 
-    const resetZoom = () => { setXZoom(null); setYZoomFactor(1); setYPan(0); persistZoom({ xZoom: null, yZoomFactor: 1, yPan: 0 }); };
-    const zoomInY = () => setYZoomFactor((f) => {
-        const next = Math.max(f * 0.7, 0.1);
-        persistZoom({ yZoomFactor: next });
-        return next;
-    });
-    // Ceiling of 10 (not 1): capping at 1 made "-" a no-op from the default
-    // view (Math.min(1/0.7, 1) = 1, every time) - zoom OUT must be able to
-    // go past the default Y range, not just undo a prior zoom-in back to it.
-    // 10x mirrors zoomInY's own 0.1 floor (10x in, 10x out).
-    const zoomOutY = () => setYZoomFactor((f) => {
-        const next = Math.min(f / 0.7, 10);
-        // back at or past the default scale there is nothing to move: drop the pan
-        if (next >= 1) { setYPan(0); persistZoom({ yZoomFactor: next, yPan: 0 }); } else persistZoom({ yZoomFactor: next });
-        return next;
-    });
-    const resetVZoom = () => { setYZoomFactor(1); setYPan(0); persistZoom({ yZoomFactor: 1, yPan: 0 }); };
-    // Arrow buttons: move the zoomed view. Horizontal moves the strike range, vertical the value
-    // axis (dir 1 = up). They only matter once zoomed, the buttons are disabled otherwise.
+    // Arrow buttons move the CHART in the direction of the arrow (click right: the picture moves
+    // right), so the visible window moves the opposite way: `-dir` below. Horizontal moves the
+    // strike range, vertical the value axis (dir 1 = the chart moves up). They only matter once
+    // zoomed, the buttons are disabled otherwise, and an arrow is disabled when the chart cannot
+    // move any further in its direction.
     const panX = (dir: -1 | 1) => {
         const base = chart?.domain;
         if (!base || !xZoom) return;
-        setXZoomAndPersist(panRange(xZoom, base, dir, chart?.strikeStep ?? 1));
+        setXZoomAndPersist(panRange(xZoom, base, -dir as -1 | 1, clickStep(base)));
     };
-    const panY = (dir: -1 | 1) => {
-        const next = stepPan(yPan, dir);
-        setYPan(next);
-        persistZoom({ yPan: next });
-    };
+    const canPanX = (dir: -1 | 1) => !!xZoom && !!chart && canPanRange(xZoom, chart.domain, -dir as -1 | 1);
     // Horizontal (strike axis) zoom buttons: zoom in/out around the middle of the
     // current range by the same 0.7 step as the vertical ones. Zooming out past
     // the full data range returns to the default view (xZoom = null).
@@ -927,14 +895,8 @@ export const GexView: React.FC<GexViewProps> = ({
     const zoomX = (dir: 'in' | 'out') => {
         const base = chart?.domain;
         if (!base) return;
-        const [a, b] = xZoom ?? base;
-        const mid = (a + b) / 2;
-        const baseRange = base[1] - base[0];
-        const range = dir === 'in' ? Math.max((b - a) * 0.7, baseRange * 0.02) : (b - a) / 0.7;
-        if (range >= baseRange) { setXZoomAndPersist(null); return; }
-        setXZoomAndPersist([mid - range / 2, mid + range / 2]);
+        setXZoomAndPersist(zoomRange(xZoom ?? base, base, dir, clickStep(base), 4 * (chart?.strikeStep ?? 1)));
     };
-    const isZoomed = xZoom != null || yZoomFactor !== 1;
 
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
         if (typeof state?.activeLabel === 'number') { setDragStart(state.activeLabel); setDragEnd(state.activeLabel); }
@@ -953,7 +915,6 @@ export const GexView: React.FC<GexViewProps> = ({
         setDragEnd(null);
     };
 
-    const scaleAroundZero = ([lo, hi]: [number, number], factor: number): [number, number] => [lo * factor, hi * factor];
 
     // ---- Chart axes + zoom ---------------------------------------------------
     // Single shared Y axis for every selected metric (no dual-axis split).
@@ -993,16 +954,14 @@ export const GexView: React.FC<GexViewProps> = ({
         // (e.g. "Call OI" alone) keeps its zero baseline exactly at 0
         // instead of gaining an empty padded strip below zero where no bar
         // ever draws; a side with real extent gets the same proportional
-        // gap either way. Scales naturally with yZoomFactor since it's baked
-        // into yBase itself, before scaleAroundZero multiplies the whole
-        // domain - zooming in/out keeps the same proportional gap.
+        // gap either way.
         const padPos = posMax > 0 ? posMax * 0.05 : 0;
         const padNeg = negMax > 0 ? negMax * 0.05 : 0;
         return [-(negMax + padNeg), posMax + padPos];
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chart, hasNetGex]);
 
-    const yDomain = viewDomain(yBase, yZoomFactor, yPan);
+    const yDomain = yBase;
     // Signed formatting once the domain can actually go negative - true
     // whenever netGex is selected, or any put metric (now also negative) is.
     const yTickFormatter = (v: number) => (yBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
@@ -1016,8 +975,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // clipped by that axis' much smaller range or force every other metric's
     // bars down to a sliver next to AG's own larger magnitude. So AG gets its
     // own independent [0, max] domain (plus the same 5%-headroom padding as
-    // yBase, scaled by the same yZoomFactor for a consistent feel when using
-    // the vertical zoom buttons) instead of any of yBase's signed/symmetry
+    // yBase) instead of any of yBase's signed/symmetry
     // logic, which is specific to netGex/OI/Volume's convention and doesn't
     // apply here.
     const agBase = useMemo((): [number, number] => {
@@ -1027,7 +985,7 @@ export const GexView: React.FC<GexViewProps> = ({
         if (max === 0) return [0, 1];
         return [0, max * 1.05];
     }, [chart]);
-    const agDomain = viewDomain(agBase, yZoomFactor, yPan);
+    const agDomain = agBase;
     const agTickFormatter = (v: number) => fmtCompact(v);
 
     // ---- OI / Volume counts axis (shared by the four metrics) ---------------
@@ -1050,7 +1008,7 @@ export const GexView: React.FC<GexViewProps> = ({
         return [-(negMax * 1.05), posMax * 1.05];
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chart, countMetrics.join(',')]);
-    const cntDomain = viewDomain(cntBase, yZoomFactor, yPan);
+    const cntDomain = cntBase;
     const cntTickFormatter = (v: number) => (cntBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
 
     // ---- Put/call ratio axis: [0, max plotted ratio] (plotted values are capped at RATIO_PLOT_CAP) ----
@@ -1063,7 +1021,7 @@ export const GexView: React.FC<GexViewProps> = ({
         return max === 0 ? [0, 1] : [0, max * 1.05];
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chart, ratioMetrics.join(',')]);
-    const ratioDomain = viewDomain(ratioBase, yZoomFactor, yPan);
+    const ratioDomain = ratioBase;
 
     // Sidebar Key Levels card: one plain "Gamma Flip" row, same as every
     // other non-optional level (maxNetGex/minNetGex/maxPain) - not `optional`,
@@ -1442,9 +1400,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                 <button
                                     type="button"
                                     onClick={() => panX(-1)}
-                                    disabled={!xZoom || !chart || !canPanRange(xZoom, chart.domain, -1)}
+                                    disabled={!canPanX(-1)}
                                     aria-label={tr('gex.zoom.panLeft')}
-                                    className={ZOOM_BTN + (!xZoom || !chart || !canPanRange(xZoom, chart.domain, -1) ? ' opacity-40' : '')}
+                                    className={ZOOM_BTN + (!canPanX(-1) ? ' opacity-40' : '')}
                                 >
                                     <ZoomIcon kind="left" />
                                 </button>
@@ -1466,27 +1424,15 @@ export const GexView: React.FC<GexViewProps> = ({
                                 <button
                                     type="button"
                                     onClick={() => panX(1)}
-                                    disabled={!xZoom || !chart || !canPanRange(xZoom, chart.domain, 1)}
+                                    disabled={!canPanX(1)}
                                     aria-label={tr('gex.zoom.panRight')}
-                                    className={ZOOM_BTN + (!xZoom || !chart || !canPanRange(xZoom, chart.domain, 1) ? ' opacity-40' : '')}
+                                    className={ZOOM_BTN + (!canPanX(1) ? ' opacity-40' : '')}
                                 >
                                     <ZoomIcon kind="right" />
                                 </button>
                             </Tip>
                         </div>
-                        <div className="flex justify-end">
-                            <Tip text={tr('gex.zoom.reset')}>
-                                <button
-                                    type="button"
-                                    onClick={resetZoom}
-                                    disabled={!isZoomed}
-                                                                    aria-label={tr('gex.zoom.reset')}
-                                    className={ZOOM_BTN + (isZoomed ? '' : ' opacity-40')}
-                                >
-                                    <ZoomIcon kind="reset" />
-                                </button>
-                            </Tip>
-                        </div>
+                        <div />
                     </div>
                     {/* select-none: dragging across the chart to zoom (onChartMouseDown/
                         onChartMouseUp below) is a mousedown+drag+mouseup gesture over plain
@@ -1496,47 +1442,6 @@ export const GexView: React.FC<GexViewProps> = ({
                         container, not the whole page, so text elsewhere (inputs, sidebar
                         values, etc.) stays normally selectable. */}
                     <div className="relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none">
-                        {/* Right-middle VERTICAL zoom column, top to bottom: + (zoom in),
-                            x (reset the value axis), - (zoom out). */}
-                        {chart && !chartMessage && (
-                            <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-1 text-xs">
-                                <Tip text={tr('gex.zoom.panUp')} side="left">
-                                    <button
-                                        type="button"
-                                        onClick={() => panY(1)}
-                                        disabled={yZoomFactor >= 1 || yPan >= 1}
-                                        aria-label={tr('gex.zoom.panUp')}
-                                        className={ZOOM_BTN + (yZoomFactor >= 1 || yPan >= 1 ? ' opacity-40' : '')}
-                                    >
-                                        <ZoomIcon kind="up" />
-                                    </button>
-                                </Tip>
-                                <Tip text={tr('gex.zoom.yIn')} side="left"><button type="button" onClick={zoomInY} aria-label={tr('gex.zoom.yIn')} className={ZOOM_BTN}><ZoomIcon kind="plus" /></button></Tip>
-                                <Tip text={tr('gex.zoom.resetV')} side="left">
-                                    <button
-                                        type="button"
-                                        onClick={resetVZoom}
-                                        disabled={yZoomFactor === 1}
-                                                                            aria-label={tr('gex.zoom.resetV')}
-                                        className={ZOOM_BTN + (yZoomFactor === 1 ? ' opacity-40' : '')}
-                                    >
-                                        <ZoomIcon kind="reset" />
-                                    </button>
-                                </Tip>
-                                <Tip text={tr('gex.zoom.yOut')} side="left"><button type="button" onClick={zoomOutY} aria-label={tr('gex.zoom.yOut')} className={ZOOM_BTN}><ZoomIcon kind="minus" /></button></Tip>
-                                <Tip text={tr('gex.zoom.panDown')} side="left">
-                                    <button
-                                        type="button"
-                                        onClick={() => panY(-1)}
-                                        disabled={yZoomFactor >= 1 || yPan <= -1}
-                                        aria-label={tr('gex.zoom.panDown')}
-                                        className={ZOOM_BTN + (yZoomFactor >= 1 || yPan <= -1 ? ' opacity-40' : '')}
-                                    >
-                                        <ZoomIcon kind="down" />
-                                    </button>
-                                </Tip>
-                            </div>
-                        )}
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (
@@ -1565,7 +1470,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     // + a little slack; verified live (Playwright) that 110px
                                     // keeps every label fully on-screen, not clipped by the
                                     // chart's own bottom edge.
-                                    margin={{ top: 24, right: 44, bottom: 110, left: 8 }}
+                                    margin={{ top: 24, right: 16, bottom: 110, left: 8 }}
                                     stackOffset="sign"
                                     barCategoryGap="15%"
                                     onMouseDown={onChartMouseDown}
