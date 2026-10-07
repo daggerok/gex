@@ -258,11 +258,11 @@ const HEADING_CLASS = 'text-base font-semibold text-slate-800 dark:text-slate-10
 
 /** Y axis tick renderer that colors every label with `colorOf(value)` (recharts' default tick
  *  is one color per axis). `format` is applied here because a custom tick bypasses tickFormatter. */
-const coloredTick = (colorOf: (v: number) => string, format: (v: number) => string) => (props: { x?: number; y?: number; payload?: { value: number }; textAnchor?: string }) => {
+const coloredTick = (colorOf: (v: number) => string, format: (v: number) => string, placement?: { dx: number; anchor: 'start' | 'end' }) => (props: { x?: number; y?: number; payload?: { value: number }; textAnchor?: string }) => {
     const v = props.payload?.value;
     if (v == null || props.x == null || props.y == null) return <React.Fragment />;
     return (
-        <text x={props.x} y={props.y} dy="0.355em" textAnchor={(props.textAnchor as 'start' | 'middle' | 'end' | 'inherit' | undefined) ?? 'end'} fill={colorOf(v)} fontSize={12}>
+        <text x={props.x + (placement?.dx ?? 0)} y={props.y} dy="0.355em" textAnchor={placement?.anchor ?? (props.textAnchor as 'start' | 'middle' | 'end' | 'inherit' | undefined) ?? 'end'} fill={colorOf(v)} fontSize={12}>
             {format(v)}
         </text>
     );
@@ -348,6 +348,12 @@ const ZOOM_ICON_SHAPES: Record<ZoomIconKind, React.ReactNode> = {
 const ZoomIcon: React.FC<{ kind: ZoomIconKind }> = ({ kind }) => (
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" className="block">{ZOOM_ICON_SHAPES[kind]}</svg>
 );
+
+/** The counts axis and the put/call ratio axis share ONE column on the right: the counts axis
+ *  owns this width and left-aligns its ticks, the ratio axis is 1px wide (recharts skips a zero-width axis) and draws its ticks
+ *  right-aligned inside the same column (see `coloredTick`'s `placement`), so enabling OI, Volume
+ *  or P/C metrics never changes the plot width. */
+const SECONDARY_AXIS_WIDTH = 100;
 
 /** Small borderless zoom button holding a ZoomIcon. */
 const ZOOM_BTN = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium leading-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 disabled:cursor-default';
@@ -664,7 +670,8 @@ export const GexView: React.FC<GexViewProps> = ({
             pcRatioOiPlot: (() => { const r = pcRatioByStrike(p).byOi; return r == null ? null : Math.min(r, RATIO_PLOT_CAP); })(),
             pcRatioVolumePlot: (() => { const r = pcRatioByStrike(p).byVolume; return r == null ? null : Math.min(r, RATIO_PLOT_CAP); })(),
         }));
-        return { rows, domain: [minK - pad, maxK + pad] as [number, number] };
+        // strikeStep: the smallest gap between two visible strikes = "one strike", the step of the pan arrows
+        return { rows, domain: [minK - pad, maxK + pad] as [number, number], strikeStep: pad };
     }, [profile, effSpot, metrics]);
 
     // ---- Multi-metric selection --------------------------------------------
@@ -913,7 +920,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const panX = (dir: -1 | 1) => {
         const base = chart?.domain;
         if (!base || !xZoom) return;
-        setXZoomAndPersist(panRange(xZoom, base, dir));
+        setXZoomAndPersist(panRange(xZoom, base, dir, chart?.strikeStep ?? 1));
     };
     const panY = (dir: -1 | 1) => {
         const next = stepPan(yPan, dir);
@@ -1436,7 +1443,6 @@ export const GexView: React.FC<GexViewProps> = ({
                     <div className="mb-2 grid grid-cols-[1fr_auto_1fr] items-start gap-2">
                         <div className="min-w-0">
                             <h3 className={HEADING_CLASS}>{chartTitle}</h3>
-                            <span className="hidden text-xs text-slate-400 sm:inline">{tr('gex.zoom.hint')}</span>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-slate-400">
                             <Tip text={tr('gex.zoom.panLeft')}>
@@ -1656,7 +1662,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickLine={false}
                                         tick={countMetrics.length > 0 ? coloredTick((v) => countAxisColor(v, countMetrics, metricColors), cntTickFormatter) : false}
                                         stroke="#94a3b8"
-                                        width={56}
+                                        width={SECONDARY_AXIS_WIDTH}
                                         tickFormatter={cntTickFormatter}
                                     />
                                     <YAxis
@@ -1667,9 +1673,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickCount={6}
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={ratioMetrics.length > 0 ? coloredTick(() => ratioAxisColor(ratioMetrics, metricColors), (v) => fmt(v)) : false}
+                                        tick={ratioMetrics.length > 0 ? coloredTick(() => ratioAxisColor(ratioMetrics, metricColors), (v) => fmt(v), { dx: -10, anchor: 'end' }) : false}
                                         stroke="#94a3b8"
-                                        width={40}
+                                        width={1}
                                         tickFormatter={(v: number) => fmt(v)}
                                     />
                                     <Tooltip
@@ -1851,6 +1857,7 @@ export const GexView: React.FC<GexViewProps> = ({
                             </ResponsiveContainer>
                         )}
                     </div>
+                    <p className="mt-1 hidden text-center text-xs text-slate-400 sm:block">{tr('gex.zoom.hint')}</p>
                 </section>
 
                 {/* ---- Values: what every level means on its own strike. One table
