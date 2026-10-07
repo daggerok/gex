@@ -49,7 +49,7 @@
     "@parcel/resolver-default": "2.16.4",
     "@parcel/transformer-sass": "2.16.4",
     "@tailwindcss/postcss": "4.3.3",
-    "@types/node": "26.1.1",
+    "@types/node": "26.6.4",
     "@types/papaparse": "5.5.2",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
