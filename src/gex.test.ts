@@ -3,17 +3,17 @@ import {
   CONTRACT_MULTIPLIER,
   GAMMA_FLIP_GRID_POINTS,
   GAMMA_FLIP_RANGE_PCT,
-  SECOND_WALL_MIN_DISTANCE_PCT,
-  SECOND_WALL_DISTANCE_BY_SYMBOL,
-  secondWallMinDistance,
+  NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT,
+  NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL,
+  netGexPlusMinusMinDistance,
   computeGexLevels,
   computeGexProfile,
   computeMaxPain,
   computeOiVolumeTotals,
   computePCRatio,
-  findCallPutWalls,
-  findGammaRange,
-  GAMMA_RANGE_SHARE,
+  findNetGexLevels,
+  findSumNetGexLevels,
+  SUM_NET_GEX_SHARE,
   findGammaFlipHypotheticalSpot,
   gexCall,
   gexPut,
@@ -91,7 +91,7 @@ const FIXTURE: OptionQuote[] = [
 describe('gex constants + per-contract formula (7.1)', () => {
   test('named constants match the spec', () => {
     expect(CONTRACT_MULTIPLIER).toBe(100);
-    expect(SECOND_WALL_MIN_DISTANCE_PCT).toBe(0.03);
+    expect(NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT).toBe(0.03);
   });
 
   test('gexCall = gamma * OI * 100 * spot^2 * 0.01, gexPut is its negation', () => {
@@ -317,87 +317,87 @@ describe('findGammaFlipHypotheticalSpot (7.3, rewritten: hypothetical-spot Black
 });
 
 describe('second walls: direction and per-symbol distance', () => {
-  // Hand-built profile, only strike + netGex matter to findCallPutWalls.
-  const pt = (strike: number, netGex: number) => ({ strike, netGex } as unknown as Parameters<typeof findCallPutWalls>[0][number]);
-  // Mirrors the SPY bug: big cluster below the call wall, small strikes above it.
+  // Hand-built profile, only strike + netGex matter to findNetGexLevels.
+  const pt = (strike: number, netGex: number) => ({ strike, netGex } as unknown as Parameters<typeof findNetGexLevels>[0][number]);
+  // Mirrors the SPY bug: big cluster below the Max Net GEX, small strikes above it.
   const profile = [
     pt(745, -100), pt(767, -500), pt(771, 300), pt(775, 2557), pt(787, 2821),
     pt(788, 37), pt(789, 20), pt(790, 90), pt(793, 36), pt(803, 50),
   ];
 
-  test('Call Wall 2 must be above the call wall, Put Wall 2 below the put wall', () => {
-    // callWall 787. With minDistance 3: strikes >= 790 -> 790 (+90) beats 793 (+36) and 803 (+50).
-    // putWall 767 (-500). Below it only 745 (-100) -> putWall2 745.
-    expect(findCallPutWalls(profile, 775.83, 3)).toEqual({
-      callWall: 787, putWall: 767, callWall2: 790, putWall2: 745,
+  test('Net GEX+ must be above the Max Net GEX, Net GEX- below the Min Net GEX', () => {
+    // maxNetGex 787. With minDistance 3: strikes >= 790 -> 790 (+90) beats 793 (+36) and 803 (+50).
+    // minNetGex 767 (-500). Below it only 745 (-100) -> netGexMinus 745.
+    expect(findNetGexLevels(profile, 775.83, 3)).toEqual({
+      maxNetGex: 787, minNetGex: 767, netGexPlus: 790, netGexMinus: 745,
     });
   });
 
   test('default 3% of spot (23.27) skips 790 and 803, nothing above qualifies -> null', () => {
     // minDistance = 0.03 * 775.83 = 23.2749 -> only strikes >= 810.27 qualify, none in the profile.
-    expect(findCallPutWalls(profile, 775.83).callWall2).toBeNull();
+    expect(findNetGexLevels(profile, 775.83).netGexPlus).toBeNull();
     // A strike at 812 (+10) is beyond the threshold and is picked.
-    expect(findCallPutWalls([...profile, pt(812, 10)], 775.83).callWall2).toBe(812);
+    expect(findNetGexLevels([...profile, pt(812, 10)], 775.83).netGexPlus).toBe(812);
   });
 
   test('distance equal to the threshold qualifies (>=)', () => {
-    expect(findCallPutWalls(profile, 775.83, 3).callWall2).toBe(790);
+    expect(findNetGexLevels(profile, 775.83, 3).netGexPlus).toBe(790);
     // 790 now excluded; 793 (+36) loses to 803 (+50)
-    expect(findCallPutWalls(profile, 775.83, 3.01).callWall2).toBe(803);
+    expect(findNetGexLevels(profile, 775.83, 3.01).netGexPlus).toBe(803);
   });
 
-  test('secondWallMinDistance: per-symbol usd override, default pct, case-insensitive', () => {
-    expect(secondWallMinDistance('SPY', 775.83)).toBe(3);
-    expect(secondWallMinDistance('spy', 775.83)).toBe(3);
-    expect(secondWallMinDistance('SPX', 7000)).toBeCloseTo(210, 9);
-    expect(secondWallMinDistance(null, 100)).toBeCloseTo(3, 9);
-    expect(secondWallMinDistance(undefined, 100)).toBeCloseTo(3, 9);
+  test('netGexPlusMinusMinDistance: per-symbol usd override, default pct, case-insensitive', () => {
+    expect(netGexPlusMinusMinDistance('SPY', 775.83)).toBe(3);
+    expect(netGexPlusMinusMinDistance('spy', 775.83)).toBe(3);
+    expect(netGexPlusMinusMinDistance('SPX', 7000)).toBeCloseTo(210, 9);
+    expect(netGexPlusMinusMinDistance(null, 100)).toBeCloseTo(3, 9);
+    expect(netGexPlusMinusMinDistance(undefined, 100)).toBeCloseTo(3, 9);
   });
 
   test('a pct rule scales with spot', () => {
-    SECOND_WALL_DISTANCE_BY_SYMBOL.TEST_PCT = { pct: 0.005 };
+    NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL.TEST_PCT = { pct: 0.005 };
     try {
-      expect(secondWallMinDistance('TEST_PCT', 800)).toBeCloseTo(4, 9);
+      expect(netGexPlusMinusMinDistance('TEST_PCT', 800)).toBeCloseTo(4, 9);
     } finally {
-      delete (SECOND_WALL_DISTANCE_BY_SYMBOL as Record<string, unknown>).TEST_PCT;
+      delete (NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL as Record<string, unknown>).TEST_PCT;
     }
   });
 });
 
-describe('findCallPutWalls (7.4)', () => {
+describe('findNetGexLevels (7.4)', () => {
   test('primary walls + second walls honoring the 2%-of-spot distance', () => {
     // min distance = 0.02 * 100 = 2.
-    // callWall = 105 (+100000). Next-highest positive is 106 (+80000), but
-    // |106-105| = 1 < 2, so callWall2 = 115 (+50000) instead.
-    // putWall = 90 (-40000); the only other negative strike is 95, which is
-    // ABOVE the put wall, so putWall2 = null (Put Wall 2 must sit below the Put Wall).
-    expect(findCallPutWalls(computeGexProfile(FIXTURE, SPOT), SPOT)).toEqual({
-      callWall: 105,
-      putWall: 90,
-      callWall2: 115,
-      putWall2: null,
+    // maxNetGex = 105 (+100000). Next-highest positive is 106 (+80000), but
+    // |106-105| = 1 < 2, so netGexPlus = 115 (+50000) instead.
+    // minNetGex = 90 (-40000); the only other negative strike is 95, which is
+    // ABOVE the Min Net GEX, so netGexMinus = null (Net GEX- must sit below the Min Net GEX).
+    expect(findNetGexLevels(computeGexProfile(FIXTURE, SPOT), SPOT)).toEqual({
+      maxNetGex: 105,
+      minNetGex: 90,
+      netGexPlus: 115,
+      netGexMinus: null,
     });
   });
 
   test('second wall is null when nothing qualifies; ties pick the lowest strike', () => {
     // EXP_A nets: 90:-20000, 95:-20000, 100:0, 105:+60000, 106:+80000.
-    // callWall 106; only other positive is 105 (distance 1) -> callWall2 null.
-    // 90 and 95 tie at -20000 -> putWall 90 (lowest strike); 95 is above it -> putWall2 null.
+    // maxNetGex 106; only other positive is 105 (distance 1) -> netGexPlus null.
+    // 90 and 95 tie at -20000 -> minNetGex 90 (lowest strike); 95 is above it -> netGexMinus null.
     const profile = computeGexProfile(FIXTURE.filter((x) => x.expiration === EXP_A), SPOT);
-    expect(findCallPutWalls(profile, SPOT)).toEqual({
-      callWall: 106,
-      putWall: 90,
-      callWall2: null,
-      putWall2: null,
+    expect(findNetGexLevels(profile, SPOT)).toEqual({
+      maxNetGex: 106,
+      minNetGex: 90,
+      netGexPlus: null,
+      netGexMinus: null,
     });
   });
 
-  test('no negative netGex -> put walls null', () => {
+  test('no negative netGex -> Min Net GEXs null', () => {
     const callsOnly = computeGexProfile(FIXTURE.filter((x) => x.side === 'call'), SPOT);
-    const walls = findCallPutWalls(callsOnly, SPOT);
-    expect(walls.putWall).toBeNull();
-    expect(walls.putWall2).toBeNull();
-    expect(walls.callWall).toBe(105); // 1100 calls is the biggest call strike
+    const walls = findNetGexLevels(callsOnly, SPOT);
+    expect(walls.minNetGex).toBeNull();
+    expect(walls.netGexMinus).toBeNull();
+    expect(walls.maxNetGex).toBe(105); // 1100 calls is the biggest call strike
   });
 });
 
@@ -499,20 +499,20 @@ describe('computeGexProfile honors a per-quote forward over the shared spot (Pha
     expect(byStrike.get(20)!.callGex).toBeCloseTo(6229.03808, 3);
   });
 
-  test('findCallPutWalls on a forward-priced profile: strikes and signs are exactly as for the shared-spot path', () => {
+  test('findNetGexLevels on a forward-priced profile: strikes and signs are exactly as for the shared-spot path', () => {
     // Only two strikes, opposite signs -> each is trivially its own wall.
     const quotes = [vq('call', 20, 1000, F), vq('put', 15, 400, F)];
     const profile = computeGexProfile(quotes, 999); // spot param irrelevant here too
-    const walls = findCallPutWalls(profile, F); // caller passes nearest-expiration forward, not spot (section 9)
-    expect(walls.callWall).toBe(20);
-    expect(walls.putWall).toBe(15);
+    const walls = findNetGexLevels(profile, F); // caller passes nearest-expiration forward, not spot (section 9)
+    expect(walls.maxNetGex).toBe(20);
+    expect(walls.minNetGex).toBe(15);
   });
 
   test('computeGexLevels end-to-end for a single futures-priced expiration', () => {
     const quotes = [vq('call', 20, 1000, F), vq('put', 15, 400, F)];
     const levels = computeGexLevels(quotes, F); // F used as the "spot" arg (section 9 design)
-    expect(levels.callWall).toBe(20);
-    expect(levels.putWall).toBe(15);
+    expect(levels.maxNetGex).toBe(20);
+    expect(levels.minNetGex).toBe(15);
     expect(levels.totalNetGex).toBeCloseTo(6229.03808 - 2491.615232, 3);
     // gammaFlip: both quotes here carry a resolved `forward` (vq() sets it),
     // i.e. they are the futures-priced (VIX/VXN-shaped) case -
@@ -536,7 +536,7 @@ describe('computeGexLevels (7.7)', () => {
     const levels = computeGexLevels(FIXTURE, SPOT);
     expect(levels.spot).toBe(SPOT);
     // FIXTURE's q() helper never sets `iv` (it only carries a pre-supplied
-    // `gamma`, which is all computeGexProfile/findCallPutWalls/computeMaxPain
+    // `gamma`, which is all computeGexProfile/findNetGexLevels/computeMaxPain
     // need). findGammaFlipHypotheticalSpot recomputes gamma from `iv` at each
     // hypothetical spot, so a quote with no `iv` can never be priced at ANY
     // hypothetical S and is excluded from the sweep entirely - with every
@@ -547,10 +547,10 @@ describe('computeGexLevels (7.7)', () => {
     expect(levels.gammaFlipPos).toBeNull();
     expect(levels.gammaFlipNeg).toBeNull();
     expect(levels.gammaFlip).toBeNull();
-    expect(levels.callWall).toBe(105);
-    expect(levels.putWall).toBe(90);
-    expect(levels.callWall2).toBe(115);
-    expect(levels.putWall2).toBeNull();
+    expect(levels.maxNetGex).toBe(105);
+    expect(levels.minNetGex).toBe(90);
+    expect(levels.netGexPlus).toBe(115);
+    expect(levels.netGexMinus).toBeNull();
     expect(levels.maxPain).toBe(100);
     expect(levels.pcRatioOi).toBeCloseTo(1220 / 3320, 12);
     expect(levels.pcRatioVolume).toBeCloseTo(0.5, 12);
@@ -564,12 +564,12 @@ describe('computeGexLevels (7.7)', () => {
       gammaFlip: null,
       gammaFlipPos: null,
       gammaFlipNeg: null,
-      callWall: null,
-      putWall: null,
-      callWall2: null,
-      putWall2: null,
-      gammaRangeHigh: null,
-      gammaRangeLow: null,
+      maxNetGex: null,
+      minNetGex: null,
+      netGexPlus: null,
+      netGexMinus: null,
+      sumNetGexPlus: null,
+      sumNetGexMinus: null,
       maxPain: null,
       pcRatioOi: null,
       pcRatioVolume: null,
@@ -644,37 +644,37 @@ describe('trimZeroBoundaries (GEX tab chart axis trimming, section 8.1 part 3)',
   });
 });
 
-describe('findGammaRange: 75% of one side\'s net GEX, from spot outward', () => {
-  const pt = (strike: number, netGex: number) => ({ strike, netGex } as unknown as Parameters<typeof findGammaRange>[0][number]);
+describe('findSumNetGexLevels: 75% of one side\'s net GEX, from spot outward', () => {
+  const pt = (strike: number, netGex: number) => ({ strike, netGex } as unknown as Parameters<typeof findSumNetGexLevels>[0][number]);
   // spot 100. Positive at/above spot: 100:+10, 102:+30, 105:+40, 110:+20 (total 100).
   // Negative at/below spot: 98:-100, 95:-60, 90:-40 (total 200 in magnitude).
   const profile = [pt(90, -40), pt(95, -60), pt(98, -100), pt(100, 10), pt(102, 30), pt(105, 40), pt(110, 20)];
 
   test('the share constant is 75%', () => {
-    expect(GAMMA_RANGE_SHARE).toBe(0.75);
+    expect(SUM_NET_GEX_SHARE).toBe(0.75);
   });
 
   test('high: running sum 10, 40, 80 crosses 75 at 105, low: 100, 160 crosses 150 at 95', () => {
-    expect(findGammaRange(profile, 100)).toEqual({ gammaRangeHigh: 105, gammaRangeLow: 95 });
+    expect(findSumNetGexLevels(profile, 100)).toEqual({ sumNetGexPlus: 105, sumNetGexMinus: 95 });
   });
 
   test('the threshold is inclusive (>=): share 0.4 -> target 40 is met exactly at 102', () => {
-    expect(findGammaRange(profile, 100, 0.4).gammaRangeHigh).toBe(102);
+    expect(findSumNetGexLevels(profile, 100, 0.4).sumNetGexPlus).toBe(102);
     // low side, target 0.5 * 200 = 100 is met exactly at 98
-    expect(findGammaRange(profile, 100, 0.5).gammaRangeLow).toBe(98);
+    expect(findSumNetGexLevels(profile, 100, 0.5).sumNetGexMinus).toBe(98);
   });
 
   test('mass on the wrong side of spot is ignored: a big positive strike below spot changes nothing', () => {
-    expect(findGammaRange([...profile, pt(80, 5000), pt(120, -5000)], 100)).toEqual({ gammaRangeHigh: 105, gammaRangeLow: 95 });
+    expect(findSumNetGexLevels([...profile, pt(80, 5000), pt(120, -5000)], 100)).toEqual({ sumNetGexPlus: 105, sumNetGexMinus: 95 });
   });
 
   test('a side with no mass is null, the other side still works', () => {
-    expect(findGammaRange([pt(98, -100), pt(95, -60)], 100)).toEqual({ gammaRangeHigh: null, gammaRangeLow: 95 });
-    expect(findGammaRange([pt(102, 30)], 100)).toEqual({ gammaRangeHigh: 102, gammaRangeLow: null });
-    expect(findGammaRange([], 100)).toEqual({ gammaRangeHigh: null, gammaRangeLow: null });
+    expect(findSumNetGexLevels([pt(98, -100), pt(95, -60)], 100)).toEqual({ sumNetGexPlus: null, sumNetGexMinus: 95 });
+    expect(findSumNetGexLevels([pt(102, 30)], 100)).toEqual({ sumNetGexPlus: 102, sumNetGexMinus: null });
+    expect(findSumNetGexLevels([], 100)).toEqual({ sumNetGexPlus: null, sumNetGexMinus: null });
   });
 
   test('share 1 returns the farthest strike with mass', () => {
-    expect(findGammaRange(profile, 100, 1)).toEqual({ gammaRangeHigh: 110, gammaRangeLow: 90 });
+    expect(findSumNetGexLevels(profile, 100, 1)).toEqual({ sumNetGexPlus: 110, sumNetGexMinus: 90 });
   });
 });

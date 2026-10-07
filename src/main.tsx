@@ -171,7 +171,7 @@
  *          NOTICE (verbatim) + https://www.tradingview.com/ link on every tab.
  * v0.9.49 - Phase 3 GEX tab: views/GexView.tsx replaces the 'gex' TabStub
  *          (plan section 8.1). Sidebar (OI Volume / GEX Analysis / Key Levels /
- *          P/C Ratio) + recharts bar chart by strike with spot and call/put wall
+ *          P/C Ratio) + recharts bar chart by strike with spot and call/Min Net GEX
  *          reference lines, metric toggle (Net GEX / Call OI / Put OI / Call
  *          Volume / Put Volume). All numbers come from src/gex.ts. No new fetch:
  *          bulk providers (CACHE/CBOE/NASDAQ) read the whole chain already held

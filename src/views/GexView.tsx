@@ -40,40 +40,40 @@ const metricDataKey = (m: GexMetric): keyof GexPoint => (m === 'absoluteGamma' ?
 
 /** GexView.tsx's own toggleable-level key: every GexLevelKey, including the
  *  plain collapsed `gammaFlip` - Gamma Flip is one ordinary toggleable/
- *  colorable Key Level here, same as Call Wall/Put Wall/Max Pain (an earlier
+ *  colorable Key Level here, same as Max Net GEX/Min Net GEX/Max Pain (an earlier
  *  adaptive gammaFlipPos/gammaFlipNeg dual-display mechanism was removed). */
 type ToggleableLevelKey = GexLevelKey;
 
 /** The 7 toggleable Key Levels (everything in GexLevels - see
  *  ToggleableLevelKey above; also gex-colors.ts's LevelColorSet).
- *  (Resistance 1.5 / Support 1.5 - `callWall1_5`/`putWall1_5` - were removed
+ *  (Resistance 1.5 / Support 1.5 - `maxNetGex1_5`/`minNetGex1_5` - were removed
  *  entirely: the user found them not working out after shipping them.
  *  Removed here alongside the corresponding
- *  `GexLevels.callWall1_5`/`putWall1_5` fields/math removal in
+ *  `GexLevels.maxNetGex1_5`/`minNetGex1_5` fields/math removal in
  *  src/gex.ts/src/types.ts, done in a separate PR.) `spot` is listed last
  *  here - its actual rendered position (toggle panel AND sidebar card) is
  *  decided by each one's own by-strike sort (see `levelPanelKeys`/
  *  `keyLevels` below), this array is just the base/reset order. */
-const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlip', 'putWall', 'putWall2', 'gammaRangeHigh', 'gammaRangeLow', 'maxPain', 'spot'];
+const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'spot'];
 
 /** Default ON selection (revised again - the user narrowed this further
- *  after seeing it live): only Gamma Range High / Gamma Range Low / Call Wall 2 / Put Wall 2 /
- *  Gamma Flip start ON. Call Wall / Put Wall stay OFF (redundant with just looking at the
+ *  after seeing it live): only 75% Sum Net GEX+ / 75% Sum Net GEX- / Net GEX+ / Net GEX- /
+ *  Gamma Flip start ON. Max Net GEX / Min Net GEX stay OFF (redundant with just looking at the
  *  chart's own tallest bars - unchanged from the earlier revision). Max
  *  Pain and Spot now ALSO start OFF - the user wants a quieter default
  *  view; both remain one click away in the Key Levels panel like every
  *  other level. */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlip', 'putWall2', 'gammaRangeHigh', 'gammaRangeLow'];
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['netGexPlus', 'gammaFlip', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus'];
 
 /** i18n key for each level's sidebar/toggle-panel label. */
 const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
-    callWall: 'gex.level.callWall',
-    callWall2: 'gex.level.resistance2',
+    maxNetGex: 'gex.level.maxNetGex',
+    netGexPlus: 'gex.level.netGexPlus',
     gammaFlip: 'gex.level.gammaFlip',
-    putWall: 'gex.level.putWall',
-    putWall2: 'gex.level.support2',
-    gammaRangeHigh: 'gex.level.gammaRangeHigh',
-    gammaRangeLow: 'gex.level.gammaRangeLow',
+    minNetGex: 'gex.level.minNetGex',
+    netGexMinus: 'gex.level.netGexMinus',
+    sumNetGexPlus: 'gex.level.sumNetGexPlus',
+    sumNetGexMinus: 'gex.level.sumNetGexMinus',
     maxPain: 'gex.level.maxPain',
     // Reuses the plain 'spot.label' key ("Spot"/"Спот") already shown
     // elsewhere in this file (spot.label/spot.estimated/spot.delayed i18n
@@ -86,13 +86,13 @@ const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
  *  two can read differently: the chart line stays short even when the
  *  sidebar label carries an "(R1)"/"(S1)" suffix). */
 const LEVEL_CHART_LABEL_KEY: Record<ToggleableLevelKey, string> = {
-    callWall: 'gex.chart.callWall',
-    callWall2: 'gex.chart.resistance2',
+    maxNetGex: 'gex.chart.maxNetGex',
+    netGexPlus: 'gex.chart.netGexPlus',
     gammaFlip: 'gex.chart.gammaFlip',
-    putWall: 'gex.chart.putWall',
-    putWall2: 'gex.chart.support2',
-    gammaRangeHigh: 'gex.chart.gammaRangeHigh',
-    gammaRangeLow: 'gex.chart.gammaRangeLow',
+    minNetGex: 'gex.chart.minNetGex',
+    netGexMinus: 'gex.chart.netGexMinus',
+    sumNetGexPlus: 'gex.chart.sumNetGexPlus',
+    sumNetGexMinus: 'gex.chart.sumNetGexMinus',
     maxPain: 'gex.chart.maxPain',
     // 'gex.chart.spot' used to read "Spot {{price}}" for the old always-on,
     // never-rotated, plain horizontal <ReferenceLine> label (which had room
@@ -105,13 +105,13 @@ const LEVEL_CHART_LABEL_KEY: Record<ToggleableLevelKey, string> = {
 
 /** i18n tooltip key (Part 4) for every Key Levels panel entry. */
 const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
-    callWall: 'gex.level.tooltip.callWall',
-    callWall2: 'gex.level.tooltip.resistance2',
+    maxNetGex: 'gex.level.tooltip.maxNetGex',
+    netGexPlus: 'gex.level.tooltip.netGexPlus',
     gammaFlip: 'gex.level.tooltip.gammaFlip',
-    putWall: 'gex.level.tooltip.putWall',
-    putWall2: 'gex.level.tooltip.support2',
-    gammaRangeHigh: 'gex.level.tooltip.gammaRangeHigh',
-    gammaRangeLow: 'gex.level.tooltip.gammaRangeLow',
+    minNetGex: 'gex.level.tooltip.minNetGex',
+    netGexMinus: 'gex.level.tooltip.netGexMinus',
+    sumNetGexPlus: 'gex.level.tooltip.sumNetGexPlus',
+    sumNetGexMinus: 'gex.level.tooltip.sumNetGexMinus',
     maxPain: 'gex.level.tooltip.maxPain',
     // Plain (non-estimated) case - see `levelTooltip` below for the
     // 'gex.level.tooltip.spotEstimated' variant used when the spot shown is
@@ -627,7 +627,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // useState in main.tsx with no localStorage key); unlike metrics, there's
     // no "at least one must stay on" rule here - toggling every level off is
     // a valid (if unusual) choice. Reset restores DEFAULT_SELECTED_LEVELS
-    // (Part 2 - only Call Wall/Put Wall start OFF; Call Wall 2/Put Wall 2/
+    // (Part 2 - only Max Net GEX/Min Net GEX start OFF; Net GEX+/Net GEX-/
     // Gamma Flip/Max Pain start ON), not "every level on".
     const [selectedLevels, setSelectedLevels] = useState<Array<ToggleableLevelKey>>(() => [...DEFAULT_SELECTED_LEVELS]);
     const [levelColors, setLevelColorsState] = useState<LevelColorSet>(() => loadLevelColors());
@@ -650,7 +650,7 @@ export const GexView: React.FC<GexViewProps> = ({
      *  `gammaFlip` here since it's the reference point every other level's
      *  position is read relative to - a reasonable logical "center", though
      *  it's moot for the actual rendered order once sorted below. */
-    const levelPanelKeysBase: Array<ToggleableLevelKey> = ['callWall', 'callWall2', 'gammaFlip', 'spot', 'putWall', 'putWall2', 'gammaRangeHigh', 'gammaRangeLow', 'maxPain'];
+    const levelPanelKeysBase: Array<ToggleableLevelKey> = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain'];
     /** The Key Levels TOGGLE PANEL's actual left-to-right order: ascending by
      *  each level's live strike (`levels?.[key]`), recomputed every render so
      *  it tracks real data as it loads/changes - the user wants the chip with
@@ -869,7 +869,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const agTickFormatter = (v: number) => fmtCompact(v);
 
     // Sidebar Key Levels card: one plain "Gamma Flip" row, same as every
-    // other non-optional level (callWall/putWall/maxPain) - not `optional`,
+    // other non-optional level (maxNetGex/minNetGex/maxPain) - not `optional`,
     // so even with no data at all it still shows a placeholder row reading
     // "-". `spot` is likewise never `optional` (GexLevels.spot is a plain
     // `number`, not nullable, whenever `levels` itself is non-null) and
@@ -884,14 +884,14 @@ export const GexView: React.FC<GexViewProps> = ({
     // build order is otherwise unused for display purposes, only for feeding
     // that sort.
     const keyLevels: Array<{ key: ToggleableLevelKey; label: string; value: number | null; optional?: boolean; suffix?: string }> = [
-        { key: 'callWall', label: levelLabel('callWall'), value: levels?.callWall ?? null },
-        { key: 'callWall2', label: levelLabel('callWall2'), value: levels?.callWall2 ?? null, optional: true },
+        { key: 'maxNetGex', label: levelLabel('maxNetGex'), value: levels?.maxNetGex ?? null },
+        { key: 'netGexPlus', label: levelLabel('netGexPlus'), value: levels?.netGexPlus ?? null, optional: true },
         { key: 'gammaFlip', label: levelLabel('gammaFlip'), value: levels?.gammaFlip ?? null },
         { key: 'spot', label: levelLabel('spot'), value: levels?.spot ?? null, suffix: effSpotIsEstimated ? tr('spot.estimated') : undefined },
-        { key: 'putWall', label: levelLabel('putWall'), value: levels?.putWall ?? null },
-        { key: 'putWall2', label: levelLabel('putWall2'), value: levels?.putWall2 ?? null, optional: true },
-        { key: 'gammaRangeHigh', label: levelLabel('gammaRangeHigh'), value: levels?.gammaRangeHigh ?? null, optional: true },
-        { key: 'gammaRangeLow', label: levelLabel('gammaRangeLow'), value: levels?.gammaRangeLow ?? null, optional: true },
+        { key: 'minNetGex', label: levelLabel('minNetGex'), value: levels?.minNetGex ?? null },
+        { key: 'netGexMinus', label: levelLabel('netGexMinus'), value: levels?.netGexMinus ?? null, optional: true },
+        { key: 'sumNetGexPlus', label: levelLabel('sumNetGexPlus'), value: levels?.sumNetGexPlus ?? null, optional: true },
+        { key: 'sumNetGexMinus', label: levelLabel('sumNetGexMinus'), value: levels?.sumNetGexMinus ?? null, optional: true },
         { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
     ];
 
@@ -1068,7 +1068,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         overflow at all once the chips (non-shrinking, `shrink-0`)
                         exceed the row's width - `scrollWidth === clientWidth`
                         measured equal - and renders the EARLIER chips in DOM order
-                        (Call Wall, Put Wall, Gamma Flip, Max Pain, Put Wall 2 in that
+                        (Max Net GEX, Min Net GEX, Gamma Flip, Max Pain, Net GEX- in that
                         run) at negative x-coordinates, fully or partly off-screen to
                         the left, with no way to reach them: wheel/trackpad/drag don't
                         move it (nothing registers as scrollable), and setting
@@ -1091,7 +1091,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         ordinary, fully-scrollable behavior every other
                         `overflow-x-auto` row in this file already relies on (e.g.
                         the Metrics row above), with the first chip (lowest strike,
-                        e.g. Call Wall) visible at the start, same as a user
+                        e.g. Max Net GEX) visible at the start, same as a user
                         scrolling a list would expect. */}
                     <div className="scrollbar-hidden flex items-center gap-2 overflow-x-auto">
                         <div aria-hidden="true" className="flex-1" />
@@ -1168,7 +1168,7 @@ export const GexView: React.FC<GexViewProps> = ({
                             fixed logical order `keyLevels` was built in above
                             (that order still drives the toggle+color panel via
                             the separate `levelPanelKeys` array, untouched by
-                            this sort). A null-valued row (Resistance/Put Wall 2
+                            this sort). A null-valued row (Resistance/Net GEX-
                             not applicable, or Gamma Flip with no data) has no
                             real price to sort by, so every
                             null row sinks to the bottom, below every row with
@@ -1257,7 +1257,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     // bottom: 110 (widened from 8) makes room for the Key Level
                                     // diagonal labels now hanging BELOW the X axis (see
                                     // renderRotatedLevelLabel's doc comment) - the longest chart
-                                    // label text ("Call Wall 2") at this -45deg rotation and
+                                    // label text ("Net GEX+") at this -45deg rotation and
                                     // 10px font needs roughly BOTTOM_GAP (28px, clears the axis'
                                     // own numeric tick labels) + ~60px of diagonal vertical extent
                                     // + a little slack; verified live (Playwright) that 110px
@@ -1458,7 +1458,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         // (see renderRotatedLevelLabel's doc comment) - only each
                                         // level's own strike (x position) and the -45deg rotation
                                         // keep labels apart, no per-drawn-level vertical offset.
-                                        // Levels that share a price (e.g. Call Wall 2 and Gamma
+                                        // Levels that share a price (e.g. Net GEX+ and Gamma
                                         // Range High both at 778) are drawn as separate lines but
                                         // get ONE merged label on the first of them, so labels
                                         // never clash and every level stays visible.
