@@ -3,7 +3,7 @@ import { pickReferenceForward } from './use-gex-levels';
 import type { OptionQuote } from './types';
 
 // ---------------------------------------------------------------------------
-// Phase 3 of .plans/gex-vix-futures-pricing-research.txt (section 9): the
+// Phase 3 of .claude/docs/spec-vix-futures.md (section 9): the
 // pure "which forward does the GEX second-wall rule anchor on" selection
 // logic, extracted out of the useGexLevels hook so it's testable without a
 // React rendering harness (none exists elsewhere in this repo).

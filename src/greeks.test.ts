@@ -118,7 +118,7 @@ describe('blackScholesGreeks dividend yield', () => {
 // model for them (not just imprecise). Cboe's own feed already supplies
 // correct 1st-order greeks for VIX; only the model-computed higher-order
 // greeks (and, separately, GEX) must be suppressed. See
-// .plans/gex-vix-futures-pricing-research.txt for the full investigation.
+// .claude/docs/spec-vix-futures.md for the full investigation.
 // ---------------------------------------------------------------------------
 describe('futures-priced symbols (VIX, VXN)', () => {
   test('FUTURES_PRICED_SYMBOLS is exactly VIX and VXN', () => {
@@ -215,8 +215,8 @@ describe('futures-priced symbols (VIX, VXN)', () => {
 // ---------------------------------------------------------------------------
 // PHASE 2: wiring settings.vixFuturesPricing into enrichQuotesWithModelGreeks
 // / enrichChainResult. The toggle's OWN default (false) must reproduce
-// exactly what shipped in Phase 1 — see .plans/gex-vix-futures-pricing-
-// research.txt sections 7-9 and src/vix-pricing.ts for the per-expiration
+// exactly what shipped in Phase 1 — see .claude/docs/spec-vix-futures.md
+// sections 7-9 and src/vix-pricing.ts for the per-expiration
 // Black-76 math this dispatches to when the toggle is on.
 // ---------------------------------------------------------------------------
 describe('vixFuturesPricing toggle wiring (Phase 2)', () => {

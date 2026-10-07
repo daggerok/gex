@@ -15,8 +15,7 @@ import type { DataProvider, GexLevels, GexPoint, OptionQuote, Settings } from '.
 import { fmt, fmtInt } from '../utils';
 
 // ============================================================================
-// GEX VIEW (Tab 2) - plan section 8.1 + gex-implementation-plan-wireframe-
-// tab2-gex.svg. A pure consumer of chain data App already holds: it never
+// GEX VIEW (Tab 2) - plan section 8.1 (`.claude/docs/spec-gex-app.md`). A pure consumer of chain data App already holds: it never
 // fetches, and every number comes from src/gex.ts (rule R1) - this file only
 // selects which quotes to pass in and formats the results.
 // ============================================================================
@@ -1292,7 +1291,7 @@ export const GexView: React.FC<GexViewProps> = ({
             )}
 
             <div className="flex flex-col gap-4 lg:flex-row">
-                {/* ---- Sidebar: exactly 4 cards (wireframe) ---- */}
+                {/* ---- Sidebar: exactly 4 cards ---- */}
                 <aside className="flex w-full flex-col gap-4 lg:w-[300px] lg:shrink-0">
                     <Card title={tr('gex.sidebar.oiVolume')}>
                         <Row label={tr('gex.sidebar.totalCallOi')} value={fmtInt(totals.callOi)} />
