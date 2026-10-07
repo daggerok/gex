@@ -4,6 +4,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
@@ -253,6 +254,18 @@ function renderRotatedLevelLabel(group: LevelLabelGroup) {
 
 /** Heading style shared by the sidebar cards and the chart title. */
 const HEADING_CLASS = 'text-base font-semibold text-slate-800 dark:text-slate-100';
+
+/** Y axis tick renderer that colors every label with `colorOf(value)` (recharts' default tick
+ *  is one color per axis). `format` is applied here because a custom tick bypasses tickFormatter. */
+const coloredTick = (colorOf: (v: number) => string, format: (v: number) => string) => (props: { x?: number; y?: number; payload?: { value: number }; textAnchor?: string }) => {
+    const v = props.payload?.value;
+    if (v == null || props.x == null || props.y == null) return <React.Fragment />;
+    return (
+        <text x={props.x} y={props.y} dy="0.355em" textAnchor={(props.textAnchor as 'start' | 'middle' | 'end' | 'inherit' | undefined) ?? 'end'} fill={colorOf(v)} fontSize={12}>
+            {format(v)}
+        </text>
+    );
+};
 
 /** Small square zoom button (+ / -). */
 const ZOOM_BTN = 'shrink-0 rounded-md border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 px-1.5 py-0.5 font-medium hover:border-slate-400 dark:hover:border-slate-500';
@@ -1257,28 +1270,31 @@ export const GexView: React.FC<GexViewProps> = ({
                         P/C Ratio cards: every total in one place, each row with the
                         color of the matching chart series (custom colors included). */}
                     <Card title={tr('gex.sidebar.metrics')}>
+                        {/* Regime first, then one total per metric in the SAME order as the
+                            metric toggles above the chart (GEX_METRICS): Net GEX, AG, Call OI,
+                            Put OI, Call Volume, Put Volume, P/C OI, P/C Volume. */}
                         <Row
                             label={tr('gex.sidebar.regime')}
                             value={tr('gex.regime.' + regime)}
-                            dotColor={regime === 'negative' ? metricColors.netGexNeg : regime === 'positive' ? metricColors.netGexPos : '#94a3b8'}
+                            dotColor={regime === 'negative' ? metricColors.netGexNeg : regime === 'positive' ? metricColors.netGexPos : AXIS_NEUTRAL}
                         />
-                        <Row
-                            label={tr('gex.sidebar.totalAg')}
-                            value={profile.length ? `${fmtCompact(sumAbsGamma(profile))} ${tr('gex.unit')}` : na}
-                            dotColor={metricColors.absoluteGamma}
-                        />
-                        <Row label={tr('gex.sidebar.pcRatioOi')} value={pcr.byOi != null ? fmt(pcr.byOi) : na} dotColor={metricColors.pcRatioOi} />
-                        <Row label={tr('gex.sidebar.pcRatioVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} dotColor={metricColors.pcRatioVolume} />
                         <Row
                             label={tr('gex.sidebar.totalNetGex')}
                             value={levels && profile.length ? `${fmtSignedCompact(levels.totalNetGex)} ${tr('gex.unit')}` : na}
                             valueClass={netClass}
                             dotColor={net < 0 ? metricColors.netGexNeg : metricColors.netGexPos}
                         />
+                        <Row
+                            label={tr('gex.sidebar.totalAg')}
+                            value={profile.length ? `${fmtCompact(sumAbsGamma(profile))} ${tr('gex.unit')}` : na}
+                            dotColor={metricColors.absoluteGamma}
+                        />
                         <Row label={tr('gex.sidebar.totalCallOi')} value={fmtInt(totals.callOi)} dotColor={metricColors.callOi} />
-                        <Row label={tr('gex.sidebar.totalCallVolume')} value={fmtInt(totals.callVolume)} dotColor={metricColors.callVolume} />
                         <Row label={tr('gex.sidebar.totalPutOi')} value={fmtInt(totals.putOi)} dotColor={metricColors.putOi} />
+                        <Row label={tr('gex.sidebar.totalCallVolume')} value={fmtInt(totals.callVolume)} dotColor={metricColors.callVolume} />
                         <Row label={tr('gex.sidebar.totalPutVolume')} value={fmtInt(totals.putVolume)} dotColor={metricColors.putVolume} />
+                        <Row label={tr('gex.sidebar.pcRatioOi')} value={pcr.byOi != null ? fmt(pcr.byOi) : na} dotColor={metricColors.pcRatioOi} />
+                        <Row label={tr('gex.sidebar.pcRatioVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} dotColor={metricColors.pcRatioVolume} />
                     </Card>
                     <Card title={tr('gex.sidebar.keyLevels')}>
                         {/* Display-only reordering: the sidebar text card reads
@@ -1385,7 +1401,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     // + a little slack; verified live (Playwright) that 110px
                                     // keeps every label fully on-screen, not clipped by the
                                     // chart's own bottom edge.
-                                    margin={{ top: 24, right: 16, bottom: 110, left: 8 }}
+                                    margin={{ top: 24, right: 92, bottom: 110, left: 8 }}
                                     stackOffset="sign"
                                     barCategoryGap="15%"
                                     onMouseDown={onChartMouseDown}
@@ -1440,7 +1456,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickCount={8}
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={hasNetGex || countMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 12 } : false}
+                                        tick={hasNetGex ? coloredTick((v) => netGexAxisColor(v, metricColors), yTickFormatter) : false}
                                         stroke="#94a3b8"
                                         width={64}
                                         tickFormatter={yTickFormatter}
@@ -1473,7 +1489,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickCount={6}
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={countMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 12 } : false}
+                                        tick={countMetrics.length > 0 ? coloredTick((v) => countAxisColor(v, countMetrics, metricColors), cntTickFormatter) : false}
                                         stroke="#94a3b8"
                                         width={56}
                                         tickFormatter={cntTickFormatter}
@@ -1486,7 +1502,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickCount={6}
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={ratioMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 12 } : false}
+                                        tick={ratioMetrics.length > 0 ? coloredTick(() => ratioAxisColor(ratioMetrics, metricColors), (v) => fmt(v)) : false}
                                         stroke="#94a3b8"
                                         width={40}
                                         tickFormatter={(v: number) => fmt(v)}
