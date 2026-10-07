@@ -3,9 +3,9 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import { Area, Bar, CartesianGrid, ComposedChart, Legend, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
-import { computeGexProfile, computeOiVolumeTotals, computePCRatio, trimZeroBoundaries } from '../gex';
+import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, trimZeroBoundaries } from '../gex';
 import {
     DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
     type GexLevelKey, type LevelColorSet, type MetricColorSet,
@@ -22,12 +22,18 @@ import { fmt, fmtInt } from '../utils';
 // ============================================================================
 
 /** GexPoint field plotted by the bars (metric toggle, section 8.1). */
-export type GexMetric = 'netGex' | 'absoluteGamma' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
+export type GexMetric = 'netGex' | 'absoluteGamma' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume' | 'pcRatioOi' | 'pcRatioVolume';
+/** OI and Volume metrics: translucent areas on their own shared counts axis (like AG, other colors). */
+type CountMetric = 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
+/** Per-strike put/call ratio lines on their own ratio axis. */
+type RatioMetric = 'pcRatioOi' | 'pcRatioVolume';
+/** Per-strike ratios above this are drawn at the cap (the hover shows the real value). */
+const RATIO_PLOT_CAP = 5;
 /** 'absoluteGamma' (AG) sits right after 'netGex' - the user's own placement
  *  request from when they first asked for a gamma-related metric - so the
  *  Metrics panel's toggle order reads Net GEX, AG, Call OI, Put OI, Call
  *  Volume, Put Volume. */
-export const GEX_METRICS: GexMetric[] = ['netGex', 'absoluteGamma', 'callOi', 'putOi', 'callVolume', 'putVolume'];
+export const GEX_METRICS: GexMetric[] = ['netGex', 'absoluteGamma', 'callOi', 'putOi', 'callVolume', 'putVolume', 'pcRatioOi', 'pcRatioVolume'];
 
 /** The GexPoint (src/gex.ts/src/types.ts) field a metric plots. Identical to
  *  the metric's own name for every metric except 'absoluteGamma', whose
@@ -36,7 +42,7 @@ export const GEX_METRICS: GexMetric[] = ['netGex', 'absoluteGamma', 'callOi', 'p
  *  settings persistence spells the metric out in full for clarity. Used
  *  anywhere a GexPoint field needs to be read generically by metric name
  *  (trimZeroBoundaries' `keys`, the hover-tooltip's per-row value lookup).  */
-const metricDataKey = (m: GexMetric): keyof GexPoint => (m === 'absoluteGamma' ? 'absGamma' : m);
+const metricDataKey = (m: GexMetric): keyof GexPoint => (m === 'absoluteGamma' ? 'absGamma' : m === 'pcRatioOi' ? 'putOi' : m === 'pcRatioVolume' ? 'putVolume' : m);
 
 /** GexView.tsx's own toggleable-level key: every GexLevelKey, including the
  *  plain collapsed `gammaFlip` - Gamma Flip is one ordinary toggleable/
@@ -254,10 +260,11 @@ const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, c
     </section>
 );
 
-const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: string }> = ({ label, value, valueClass, dot }) => (
+const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: string; dotColor?: string }> = ({ label, value, valueClass, dot, dotColor }) => (
     <div className="flex items-center justify-between gap-3 text-xs">
         <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
             {dot && <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" />}
+            {dotColor && <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: dotColor }} aria-hidden="true" />}
             {label}
         </span>
         <span className={`font-medium tabular-nums ${valueClass ?? 'text-slate-800 dark:text-slate-100'}`}>{value}</span>
@@ -542,6 +549,13 @@ export const GexView: React.FC<GexViewProps> = ({
             neg: Math.min(p.netGex, 0),
             putOiNeg: -p.putOi,
             putVolumeNeg: -p.putVolume,
+            // Per-strike put/call ratios (src/gex.ts, rule R1): the real value for
+            // the hover, and a capped copy for the line so one outlier strike
+            // cannot flatten the whole ratio axis.
+            pcRatioOi: pcRatioByStrike(p).byOi,
+            pcRatioVolume: pcRatioByStrike(p).byVolume,
+            pcRatioOiPlot: (() => { const r = pcRatioByStrike(p).byOi; return r == null ? null : Math.min(r, RATIO_PLOT_CAP); })(),
+            pcRatioVolumePlot: (() => { const r = pcRatioByStrike(p).byVolume; return r == null ? null : Math.min(r, RATIO_PLOT_CAP); })(),
         }));
         return { rows, domain: [minK - pad, maxK + pad] as [number, number] };
     }, [profile, effSpot, metrics]);
@@ -563,13 +577,14 @@ export const GexView: React.FC<GexViewProps> = ({
     // of the Bar-based count metrics sharing yBase/yDomain with netGex/OI/
     // Volume (it would also dominate that shared axis, since AG >= |netGex|
     // at every strike by construction - see GexPoint.absGamma's doc comment).
-    const countMetrics = GEX_METRICS.filter((m) => m !== 'netGex' && m !== 'absoluteGamma' && metrics.includes(m)) as Array<Exclude<GexMetric, 'netGex' | 'absoluteGamma'>>;
+    const countMetrics = GEX_METRICS.filter((m) => (m === 'callOi' || m === 'putOi' || m === 'callVolume' || m === 'putVolume') && metrics.includes(m)) as CountMetric[];
+    const ratioMetrics = GEX_METRICS.filter((m) => (m === 'pcRatioOi' || m === 'pcRatioVolume') && metrics.includes(m)) as RatioMetric[];
     const hasNetGex = metrics.includes('netGex');
     const hasAbsoluteGamma = metrics.includes('absoluteGamma');
     const isPutMetric = (m: GexMetric) => m === 'putOi' || m === 'putVolume';
     /** dataKey the <Bar> for a count metric actually plots - put metrics plot
      *  their negated mirror field, so the bar draws below zero (see `rows`). */
-    const barKeyFor = (m: Exclude<GexMetric, 'netGex' | 'absoluteGamma'>) => (isPutMetric(m) ? `${m}Neg` : m);
+    const barKeyFor = (m: CountMetric) => (isPutMetric(m) ? `${m}Neg` : m);
     /** Short label (chip body, Legend abbreviation) - "AG" for Absolute
      *  Gamma, matching the reference tool's own abbreviation; the metric's
      *  one plain name for everything else. */
@@ -582,7 +597,7 @@ export const GexView: React.FC<GexViewProps> = ({
     /** Reads a chart row's value for a metric generically (see
      *  metricDataKey's doc comment for why AG needs this instead of
      *  `row[m]` directly). */
-    const metricValue = (m: GexMetric, row: Record<string, number>): number => row[metricDataKey(m)] ?? 0;
+    const metricValue = (m: GexMetric, row: Record<string, number | null>): number | null => (m === 'pcRatioOi' || m === 'pcRatioVolume' ? row[m] ?? null : row[metricDataKey(m)] ?? 0);
 
     // ---- Per-metric bar colors (user-customizable, persisted) --------------
     const [metricColors, setMetricColorsState] = useState<MetricColorSet>(() => loadMetricColors());
@@ -607,8 +622,10 @@ export const GexView: React.FC<GexViewProps> = ({
     // AG is a dollar-gamma magnitude, same unit/scale as netGex (just
     // unsigned - no cancellation between call/put) - formatted the same way
     // (compact + the "$/1%" unit), not as a plain integer count like OI/Volume.
-    const fmtMetricValue = (m: GexMetric, v: number) => (
-        m === 'netGex' ? `${fmtSignedCompact(v)} ${tr('gex.unit')}`
+    const fmtMetricValue = (m: GexMetric, v: number | null) => (
+        v == null ? na
+            : m === 'pcRatioOi' || m === 'pcRatioVolume' ? fmt(v)
+            : m === 'netGex' ? `${fmtSignedCompact(v)} ${tr('gex.unit')}`
             : m === 'absoluteGamma' ? `${fmtCompact(v)} ${tr('gex.unit')}`
                 : fmtInt(v)
     );
@@ -668,13 +685,23 @@ export const GexView: React.FC<GexViewProps> = ({
      *  rule, just at the opposite end since this row reads left-to-right
      *  instead of top-to-bottom. `Array#sort` is stable, so among themselves
      *  the null-valued entries keep `levelPanelKeysBase`'s order. */
-    const levelPanelKeys: Array<ToggleableLevelKey> = [...levelPanelKeysBase].sort((a, b) => {
+    const levelPanelKeysSorted: Array<ToggleableLevelKey> = [...levelPanelKeysBase].sort((a, b) => {
         const va = levels?.[a] ?? null;
         const vb = levels?.[b] ?? null;
         if (va == null) return vb == null ? 0 : 1;
         if (vb == null) return -1;
         return va - vb;
     });
+    // User request: the "Net GEX-" button always sits before "75% Sum Net GEX-"
+    // in this row, even when the 75% level has the lower strike - the two
+    // swap places whenever the by-strike sort would put them the other way.
+    const levelPanelKeys: Array<ToggleableLevelKey> = (() => {
+        const out = [...levelPanelKeysSorted];
+        const i = out.indexOf('netGexMinus');
+        const j = out.indexOf('sumNetGexMinus');
+        if (i > j && j >= 0) { out[j] = 'netGexMinus'; out[i] = 'sumNetGexMinus'; }
+        return out;
+    })();
 
     const levelLabel = (key: ToggleableLevelKey): string => tr(LEVEL_LABEL_KEY[key]);
     const levelChartLabel = (key: ToggleableLevelKey): string => tr(LEVEL_CHART_LABEL_KEY[key]);
@@ -818,10 +845,6 @@ export const GexView: React.FC<GexViewProps> = ({
                 posMax = Math.max(posMax, row.pos);
                 negMax = Math.max(negMax, Math.abs(row.neg));
             }
-            for (const m of countMetrics) {
-                if (isPutMetric(m)) negMax = Math.max(negMax, row[m] ?? 0);
-                else posMax = Math.max(posMax, row[m] ?? 0);
-            }
         }
         if (posMax === 0 && negMax === 0) return [0, 1];
         // 5% breathing-room padding above the max / below the min, so the
@@ -838,7 +861,7 @@ export const GexView: React.FC<GexViewProps> = ({
         const padNeg = negMax > 0 ? negMax * 0.05 : 0;
         return [-(negMax + padNeg), posMax + padPos];
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chart, hasNetGex, countMetrics.join(',')]);
+    }, [chart, hasNetGex]);
 
     const yDomain = scaleAroundZero(yBase, yZoomFactor);
     // Signed formatting once the domain can actually go negative - true
@@ -867,6 +890,41 @@ export const GexView: React.FC<GexViewProps> = ({
     }, [chart]);
     const agDomain = scaleAroundZero(agBase, yZoomFactor);
     const agTickFormatter = (v: number) => fmtCompact(v);
+
+    // ---- OI / Volume counts axis (shared by the four metrics) ---------------
+    // Same signed call/put convention as before (calls above zero, puts
+    // mirrored below it), same per-side 5% headroom as yBase, but on their own
+    // axis now: contracts are not dollars of gamma, and sharing the Net GEX
+    // axis made them a flat sliver (see the metrics comment above).
+    const cntBase = useMemo((): [number, number] => {
+        if (!chart || countMetrics.length === 0) return [0, 1];
+        let posMax = 0;
+        let negMax = 0;
+        for (const row of chart.rows) {
+            for (const m of countMetrics) {
+                const v = (row as Record<string, number>)[m] ?? 0;
+                if (isPutMetric(m)) negMax = Math.max(negMax, v);
+                else posMax = Math.max(posMax, v);
+            }
+        }
+        if (posMax === 0 && negMax === 0) return [0, 1];
+        return [-(negMax * 1.05), posMax * 1.05];
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [chart, countMetrics.join(',')]);
+    const cntDomain = scaleAroundZero(cntBase, yZoomFactor);
+    const cntTickFormatter = (v: number) => (cntBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
+
+    // ---- Put/call ratio axis: [0, max plotted ratio] (plotted values are capped at RATIO_PLOT_CAP) ----
+    const ratioBase = useMemo((): [number, number] => {
+        if (!chart || ratioMetrics.length === 0) return [0, 1];
+        let max = 0;
+        for (const row of chart.rows) {
+            for (const m of ratioMetrics) max = Math.max(max, ((row as Record<string, number | null>)[`${m}Plot`] ?? 0));
+        }
+        return max === 0 ? [0, 1] : [0, max * 1.05];
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [chart, ratioMetrics.join(',')]);
+    const ratioDomain = scaleAroundZero(ratioBase, yZoomFactor);
 
     // Sidebar Key Levels card: one plain "Gamma Flip" row, same as every
     // other non-optional level (maxNetGex/minNetGex/maxPain) - not `optional`,
@@ -1148,19 +1206,29 @@ export const GexView: React.FC<GexViewProps> = ({
             )}
 
             <div className="flex flex-col gap-4 lg:flex-1 lg:flex-row">
-                {/* ---- Sidebar: exactly 4 cards ---- */}
+                {/* ---- Sidebar: Metrics table + Levels ---- */}
                 <aside className="flex w-full flex-col gap-4 lg:w-[300px] lg:shrink-0">
-                    <Card title={tr('gex.sidebar.oiVolume')}>
-                        <Row label={tr('gex.sidebar.totalCallOi')} value={fmtInt(totals.callOi)} />
-                        <Row label={tr('gex.sidebar.totalPutOi')} value={fmtInt(totals.putOi)} />
-                    </Card>
-                    <Card title={tr('gex.sidebar.gexAnalysis')}>
+                    {/* One Metrics table instead of the old OI Volume / GEX Analysis /
+                        P/C Ratio cards: every total in one place, each row with the
+                        color of the matching chart series (custom colors included). */}
+                    <Card title={tr('gex.sidebar.metrics')}>
                         <Row
                             label={tr('gex.sidebar.totalNetGex')}
                             value={levels && profile.length ? `${fmtSignedCompact(levels.totalNetGex)} ${tr('gex.unit')}` : na}
                             valueClass={netClass}
+                            dotColor={net < 0 ? metricColors.netGexNeg : metricColors.netGexPos}
                         />
-                        <Row label={tr('gex.sidebar.regime')} value={tr('gex.regime.' + regime)} />
+                        <Row
+                            label={tr('gex.sidebar.regime')}
+                            value={tr('gex.regime.' + regime)}
+                            dotColor={regime === 'negative' ? metricColors.netGexNeg : regime === 'positive' ? metricColors.netGexPos : '#94a3b8'}
+                        />
+                        <Row label={tr('gex.sidebar.pcRatioOi')} value={pcr.byOi != null ? fmt(pcr.byOi) : na} dotColor={metricColors.pcRatioOi} />
+                        <Row label={tr('gex.sidebar.pcRatioVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} dotColor={metricColors.pcRatioVolume} />
+                        <Row label={tr('gex.sidebar.totalCallOi')} value={fmtInt(totals.callOi)} dotColor={metricColors.callOi} />
+                        <Row label={tr('gex.sidebar.totalCallVolume')} value={fmtInt(totals.callVolume)} dotColor={metricColors.callVolume} />
+                        <Row label={tr('gex.sidebar.totalPutOi')} value={fmtInt(totals.putOi)} dotColor={metricColors.putOi} />
+                        <Row label={tr('gex.sidebar.totalPutVolume')} value={fmtInt(totals.putVolume)} dotColor={metricColors.putVolume} />
                     </Card>
                     <Card title={tr('gex.sidebar.keyLevels')}>
                         {/* Display-only reordering: the sidebar text card reads
@@ -1185,10 +1253,6 @@ export const GexView: React.FC<GexViewProps> = ({
                                     dot={GEX_LEVEL_COLORS[l.key].dot}
                                 />
                             ))}
-                    </Card>
-                    <Card title={tr('gex.sidebar.pcRatio')}>
-                        <Row label={tr('gex.pcRatio.byOi')} value={pcr.byOi != null ? fmt(pcr.byOi) : na} />
-                        <Row label={tr('gex.pcRatio.byVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} />
                     </Card>
                 </aside>
 
@@ -1340,19 +1404,48 @@ export const GexView: React.FC<GexViewProps> = ({
                                         width={64}
                                         tickFormatter={agTickFormatter}
                                     />
+                                    {/* Counts axis (OI / Volume areas) and ratio axis (P/C lines):
+                                        always mounted like the AG axis so toggling a metric never
+                                        moves the plot, ticks only while something plots on them. */}
+                                    <YAxis
+                                        yAxisId="cnt"
+                                        orientation="right"
+                                        domain={cntDomain}
+                                        allowDataOverflow
+                                        tickCount={6}
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={countMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 11 } : false}
+                                        stroke="#94a3b8"
+                                        width={56}
+                                        tickFormatter={cntTickFormatter}
+                                    />
+                                    <YAxis
+                                        yAxisId="ratio"
+                                        orientation="right"
+                                        domain={ratioDomain}
+                                        allowDataOverflow
+                                        tickCount={6}
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={ratioMetrics.length > 0 ? { fill: '#94a3b8', fontSize: 11 } : false}
+                                        stroke="#94a3b8"
+                                        width={40}
+                                        tickFormatter={(v: number) => fmt(v)}
+                                    />
                                     <Tooltip
                                         cursor={{ fill: '#94a3b8', fillOpacity: 0.12 }}
-                                        content={({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: Record<string, number> }> }) => {
+                                        content={({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: Record<string, number | null> }> }) => {
                                             const row = active && payload && payload[0] ? payload[0].payload : null;
                                             if (!row) return null;
                                             return (
                                                 <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs shadow">
-                                                    <div className="text-slate-500 dark:text-slate-400">{tr('chain.strike')} {fmt(row.strike)}</div>
+                                                    <div className="text-slate-500 dark:text-slate-400">{tr('chain.strike')} {fmt(row.strike as number)}</div>
                                                     {metrics.map((m) => (
                                                         <div key={m} className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
                                                             <span
                                                                 className="inline-block h-2 w-2 shrink-0 rounded-full"
-                                                                style={{ background: m === 'netGex' ? colorFor('netGex', row.netGex >= 0 ? 'pos' : 'neg') : colorFor(m) }}
+                                                                style={{ background: m === 'netGex' ? colorFor('netGex', (row.netGex as number) >= 0 ? 'pos' : 'neg') : colorFor(m) }}
                                                                 aria-hidden="true"
                                                             />
                                                             {metricLabelFull(m)}: {fmtMetricValue(m, metricValue(m, row))}
@@ -1395,8 +1488,40 @@ export const GexView: React.FC<GexViewProps> = ({
                                             <Bar dataKey="neg" stackId="net" name={`${tr('gex.metric.netGex')} (−)`} fill={metricColors.netGexNeg} isAnimationActive={false} />
                                         </>
                                     )}
+                                    {/* OI / Volume: translucent areas like AG, each in its own
+                                        color, on the shared counts axis, drawn above the Net GEX
+                                        bars (zIndex 350, see the AG comment below). */}
                                     {countMetrics.map((m) => (
-                                        <Bar key={m} dataKey={barKeyFor(m)} name={metricLabel(m)} fill={metricColors[m]} isAnimationActive={false} />
+                                        <Area
+                                            key={m}
+                                            yAxisId="cnt"
+                                            dataKey={barKeyFor(m)}
+                                            name={metricLabel(m)}
+                                            stroke={metricColors[m]}
+                                            fill={metricColors[m]}
+                                            fillOpacity={0.18}
+                                            strokeWidth={1.5}
+                                            zIndex={350}
+                                            isAnimationActive={false}
+                                        />
+                                    ))}
+                                    {/* Per-strike put/call ratios: one line each on the ratio
+                                        axis, gaps where a strike has no call side. */}
+                                    {ratioMetrics.map((m) => (
+                                        <Line
+                                            key={m}
+                                            yAxisId="ratio"
+                                            dataKey={`${m}Plot`}
+                                            name={metricLabel(m)}
+                                            type="linear"
+                                            stroke={metricColors[m]}
+                                            strokeWidth={1.5}
+                                            dot={false}
+                                            activeDot={false}
+                                            connectNulls={false}
+                                            zIndex={350}
+                                            isAnimationActive={false}
+                                        />
                                     ))}
                                     {/* AG (design decision, see agBase/agDomain above): rendered
                                         as a filled <Area>, not a <Bar> like every other metric -

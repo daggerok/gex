@@ -478,6 +478,16 @@ export function computeMaxPain(quotes: readonly OptionQuote[]): number | null {
     return best;
 }
 
+/** Put/call ratios of ONE strike: puts divided by calls, by open interest and by
+ *  volume. Each is null when the call side is 0 (no meaningful ratio). Plain
+ *  ratio of the strike's own sums, same definition as computePCRatio's totals. */
+export function pcRatioByStrike(p: Pick<GexPoint, 'callOi' | 'putOi' | 'callVolume' | 'putVolume'>): { byOi: number | null; byVolume: number | null } {
+    return {
+        byOi: p.callOi > 0 ? p.putOi / p.callOi : null,
+        byVolume: p.callVolume > 0 ? p.putVolume / p.callVolume : null,
+    };
+}
+
 export interface OiVolumeTotals {
     callOi: number;
     putOi: number;

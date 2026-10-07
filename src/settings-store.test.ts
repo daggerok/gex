@@ -200,6 +200,10 @@ describe('sanitizeGexMetrics', () => {
         expect(sanitizeGexMetrics(['callVolume', 'putVolume'])).toEqual(['callVolume', 'putVolume']);
     });
 
+    test('accepts the per-strike put/call ratio metrics', () => {
+        expect(sanitizeGexMetrics(['netGex', 'pcRatioOi', 'pcRatioVolume'])).toEqual(['netGex', 'pcRatioOi', 'pcRatioVolume']);
+    });
+
     test('drops entries naming a metric outside GEX_METRICS (e.g. a removed/renamed one)', () => {
         expect(sanitizeGexMetrics(['callVolume', 'totallyMadeUpMetric', 'putOi'])).toEqual(['callVolume', 'putOi']);
     });
