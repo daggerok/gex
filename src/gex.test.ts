@@ -345,14 +345,14 @@ describe('second walls: direction and per-symbol distance', () => {
   test('secondWallMinDistance: per-symbol usd override, default pct, case-insensitive', () => {
     expect(secondWallMinDistance('SPY', 775.83)).toBe(3);
     expect(secondWallMinDistance('spy', 775.83)).toBe(3);
-    expect(secondWallMinDistance('SPX', 7000)).toBeCloseTo(70, 9);
+    expect(secondWallMinDistance('SPX', 7000)).toBeCloseTo(210, 9);
     expect(secondWallMinDistance(null, 100)).toBeCloseTo(2, 9);
     expect(secondWallMinDistance(undefined, 100)).toBeCloseTo(2, 9);
   });
 
-  test('SPX uses a 1% of spot distance, other index-like symbols keep the 2% default', () => {
-    expect(secondWallMinDistance('SPX', 6000)).toBeCloseTo(60, 9);
-    expect(secondWallMinDistance('spx', 6000)).toBeCloseTo(60, 9);
+  test('SPX uses a 3% of spot distance, other index-like symbols keep the 2% default', () => {
+    expect(secondWallMinDistance('SPX', 6000)).toBeCloseTo(180, 9);
+    expect(secondWallMinDistance('spx', 6000)).toBeCloseTo(180, 9);
     expect(secondWallMinDistance('NDX', 6000)).toBeCloseTo(120, 9);
   });
 

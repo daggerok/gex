@@ -63,7 +63,7 @@ export type SecondWallDistance = { pct: number } | { usd: number };
  */
 export const SECOND_WALL_DISTANCE_BY_SYMBOL: Readonly<Record<string, SecondWallDistance>> = {
     SPY: { usd: 3 },
-    SPX: { pct: 0.01 },
+    SPX: { pct: 0.03 },
 };
 
 /** Resolved minimum second-wall distance in price units for `symbol` at `spot`. */

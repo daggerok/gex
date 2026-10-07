@@ -4,9 +4,9 @@ Newest first inside each section. PR numbers are from `daggerok/gex`. Add a date
 
 ## GEX levels
 
-### SPX second-wall distance set to 1% of spot (2026-10-07)
+### SPX second-wall distance set to 3% of spot (2026-10-07)
 
-- `SECOND_WALL_DISTANCE_BY_SYMBOL.SPX = { pct: 0.01 }` in `src/gex.ts`, so Range High / Range Low on SPX must be at least 1% of spot away from the Call Wall / Put Wall instead of the 2% default (at spot 6000: 60 points instead of 120). Other symbols are unchanged. The user's wording was "increase SPX to 1%", read as "use 1% for SPX"
+- `SECOND_WALL_DISTANCE_BY_SYMBOL.SPX = { pct: 0.03 }` in `src/gex.ts`, so Range High / Range Low on SPX must be at least 3% of spot away from the Call Wall / Put Wall instead of the 2% default (at spot 6000: 180 points instead of 120). Other symbols are unchanged. Reason: the user wanted these levels further out on SPX than the 2% default gives (first read as 1% by mistake, corrected the same day)
 
 ### Resistance 2 / Support 2 renamed Range High / Range Low (2026-10-07)
 
