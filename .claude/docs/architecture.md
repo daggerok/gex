@@ -49,7 +49,7 @@ If the app spot is missing, `estimateSpot` derives one from put-call parity on t
 
 - `bun test`, tests sit next to sources (`gex.test.ts`, `greeks.test.ts`, `vix-pricing.test.ts`, `use-gex-levels.test.ts`, `providers/*.test.ts`, ...)
 - GEX tests use small synthetic chains whose walls and flips can be derived by hand
-- CI (`.github/workflows/ci.yaml`): `bun run test`, py_compile, `node --check` on the Worker, `bun run build`, `bun run build-github-pages`, plus an `npm-check-updates` job
+- CI (`.github/workflows/ci.yaml`): `bun run test`, py_compile, `node --check` on the Worker, `bun run build`, `bun run build-github-pages`, plus an `npm-check-updates` job that runs only on manual `workflow_dispatch`
 
 ## Licensing
 
