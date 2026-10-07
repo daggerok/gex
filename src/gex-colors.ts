@@ -25,7 +25,7 @@
  * comment, and the corresponding math/field removal in src/gex.ts/
  * src/types.ts, done in a separate PR).
  */
-export type GexLevelKey = 'callWall' | 'callWall2' | 'gammaFlip' | 'putWall' | 'putWall2' | 'maxPain' | 'spot';
+export type GexLevelKey = 'callWall' | 'callWall2' | 'gammaFlip' | 'putWall' | 'putWall2' | 'gammaRangeHigh' | 'gammaRangeLow' | 'maxPain' | 'spot';
 
 export interface GexLevelColor {
     hex: string;
@@ -34,10 +34,12 @@ export interface GexLevelColor {
 
 export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
     callWall: { hex: '#22c55e', dot: 'bg-green-500' },   // green-500
-    callWall2: { hex: '#86efac', dot: 'bg-green-300' },  // green-300 (Range High)
+    callWall2: { hex: '#86efac', dot: 'bg-green-300' },  // green-300 (Call Wall 2)
     gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400
     putWall: { hex: '#ef4444', dot: 'bg-red-500' },      // red-500
-    putWall2: { hex: '#fca5a5', dot: 'bg-red-300' },     // red-300 (Range Low)
+    putWall2: { hex: '#fca5a5', dot: 'bg-red-300' },     // red-300 (Put Wall 2)
+    gammaRangeHigh: { hex: '#22d3ee', dot: 'bg-cyan-400' },  // cyan-400
+    gammaRangeLow: { hex: '#f472b6', dot: 'bg-pink-400' },   // pink-400
     maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },   // yellow-400
     spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
 };
@@ -148,6 +150,8 @@ export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
     gammaFlip: GEX_LEVEL_COLORS.gammaFlip.hex,
     putWall: GEX_LEVEL_COLORS.putWall.hex,
     putWall2: GEX_LEVEL_COLORS.putWall2.hex,
+    gammaRangeHigh: GEX_LEVEL_COLORS.gammaRangeHigh.hex,
+    gammaRangeLow: GEX_LEVEL_COLORS.gammaRangeLow.hex,
     maxPain: GEX_LEVEL_COLORS.maxPain.hex,
     spot: GEX_LEVEL_COLORS.spot.hex,
 };

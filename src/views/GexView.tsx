@@ -53,16 +53,16 @@ type ToggleableLevelKey = GexLevelKey;
  *  here - its actual rendered position (toggle panel AND sidebar card) is
  *  decided by each one's own by-strike sort (see `levelPanelKeys`/
  *  `keyLevels` below), this array is just the base/reset order. */
-const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlip', 'putWall', 'putWall2', 'maxPain', 'spot'];
+const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlip', 'putWall', 'putWall2', 'gammaRangeHigh', 'gammaRangeLow', 'maxPain', 'spot'];
 
 /** Default ON selection (revised again - the user narrowed this further
- *  after seeing it live): only Range High / Range Low / Gamma Flip start
- *  ON. Call Wall / Put Wall stay OFF (redundant with just looking at the
+ *  after seeing it live): only Gamma Range High / Gamma Range Low / Call Wall 2 / Put Wall 2 /
+ *  Gamma Flip start ON. Call Wall / Put Wall stay OFF (redundant with just looking at the
  *  chart's own tallest bars - unchanged from the earlier revision). Max
  *  Pain and Spot now ALSO start OFF - the user wants a quieter default
  *  view; both remain one click away in the Key Levels panel like every
  *  other level. */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlip', 'putWall2'];
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ['callWall2', 'gammaFlip', 'putWall2', 'gammaRangeHigh', 'gammaRangeLow'];
 
 /** i18n key for each level's sidebar/toggle-panel label. */
 const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
@@ -71,6 +71,8 @@ const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
     gammaFlip: 'gex.level.gammaFlip',
     putWall: 'gex.level.putWall',
     putWall2: 'gex.level.support2',
+    gammaRangeHigh: 'gex.level.gammaRangeHigh',
+    gammaRangeLow: 'gex.level.gammaRangeLow',
     maxPain: 'gex.level.maxPain',
     // Reuses the plain 'spot.label' key ("Spot"/"Спот") already shown
     // elsewhere in this file (spot.label/spot.estimated/spot.delayed i18n
@@ -88,6 +90,8 @@ const LEVEL_CHART_LABEL_KEY: Record<ToggleableLevelKey, string> = {
     gammaFlip: 'gex.chart.gammaFlip',
     putWall: 'gex.chart.putWall',
     putWall2: 'gex.chart.support2',
+    gammaRangeHigh: 'gex.chart.gammaRangeHigh',
+    gammaRangeLow: 'gex.chart.gammaRangeLow',
     maxPain: 'gex.chart.maxPain',
     // 'gex.chart.spot' used to read "Spot {{price}}" for the old always-on,
     // never-rotated, plain horizontal <ReferenceLine> label (which had room
@@ -105,6 +109,8 @@ const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
     gammaFlip: 'gex.level.tooltip.gammaFlip',
     putWall: 'gex.level.tooltip.putWall',
     putWall2: 'gex.level.tooltip.support2',
+    gammaRangeHigh: 'gex.level.tooltip.gammaRangeHigh',
+    gammaRangeLow: 'gex.level.tooltip.gammaRangeLow',
     maxPain: 'gex.level.tooltip.maxPain',
     // Plain (non-estimated) case - see `levelTooltip` below for the
     // 'gex.level.tooltip.spotEstimated' variant used when the spot shown is
@@ -599,7 +605,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // useState in main.tsx with no localStorage key); unlike metrics, there's
     // no "at least one must stay on" rule here - toggling every level off is
     // a valid (if unusual) choice. Reset restores DEFAULT_SELECTED_LEVELS
-    // (Part 2 - only Call Wall/Put Wall start OFF; Range High/Range Low/
+    // (Part 2 - only Call Wall/Put Wall start OFF; Call Wall 2/Put Wall 2/
     // Gamma Flip/Max Pain start ON), not "every level on".
     const [selectedLevels, setSelectedLevels] = useState<Array<ToggleableLevelKey>>(() => [...DEFAULT_SELECTED_LEVELS]);
     const [levelColors, setLevelColorsState] = useState<LevelColorSet>(() => loadLevelColors());
@@ -622,7 +628,7 @@ export const GexView: React.FC<GexViewProps> = ({
      *  `gammaFlip` here since it's the reference point every other level's
      *  position is read relative to - a reasonable logical "center", though
      *  it's moot for the actual rendered order once sorted below. */
-    const levelPanelKeysBase: Array<ToggleableLevelKey> = ['callWall', 'callWall2', 'gammaFlip', 'spot', 'putWall', 'putWall2', 'maxPain'];
+    const levelPanelKeysBase: Array<ToggleableLevelKey> = ['callWall', 'callWall2', 'gammaFlip', 'spot', 'putWall', 'putWall2', 'gammaRangeHigh', 'gammaRangeLow', 'maxPain'];
     /** The Key Levels TOGGLE PANEL's actual left-to-right order: ascending by
      *  each level's live strike (`levels?.[key]`), recomputed every render so
      *  it tracks real data as it loads/changes - the user wants the chip with
@@ -862,6 +868,8 @@ export const GexView: React.FC<GexViewProps> = ({
         { key: 'spot', label: levelLabel('spot'), value: levels?.spot ?? null, suffix: effSpotIsEstimated ? tr('spot.estimated') : undefined },
         { key: 'putWall', label: levelLabel('putWall'), value: levels?.putWall ?? null },
         { key: 'putWall2', label: levelLabel('putWall2'), value: levels?.putWall2 ?? null, optional: true },
+        { key: 'gammaRangeHigh', label: levelLabel('gammaRangeHigh'), value: levels?.gammaRangeHigh ?? null, optional: true },
+        { key: 'gammaRangeLow', label: levelLabel('gammaRangeLow'), value: levels?.gammaRangeLow ?? null, optional: true },
         { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
     ];
 
@@ -1038,7 +1046,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         overflow at all once the chips (non-shrinking, `shrink-0`)
                         exceed the row's width - `scrollWidth === clientWidth`
                         measured equal - and renders the EARLIER chips in DOM order
-                        (Call Wall, Put Wall, Gamma Flip, Max Pain, Range Low in that
+                        (Call Wall, Put Wall, Gamma Flip, Max Pain, Put Wall 2 in that
                         run) at negative x-coordinates, fully or partly off-screen to
                         the left, with no way to reach them: wheel/trackpad/drag don't
                         move it (nothing registers as scrollable), and setting
@@ -1138,7 +1146,7 @@ export const GexView: React.FC<GexViewProps> = ({
                             fixed logical order `keyLevels` was built in above
                             (that order still drives the toggle+color panel via
                             the separate `levelPanelKeys` array, untouched by
-                            this sort). A null-valued row (Resistance/Range Low
+                            this sort). A null-valued row (Resistance/Put Wall 2
                             not applicable, or Gamma Flip with no data) has no
                             real price to sort by, so every
                             null row sinks to the bottom, below every row with
@@ -1227,7 +1235,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     // bottom: 110 (widened from 8) makes room for the Key Level
                                     // diagonal labels now hanging BELOW the X axis (see
                                     // renderRotatedLevelLabel's doc comment) - the longest chart
-                                    // label text ("Range High") at this -45deg rotation and
+                                    // label text ("Call Wall 2") at this -45deg rotation and
                                     // 10px font needs roughly BOTTOM_GAP (28px, clears the axis'
                                     // own numeric tick labels) + ~60px of diagonal vertical extent
                                     // + a little slack; verified live (Playwright) that 110px

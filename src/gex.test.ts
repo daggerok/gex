@@ -12,6 +12,8 @@ import {
   computeOiVolumeTotals,
   computePCRatio,
   findCallPutWalls,
+  findGammaRange,
+  GAMMA_RANGE_SHARE,
   findGammaFlipHypotheticalSpot,
   gexCall,
   gexPut,
@@ -323,7 +325,7 @@ describe('second walls: direction and per-symbol distance', () => {
     pt(788, 37), pt(789, 20), pt(790, 90), pt(793, 36), pt(803, 50),
   ];
 
-  test('Range High must be above the call wall, Range Low below the put wall', () => {
+  test('Call Wall 2 must be above the call wall, Put Wall 2 below the put wall', () => {
     // callWall 787. With minDistance 3: strikes >= 790 -> 790 (+90) beats 793 (+36) and 803 (+50).
     // putWall 767 (-500). Below it only 745 (-100) -> putWall2 745.
     expect(findCallPutWalls(profile, 775.83, 3)).toEqual({
@@ -368,7 +370,7 @@ describe('findCallPutWalls (7.4)', () => {
     // callWall = 105 (+100000). Next-highest positive is 106 (+80000), but
     // |106-105| = 1 < 2, so callWall2 = 115 (+50000) instead.
     // putWall = 90 (-40000); the only other negative strike is 95, which is
-    // ABOVE the put wall, so putWall2 = null (Range Low must sit below the Put Wall).
+    // ABOVE the put wall, so putWall2 = null (Put Wall 2 must sit below the Put Wall).
     expect(findCallPutWalls(computeGexProfile(FIXTURE, SPOT), SPOT)).toEqual({
       callWall: 105,
       putWall: 90,
@@ -566,6 +568,8 @@ describe('computeGexLevels (7.7)', () => {
       putWall: null,
       callWall2: null,
       putWall2: null,
+      gammaRangeHigh: null,
+      gammaRangeLow: null,
       maxPain: null,
       pcRatioOi: null,
       pcRatioVolume: null,
@@ -637,5 +641,40 @@ describe('trimZeroBoundaries (GEX tab chart axis trimming, section 8.1 part 3)',
     const one = [point(100, 5)];
     expect(trimZeroBoundaries(one, ['netGex'])).toEqual(one);
     expect(trimZeroBoundaries(spxLike, [])).toEqual(spxLike);
+  });
+});
+
+describe('findGammaRange: 75% of one side\'s net GEX, from spot outward', () => {
+  const pt = (strike: number, netGex: number) => ({ strike, netGex } as unknown as Parameters<typeof findGammaRange>[0][number]);
+  // spot 100. Positive at/above spot: 100:+10, 102:+30, 105:+40, 110:+20 (total 100).
+  // Negative at/below spot: 98:-100, 95:-60, 90:-40 (total 200 in magnitude).
+  const profile = [pt(90, -40), pt(95, -60), pt(98, -100), pt(100, 10), pt(102, 30), pt(105, 40), pt(110, 20)];
+
+  test('the share constant is 75%', () => {
+    expect(GAMMA_RANGE_SHARE).toBe(0.75);
+  });
+
+  test('high: running sum 10, 40, 80 crosses 75 at 105, low: 100, 160 crosses 150 at 95', () => {
+    expect(findGammaRange(profile, 100)).toEqual({ gammaRangeHigh: 105, gammaRangeLow: 95 });
+  });
+
+  test('the threshold is inclusive (>=): share 0.4 -> target 40 is met exactly at 102', () => {
+    expect(findGammaRange(profile, 100, 0.4).gammaRangeHigh).toBe(102);
+    // low side, target 0.5 * 200 = 100 is met exactly at 98
+    expect(findGammaRange(profile, 100, 0.5).gammaRangeLow).toBe(98);
+  });
+
+  test('mass on the wrong side of spot is ignored: a big positive strike below spot changes nothing', () => {
+    expect(findGammaRange([...profile, pt(80, 5000), pt(120, -5000)], 100)).toEqual({ gammaRangeHigh: 105, gammaRangeLow: 95 });
+  });
+
+  test('a side with no mass is null, the other side still works', () => {
+    expect(findGammaRange([pt(98, -100), pt(95, -60)], 100)).toEqual({ gammaRangeHigh: null, gammaRangeLow: 95 });
+    expect(findGammaRange([pt(102, 30)], 100)).toEqual({ gammaRangeHigh: 102, gammaRangeLow: null });
+    expect(findGammaRange([], 100)).toEqual({ gammaRangeHigh: null, gammaRangeLow: null });
+  });
+
+  test('share 1 returns the farthest strike with mass', () => {
+    expect(findGammaRange(profile, 100, 1)).toEqual({ gammaRangeHigh: 110, gammaRangeLow: 90 });
   });
 });

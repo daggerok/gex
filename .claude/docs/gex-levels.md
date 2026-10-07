@@ -8,7 +8,8 @@ Code: `src/gex.ts` (pure functions), called once through `src/use-gex-levels.ts`
 |---|---|
 | GEX per contract, sign convention | Public convention (SpotGamma-style), a model approximation |
 | Call Wall, Put Wall | Max / min per-strike netGex, standard definition |
-| Range High, Range Low | NO - original heuristic (direction rule plus distance threshold), no public standard exists |
+| Gamma Range High, Gamma Range Low | NO - original heuristic (75% of one side's net GEX counted from spot outward), no public standard exists |
+| Call Wall 2, Put Wall 2 | NO - original heuristic (direction rule plus distance threshold), no public standard exists |
 | Gamma Flip | Yes - SpotGamma "Zero Gamma" docs and ZeroGEX, quoted below |
 | Absolute Gamma | Yes - SpotGamma support docs, quoted below |
 | Max Pain | Standard, uncontested formula |
@@ -37,7 +38,16 @@ absGamma        = callGex - putGex      (= |callGex| + |putGex|)
 - `putWall` = strike with the minimum (most negative) `netGex` among strikes where `netGex < 0`, null if none
 - Ties resolve to the lowest strike
 
-## Range High and Range Low (UNSOURCED)
+## Gamma Range High and Gamma Range Low (UNSOURCED)
+
+`findGammaRange(profile, spot, share = GAMMA_RANGE_SHARE)` in `src/gex.ts`, `GAMMA_RANGE_SHARE = 0.75`:
+
+- `gammaRangeHigh`: start at spot (the center) and move right. Sum the POSITIVE `netGex` of strikes `>= spot` in ascending order. The first strike where the running sum is `>= share *` (total positive `netGex` of that side) is the level. Null if that side has no positive mass
+- `gammaRangeLow`: the mirror image, move left from spot over NEGATIVE `netGex` of strikes `<= spot` in descending order, magnitudes summed. Null if that side has no negative mass
+- The profile is built from the selected expirations, so the levels move with the expiration selection. Only the scanned side counts toward its own total, so a positive cluster below spot never makes the high level unreachable. The comparison is `>=`
+- Source: none, an original heuristic chosen by the user (75% of one side's net GEX). Tooltips say so. Do not present it as a standard
+
+## Call Wall 2 and Put Wall 2 (UNSOURCED)
 
 `findCallPutWalls(profile, spot, minDistance)` in `src/gex.ts`:
 
