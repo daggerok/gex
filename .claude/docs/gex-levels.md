@@ -8,7 +8,7 @@ Code: `src/gex.ts` (pure functions), called once through `src/use-gex-levels.ts`
 |---|---|
 | GEX per contract, sign convention | Public convention (SpotGamma-style), a model approximation |
 | Call Wall, Put Wall | Max / min per-strike netGex, standard definition |
-| Resistance 2, Support 2 | NO - original heuristic (direction rule plus distance threshold), no public standard exists |
+| Range High, Range Low | NO - original heuristic (direction rule plus distance threshold), no public standard exists |
 | Gamma Flip | Yes - SpotGamma "Zero Gamma" docs and ZeroGEX, quoted below |
 | Absolute Gamma | Yes - SpotGamma support docs, quoted below |
 | Max Pain | Standard, uncontested formula |
@@ -37,7 +37,7 @@ absGamma        = callGex - putGex      (= |callGex| + |putGex|)
 - `putWall` = strike with the minimum (most negative) `netGex` among strikes where `netGex < 0`, null if none
 - Ties resolve to the lowest strike
 
-## Resistance 2 and Support 2 (UNSOURCED)
+## Range High and Range Low (UNSOURCED)
 
 `findCallPutWalls(profile, spot, minDistance)` in `src/gex.ts`:
 

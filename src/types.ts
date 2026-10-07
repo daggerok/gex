@@ -346,9 +346,9 @@ export interface GexLevels {
     gammaFlipNeg: number | null;
     callWall: number | null;
     putWall: number | null;
-    /** "Resistance 2" - null if none qualifies. */
+    /** "Range High" - null if none qualifies. */
     callWall2: number | null;
-    /** "Support 2" - null if none qualifies. */
+    /** "Range Low" - null if none qualifies. */
     putWall2: number | null;
     maxPain: number | null;
     pcRatioOi: number | null;

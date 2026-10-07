@@ -56,7 +56,7 @@ type ToggleableLevelKey = GexLevelKey;
 const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['callWall', 'callWall2', 'gammaFlip', 'putWall', 'putWall2', 'maxPain', 'spot'];
 
 /** Default ON selection (revised again - the user narrowed this further
- *  after seeing it live): only Resistance 2 / Support 2 / Gamma Flip start
+ *  after seeing it live): only Range High / Range Low / Gamma Flip start
  *  ON. Call Wall / Put Wall stay OFF (redundant with just looking at the
  *  chart's own tallest bars - unchanged from the earlier revision). Max
  *  Pain and Spot now ALSO start OFF - the user wants a quieter default
@@ -599,7 +599,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // useState in main.tsx with no localStorage key); unlike metrics, there's
     // no "at least one must stay on" rule here - toggling every level off is
     // a valid (if unusual) choice. Reset restores DEFAULT_SELECTED_LEVELS
-    // (Part 2 - only Call Wall/Put Wall start OFF; Resistance 2/Support 2/
+    // (Part 2 - only Call Wall/Put Wall start OFF; Range High/Range Low/
     // Gamma Flip/Max Pain start ON), not "every level on".
     const [selectedLevels, setSelectedLevels] = useState<Array<ToggleableLevelKey>>(() => [...DEFAULT_SELECTED_LEVELS]);
     const [levelColors, setLevelColorsState] = useState<LevelColorSet>(() => loadLevelColors());
@@ -1038,7 +1038,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         overflow at all once the chips (non-shrinking, `shrink-0`)
                         exceed the row's width - `scrollWidth === clientWidth`
                         measured equal - and renders the EARLIER chips in DOM order
-                        (Call Wall, Put Wall, Gamma Flip, Max Pain, Support 2 in that
+                        (Call Wall, Put Wall, Gamma Flip, Max Pain, Range Low in that
                         run) at negative x-coordinates, fully or partly off-screen to
                         the left, with no way to reach them: wheel/trackpad/drag don't
                         move it (nothing registers as scrollable), and setting
@@ -1138,7 +1138,7 @@ export const GexView: React.FC<GexViewProps> = ({
                             fixed logical order `keyLevels` was built in above
                             (that order still drives the toggle+color panel via
                             the separate `levelPanelKeys` array, untouched by
-                            this sort). A null-valued row (Resistance/Support 2
+                            this sort). A null-valued row (Resistance/Range Low
                             not applicable, or Gamma Flip with no data) has no
                             real price to sort by, so every
                             null row sinks to the bottom, below every row with
@@ -1227,7 +1227,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     // bottom: 110 (widened from 8) makes room for the Key Level
                                     // diagonal labels now hanging BELOW the X axis (see
                                     // renderRotatedLevelLabel's doc comment) - the longest chart
-                                    // label text ("Resistance 2") at this -45deg rotation and
+                                    // label text ("Range High") at this -45deg rotation and
                                     // 10px font needs roughly BOTTOM_GAP (28px, clears the axis'
                                     // own numeric tick labels) + ~60px of diagonal vertical extent
                                     // + a little slack; verified live (Playwright) that 110px
