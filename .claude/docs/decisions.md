@@ -63,6 +63,7 @@ Newest first inside each section. PR numbers are from `daggerok/gex`. Add a date
 
 ## Repo history
 
+- CI runs on pull requests only (2026-10-07): `ci.yaml` triggers on `pull_request` to `main` plus manual dispatch, with a per-ref concurrency group that cancels superseded runs. Pushes to `main` are built and deployed by `github-pages.yml`, so a second build there was redundant (tests no longer run on push to main, they gate the PR). The `npm-check-updates` job moved to its own manual workflow `npm-check-updates.yml`
 - Fetch and rebase rule (2026-10-07): `rules/workflow.md` requires `git fetch` + `git rebase origin/main` before starting work and before every push. Reason: parallel PRs kept colliding, e.g. two PRs adding an entry at the top of this section conflicted in `decisions.md`
 - `npm-check-updates` CI job is manual-only (2026-10-07): `if: github.event_name == 'workflow_dispatch'` in `ci.yaml`, so push and PR runs no longer bump dependencies and fail on upstream releases. Run it from the Actions tab. The separate `dependency-updates.yml` workflow was already manual
 - Dependabot uses the `npm` ecosystem instead of `bun` (2026-10-07): the `bun` updater failed on every run with `Unsupported bun.lock 'lockfileVersion' 2` (it only parses version 1), so no JS update PRs were ever created. `npm` reads `package.json` only, so PRs do not touch `bun.lock`, run `bun install` on the branch to refresh it. The `github-actions` entry also scans the local composite action in `.github/actions/uv`. Revisit `bun` once Dependabot supports lockfileVersion 2

@@ -1,0 +1,28 @@
+name: npm-check-updates
+# Manual only: bumps every dependency in package.json and checks that tests and builds still pass
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  npm-check-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bunx npm-check-updates -u
+      - run: bun install
+      - run: bun run test
+      - run: bun run build
+      - run: bun run clean
+      - run: bun run build-github-pages

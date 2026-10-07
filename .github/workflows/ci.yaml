@@ -1,8 +1,14 @@
 name: CI
+# Pull requests only: main is built and deployed by github-pages.yml
 on:
-  push:
   pull_request:
+    branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,29 +34,4 @@ jobs:
       - run: python3 -m py_compile scripts/options-data.py
       - run: node --check scripts/options-cloudflare-proxy.js
       - run: bun run build
-      - run: bun run build-github-pages
-  npm-check-updates:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      # On pull requests, use the contributor's head commit rather than GitHub's
-      # synthetic merge commit. Only that ref's two most recent commits are fetched.
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 2
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/cache@v6
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-      - run: bunx npm-check-updates -u
-      - run: bun install
-      - run: bun run test
-      - run: bun run build
-      - run: bun run clean
       - run: bun run build-github-pages
