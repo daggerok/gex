@@ -1334,29 +1334,29 @@ export const GexView: React.FC<GexViewProps> = ({
                             <span className="hidden text-xs text-slate-400 sm:inline">{tr('gex.zoom.hint')}</span>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-slate-400">
-                            <button type="button" onClick={() => zoomX('out')} title={tr('gex.zoom.xOut')} className={ZOOM_BTN}>−</button>
+                            <button type="button" onClick={() => zoomX('out')} title={tr('gex.zoom.xOut')} aria-label={tr('gex.zoom.xOut')} className={ZOOM_BTN}>➖</button>
                             <button
                                 type="button"
                                 onClick={() => setXZoomAndPersist(null)}
                                 disabled={xZoom == null}
                                 title={tr('gex.zoom.resetH')}
+                                aria-label={tr('gex.zoom.resetH')}
                                 className={ZOOM_BTN + (xZoom == null ? ' opacity-40' : '')}
                             >
-                                x
+                                🔄
                             </button>
-                            <button type="button" onClick={() => zoomX('in')} title={tr('gex.zoom.xIn')} className={ZOOM_BTN}>+</button>
+                            <button type="button" onClick={() => zoomX('in')} title={tr('gex.zoom.xIn')} aria-label={tr('gex.zoom.xIn')} className={ZOOM_BTN}>➕</button>
                         </div>
                         <div className="flex justify-end">
                             <button
                                 type="button"
                                 onClick={resetZoom}
                                 disabled={!isZoomed}
-                                className={
-                                    'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' +
-                                    (isZoomed ? ax.chipIdle : 'border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600')
-                                }
+                                title={tr('gex.zoom.reset')}
+                                aria-label={tr('gex.zoom.reset')}
+                                className={ZOOM_BTN + (isZoomed ? '' : ' opacity-40')}
                             >
-                                {tr('gex.zoom.reset')}
+                                🔃
                             </button>
                         </div>
                     </div>
@@ -1372,17 +1372,18 @@ export const GexView: React.FC<GexViewProps> = ({
                             x (reset the value axis), - (zoom out). */}
                         {chart && !chartMessage && (
                             <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-1 text-xs">
-                                <button type="button" onClick={zoomInY} title={tr('gex.zoom.yIn')} className={ZOOM_BTN}>+</button>
+                                <button type="button" onClick={zoomInY} title={tr('gex.zoom.yIn')} aria-label={tr('gex.zoom.yIn')} className={ZOOM_BTN}>➕</button>
                                 <button
                                     type="button"
                                     onClick={resetVZoom}
                                     disabled={yZoomFactor === 1}
                                     title={tr('gex.zoom.resetV')}
+                                    aria-label={tr('gex.zoom.resetV')}
                                     className={ZOOM_BTN + (yZoomFactor === 1 ? ' opacity-40' : '')}
                                 >
-                                    x
+                                    🔄
                                 </button>
-                                <button type="button" onClick={zoomOutY} title={tr('gex.zoom.yOut')} className={ZOOM_BTN}>−</button>
+                                <button type="button" onClick={zoomOutY} title={tr('gex.zoom.yOut')} aria-label={tr('gex.zoom.yOut')} className={ZOOM_BTN}>➖</button>
                             </div>
                         )}
                         {chartMessage || !chart ? (
