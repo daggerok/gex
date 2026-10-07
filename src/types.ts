@@ -283,7 +283,7 @@ export interface Settings {
      * Unrelated to per-metric chart COLORS, which persist separately via
      * gex-colors.ts's `gex.metricColors.v1` key.
      */
-    gexMetrics: ('netGex' | 'absoluteGamma' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume')[];
+    gexMetrics: ('netGex' | 'absoluteGamma' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume' | 'pcRatioOi' | 'pcRatioVolume')[];
 }
 
 // ============================================================================

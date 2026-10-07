@@ -91,6 +91,9 @@ export interface MetricColorSet {
     putOi: string;
     callVolume: string;
     putVolume: string;
+    /** Per-strike put/call ratio lines, each on the shared ratio axis. */
+    pcRatioOi: string;
+    pcRatioVolume: string;
 }
 
 /** Defaults mirror today's hardcoded chart colors exactly. */
@@ -102,6 +105,8 @@ export const DEFAULT_METRIC_COLORS: MetricColorSet = {
     putOi: GEX_METRIC_COLORS.putOi,
     callVolume: GEX_METRIC_COLORS.callVolume,
     putVolume: GEX_METRIC_COLORS.putVolume,
+    pcRatioOi: '#14b8a6',     // teal-500
+    pcRatioVolume: '#f97316', // orange-500
 };
 
 export const METRIC_COLORS_KEY = 'gex.metricColors.v1';

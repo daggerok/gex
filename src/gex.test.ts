@@ -13,6 +13,7 @@ import {
   computePCRatio,
   findNetGexLevels,
   findSumNetGexLevels,
+  pcRatioByStrike,
   SUM_NET_GEX_SHARE,
   findGammaFlipHypotheticalSpot,
   gexCall,
@@ -676,5 +677,20 @@ describe('findSumNetGexLevels: 75% of one side\'s net GEX, from spot outward', (
 
   test('share 1 returns the farthest strike with mass', () => {
     expect(findSumNetGexLevels(profile, 100, 1)).toEqual({ sumNetGexPlus: 110, sumNetGexMinus: 90 });
+  });
+});
+
+describe('pcRatioByStrike: put/call ratios of one strike', () => {
+  test('puts divided by calls, by OI and by volume', () => {
+    expect(pcRatioByStrike({ callOi: 100, putOi: 150, callVolume: 40, putVolume: 10 })).toEqual({ byOi: 1.5, byVolume: 0.25 });
+  });
+
+  test('no call side -> null for that ratio only, the other still works', () => {
+    expect(pcRatioByStrike({ callOi: 0, putOi: 150, callVolume: 40, putVolume: 10 })).toEqual({ byOi: null, byVolume: 0.25 });
+    expect(pcRatioByStrike({ callOi: 100, putOi: 0, callVolume: 0, putVolume: 10 })).toEqual({ byOi: 0, byVolume: null });
+  });
+
+  test('empty strike -> both null', () => {
+    expect(pcRatioByStrike({ callOi: 0, putOi: 0, callVolume: 0, putVolume: 0 })).toEqual({ byOi: null, byVolume: null });
   });
 });

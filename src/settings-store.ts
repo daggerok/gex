@@ -443,7 +443,7 @@ export const DEFAULT_SETTINGS: Settings = {
 // Keep these two arrays in sync by hand if those enums ever change.
 // ---------------------------------------------------------------------------
 const APP_TAB_VALUES: readonly string[] = ['desk', 'gex', 'chart'];
-const GEX_METRIC_VALUES: readonly string[] = ['netGex', 'absoluteGamma', 'callOi', 'putOi', 'callVolume', 'putVolume'];
+const GEX_METRIC_VALUES: readonly string[] = ['netGex', 'absoluteGamma', 'callOi', 'putOi', 'callVolume', 'putVolume', 'pcRatioOi', 'pcRatioVolume'];
 
 /** Sanitize a loaded `activeTab`: any value outside the known tabs (missing,
  *  wrong type, stale/removed tab name) falls back to the default ('desk'). */
