@@ -4,7 +4,7 @@ import type { GexLevels, GexPoint, OptionQuote } from './types';
 // ---------------------------------------------------------------------------
 // Gamma exposure (GEX) math - SINGLE SOURCE OF TRUTH for GEX-derived levels
 // ---------------------------------------------------------------------------
-// Spec: .plans/gex-implementation-plan.txt section 7. Pure functions, zero
+// Spec: .claude/docs/spec-gex-app.md section 7. Pure functions, zero
 // React/DOM dependencies. Never duplicate any of this in scripts/options-data.py
 // or in the proxy scripts (architecture rule R1).
 //
@@ -17,8 +17,8 @@ import type { GexLevels, GexPoint, OptionQuote } from './types';
 // commercial GEX product, so expect numbers in the same ballpark as other
 // public GEX tools, not an exact match (plan section 17 item 3).
 //
-// Per-quote reference price (Phase 3 of .plans/gex-vix-futures-pricing-
-// research.txt, section 9): for almost every symbol one shared `spot` is the
+// Per-quote reference price (Phase 3 of .claude/docs/spec-vix-futures.md,
+// section 9): for almost every symbol one shared `spot` is the
 // right reference price for every quote in the chain. VIX/VXN (futures-priced
 // - see FUTURES_PRICED_SYMBOLS in src/greeks.ts) are the exception: each
 // expiration is priced off its OWN forward (src/vix-pricing.ts's
@@ -46,6 +46,31 @@ export const CONTRACT_MULTIPLIER = 100;
  * item 6).
  */
 export const SECOND_WALL_MIN_DISTANCE_PCT = 0.02;
+
+/**
+ * Minimum distance between the primary wall and its second wall, either as a
+ * fraction of spot (`pct`, 0.004 = 0.4%) or as an absolute price (`usd`).
+ */
+export type SecondWallDistance = { pct: number } | { usd: number };
+
+/**
+ * Per-symbol override of the second-wall distance. Symbols not listed here
+ * use SECOND_WALL_MIN_DISTANCE_PCT. Keys are upper-case root symbols. A fixed
+ * 2% is far too wide for SPY ($1 strikes, ~$15 at spot 775) - the second
+ * wall then lands on a negligible strike far from the real cluster - so SPY
+ * uses a flat $3. Add a row here to tune another symbol, nothing else needs
+ * to change.
+ */
+export const SECOND_WALL_DISTANCE_BY_SYMBOL: Readonly<Record<string, SecondWallDistance>> = {
+    SPY: { usd: 3 },
+};
+
+/** Resolved minimum second-wall distance in price units for `symbol` at `spot`. */
+export function secondWallMinDistance(symbol: string | null | undefined, spot: number): number {
+    const rule = symbol ? SECOND_WALL_DISTANCE_BY_SYMBOL[symbol.toUpperCase()] : undefined;
+    if (rule && 'usd' in rule) return rule.usd;
+    return (rule ? rule.pct : SECOND_WALL_MIN_DISTANCE_PCT) * spot;
+}
 
 /** GEX of a call position: gamma * OI * multiplier * spot^2 * 0.01 (section 7.1). */
 export function gexCall(gamma: number, openInterest: number, spot: number): number {
@@ -334,33 +359,42 @@ export interface CallPutWalls {
 }
 
 /**
- * Call/put walls (section 7.4). The second-wall rule needs spot, so it is an
- * explicit parameter here.
+ * Call/put walls (section 7.4).
  *  - callWall: strike with the maximum netGex among netGex > 0
  *  - putWall: strike with the minimum netGex among netGex < 0
- *  - callWall2 / putWall2: same, restricted to strikes at least
- *    SECOND_WALL_MIN_DISTANCE_PCT * spot away from the primary wall (an
- *    unsourced heuristic, see the constant's comment)
+ *  - callWall2: the strongest netGex > 0 strike ABOVE callWall and at least
+ *    `minDistance` away from it (Resistance 2 must sit above Resistance 1)
+ *  - putWall2: the strongest netGex < 0 strike BELOW putWall and at least
+ *    `minDistance` away from it (Support 2 must sit below Support 1)
  * Ties on netGex resolve to the lowest strike (first in ascending order).
  *
- * `spot` here is just "the reference price the 2%-distance rule measures
+ * `minDistance` is in price units; the default is SECOND_WALL_MIN_DISTANCE_PCT
+ * * spot. Callers with a symbol use secondWallMinDistance() to apply the
+ * per-symbol override. The distance rule is an unsourced heuristic, see the
+ * constant's comment.
+ *
+ * `spot` here is just "the reference price the default distance measures
  * from" - for a futures-priced symbol (VIX/VXN) there is no single spot in
  * the GEX-relevant sense once multiple expirations/forwards are in play, so
  * the caller (src/use-gex-levels.ts) passes the nearest selected
  * expiration's forward instead of the true spot index level (design
- * decision, Phase 3 of .plans/gex-vix-futures-pricing-research.txt section
+ * decision, Phase 3 of .claude/docs/spec-vix-futures.md section
  * 9: strikes live in futures-space for these symbols, so a futures-space
- * reference price makes the 2%-of-reference distance threshold meaningful;
- * the true spot VIX index is still shown separately in the UI).
+ * reference price makes the distance threshold meaningful; the true spot VIX
+ * index is still shown separately in the UI).
  */
-export function findCallPutWalls(profile: readonly GexPoint[], spot: number): CallPutWalls {
-    const minDistance = SECOND_WALL_MIN_DISTANCE_PCT * spot;
-    const pick = (sign: 1 | -1, awayFrom: number | null): number | null => {
+export function findCallPutWalls(
+    profile: readonly GexPoint[],
+    spot: number,
+    minDistance: number = SECOND_WALL_MIN_DISTANCE_PCT * spot,
+): CallPutWalls {
+    const pick = (sign: 1 | -1, beyond: number | null): number | null => {
         let best: GexPoint | null = null;
         for (const point of profile) {
             const signed = sign * point.netGex;
             if (!(signed > 0)) continue;
-            if (awayFrom !== null && Math.abs(point.strike - awayFrom) < minDistance) continue;
+            // sign 1 (calls): only strikes above the wall; sign -1 (puts): only below
+            if (beyond !== null && sign * (point.strike - beyond) < minDistance) continue;
             if (best === null || signed > sign * best.netGex) best = point;
         }
         return best ? best.strike : null;
@@ -497,9 +531,9 @@ export function trimZeroBoundaries<T extends { strike: number }>(
     return points.slice(start, end + 1);
 }
 
-export function computeGexLevels(quotes: readonly OptionQuote[], spot: number): GexLevels {
+export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, symbol?: string | null): GexLevels {
     const profile = computeGexProfile(quotes, spot);
-    const walls = findCallPutWalls(profile, spot);
+    const walls = findCallPutWalls(profile, spot, secondWallMinDistance(symbol, spot));
     const pcr = computePCRatio(quotes);
     // Gamma flip (section 7.3): hypothetical-spot Black-Scholes recompute
     // against the RAW quotes, not the real-spot profile - see

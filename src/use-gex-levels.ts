@@ -12,7 +12,7 @@ import { estimateSpot } from './utils';
 // (price lines), so the two tabs always show the same numbers. Neither view
 // recomputes levels itself (rule R1).
 //
-// Phase 3 of .plans/gex-vix-futures-pricing-research.txt (section 9): a
+// Phase 3 of .claude/docs/spec-vix-futures.md (section 9): a
 // futures-priced symbol (VIX/VXN, isFuturesPricedSymbol) used to ALWAYS get
 // `levels: null` here, regardless of settings.vixFuturesPricing. Now it only
 // stays null when real levels genuinely aren't available for it - the toggle
@@ -116,9 +116,9 @@ export function useGexLevels(
 
     const levels = useMemo(() => {
         if (!quotes.length) return null;
-        if (isFuturesPriced) return futuresPricingAvailable ? computeGexLevels(quotes, referenceForward!) : null;
-        return spot != null ? computeGexLevels(quotes, spot) : null;
-    }, [quotes, spot, isFuturesPriced, futuresPricingAvailable, referenceForward]);
+        if (isFuturesPriced) return futuresPricingAvailable ? computeGexLevels(quotes, referenceForward!, symbol) : null;
+        return spot != null ? computeGexLevels(quotes, spot, symbol) : null;
+    }, [quotes, spot, symbol, isFuturesPriced, futuresPricingAvailable, referenceForward]);
 
     return { quotes, spot, spotIsEstimated, levels, isFuturesPriced };
 }

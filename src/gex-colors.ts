@@ -6,7 +6,7 @@
 // `hex` is for chart libraries that take raw colors (recharts and
 // lightweight-charts). `dot` is the matching Tailwind class for
 // HTML swatches; class names are spelled out literally so Tailwind's source
-// scanner picks them up. Values follow the Tab 2 wireframe.
+// scanner picks them up. Values follow the original Tab 2 design.
 // ---------------------------------------------------------------------------
 
 /**

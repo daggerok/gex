@@ -10,7 +10,7 @@
  *    this header section and related documentation blocks MUST be kept accurate
  *    and synchronized with feature upgrades.
  * 3. MODULE LAYOUT: Since v0.9.47 the app is split into modules under src/
- *    (layout per .plans/gex-implementation-plan.txt section 4). This file is
+ *    (layout per .claude/docs/spec-gex-app.md section 4). This file is
  *    the App shell only (state, effects, render) plus this shared changelog.
  *    (Optional INFRASTRUCTURE lives outside src/ — see "COMPANION
  *    INFRASTRUCTURE" below — and is not required for the app to run.)

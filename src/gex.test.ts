@@ -4,6 +4,8 @@ import {
   GAMMA_FLIP_GRID_POINTS,
   GAMMA_FLIP_RANGE_PCT,
   SECOND_WALL_MIN_DISTANCE_PCT,
+  SECOND_WALL_DISTANCE_BY_SYMBOL,
+  secondWallMinDistance,
   computeGexLevels,
   computeGexProfile,
   computeMaxPain,
@@ -312,30 +314,77 @@ describe('findGammaFlipHypotheticalSpot (7.3, rewritten: hypothetical-spot Black
   });
 });
 
+describe('second walls: direction and per-symbol distance', () => {
+  // Hand-built profile, only strike + netGex matter to findCallPutWalls.
+  const pt = (strike: number, netGex: number) => ({ strike, netGex } as unknown as Parameters<typeof findCallPutWalls>[0][number]);
+  // Mirrors the SPY bug: big cluster below the call wall, small strikes above it.
+  const profile = [
+    pt(745, -100), pt(767, -500), pt(771, 300), pt(775, 2557), pt(787, 2821),
+    pt(788, 37), pt(789, 20), pt(790, 90), pt(793, 36), pt(803, 50),
+  ];
+
+  test('Resistance 2 must be above the call wall, Support 2 below the put wall', () => {
+    // callWall 787. With minDistance 3: strikes >= 790 -> 790 (+90) beats 793 (+36) and 803 (+50).
+    // putWall 767 (-500). Below it only 745 (-100) -> putWall2 745.
+    expect(findCallPutWalls(profile, 775.83, 3)).toEqual({
+      callWall: 787, putWall: 767, callWall2: 790, putWall2: 745,
+    });
+  });
+
+  test('default 2% of spot (15.5) skips 790 and lands on 803', () => {
+    // minDistance = 0.02 * 775.83 = 15.5166 -> only strikes >= 802.52 qualify -> 803.
+    expect(findCallPutWalls(profile, 775.83).callWall2).toBe(803);
+  });
+
+  test('distance equal to the threshold qualifies (>=)', () => {
+    expect(findCallPutWalls(profile, 775.83, 3).callWall2).toBe(790);
+    // 790 now excluded; 793 (+36) loses to 803 (+50)
+    expect(findCallPutWalls(profile, 775.83, 3.01).callWall2).toBe(803);
+  });
+
+  test('secondWallMinDistance: per-symbol usd override, default pct, case-insensitive', () => {
+    expect(secondWallMinDistance('SPY', 775.83)).toBe(3);
+    expect(secondWallMinDistance('spy', 775.83)).toBe(3);
+    expect(secondWallMinDistance('SPX', 7000)).toBeCloseTo(140, 9);
+    expect(secondWallMinDistance(null, 100)).toBeCloseTo(2, 9);
+    expect(secondWallMinDistance(undefined, 100)).toBeCloseTo(2, 9);
+  });
+
+  test('a pct rule scales with spot', () => {
+    SECOND_WALL_DISTANCE_BY_SYMBOL.TEST_PCT = { pct: 0.005 };
+    try {
+      expect(secondWallMinDistance('TEST_PCT', 800)).toBeCloseTo(4, 9);
+    } finally {
+      delete (SECOND_WALL_DISTANCE_BY_SYMBOL as Record<string, unknown>).TEST_PCT;
+    }
+  });
+});
+
 describe('findCallPutWalls (7.4)', () => {
   test('primary walls + second walls honoring the 2%-of-spot distance', () => {
     // min distance = 0.02 * 100 = 2.
     // callWall = 105 (+100000). Next-highest positive is 106 (+80000), but
     // |106-105| = 1 < 2, so callWall2 = 115 (+50000) instead.
-    // putWall = 90 (-40000); putWall2 = 95 (-20000), |95-90| = 5 >= 2.
+    // putWall = 90 (-40000); the only other negative strike is 95, which is
+    // ABOVE the put wall, so putWall2 = null (Support 2 must sit below Support 1).
     expect(findCallPutWalls(computeGexProfile(FIXTURE, SPOT), SPOT)).toEqual({
       callWall: 105,
       putWall: 90,
       callWall2: 115,
-      putWall2: 95,
+      putWall2: null,
     });
   });
 
   test('second wall is null when nothing qualifies; ties pick the lowest strike', () => {
     // EXP_A nets: 90:-20000, 95:-20000, 100:0, 105:+60000, 106:+80000.
     // callWall 106; only other positive is 105 (distance 1) -> callWall2 null.
-    // 90 and 95 tie at -20000 -> putWall 90, putWall2 95.
+    // 90 and 95 tie at -20000 -> putWall 90 (lowest strike); 95 is above it -> putWall2 null.
     const profile = computeGexProfile(FIXTURE.filter((x) => x.expiration === EXP_A), SPOT);
     expect(findCallPutWalls(profile, SPOT)).toEqual({
       callWall: 106,
       putWall: 90,
       callWall2: null,
-      putWall2: 95,
+      putWall2: null,
     });
   });
 
@@ -394,7 +443,7 @@ describe('computeOiVolumeTotals', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 3 of .plans/gex-vix-futures-pricing-research.txt: a quote carrying
+// Phase 3 of .claude/docs/spec-vix-futures.md: a quote carrying
 // its own `forward` (VIX/VXN with settings.vixFuturesPricing on and Black-76
 // enrichment succeeding, src/vix-pricing.ts) must use THAT forward in place
 // of the shared `spot` parameter — section 9's "GEX for VIX" fix. Every test
@@ -497,7 +546,7 @@ describe('computeGexLevels (7.7)', () => {
     expect(levels.callWall).toBe(105);
     expect(levels.putWall).toBe(90);
     expect(levels.callWall2).toBe(115);
-    expect(levels.putWall2).toBe(95);
+    expect(levels.putWall2).toBeNull();
     expect(levels.maxPain).toBe(100);
     expect(levels.pcRatioOi).toBeCloseTo(1220 / 3320, 12);
     expect(levels.pcRatioVolume).toBeCloseTo(0.5, 12);

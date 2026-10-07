@@ -6,7 +6,7 @@ import type { Language } from './i18n';
 
 /** Source of greeks stored on a quote. `black-scholes` is a model estimate.
  *  `black-76` is the futures-priced model estimate for VIX/VXN (Phase 2 of
- *  .plans/gex-vix-futures-pricing-research.txt, opt-in via
+ *  .claude/docs/spec-vix-futures.md, opt-in via
  *  settings.vixFuturesPricing). Legacy static files may still carry
  *  `marketdata` / `dolthub` tags. */
 export type GreeksSource = 'cboe' | 'black-scholes' | 'black-76' | 'marketdata' | 'dolthub' | null;
@@ -249,7 +249,7 @@ export interface Settings {
     lastTicker: string;
     /**
      * Opt-in to Black-76 futures-priced greeks/IV for VIX/VXN (see
-     * src/vix-pricing.ts and .plans/gex-vix-futures-pricing-research.txt).
+     * src/vix-pricing.ts and .claude/docs/spec-vix-futures.md).
      * PHASE 1: this field is persisted and toggleable but nothing reads it
      * yet — wiring it into the live enrichment path is Phase 2. Defaults to
      * OFF: a new, not-yet-fully-wired feature must not change behavior for
@@ -287,7 +287,7 @@ export interface Settings {
 }
 
 // ============================================================================
-// GEX / CHART TYPES (see .plans/gex-implementation-plan.txt section 5)
+// GEX / CHART TYPES (see .claude/docs/spec-gex-app.md section 5)
 // ============================================================================
 
 /** Aggregated gamma exposure at a single strike (output of computeGexProfile). */
