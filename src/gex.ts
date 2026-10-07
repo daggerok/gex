@@ -41,11 +41,11 @@ export const CONTRACT_MULTIPLIER = 100;
  * to qualify as the "second wall" (callWall2 / putWall2).
  * ORIGINAL, UNSOURCED heuristic: no public standard for a "second wall" exists.
  * It only makes the behavior deterministic and documented. Treat it as a
- * tunable constant, not an established rule - at a fixed 2% it behaves very
+ * tunable constant, not an established rule - at a fixed 3% (2% before 2026-10-07) it behaves very
  * differently on $1 strike spacing than on $2.50/$5 spacing (plan section 17
  * item 6).
  */
-export const SECOND_WALL_MIN_DISTANCE_PCT = 0.02;
+export const SECOND_WALL_MIN_DISTANCE_PCT = 0.03;
 
 /**
  * Minimum distance between the primary wall and its second wall, either as a
@@ -56,14 +56,13 @@ export type SecondWallDistance = { pct: number } | { usd: number };
 /**
  * Per-symbol override of the second-wall distance. Symbols not listed here
  * use SECOND_WALL_MIN_DISTANCE_PCT. Keys are upper-case root symbols. A fixed
- * 2% is far too wide for SPY ($1 strikes, ~$15 at spot 775) - the second
+ * percentage is far too wide for SPY ($1 strikes, ~$23 at 3% of spot 775) - the second
  * wall then lands on a negligible strike far from the real cluster - so SPY
  * uses a flat $3. Add a row here to tune another symbol, nothing else needs
  * to change.
  */
 export const SECOND_WALL_DISTANCE_BY_SYMBOL: Readonly<Record<string, SecondWallDistance>> = {
     SPY: { usd: 3 },
-    SPX: { pct: 0.03 },
 };
 
 /** Resolved minimum second-wall distance in price units for `symbol` at `spot`. */
