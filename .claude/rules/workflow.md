@@ -1,6 +1,7 @@
 # Workflow
 
 - Direct push to `main` is fine for low-risk agreed changes, use a PR when review is needed. Squash merges only
+- Sync before work and before every push: `git fetch` then `git rebase origin/main` (never merge main in), resolve conflicts locally, rerun `bun test` if the rebase pulled changes. Applies to subagents too, restate it in their prompts
 - Conventional Commits with a scope, e.g. `fix(gex): ...`
 - Exploratory work goes to a background agent in an isolated worktree that writes `.claude/docs/spec-<topic>.md` (linked from `.claude/docs/README.md`), opens a PR and does NOT merge, the orchestrating session reviews and merges
 - Agents commit incrementally and squash before the PR, use Sonnet unless asked otherwise
