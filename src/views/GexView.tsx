@@ -4,7 +4,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, zoomRange, zoomStep } from '../zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
@@ -383,6 +383,9 @@ const TooltipFade: React.FC<{ shown: boolean; children: React.ReactNode }> = ({ 
 
 /** How long the cursor must rest on the chart before the hover tooltip appears. */
 const TOOLTIP_DELAY_MS = 500;
+
+/** Scroll distance (pixels) that makes one wheel zoom step. */
+const WHEEL_STEP_PX = 60;
 
 /** Small borderless zoom button holding a ZoomIcon. */
 const ZOOM_BTN = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium leading-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 disabled:cursor-default';
@@ -969,6 +972,40 @@ export const GexView: React.FC<GexViewProps> = ({
             zoomX(action === 'zoomIn' ? 'in' : 'out');
         }
     };
+    // Mouse wheel and two-finger trackpad scroll over the chart zoom it, anchored at the cursor: scrolling
+    // DOWN zooms in, UP zooms out (a pinch, which arrives as Ctrl + wheel, zooms the natural way). The
+    // listener is native and not passive so the page does not scroll while the cursor is on the chart.
+    const chartBoxRef = useRef<HTMLDivElement | null>(null);
+    const wheelAccRef = useRef(0);
+    const wheelHandlerRef = useRef<(e: WheelEvent) => void>(() => {});
+    wheelHandlerRef.current = (e: WheelEvent) => {
+        if (!chart) return;
+        e.preventDefault();
+        // lines and pages (a classic mouse wheel on some systems) to pixels
+        const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+        const r = wheelSteps(wheelAccRef.current, px, e.ctrlKey, WHEEL_STEP_PX);
+        wheelAccRef.current = r.acc;
+        if (r.steps === 0) return;
+        const axisLine = chartBoxRef.current?.querySelector('.recharts-xAxis .recharts-cartesian-axis-line');
+        const rect = axisLine?.getBoundingClientRect();
+        const frac = rect && rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0.5;
+        const base = chart.domain;
+        let range: [number, number] | null = xZoom;
+        const dir = r.steps > 0 ? 'in' : 'out';
+        for (let i = 0; i < Math.min(Math.abs(r.steps), 3); i++) {
+            range = zoomRangeAt(range ?? base, base, dir, zoomStep(base), 4 * (chart.strikeStep ?? 1), frac);
+            if (range === null) break;
+        }
+        setXZoomAndPersist(range);
+    };
+    useEffect(() => {
+        const el = chartBoxRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => wheelHandlerRef.current(e);
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, [!!chart]);
+
     // Triple Escape (main.tsx) resets every reset button: this view resets Metrics, Levels and the zoom.
     const resetAllRef = useRef<() => void>(() => {});
     resetAllRef.current = () => { resetMetricsPanel(); resetLevelsPanel(); setXZoomAndPersist(null); };
@@ -1026,7 +1063,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
         if (typeof state?.activeLabel === 'number') { setDragStart(state.activeLabel); setDragEnd(state.activeLabel); }
     };
-    const chartGuides = [tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys')].join(' | ');
+    const chartGuides = [tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintWheel'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys')].join(' | ');
     // Hover-intent for the chart tooltip: it shows only once the cursor has stopped for
     // TOOLTIP_DELAY_MS, fades out as soon as the cursor moves again or leaves the chart.
     const [tooltipArmed, setTooltipArmed] = useState(false);
@@ -1584,6 +1621,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         container, not the whole page, so text elsewhere (inputs, sidebar
                         values, etc.) stays normally selectable. */}
                     <div
+                        ref={chartBoxRef}
                         className={'relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : '')}
                         onMouseDownCapture={onChartPointerDownCapture}
                     >

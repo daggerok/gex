@@ -91,3 +91,31 @@ export function recordEscape(history: readonly number[], now: number): number[] 
 /** Name of the app-wide event the triple Escape fires after resetting the expirations: every panel
  *  that has a Reset button listens and resets itself. */
 export const RESET_ALL_EVENT = 'app:reset-all';
+
+/** Like zoomRange, but anchored at a point of the visible range instead of its middle: `frac` is where
+ *  the cursor is inside the plot, 0 = left edge, 1 = right edge. The strike under the cursor stays put,
+ *  so the edge nearer to the cursor moves less. `step` is the TOTAL width change of one zoom step
+ *  (twice the per-edge step of zoomRange), shared between the two edges by `frac`. */
+export function zoomRangeAt(range: [number, number], base: [number, number], dir: 'in' | 'out', step: number, minWidth: number, frac: number): [number, number] | null {
+    const [a, b] = range;
+    const f = Math.min(1, Math.max(0, frac));
+    const total = 2 * step;
+    if (dir === 'in') {
+        if (b - a - total < minWidth) return range;
+        return [a + total * f, b - total * (1 - f)];
+    }
+    const na = Math.max(base[0], a - total * f);
+    const nb = Math.min(base[1], b + total * (1 - f));
+    return na <= base[0] && nb >= base[1] ? null : [na, nb];
+}
+
+/** Wheel and two-finger scroll over the chart: scrolling DOWN (positive deltaY) zooms in, scrolling UP
+ *  zooms out. A trackpad pinch arrives as a wheel event with Ctrl held and the opposite sign (pinch
+ *  out = negative deltaY): that zooms in. `acc` collects the small deltas of a smooth scroll; once it
+ *  passes `threshold` pixels, whole steps are returned and the remainder is kept. Pure. */
+export function wheelSteps(acc: number, deltaY: number, ctrl: boolean, threshold: number): { steps: number; acc: number } {
+    const d = ctrl ? -deltaY : deltaY;
+    const total = acc + d;
+    const steps = Math.trunc(total / threshold);
+    return { steps, acc: total - steps * threshold };
+}
