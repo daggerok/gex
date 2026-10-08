@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 const root = join(import.meta.dir, '..');
 const fetcher = readFileSync(join(root, 'scripts/options-data.py'), 'utf8');
+const fetcherTs = readFileSync(join(root, 'scripts/options-data.ts'), 'utf8');
 // App source is split into modules under src/ (Phase 0), so scan all of it.
 const main = readdirSync(join(root, 'src'), { recursive: true })
     .map(String)
@@ -17,6 +18,12 @@ describe('data/options path layout (PR2)', () => {
     expect(fetcher).toContain(', "data", "options")');
     expect(fetcher).toContain('data/options/index.json');
     expect(fetcher).toContain('cdn.cboe.com');
+  });
+
+  test('ts fetcher writes the same layout', () => {
+    expect(fetcherTs).toContain('"data", "options"');
+    expect(fetcherTs).toContain('data/options/index.json');
+    expect(fetcherTs).toContain('cdn.cboe.com');
   });
 
   test('UI static cache reads data/options/*', () => {
