@@ -275,7 +275,7 @@ const coloredTick = (colorOf: (v: number) => string, format: (v: number) => stri
  * the button would do once enabled) would never show. The native `title` is left off on
  * purpose, it would pop up a second, duplicate tooltip.
  */
-const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; wrapperClassName?: string; children: React.ReactNode }> = ({ text, side = 'below', wrap = false, wrapperClassName = 'inline-flex', children }) => {
+const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; onlyWhenCut?: boolean; wrapperClassName?: string; children: React.ReactNode }> = ({ text, side = 'below', wrap = false, onlyWhenCut = false, wrapperClassName = 'inline-flex', children }) => {
     const wrapRef = useRef<HTMLSpanElement>(null);
     const tipRef = useRef<HTMLDivElement>(null);
     const tooltipId = useId();
@@ -283,6 +283,11 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; wra
     const [pos, setPos] = useState({ top: 0, left: 0, placement: 'bottom' as 'top' | 'bottom' | 'left' });
     const show = () => {
         const el = wrapRef.current;
+        // `onlyWhenCut`: the tooltip repeats text that is cut off, so skip it when the text fits
+        if (onlyWhenCut) {
+            const shown = el?.firstElementChild as HTMLElement | null;
+            if (!shown || shown.scrollWidth <= shown.clientWidth + 1) return;
+        }
         if (el) {
             const r = el.getBoundingClientRect();
             if (side === 'left') {
@@ -1912,7 +1917,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     {/* Guides under the chart, separated by " | " */}
                     {/* One line; when the screen is too narrow it is cut with an ellipsis and the
                         whole text shows in a tooltip on hover. */}
-                    <Tip text={chartGuides} wrap wrapperClassName="mt-1 flex w-full min-w-0 justify-center">
+                    <Tip text={chartGuides} wrap onlyWhenCut wrapperClassName="mt-1 flex w-full min-w-0 justify-center">
                         <p className="min-w-0 truncate text-center text-xs text-slate-400">{chartGuides}</p>
                     </Tip>
                 </section>
