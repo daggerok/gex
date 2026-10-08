@@ -995,7 +995,7 @@ export const GexView: React.FC<GexViewProps> = ({
         let range: [number, number] | null = xZoom;
         const dir = r.steps > 0 ? 'in' : 'out';
         for (let i = 0; i < Math.min(Math.abs(r.steps), 3); i++) {
-            range = zoomRangeAt(range ?? base, base, dir, zoomStep(base), 4 * (chart.strikeStep ?? 1), frac);
+            range = zoomRangeAt(range ?? base, base, dir, clickStep(base), 4 * (chart.strikeStep ?? 1), frac);
             if (range === null) break;
         }
         setXZoomAndPersist(range);
