@@ -220,7 +220,7 @@ function renderRotatedLevelLabel(group: LevelLabelGroup) {
         const vy = props.viewBox?.y;
         const vh = props.viewBox?.height;
         if (vx == null || vy == null || vh == null) return <React.Fragment />;
-        const BOTTOM_GAP = 28 + STRIKES_CAPTION_H; // clears the Strikes caption strip and recharts' own numeric X-axis tick labels
+        const BOTTOM_GAP = 28; // clears recharts' own numeric X-axis tick labels below the axis line
         const x = vx + 4;
         const y = vy + vh + BOTTOM_GAP;
         // Levels on the same price share one label (see level-labels.ts): one line
@@ -252,7 +252,7 @@ function renderRotatedLevelLabel(group: LevelLabelGroup) {
     };
 }
 
-/** Height of the strip under the X axis line that holds the "Strikes" caption. */
+/** Height of the strip at the bottom of the plot, right above the X axis line, that holds the "Strikes" caption. */
 const STRIKES_CAPTION_H = 20;
 
 /** Heading style shared by the sidebar cards and the chart title. */
@@ -390,11 +390,11 @@ const TOOLTIP_DELAY_MS = 500;
 /** Chart margins and axis widths. The Net GEX and AG captions are positioned from them: the left axis
  *  column starts at CHART_MARGIN.left and is Y_AXIS_WIDTH wide, the AG axis is the first one on the right,
  *  after the shared secondary column (SECONDARY_AXIS_WIDTH + the 1px ratio axis). */
-const CHART_MARGIN = { top: 24, right: 16, bottom: 110 + STRIKES_CAPTION_H, left: 8 };
-/** The X axis band under the plot is STRIKES_CAPTION_H taller than the default 30px: the "Strikes" caption sits
- *  right under the axis line in that extra strip and the strike numbers are pushed below it, so the plot ends
- *  above the caption and no bar can reach it. */
-const X_AXIS_HEIGHT = 30 + STRIKES_CAPTION_H;
+const CHART_MARGIN = { top: 24, right: 16, bottom: 110, left: 8 };
+/** The X axis band under the plot keeps recharts' default 30px. The "Strikes" caption sits INSIDE the plot, right
+ *  above the axis line, and the Net GEX domain is extended downwards by that strip (see `yDomain`), so the
+ *  lowest negative bar stops above the caption. */
+const X_AXIS_HEIGHT = 30;
 const Y_AXIS_WIDTH = 64;
 const RATIO_AXIS_WIDTH = 1;
 
@@ -997,6 +997,8 @@ export const GexView: React.FC<GexViewProps> = ({
     // DOWN zooms in, UP zooms out (a pinch, which arrives as Ctrl + wheel, zooms the natural way). The
     // listener is native and not passive so the page does not scroll while the cursor is on the chart.
     const chartBoxRef = useRef<HTMLDivElement | null>(null);
+    // Height of the chart box in px: the Strikes caption strip is a fixed pixel height, the Net GEX domain is padded by its share of the plot
+    const [chartBoxH, setChartBoxH] = useState(0);
     const wheelAccRef = useRef(0);
     const wheelHandlerRef = useRef<(e: WheelEvent) => void>(() => {});
     wheelHandlerRef.current = (e: WheelEvent) => {
@@ -1019,6 +1021,14 @@ export const GexView: React.FC<GexViewProps> = ({
         }
         setXZoomAndPersist(range);
     };
+    useEffect(() => {
+        const el = chartBoxRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(() => setChartBoxH(Math.round(el.getBoundingClientRect().height)));
+        ro.observe(el);
+        setChartBoxH(Math.round(el.getBoundingClientRect().height));
+        return () => ro.disconnect();
+    }, [!!chart]);
     useEffect(() => {
         const el = chartBoxRef.current;
         if (!el) return;
@@ -1176,7 +1186,15 @@ export const GexView: React.FC<GexViewProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chart, hasNetGex]);
 
-    const yDomain = yBase;
+    // The lowest negative bar must not reach the "Strikes" caption inside the plot: extend the bottom of the domain so
+    // the caption strip (plus a small gap) is empty plot. Only when the domain goes negative, a positive-only
+    // selection keeps its zero baseline
+    const yDomain = useMemo((): [number, number] => {
+        const plotH = chartBoxH - CHART_MARGIN.top - CHART_MARGIN.bottom - X_AXIS_HEIGHT;
+        if (yBase[0] >= 0 || plotH <= 4 * STRIKES_CAPTION_H) return yBase;
+        const f = (STRIKES_CAPTION_H + 6) / plotH;
+        return [yBase[1] - (yBase[1] - yBase[0]) / (1 - f), yBase[1]];
+    }, [yBase, chartBoxH]);
     // Signed formatting once the domain can actually go negative - true
     // whenever netGex is selected, or any put metric (now also negative) is.
     const yTickFormatter = (v: number) => (yBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
@@ -1715,14 +1733,14 @@ export const GexView: React.FC<GexViewProps> = ({
                         onMouseDownCapture={onChartPointerDownCapture}
                         onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
-                        {/* "Strikes": centered under the plot, in the strip right under the X axis line, above the
-                            strike numbers (see X_AXIS_HEIGHT). */}
+                        {/* "Strikes": centered inside the plot, in the strip right above the X axis line, over the
+                            strike numbers. */}
                         {chart && (
                             <span
                                 className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-white"
                                 style={{
                                     left: `calc(50% + ${(CHART_MARGIN.left + Y_AXIS_WIDTH - (CHART_MARGIN.right + secondaryWidth + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH)) / 2}px)`,
-                                    bottom: CHART_MARGIN.bottom + X_AXIS_HEIGHT - STRIKES_CAPTION_H - 2,
+                                    bottom: CHART_MARGIN.bottom + X_AXIS_HEIGHT + 2,
                                     height: STRIKES_CAPTION_H,
                                     lineHeight: `${STRIKES_CAPTION_H}px`,
                                 }}
@@ -1812,7 +1830,6 @@ export const GexView: React.FC<GexViewProps> = ({
                                     <XAxis
                                         dataKey="strike"
                                         height={X_AXIS_HEIGHT}
-                                        tickMargin={2 + STRIKES_CAPTION_H}
                                         type="number"
                                         domain={xDomain}
                                         allowDataOverflow
