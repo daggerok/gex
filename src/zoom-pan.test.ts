@@ -94,6 +94,21 @@ describe('chartKeyAction', () => {
     expect(chartKeyAction(k('Enter', { shiftKey: true }))).toBeNull();
   });
 
+  test('the plus and minus keys zoom in and out, with or without Shift (Shift+= types a plus)', () => {
+    expect(chartKeyAction(k('+'))).toBe('zoomIn');
+    expect(chartKeyAction(k('+', { shiftKey: true }))).toBe('zoomIn');
+    expect(chartKeyAction(k('='))).toBe('zoomIn');
+    expect(chartKeyAction(k('-'))).toBe('zoomOut');
+    expect(chartKeyAction(k('_', { shiftKey: true }))).toBe('zoomOut');
+  });
+
+  test('plus and minus with Cmd, Ctrl or Alt are the browser page zoom or special characters, not ours', () => {
+    expect(chartKeyAction(k('+', { metaKey: true }))).toBeNull();
+    expect(chartKeyAction(k('=', { ctrlKey: true }))).toBeNull();
+    expect(chartKeyAction(k('-', { ctrlKey: true }))).toBeNull();
+    expect(chartKeyAction(k('-', { altKey: true }))).toBeNull();
+  });
+
   test('Cmd is left to the browser (back and forward)', () => {
     expect(chartKeyAction(k('ArrowLeft', { metaKey: true }))).toBeNull();
     expect(chartKeyAction(k('ArrowRight', { metaKey: true, shiftKey: true }))).toBeNull();
