@@ -1095,8 +1095,12 @@ export const GexView: React.FC<GexViewProps> = ({
         setTooltipArmed(false);
     };
     useEffect(() => () => { if (tooltipTimer.current) clearTimeout(tooltipTimer.current); }, []);
+    // Strike under the cursor, for the Cursor table in the sidebar. Updated on every mouse move over the chart
+    // (no hover delay, unlike the tooltip), null once the cursor leaves the chart.
+    const [cursorStrike, setCursorStrike] = useState<number | null>(null);
     const onChartMouseMove = (state: { activeLabel?: string | number }) => {
         rearmTooltip();
+        setCursorStrike(typeof state?.activeLabel === 'number' ? state.activeLabel : null);
         if (dragStart == null) return;
         if (typeof state?.activeLabel === 'number') setDragEnd(state.activeLabel);
     };
@@ -1269,6 +1273,26 @@ export const GexView: React.FC<GexViewProps> = ({
         const hit = l.value != null ? pointAtPrice(profile, l.value) : null;
         return { key: l.key, point: hit ? hit.point : null, exact: hit ? hit.exact : true, pc: hit ? pcRatioByStrike(hit.point) : null };
     });
+
+    // Cursor table rows: the profile row of the strike under the mouse, dashes while the cursor is off the chart.
+    const cursorPoint = cursorStrike != null ? profile.find((p) => p.strike === cursorStrike) ?? null : null;
+    const cursorPc = cursorPoint ? pcRatioByStrike(cursorPoint) : null;
+    const cursorRows: Array<{ label: string; value: string; color: string; valueClass?: string }> = [
+        { label: tr('gex.values.strike'), value: cursorPoint ? fmt(cursorPoint.strike) : na, color: '#94a3b8' },
+        {
+            label: tr('gex.metric.netGex'),
+            value: cursorPoint ? fmtSignedCompact(cursorPoint.netGex) : na,
+            color: cursorPoint && cursorPoint.netGex < 0 ? metricColors.netGexNeg : metricColors.netGexPos,
+            valueClass: cursorPoint ? (cursorPoint.netGex > 0 ? 'text-green-600 dark:text-green-400' : cursorPoint.netGex < 0 ? 'text-red-600 dark:text-red-400' : undefined) : undefined,
+        },
+        { label: tr('gex.metric.absoluteGamma'), value: cursorPoint ? fmtCompact(cursorPoint.absGamma) : na, color: metricColors.absoluteGamma },
+        { label: tr('gex.metric.callOi'), value: cursorPoint ? fmtInt(cursorPoint.callOi) : na, color: metricColors.callOi },
+        { label: tr('gex.metric.callVolume'), value: cursorPoint ? fmtInt(cursorPoint.callVolume) : na, color: metricColors.callVolume },
+        { label: tr('gex.metric.putOi'), value: cursorPoint ? fmtInt(cursorPoint.putOi) : na, color: metricColors.putOi },
+        { label: tr('gex.metric.putVolume'), value: cursorPoint ? fmtInt(cursorPoint.putVolume) : na, color: metricColors.putVolume },
+        { label: tr('gex.metric.pcRatioOi'), value: cursorPc && cursorPc.byOi != null ? fmt(cursorPc.byOi) : na, color: metricColors.pcRatioOi },
+        { label: tr('gex.metric.pcRatioVolume'), value: cursorPc && cursorPc.byVolume != null ? fmt(cursorPc.byVolume) : na, color: metricColors.pcRatioVolume },
+    ];
 
     const box = 'flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5';
     const emptyBox = 'grid h-full min-h-[240px] place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-4 text-center text-sm text-slate-400';
@@ -1557,6 +1581,22 @@ export const GexView: React.FC<GexViewProps> = ({
                         <Row label={tr('gex.sidebar.pcRatioOi')} value={pcr.byOi != null ? fmt(pcr.byOi) : na} dotColor={metricColors.pcRatioOi} />
                         <Row label={tr('gex.sidebar.pcRatioVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} dotColor={metricColors.pcRatioVolume} />
                     </Card>
+                    {/* Cursor: the data of the strike under the mouse, live while the cursor moves over the chart.
+                        It takes all the space between Metrics and Levels (flex-1), its rows share that height. */}
+                    <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+                        <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{tr('gex.sidebar.cursor')}</h3>
+                        <div className="flex flex-1 flex-col border-t border-slate-200 dark:border-slate-700 px-3 py-1">
+                            {cursorRows.map((r) => (
+                                <div key={r.label} className={`flex min-h-7 flex-1 items-center justify-between gap-3 text-sm`}>
+                                    <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} aria-hidden="true" />
+                                        {r.label}
+                                    </span>
+                                    <span className={'font-medium tabular-nums ' + (r.valueClass ?? 'text-slate-800 dark:text-slate-100')}>{r.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
                     {/* Levels sits at the bottom of the sidebar (mt-auto), level by level beside the Values
                         table under the chart: the same row heights and order, Values continues each row. */}
                     <section className="mt-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
@@ -1704,7 +1744,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     barCategoryGap="15%"
                                     onMouseDown={onChartMouseDown}
                                     onMouseMove={onChartMouseMove}
-                                    onMouseLeave={disarmTooltip}
+                                    onMouseLeave={() => { disarmTooltip(); setCursorStrike(null); }}
                                     onMouseUp={onChartMouseUp}
                                 >
                                     <CartesianGrid stroke="#94a3b8" strokeOpacity={0.15} vertical={false} />
