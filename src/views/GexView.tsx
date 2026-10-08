@@ -1278,17 +1278,17 @@ export const GexView: React.FC<GexViewProps> = ({
     const cursorPoint = cursorStrike != null ? profile.find((p) => p.strike === cursorStrike) ?? null : null;
     const cursorPc = cursorPoint ? pcRatioByStrike(cursorPoint) : null;
     const cursorRows: Array<{ label: string; value: string; color: string; valueClass?: string }> = [
-        { label: tr('gex.values.strike'), value: cursorPoint ? fmt(cursorPoint.strike) : na, color: '#94a3b8' },
         {
             label: tr('gex.metric.netGex'),
             value: cursorPoint ? fmtSignedCompact(cursorPoint.netGex) : na,
             color: cursorPoint && cursorPoint.netGex < 0 ? metricColors.netGexNeg : metricColors.netGexPos,
             valueClass: cursorPoint ? (cursorPoint.netGex > 0 ? 'text-green-600 dark:text-green-400' : cursorPoint.netGex < 0 ? 'text-red-600 dark:text-red-400' : undefined) : undefined,
         },
+        { label: tr('gex.values.strike'), value: cursorPoint ? fmt(cursorPoint.strike) : na, color: '#94a3b8' },
         { label: tr('gex.metric.absoluteGamma'), value: cursorPoint ? fmtCompact(cursorPoint.absGamma) : na, color: metricColors.absoluteGamma },
         { label: tr('gex.metric.callOi'), value: cursorPoint ? fmtInt(cursorPoint.callOi) : na, color: metricColors.callOi },
-        { label: tr('gex.metric.callVolume'), value: cursorPoint ? fmtInt(cursorPoint.callVolume) : na, color: metricColors.callVolume },
         { label: tr('gex.metric.putOi'), value: cursorPoint ? fmtInt(cursorPoint.putOi) : na, color: metricColors.putOi },
+        { label: tr('gex.metric.callVolume'), value: cursorPoint ? fmtInt(cursorPoint.callVolume) : na, color: metricColors.callVolume },
         { label: tr('gex.metric.putVolume'), value: cursorPoint ? fmtInt(cursorPoint.putVolume) : na, color: metricColors.putVolume },
         { label: tr('gex.metric.pcRatioOi'), value: cursorPc && cursorPc.byOi != null ? fmt(cursorPc.byOi) : na, color: metricColors.pcRatioOi },
         { label: tr('gex.metric.pcRatioVolume'), value: cursorPc && cursorPc.byVolume != null ? fmt(cursorPc.byVolume) : na, color: metricColors.pcRatioVolume },
