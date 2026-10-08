@@ -1019,19 +1019,23 @@ export const GexView: React.FC<GexViewProps> = ({
         return () => { window.removeEventListener('keydown', onKey); window.removeEventListener(RESET_ALL_EVENT, onResetAll); };
     }, []);
 
-    // Mouse drag with Cmd or Option held moves the chart with the cursor (grab and drag) instead of
-    // selecting a range to zoom into. Only while zoomed. The capture handler on the chart box runs
-    // before recharts' own handlers and stops them, window listeners follow the drag outside the box.
+    // TradingView-style mouse: pressing and dragging moves the chart left or right with the cursor (only
+    // while zoomed, there is nothing to move at the full range), holding Cmd or Shift while dragging
+    // selects a range to zoom into instead (recharts' own selection drag, left to run). The capture
+    // handler on the chart box starts the move and stops recharts' selection for a plain press, window
+    // listeners follow the drag outside the box.
     const [panning, setPanning] = useState(false);
-    // Set while a Cmd/Option drag is running: puts the chart back and ends the drag (Escape).
+    // Set while a move drag is running: puts the chart back and ends the drag (Escape).
     const cancelPanRef = useRef<(() => void) | null>(null);
     const onChartPointerDownCapture = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.button !== 0 || !(e.metaKey || e.altKey) || !xZoom || !chart) return;
+        if (e.button !== 0 || e.metaKey || e.shiftKey) return; // Cmd / Shift: let recharts select a range
+        // a plain press never starts the selection, whether or not there is anything to move
+        e.stopPropagation();
+        if (!xZoom || !chart) return;
         const axisLine = e.currentTarget.querySelector('.recharts-xAxis .recharts-cartesian-axis-line');
         const plotWidth = axisLine ? axisLine.getBoundingClientRect().width : 0;
         if (plotWidth <= 0) return;
         e.preventDefault();
-        e.stopPropagation();
         const startX = e.clientX;
         const startRange = xZoom;
         const base = chart.domain;
@@ -1640,7 +1644,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         values, etc.) stays normally selectable. */}
                     <div
                         ref={chartBoxRef}
-                        className={'relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : '')}
+                        className={'relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
                         onMouseDownCapture={onChartPointerDownCapture}
                     >
                         {chartMessage || !chart ? (

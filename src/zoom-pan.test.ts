@@ -77,10 +77,11 @@ describe('panRangeBy: free shift for the mouse drag', () => {
 describe('chartKeyAction', () => {
   const k = (key: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }> = {}) => ({ key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
 
-  test('plain Left and Right move the chart, other keys are not ours', () => {
+  test('plain Left and Right move the chart, Up zooms in, Down zooms out, other keys are not ours', () => {
     expect(chartKeyAction(k('ArrowLeft'))).toBe('panLeft');
     expect(chartKeyAction(k('ArrowRight'))).toBe('panRight');
-    expect(chartKeyAction(k('ArrowUp'))).toBeNull();
+    expect(chartKeyAction(k('ArrowUp'))).toBe('zoomIn');
+    expect(chartKeyAction(k('ArrowDown'))).toBe('zoomOut');
     expect(chartKeyAction(k('a'))).toBeNull();
   });
 
