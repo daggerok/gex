@@ -409,6 +409,8 @@ html[data-palette='fundamentals'].dark {
  * the `.dark` class instantly with a soft transition. */
 html, body {
     height: 100%;
+    /* Only the Values table may scroll sideways, never the page (mobile). */
+    overflow-x: clip;
 }
 body {
     background-color: var(--od-bg);

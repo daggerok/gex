@@ -26,7 +26,7 @@ export const NOTICE_LINE_1 = 'TradingView Lightweight Charts™';
 export const NOTICE_LINE_2 = 'Copyright (с) 2025 TradingView, Inc.';
 export const NOTICE_URL = 'https://www.tradingview.com/';
 
-// pb-[3.5px] lg:pb-[11.5px] (NOT a plain pb-4/lg:pb-6 match to the side
+// min-h-4 lg:min-h-6 (rem based, replaced the old pb-[3.5px] lg:pb-[11.5px] pixel remainder; NOT a plain pb-4/lg:pb-6 match to the side
 // gutter's own px-4/lg:px-6 SCALE - that was tried first and overcorrected):
 // the TARGET is the TOTAL bottom whitespace (this footer's own padding-top
 // (none) + its text's own line-height/height + padding-bottom) reading the
@@ -48,7 +48,7 @@ export const NOTICE_URL = 'https://www.tradingview.com/';
 // pb value still minimizes the overshoot rather than adding more on top of
 // it, same reasoning as the single-line case.
 export const AttributionFooter: React.FC = () => (
-    <footer className="mx-auto w-full max-w-3xl px-4 pb-[3.5px] text-center text-[10px] leading-tight text-slate-400 lg:max-w-none lg:px-6 lg:pb-[11.5px]">
+    <footer className="mx-auto w-full max-w-3xl flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:max-w-none lg:min-h-6 lg:px-6">
         {NOTICE_LINE_1} &middot; {NOTICE_LINE_2}{' '}
         <a href={NOTICE_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-200">
             {NOTICE_URL}
@@ -67,7 +67,7 @@ export const REPO_URL = 'https://github.com/daggerok/gex';
  */
 export const RepoFooter: React.FC = () => {
     return (
-        <footer className="mx-auto w-full max-w-3xl px-4 pb-[3.5px] text-center text-[10px] leading-tight text-slate-400 lg:max-w-none lg:px-6 lg:pb-[11.5px]">
+        <footer className="mx-auto w-full max-w-3xl flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:max-w-none lg:min-h-6 lg:px-6">
             <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-slate-600 dark:hover:text-slate-200">
                 daggerok &copy; {new Date().getFullYear()}
             </a>

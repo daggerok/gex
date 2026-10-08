@@ -1322,7 +1322,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // already-loaded dates.
     if (!symbol) {
         return (
-            <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
+            <main className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6">
                 <div className={emptyBox}>{tr('gex.empty.noData')}</div>
             </main>
         );
@@ -1340,7 +1340,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // chain table) was always unaffected either way.
     if (isFuturesPriced && !levels) {
         return (
-            <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
+            <main className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6">
                 <div className={emptyBox}>{tr('gex.empty.futuresPriced', { symbol })}</div>
             </main>
         );
@@ -1351,7 +1351,7 @@ export const GexView: React.FC<GexViewProps> = ({
         : !chart ? tr('gex.empty.noGamma') : null;
 
     return (
-        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-4 lg:max-w-none lg:px-6">
+        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-4 lg:max-w-none lg:px-6">
             {/* ---- Controls: metric toggle + Key Levels toggle (expiration
                 picker + Load live in the shared panel in main.tsx). One
                 flex-wrap row, `justify-between`, `items-center` so each
@@ -2095,7 +2095,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         <button
                             type="button"
                             aria-expanded={valuesOpen}
-                            onClick={toggleValues}
+                            onClick={(e) => { toggleValues(); e.currentTarget.blur() }}
                             className={'flex w-full items-center justify-center gap-2 rounded-lg px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 max-lg:pointer-events-none ' + HEADING_CLASS}
                         >
                             <span aria-hidden="true" className="text-xs max-lg:hidden">{valuesOpen ? '▼' : '▲'}</span>
@@ -2103,7 +2103,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         </button>
                         <div className={'grid transition-[grid-template-rows] duration-300 ease-out ' + (valuesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] max-lg:grid-rows-[1fr]')}>
                             <div className="overflow-hidden">
-                                <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-700">
+                                <div className="overflow-x-auto overscroll-x-contain border-t border-slate-200 dark:border-slate-700">
                                     <table className="w-full border-separate border-spacing-0 whitespace-nowrap text-sm tabular-nums">
                                         <thead>
                                             <tr className={`${LEVEL_ROW_H} text-xs text-slate-500 dark:text-slate-400`}>
