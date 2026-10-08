@@ -391,16 +391,20 @@ const WHEEL_STEP_PX = 60;
 const ZOOM_BTN = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium leading-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 disabled:cursor-default';
 
 
-/** Compact sidebar table: centered heading, tight rows (the user prefers this
- *  over rows stretched to fill the height). */
+/** Sidebar table in the same style as the Values table: one bordered box whose first row is the centered
+ *  heading, with a divider under it, then tight rows. */
 const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-    <section>
-        <h3 className={'mb-1.5 text-center ' + HEADING_CLASS}>{title}</h3>
-        <div className="space-y-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 px-3 py-2.5">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+        <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{title}</h3>
+        <div className="space-y-1.5 border-t border-slate-200 dark:border-slate-700 px-3 py-2.5">
             {children}
         </div>
     </section>
 );
+
+/** Height of one row of the Levels table and of the Values table next to it. Both use it, so that when
+ *  Values is open every Values row sits exactly beside its Levels row (the two are one table). */
+const LEVEL_ROW_H = 'h-7';
 
 const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: string; dotColor?: string }> = ({ label, value, valueClass, dot, dotColor }) => (
     <div className="flex items-center justify-between gap-3 text-sm">
@@ -1246,16 +1250,19 @@ export const GexView: React.FC<GexViewProps> = ({
         try { localStorage.setItem(VALUES_OPEN_KEY, next ? '1' : '0'); } catch { /* ignore */ }
         return next;
     });
-    // Values table rows: every level that has a price, highest price first (same
-    // order as the Levels card), mapped to the profile row of its strike (nearest
-    // strike when the level is not on one - Spot, Gamma Flip).
-    const valueRows = keyLevels
-        .filter((l) => l.value != null)
-        .sort((a, b) => (b.value as number) - (a.value as number))
-        .flatMap((l) => {
-            const hit = pointAtPrice(profile, l.value as number);
-            return hit ? [{ key: l.key, label: l.label, point: hit.point, exact: hit.exact, pc: pcRatioByStrike(hit.point) }] : [];
-        });
+    // Rows of the Levels table (sidebar, bottom) and of the Values table beside it: the levels highest price
+    // first, a level without a price (no data) after those with one, optional levels that do not apply are
+    // left out. One list drives both tables so that every Values row is the continuation of the Levels row
+    // at the same height.
+    const levelRows = keyLevels
+        .filter((l) => !(l.optional && l.value == null))
+        .sort((a, b) => (a.value == null ? 1 : b.value == null ? -1 : b.value - a.value));
+    // Each row's data is the profile row of its strike (the nearest strike when the level is not on one -
+    // Spot, Gamma Flip), or none for a level without a price.
+    const valueRows = levelRows.map((l) => {
+        const hit = l.value != null ? pointAtPrice(profile, l.value) : null;
+        return { key: l.key, point: hit ? hit.point : null, exact: hit ? hit.exact : true, pc: hit ? pcRatioByStrike(hit.point) : null };
+    });
 
     const box = 'flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5';
     const emptyBox = 'grid h-full min-h-[240px] place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-4 text-center text-sm text-slate-400';
@@ -1544,30 +1551,28 @@ export const GexView: React.FC<GexViewProps> = ({
                         <Row label={tr('gex.sidebar.pcRatioOi')} value={pcr.byOi != null ? fmt(pcr.byOi) : na} dotColor={metricColors.pcRatioOi} />
                         <Row label={tr('gex.sidebar.pcRatioVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} dotColor={metricColors.pcRatioVolume} />
                     </Card>
-                    <Card title={tr('gex.sidebar.keyLevels')}>
-                        {/* Display-only reordering: the sidebar text card reads
-                            top-to-bottom by strike price, descending - NOT the
-                            fixed logical order `keyLevels` was built in above
-                            (that order still drives the toggle+color panel via
-                            the separate `levelPanelKeys` array, untouched by
-                            this sort). A null-valued row (Resistance/Net GEX-
-                            not applicable, or Gamma Flip with no data) has no
-                            real price to sort by, so every
-                            null row sinks to the bottom, below every row with
-                            a real value - Array#sort is stable, so nulls keep
-                            their relative order among themselves. */}
-                        {keyLevels
-                            .filter((l) => !(l.optional && l.value == null))
-                            .sort((a, b) => (a.value == null ? 1 : b.value == null ? -1 : b.value - a.value))
-                            .map((l) => (
-                                <Row
-                                    key={l.key}
-                                    label={l.label}
-                                    value={l.value != null ? fmt(l.value) + (l.suffix ? ` ${l.suffix}` : '') : na}
-                                    dot={GEX_LEVEL_COLORS[l.key].dot}
-                                />
+                    {/* Levels sits at the bottom of the sidebar (mt-auto), level by level beside the Values
+                        table under the chart: the same row heights and order, Values continues each row. */}
+                    <section className="mt-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+                        <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{tr('gex.sidebar.keyLevels')}</h3>
+                        <div className="border-t border-slate-200 dark:border-slate-700">
+                            <div className={`flex ${LEVEL_ROW_H} items-center justify-between border-b border-slate-200 dark:border-slate-700 px-3 text-xs text-slate-500 dark:text-slate-400`}>
+                                <span className="font-medium">{tr('gex.values.level')}</span>
+                                <span className="font-medium">{tr('gex.values.strike')}</span>
+                            </div>
+                            {levelRows.map((l) => (
+                                <div key={l.key} className={`flex ${LEVEL_ROW_H} items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/50 px-3 text-sm last:border-0`}>
+                                    <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${GEX_LEVEL_COLORS[l.key].dot}`} aria-hidden="true" />
+                                        {l.label}
+                                    </span>
+                                    <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">
+                                        {l.value != null ? fmt(l.value) + (l.suffix ? ` ${l.suffix}` : '') : na}
+                                    </span>
+                                </div>
                             ))}
-                    </Card>
+                        </div>
+                    </section>
                 </aside>
 
                 {/* ---- Main chart ---- */}
@@ -1989,7 +1994,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     toggle: closed, only that row shows; open, the rows slide in below
                     it and the whole table grows upward from the bottom edge. The
                     state is remembered in localStorage. ---- */}
-                {valueRows.length > 0 && (
+                {valueRows.some((r) => r.point) && (
                     <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
                         <button
                             type="button"
@@ -2003,45 +2008,39 @@ export const GexView: React.FC<GexViewProps> = ({
                         <div className={'grid transition-[grid-template-rows] duration-300 ease-out ' + (valuesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
                             <div className="overflow-hidden">
                                 <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-700">
-                                    <table className="w-full whitespace-nowrap text-sm tabular-nums">
-                                    <thead>
-                                        <tr className="border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
-                                            <th className="px-3 py-1.5 text-left font-medium">{tr('gex.values.level')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.values.strike')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.netGex')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.absoluteGamma')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.callOi')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.putOi')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.callVolume')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.putVolume')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.pcRatioOi')}</th>
-                                            <th className="px-3 py-1.5 text-right font-medium">{tr('gex.metric.pcRatioVolume')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {valueRows.map((r) => (
-                                            <tr key={r.key} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0 text-slate-800 dark:text-slate-100">
-                                                <td className="px-3 py-0.5 text-left">
-                                                    <span className="flex items-center gap-2">
-                                                        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: levelColors[r.key] }} aria-hidden="true" />
-                                                        {r.label}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-0.5 text-right" title={r.exact ? undefined : tr('gex.values.nearest')}>
-                                                    {fmt(r.point.strike)}{r.exact ? '' : ' ≈'}
-                                                </td>
-                                                <td className={'px-3 py-0.5 text-right ' + (r.point.netGex > 0 ? 'text-green-600 dark:text-green-400' : r.point.netGex < 0 ? 'text-red-600 dark:text-red-400' : '')}>{fmtSignedCompact(r.point.netGex)}</td>
-                                                <td className="px-3 py-0.5 text-right">{fmtCompact(r.point.absGamma)}</td>
-                                                <td className="px-3 py-0.5 text-right">{fmtInt(r.point.callOi)}</td>
-                                                <td className="px-3 py-0.5 text-right">{fmtInt(r.point.putOi)}</td>
-                                                <td className="px-3 py-0.5 text-right">{fmtInt(r.point.callVolume)}</td>
-                                                <td className="px-3 py-0.5 text-right">{fmtInt(r.point.putVolume)}</td>
-                                                <td className="px-3 py-0.5 text-right">{r.pc.byOi != null ? fmt(r.pc.byOi) : na}</td>
-                                                <td className="px-3 py-0.5 text-right">{r.pc.byVolume != null ? fmt(r.pc.byVolume) : na}</td>
+                                    <table className="w-full border-separate border-spacing-0 whitespace-nowrap text-sm tabular-nums">
+                                        <thead>
+                                            <tr className={`${LEVEL_ROW_H} text-xs text-slate-500 dark:text-slate-400`}>
+                                                {['netGex', 'absoluteGamma', 'callOi', 'putOi', 'callVolume', 'putVolume', 'pcRatioOi', 'pcRatioVolume'].map((m) => (
+                                                    <th key={m} className="border-b border-slate-200 dark:border-slate-700 px-3 text-right font-medium">{tr('gex.metric.' + m)}</th>
+                                                ))}
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody>
+                                            {valueRows.map((r) => {
+                                                const cell = 'h-7 border-b border-slate-100 dark:border-slate-700/50 px-3 text-right group-last:border-0';
+                                                const pt = r.point;
+                                                return (
+                                                    <tr
+                                                        key={r.key}
+                                                        className="group text-slate-800 dark:text-slate-100"
+                                                        title={pt && !r.exact ? `${tr('gex.values.nearest')}: ${fmt(pt.strike)}` : undefined}
+                                                    >
+                                                        <td className={cell + (pt && pt.netGex > 0 ? ' text-green-600 dark:text-green-400' : pt && pt.netGex < 0 ? ' text-red-600 dark:text-red-400' : '')}>
+                                                            {pt ? `${r.exact ? '' : '≈ '}${fmtSignedCompact(pt.netGex)}` : na}
+                                                        </td>
+                                                        <td className={cell}>{pt ? fmtCompact(pt.absGamma) : na}</td>
+                                                        <td className={cell}>{pt ? fmtInt(pt.callOi) : na}</td>
+                                                        <td className={cell}>{pt ? fmtInt(pt.putOi) : na}</td>
+                                                        <td className={cell}>{pt ? fmtInt(pt.callVolume) : na}</td>
+                                                        <td className={cell}>{pt ? fmtInt(pt.putVolume) : na}</td>
+                                                        <td className={cell}>{r.pc && r.pc.byOi != null ? fmt(r.pc.byOi) : na}</td>
+                                                        <td className={cell}>{r.pc && r.pc.byVolume != null ? fmt(r.pc.byVolume) : na}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </div>
