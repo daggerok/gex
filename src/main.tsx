@@ -803,6 +803,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
+import { pickExpirations } from './expiration-select';
 import { AttributionFooter, RepoFooter } from './components/AttributionFooter';
 import type { ChainSection } from './components/ChainTable';
 import { ExpirationChips } from './components/ExpirationChips';
@@ -1016,6 +1017,9 @@ const App: React.FC = () => {
      * whether the SAME fetch path a manual search uses succeeded before it
      * can intersect the persisted expiration selection against real data.
      */
+    // Latest selection, read by getDates (a useCallback) when the user switches to another ticker.
+    const selectedExpsRef = useRef<string[]>([]);
+    selectedExpsRef.current = selectedExps;
     const getDates = useCallback(async (symbol: string, credsOverride?: { token?: string; secret?: string }): Promise<ChainMeta | null> => {
         const sym = symbol.trim().toUpperCase();
         setError('');
@@ -1039,9 +1043,11 @@ const App: React.FC = () => {
             if (ac.signal.aborted) return null;
             if (m.expirations.length === 0) throw new Error(tr('error.noContracts', { symbol: sym }));
             setMeta(m);
-            // Pre-select the nearest expiration by default (user can add more).
-            setSelectedExps([m.expirations[0]]);
-            patchSettings({ lastTicker: m.symbol, selectedExps: [m.expirations[0]] });
+            // Keep the previous selection when the new ticker has it, else everything inside its
+            // date range, else the nearest expiration (pickExpirations, expiration-select.ts).
+            const picked = pickExpirations(selectedExpsRef.current, m.expirations);
+            setSelectedExps(picked);
+            patchSettings({ lastTicker: m.symbol, selectedExps: picked });
             dbg('getDates ok', { expirations: m.expirations.length });
             return m;
         } catch (e: unknown) {
@@ -1186,18 +1192,20 @@ const App: React.FC = () => {
         requestAnimationFrame(() => loadBtnRef.current?.focus());
     }, []);
 
-    /** Select a suggestion into the ticker input without auto-fetching. */
+    /** Choosing a suggestion (click, or arrows + Enter) loads that ticker right away, with the same
+     *  expirations selected as before (see getDates). A ticker without options only shows the notice. */
     const chooseTickerSuggestion = useCallback((s: TickerSuggestion) => {
         setTickerInput(s.symbol);
         setTickerSuggestionsOpen(false);
         setActiveTickerSuggestion(-1);
         if (!s.hasOptions) {
             setNotice(tr('notice.noOptions', { symbol: s.symbol }));
-        } else {
-            setNotice('');
+            focusGetDatesButton();
+            return;
         }
-        focusGetDatesButton();
-    }, [focusGetDatesButton]);
+        setNotice('');
+        void getDates(s.symbol);
+    }, [focusGetDatesButton, getDates]);
 
     /** Keyboard navigation for the custom ticker suggestion popover. */
     const onTickerKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1207,15 +1215,14 @@ const App: React.FC = () => {
             return;
         }
         if (e.key === 'Enter') {
-            // Confirm ticker → focus Expirations (Space/Enter there runs the fetch).
-            // Do not submit the form from the input; button receives the next activation.
+            // Enter loads the highlighted suggestion, or else the typed ticker, right away.
             e.preventDefault();
             if (tickerSuggestionsOpen && activeTickerSuggestion >= 0 && tickerSuggestions[activeTickerSuggestion]) {
                 chooseTickerSuggestion(tickerSuggestions[activeTickerSuggestion]);
             } else {
                 setTickerSuggestionsOpen(false);
                 setActiveTickerSuggestion(-1);
-                focusGetDatesButton();
+                void getDates(tickerInput);
             }
             return;
         }
@@ -1227,7 +1234,7 @@ const App: React.FC = () => {
             e.preventDefault();
             setActiveTickerSuggestion((i) => Math.max(i - 1, -1));
         }
-    }, [tickerSuggestionsOpen, tickerSuggestions, activeTickerSuggestion, chooseTickerSuggestion, focusGetDatesButton]);
+    }, [tickerSuggestionsOpen, tickerSuggestions, activeTickerSuggestion, chooseTickerSuggestion, getDates, tickerInput]);
 
     // Whether the current provider+settings require a key for the typed ticker.
     const showOnboarding = useMemo(() => {
