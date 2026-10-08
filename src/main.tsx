@@ -1220,6 +1220,14 @@ const App: React.FC = () => {
         requestAnimationFrame(() => loadBtnRef.current?.focus());
     }, []);
 
+    /** Once a ticker is chosen the cursor must not stay in the search box: while it does, the GEX chart's
+     *  keyboard shortcuts are off (typing keys belong to the input), and the user would have to click
+     *  elsewhere first. Drops focus from whatever has it (the input, or the suggestion that was clicked). */
+    const releaseSearchFocus = () => {
+        const el = document.activeElement;
+        if (el instanceof HTMLElement && el !== document.body) el.blur();
+    };
+
     /** Choosing a suggestion (click, or arrows + Enter) loads that ticker right away, with the same
      *  expirations selected as before (see getDates). A ticker without options only shows the notice. */
     const chooseTickerSuggestion = useCallback((s: TickerSuggestion) => {
@@ -1232,6 +1240,7 @@ const App: React.FC = () => {
             return;
         }
         setNotice('');
+        releaseSearchFocus();
         void getDates(s.symbol);
     }, [focusGetDatesButton, getDates]);
 
@@ -1250,6 +1259,7 @@ const App: React.FC = () => {
             } else {
                 setTickerSuggestionsOpen(false);
                 setActiveTickerSuggestion(-1);
+                releaseSearchFocus();
                 void getDates(tickerInput);
             }
             return;
