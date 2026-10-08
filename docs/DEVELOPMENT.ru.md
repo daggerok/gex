@@ -33,14 +33,16 @@
 
 Мы используем `uv` для управления окружением Python.
 
+Скрипты исполняемые и запускаются напрямую: `./scripts/options-data.py` (shebang `uv run --script` с inline-зависимостями, флаги `--with` не нужны) и `./scripts/options-local-proxy.ts` (shebang bun).
+
 1. **Запуск полного цикла обновления кэша:**
    ```bash
-   uv run --with yfinance --with requests python scripts/options-data.py
+   ./scripts/options-data.py
    ```
 
 2. **Точечное тестирование тикеров:**
    ```bash
-   TICKERS=AAPL,MSFT MAX_FETCHES=2 uv run --with yfinance --with requests python scripts/options-data.py
+   TICKERS=AAPL,MSFT MAX_FETCHES=2 ./scripts/options-data.py
    ```
 
 ## Архитектура greeks
