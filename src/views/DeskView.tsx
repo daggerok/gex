@@ -147,11 +147,11 @@ export const DeskView: React.FC<DeskViewProps> = ({
                     <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} />
                 ) : meta && !expLoading && !chainSymbol ? (
                     <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                        {tr('notice.pickExp')} <span className={`mx-1 font-semibold ${ax.pulse}`}>{tr('controls.load')}</span> {tr('notice.toFetch')}
+                        {tr('notice.pickExp')}
                     </div>
                 ) : (!meta && !metaLoading && !error) ? (
                     <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
-                        {tr('notice.enterTicker')} <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">{tr('controls.expirations')}</span> {tr('notice.toBegin')}
+                        {tr('notice.enterTicker')} <span className="mx-1 font-semibold text-slate-600 dark:text-slate-300">{tr('controls.enterKey')}</span> {tr('notice.toBegin')}
                     </div>
                 ) : null
             )}

@@ -1160,24 +1160,52 @@ const App: React.FC = () => {
     const loadChainRef = useRef(loadChain);
     loadChainRef.current = loadChain;
     useEffect(() => {
-        if (provider.mode !== 'bulk' || !meta || selectedExps.length === 0) return;
+        if (!meta || selectedExps.length === 0) return;
         expAbort.current?.abort();
-        void loadChainRef.current();
+        // Bulk data is in memory: load at once. Lazy (YAHOO) waits a moment so a quick run of
+        // clicks on several dates becomes one load, and each date is already prefetched (below).
+        const wait = provider.mode === 'bulk' ? 0 : 200;
+        const timer = setTimeout(() => { void loadChainRef.current(); }, wait);
+        return () => clearTimeout(timer);
         // loadChain itself is read through the ref: it is recreated on every settings change.
     }, [provider, meta, selectedExps]);
 
-    /** Toggle one expiration in the multi-select, then focus the Load button so
-     *  pressing Enter immediately loads (no need to click Load). Persists the
-     *  resulting selection into Settings (selectedExps) so a reload restores it. */
+    // Lazy providers (YAHOO) fetch one expiration per request. As soon as the ticker is found,
+    // fetch ALL its expirations in the background (selected ones first, then the rest), into the
+    // persistent cache, so clicking any date shows data without a wait. Errors are ignored here:
+    // clicking the date retries through loadChain and shows the error there.
+    useEffect(() => {
+        if (provider.mode !== 'lazy' || !meta) return;
+        const ac = new AbortController();
+        const ordered = [...meta.expirations].sort((a, b) => Number(selectedExpsRef.current.includes(b)) - Number(selectedExpsRef.current.includes(a)));
+        void (async () => {
+            for (const exp of ordered) {
+                if (ac.signal.aborted) return;
+                try { await loadExpiration(provider, meta.symbol, exp, ctxFor(settings, provider, ac.signal), settings.vixFuturesPricing); } catch { /* retried when the date is clicked */ }
+            }
+        })();
+        return () => ac.abort();
+        // settings are read once per ticker; a later settings change must not restart the prefetch.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [provider, meta]);
+
+    /** Toggle one expiration in the multi-select. The data loads by itself (the effect above), no
+     *  Load button. Persists the resulting selection into Settings (selectedExps) so a reload
+     *  restores it. */
     const toggleExpiration = useCallback((exp: string) => {
         setSelectedExps((prev) => {
             const next = prev.includes(exp) ? prev.filter((e) => e !== exp) : [...prev, exp];
             patchSettings({ selectedExps: next });
             return next;
         });
-        // Focus after the state/DOM settles.
-        requestAnimationFrame(() => loadBtnRef.current?.focus());
     }, [patchSettings]);
+
+    /** Reset button of the expirations panel: back to the default selection, the nearest expiration. */
+    const resetExpirations = useCallback(() => {
+        if (!meta || meta.expirations.length === 0) return;
+        setSelectedExps([meta.expirations[0]]);
+        patchSettings({ selectedExps: [meta.expirations[0]] });
+    }, [meta, patchSettings]);
 
     /** Wraps the shared ExpirationChips' "All"/"None" setter so that action
      *  also persists into Settings, same as toggleExpiration above. */
@@ -1475,10 +1503,7 @@ const App: React.FC = () => {
                     see ExpirationChips.tsx's doc comment for the measured
                     root cause). ---- */
                 endSlot={meta && activeTab !== 'chart' ? (
-                    <form
-                        onSubmit={(e) => { e.preventDefault(); loadChain(); }}
-                        className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5"
-                    >
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5">
                         <ExpirationChips
                             expirations={meta.expirations}
                             selected={selectedExps}
@@ -1488,13 +1513,15 @@ const App: React.FC = () => {
                         />
                         <button
                             ref={loadBtnRef}
-                            type="submit"
-                            disabled={expLoading || selectedExps.length === 0}
+                            type="button"
+                            onClick={resetExpirations}
+                            disabled={meta.expirations.length === 0}
+                            title={tr('controls.resetTooltip')}
                             className={`shrink-0 rounded-md ${ax.btn} px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 ${ax.focusRingOffset}`}
                         >
-                            {expLoading ? tr('controls.loading') : (selectedExps.length > 1 ? tr('controls.loadCount', { count: selectedExps.length }) : tr('controls.load'))}
+                            {expLoading ? tr('controls.loading') : tr('controls.reset')}
                         </button>
-                    </form>
+                    </div>
                 ) : null}
             />
             </div>

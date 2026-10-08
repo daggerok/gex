@@ -417,7 +417,10 @@ describe('vixFuturesPricing call-site parity', () => {
     const codeLines = mainSrc.split('\n').filter((l) => !/^\s*(\*|\/\/)/.test(l));
     const countCalls = (re: RegExp) => codeLines.filter((l) => re.test(l)).length;
     expect(countCalls(/\bloadMeta\(/)).toBe(1);
-    expect(countCalls(/\bloadExpiration\(/)).toBe(1);
+    // two: loadChain, and the background prefetch of every expiration for lazy providers
+    expect(countCalls(/\bloadExpiration\(/)).toBe(2);
+    const prefetchLine = codeLines.filter((l) => /\bloadExpiration\(/.test(l) && l.includes('settings.vixFuturesPricing'));
+    expect(prefetchLine.length).toBe(2);
     expect(countCalls(/\bgetBulk\(/)).toBe(1);
   });
 });
