@@ -1686,7 +1686,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                 {otherMetrics.map((m, i) => (
                                     <React.Fragment key={m}>
                                         {i > 0 && <span className="text-slate-400">, </span>}
-                                        <span style={{ color: metricColors[m] }}>{metricLabelFull(m)}</span>
+                                        <span style={{ color: metricColors[m] }}>{metricLabel(m)}</span>
                                     </React.Fragment>
                                 ))}
                             </h3>
@@ -1712,7 +1712,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                 className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap text-sm font-semibold"
                                 style={{ left: CHART_MARGIN.left + Y_AXIS_WIDTH / 2, color: net > 0 ? metricColors.netGexPos : metricColors.netGexNeg }}
                             >
-                                {metricLabelFull('netGex')}
+                                {metricLabel('netGex')}
                             </span>
                         )}
                         {chart && metrics.includes('absoluteGamma') && (
@@ -1720,7 +1720,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                 className="pointer-events-none absolute top-0 z-10 translate-x-1/2 whitespace-nowrap text-sm font-semibold"
                                 style={{ right: CHART_MARGIN.right + SECONDARY_AXIS_WIDTH + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH / 2, color: metricColors.absoluteGamma }}
                             >
-                                {metricLabelFull('absoluteGamma')}
+                                {metricLabel('absoluteGamma')}
                             </span>
                         )}
                         {chartMessage || !chart ? (
