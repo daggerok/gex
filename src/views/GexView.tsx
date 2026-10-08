@@ -384,6 +384,13 @@ const TooltipFade: React.FC<{ shown: boolean; children: React.ReactNode }> = ({ 
 /** How long the cursor must rest on the chart before the hover tooltip appears. */
 const TOOLTIP_DELAY_MS = 500;
 
+/** Chart margins and axis widths. The Net GEX and AG captions are positioned from them: the left axis
+ *  column starts at CHART_MARGIN.left and is Y_AXIS_WIDTH wide, the AG axis is the first one on the right,
+ *  after the shared secondary column (SECONDARY_AXIS_WIDTH + the 1px ratio axis). */
+const CHART_MARGIN = { top: 24, right: 16, bottom: 110, left: 8 };
+const Y_AXIS_WIDTH = 64;
+const RATIO_AXIS_WIDTH = 1;
+
 /** Scroll distance (pixels) that makes one wheel zoom step. */
 const WHEEL_STEP_PX = 60;
 
@@ -768,12 +775,11 @@ export const GexView: React.FC<GexViewProps> = ({
             : m === 'absoluteGamma' ? `${fmtCompact(v)} ${tr('gex.unit')}`
                 : fmtInt(v)
     );
-    // Chart captions: top left the left-axis metric (Net GEX), top right every other selected metric,
-    // bottom the strike axis. Each is empty when there is nothing to show.
-    // Colored like the value labels of the axis they belong to: Net GEX in its two colors (green for
-    // positive, red for negative, split half and half), every other metric in its own series color.
-    const leftCaption = metrics.includes('netGex') ? metricLabelFull('netGex') : '';
-    const rightMetrics = metrics.filter((m) => m !== 'netGex');
+    // Chart captions. Net GEX and Absolute Gamma are written right above the value labels of their own axes
+    // (left and first right axis, see CHART_MARGIN below), Net GEX green when the total Net GEX is positive
+    // and red otherwise, AG in its blue. The other selected metrics are listed at the top right of the header,
+    // each in its own series color, and the strike axis caption is at the bottom.
+    const otherMetrics = metrics.filter((m) => m !== 'netGex' && m !== 'absoluteGamma');
 
     // ---- Key Levels: toggleable + colorable <ReferenceLine>s ---------------
     // Same pattern as the metrics panel above: per-level show/hide + a color
@@ -1578,20 +1584,11 @@ export const GexView: React.FC<GexViewProps> = ({
                 {/* ---- Main chart ---- */}
                 <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3">
-                    {/* Header: the left-axis metric (Net GEX) at the top left, the HORIZONTAL zoom row
-                        centered above the chart as `<- - x + ->`, every other selected metric at the
-                        top right. The strike axis caption is at the bottom. */}
+                    {/* Header: the HORIZONTAL zoom row centered above the chart as `<- - x + ->`, the
+                        metrics other than Net GEX and AG at the top right (those two are written above
+                        their own axes inside the chart). The strike axis caption is at the bottom. */}
                     <div className="mb-2 grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-                        <div className="min-w-0">
-                            <h3
-                                className={HEADING_CLASS + ' inline-block'}
-                                // Net GEX is two-colored on its axis (green positive, red negative): the caption is
-                                // split in the same two colors, half and half.
-                                style={{ backgroundImage: `linear-gradient(90deg, ${metricColors.netGexPos} 0 50%, ${metricColors.netGexNeg} 50% 100%)`, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}
-                            >
-                                {leftCaption}
-                            </h3>
-                        </div>
+                        <div />
                         <div className="flex items-center gap-1 text-xs text-slate-400">
                             <Tip text={tr('gex.zoom.panLeft')}>
                                 <button
@@ -1631,7 +1628,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         </div>
                         <div className="min-w-0 text-right">
                             <h3 className={HEADING_CLASS}>
-                                {rightMetrics.map((m, i) => (
+                                {otherMetrics.map((m, i) => (
                                     <React.Fragment key={m}>
                                         {i > 0 && <span className="text-slate-400">, </span>}
                                         <span style={{ color: metricColors[m] }}>{metricLabelFull(m)}</span>
@@ -1653,6 +1650,23 @@ export const GexView: React.FC<GexViewProps> = ({
                         onMouseDownCapture={onChartPointerDownCapture}
                         onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
+                        {/* Axis captions, centered over the value labels of their axes */}
+                        {chart && metrics.includes('netGex') && (
+                            <span
+                                className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap text-sm font-semibold"
+                                style={{ left: CHART_MARGIN.left + Y_AXIS_WIDTH / 2, color: net > 0 ? metricColors.netGexPos : metricColors.netGexNeg }}
+                            >
+                                {metricLabelFull('netGex')}
+                            </span>
+                        )}
+                        {chart && metrics.includes('absoluteGamma') && (
+                            <span
+                                className="pointer-events-none absolute top-0 z-10 translate-x-1/2 whitespace-nowrap text-sm font-semibold"
+                                style={{ right: CHART_MARGIN.right + SECONDARY_AXIS_WIDTH + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH / 2, color: metricColors.absoluteGamma }}
+                            >
+                                {metricLabelFull('absoluteGamma')}
+                            </span>
+                        )}
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (
@@ -1681,7 +1695,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     // + a little slack; verified live (Playwright) that 110px
                                     // keeps every label fully on-screen, not clipped by the
                                     // chart's own bottom edge.
-                                    margin={{ top: 24, right: 16, bottom: 110, left: 8 }}
+                                    margin={CHART_MARGIN}
                                     // No recharts accessibility layer: it makes the svg focusable (tabindex 0), so a click
                                     // on the chart drew the browser's bright focus ring, and it moves the tooltip with the
                                     // arrow keys, which the chart's own keyboard shortcuts already use.
@@ -1743,7 +1757,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickLine={false}
                                         tick={hasNetGex ? coloredTick((v) => netGexAxisColor(v, metricColors), yTickFormatter) : false}
                                         stroke="#94a3b8"
-                                        width={64}
+                                        width={Y_AXIS_WIDTH}
                                         tickFormatter={yTickFormatter}
                                     />
                                     {/* AG's own secondary axis (see agBase/agDomain above) - only
@@ -1760,7 +1774,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickLine={false}
                                         tick={hasAbsoluteGamma ? { fill: metricColors.absoluteGamma, fontSize: 12 } : false}
                                         stroke={metricColors.absoluteGamma}
-                                        width={64}
+                                        width={Y_AXIS_WIDTH}
                                         tickFormatter={agTickFormatter}
                                     />
                                     {/* Counts axis (OI / Volume areas) and ratio axis (P/C lines):
@@ -1789,7 +1803,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickLine={false}
                                         tick={ratioMetrics.length > 0 ? coloredTick(() => ratioAxisColor(ratioMetrics, metricColors), (v) => fmt(v), { dx: -10, anchor: 'end' }) : false}
                                         stroke="#94a3b8"
-                                        width={1}
+                                        width={RATIO_AXIS_WIDTH}
                                         tickFormatter={(v: number) => fmt(v)}
                                     />
                                     {/* Hover tooltip: fades in and out like every other tooltip, no gliding. recharts
