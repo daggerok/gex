@@ -930,6 +930,15 @@ export const GexView: React.FC<GexViewProps> = ({
     // Down zoom out (chartKeyAction). The listener is registered once and calls the latest handlers.
     const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
     keyHandlerRef.current = (e: KeyboardEvent) => {
+        // Escape while a drag is in progress cancels it: a range selection is dropped without
+        // zooming, a Cmd/Option move puts the chart back where it was.
+        if (e.key === 'Escape' && (dragStart != null || cancelPanRef.current)) {
+            e.preventDefault();
+            setDragStart(null);
+            setDragEnd(null);
+            cancelPanRef.current?.();
+            return;
+        }
         if (e.defaultPrevented || !chart) return;
         const el = e.target as HTMLElement | null;
         if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
@@ -954,6 +963,8 @@ export const GexView: React.FC<GexViewProps> = ({
     // selecting a range to zoom into. Only while zoomed. The capture handler on the chart box runs
     // before recharts' own handlers and stops them, window listeners follow the drag outside the box.
     const [panning, setPanning] = useState(false);
+    // Set while a Cmd/Option drag is running: puts the chart back and ends the drag (Escape).
+    const cancelPanRef = useRef<(() => void) | null>(null);
     const onChartPointerDownCapture = (e: React.MouseEvent<HTMLDivElement>) => {
         if (e.button !== 0 || !(e.metaKey || e.altKey) || !xZoom || !chart) return;
         const axisLine = e.currentTarget.querySelector('.recharts-xAxis .recharts-cartesian-axis-line');
@@ -972,11 +983,20 @@ export const GexView: React.FC<GexViewProps> = ({
             last = panRangeBy(startRange, base, -(m.clientX - startX) * perPx);
             setXZoom(last);
         };
-        const onUp = () => {
+        const end = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
+            cancelPanRef.current = null;
             setPanning(false);
+        };
+        const onUp = () => {
+            end();
             persistZoom({ xZoom: last });
+        };
+        // Escape: back to where the drag started, nothing is saved
+        cancelPanRef.current = () => {
+            end();
+            setXZoom(startRange);
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
