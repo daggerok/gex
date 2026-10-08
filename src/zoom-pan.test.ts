@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canPanRange, clickStep, panRange, zoomRange } from './zoom-pan';
+import { canPanRange, clickStep, panRange, zoomRange, zoomStep } from './zoom-pan';
 
 const base: [number, number] = [0, 100];
 
@@ -22,6 +22,14 @@ describe('clickStep: 1% of the full range', () => {
     expect(clickStep([0, 100])).toBe(1);
     expect(clickStep([704, 856])).toBeCloseTo(1.52, 9);
     expect(clickStep([7335, 8100])).toBeCloseTo(7.65, 9);
+  });
+});
+
+describe('zoomStep: 2% of the full range, twice the arrow step', () => {
+  test('is double clickStep', () => {
+    expect(zoomStep([0, 100])).toBe(2);
+    expect(zoomStep([704, 856])).toBeCloseTo(3.04, 9);
+    expect(zoomStep([7335, 8100])).toBeCloseTo(2 * clickStep([7335, 8100]), 9);
   });
 });
 
