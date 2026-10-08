@@ -332,6 +332,63 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; onl
     );
 };
 
+/** "?" button in the chart card corners: hover or keyboard focus shows the chart controls guide, a click pins it open
+ *  (a click outside closes it). One paragraph per instruction, in a fixed portal panel next to the button so no
+ *  `overflow` ancestor clips it. `align` says which side of the button the panel lines up with. */
+const HelpButton: React.FC<{ label: string; paragraphs: string[]; align: 'left' | 'right' }> = ({ label, paragraphs, align }) => {
+    const wrapRef = useRef<HTMLSpanElement>(null);
+    const panelId = useId();
+    const [hover, setHover] = useState(false);
+    const [pinned, setPinned] = useState(false);
+    const [pos, setPos] = useState({ bottom: 0, left: 0, right: 0 });
+    const open = hover || pinned;
+    const place = () => {
+        const r = wrapRef.current?.getBoundingClientRect();
+        if (!r) return;
+        setPos({ bottom: window.innerHeight - r.top + 8, left: Math.max(8, r.left), right: Math.max(8, window.innerWidth - r.right) });
+    };
+    useEffect(() => {
+        if (!pinned) return;
+        const onDown = (e: PointerEvent) => { if (!wrapRef.current?.contains(e.target as Node)) setPinned(false); };
+        window.addEventListener('pointerdown', onDown);
+        return () => window.removeEventListener('pointerdown', onDown);
+    }, [pinned]);
+    return (
+        <span ref={wrapRef} className="inline-flex" onMouseEnter={() => { place(); setHover(true); }} onMouseLeave={() => setHover(false)}>
+            <button
+                type="button"
+                aria-label={label}
+                aria-expanded={open}
+                aria-describedby={panelId}
+                onClick={() => { place(); setPinned((v) => !v); }}
+                onFocus={() => { place(); setHover(true); }}
+                onBlur={() => setHover(false)}
+                className={ZOOM_BTN + ' text-slate-500 dark:text-slate-400'}
+            >
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" className="block">
+                    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                    <path d="M9.2 9.3a2.9 2.9 0 1 1 4.3 2.5c-.9.6-1.5 1.1-1.5 2.2" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <circle cx="12" cy="17.2" r="1.5" fill="currentColor" />
+                </svg>
+            </button>
+            {createPortal(
+                <div
+                    id={panelId}
+                    role="tooltip"
+                    style={{ bottom: pos.bottom, ...(align === 'left' ? { left: pos.left, maxWidth: `calc(100vw - ${pos.left + 8}px)` } : { right: pos.right, maxWidth: `calc(100vw - ${pos.right + 8}px)` }) }}
+                    className={
+                        'pointer-events-none fixed z-50 w-96 space-y-1.5 whitespace-normal rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs leading-snug text-slate-100 shadow-lg transition-opacity duration-200 ease-out dark:border-slate-600 ' +
+                        (open ? 'opacity-100' : 'opacity-0')
+                    }
+                >
+                    {paragraphs.map((t) => <p key={t}>{t}</p>)}
+                </div>,
+                document.body,
+            )}
+        </span>
+    );
+};
+
 /** One icon set for every zoom button: heavy inline SVG strokes and solid heads painted with
  *  `currentColor`, so all of them share one style and follow the theme (the emoji did neither:
  *  some rendered in colored squares, the plus and minus were black on the dark theme). */
@@ -1098,7 +1155,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
         if (typeof state?.activeLabel === 'number') { setDragStart(state.activeLabel); setDragEnd(state.activeLabel); }
     };
-    const chartGuides = [tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintWheel'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys')].join(' | ');
+    const chartGuides = [tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintWheel'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys')];
     // Hover-intent for the chart tooltip: it shows only once the cursor has stopped for
     // TOOLTIP_DELAY_MS, fades out as soon as the cursor moves again or leaves the chart.
     const [tooltipArmed, setTooltipArmed] = useState(false);
@@ -1733,6 +1790,10 @@ export const GexView: React.FC<GexViewProps> = ({
                         onMouseDownCapture={onChartPointerDownCapture}
                         onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
+                        {/* Chart controls guide: a "?" button in each bottom corner, over the empty strip under the plot
+                            (only the level labels use that space), one paragraph per instruction */}
+                        <div className="absolute bottom-0 left-0 z-20"><HelpButton label={tr('gex.help.label')} paragraphs={chartGuides} align="left" /></div>
+                        <div className="absolute bottom-0 right-0 z-20"><HelpButton label={tr('gex.help.label')} paragraphs={chartGuides} align="right" /></div>
                         {/* "Strikes": centered inside the plot, in the strip right above the X axis line, over the
                             strike numbers. */}
                         {chart && (
@@ -2096,12 +2157,6 @@ export const GexView: React.FC<GexViewProps> = ({
                             </ResponsiveContainer>
                         )}
                     </div>
-                    {/* Guides under the chart, separated by " | " */}
-                    {/* One line; when the screen is too narrow it is cut with an ellipsis and the
-                        whole text shows in a tooltip on hover. */}
-                    <Tip text={chartGuides} wrap onlyWhenCut wrapperClassName="mt-1 flex w-full min-w-0 justify-center">
-                        <p className="min-w-0 truncate text-center text-xs text-slate-400">{chartGuides}</p>
-                    </Tip>
                 </section>
 
                 {/* ---- Values: what every level means on its own strike. One table
