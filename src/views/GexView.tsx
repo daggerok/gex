@@ -359,8 +359,8 @@ const ZoomIcon: React.FC<{ kind: ZoomIconKind }> = ({ kind }) => (
 
 /** The counts axis and the put/call ratio axis share ONE column on the right: the counts axis
  *  owns this width and left-aligns its ticks, the ratio axis is 1px wide (recharts skips a zero-width axis) and draws its ticks
- *  right-aligned inside the same column (see `coloredTick`'s `placement`), so enabling OI, Volume
- *  or P/C metrics never changes the plot width. */
+ *  right-aligned inside the same column (see `coloredTick`'s `placement`), so switching between OI, Volume
+ *  and P/C metrics never changes the plot width. The column is only reserved while one of them is on. */
 const SECONDARY_AXIS_WIDTH = 100;
 
 /**
@@ -732,6 +732,8 @@ export const GexView: React.FC<GexViewProps> = ({
     // at every strike by construction - see GexPoint.absGamma's doc comment).
     const countMetrics = GEX_METRICS.filter((m) => (m === 'callOi' || m === 'putOi' || m === 'callVolume' || m === 'putVolume') && metrics.includes(m)) as CountMetric[];
     const ratioMetrics = GEX_METRICS.filter((m) => (m === 'pcRatioOi' || m === 'pcRatioVolume') && metrics.includes(m)) as RatioMetric[];
+    // The shared counts/ratio column on the right is only reserved while a count or ratio metric is on, otherwise the plot uses that width (1px keeps the axis mounted, recharts skips a zero-width axis)
+    const secondaryWidth = countMetrics.length + ratioMetrics.length > 0 ? SECONDARY_AXIS_WIDTH : RATIO_AXIS_WIDTH;
     const hasNetGex = metrics.includes('netGex');
     const hasAbsoluteGamma = metrics.includes('absoluteGamma');
     const isPutMetric = (m: GexMetric) => m === 'putOi' || m === 'putVolume';
@@ -1322,7 +1324,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // already-loaded dates.
     if (!symbol) {
         return (
-            <main className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6">
+            <main className="mx-auto w-full px-4 pt-4 lg:px-6">
                 <div className={emptyBox}>{tr('gex.empty.noData')}</div>
             </main>
         );
@@ -1340,7 +1342,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // chain table) was always unaffected either way.
     if (isFuturesPriced && !levels) {
         return (
-            <main className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6">
+            <main className="mx-auto w-full px-4 pt-4 lg:px-6">
                 <div className={emptyBox}>{tr('gex.empty.futuresPriced', { symbol })}</div>
             </main>
         );
@@ -1351,7 +1353,7 @@ export const GexView: React.FC<GexViewProps> = ({
         : !chart ? tr('gex.empty.noGamma') : null;
 
     return (
-        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pt-4 lg:max-w-none lg:px-6">
+        <main className="mx-auto flex w-full flex-1 flex-col px-4 pt-4 lg:px-6">
             {/* ---- Controls: metric toggle + Key Levels toggle (expiration
                 picker + Load live in the shared panel in main.tsx). One
                 flex-wrap row, `justify-between`, `items-center` so each
@@ -1719,7 +1721,7 @@ export const GexView: React.FC<GexViewProps> = ({
                             <span
                                 className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-white"
                                 style={{
-                                    left: `calc(50% + ${(CHART_MARGIN.left + Y_AXIS_WIDTH - (CHART_MARGIN.right + SECONDARY_AXIS_WIDTH + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH)) / 2}px)`,
+                                    left: `calc(50% + ${(CHART_MARGIN.left + Y_AXIS_WIDTH - (CHART_MARGIN.right + secondaryWidth + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH)) / 2}px)`,
                                     bottom: CHART_MARGIN.bottom + X_AXIS_HEIGHT - STRIKES_CAPTION_H - 2,
                                     height: STRIKES_CAPTION_H,
                                     lineHeight: `${STRIKES_CAPTION_H}px`,
@@ -1740,7 +1742,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         {chart && metrics.includes('absoluteGamma') && (
                             <span
                                 className="pointer-events-none absolute top-0 z-10 translate-x-1/2 whitespace-nowrap text-sm font-semibold"
-                                style={{ right: CHART_MARGIN.right + SECONDARY_AXIS_WIDTH + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH / 2, color: metricColors.absoluteGamma }}
+                                style={{ right: CHART_MARGIN.right + secondaryWidth + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH / 2, color: metricColors.absoluteGamma }}
                             >
                                 {metricLabel('absoluteGamma')}
                             </span>
@@ -1873,7 +1875,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         tickLine={false}
                                         tick={countMetrics.length > 0 ? coloredTick((v) => countAxisColor(v, countMetrics, metricColors), cntTickFormatter) : false}
                                         stroke="#94a3b8"
-                                        width={SECONDARY_AXIS_WIDTH}
+                                        width={secondaryWidth}
                                         tickFormatter={cntTickFormatter}
                                     />
                                     <YAxis

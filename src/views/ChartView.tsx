@@ -214,7 +214,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
 
     if (!symbol) {
         return (
-            <main className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6">
+            <main className="mx-auto w-full px-4 pt-4 lg:px-6">
                 <div className={emptyBox}>{tr('chart.empty.noData')}</div>
             </main>
         );
@@ -228,7 +228,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             : bars && bars.length === 0 ? tr('chart.empty.noBars', { symbol }) : null;
 
     return (
-        <main className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6">
+        <main className="mx-auto w-full px-4 pt-4 lg:px-6">
             {/* ---- Controls: range selector + symbol ---- */}
             <div className="mb-3 flex flex-wrap items-center gap-2">
                 <div className={box} role="group" aria-label={tr('chart.range.label')}>

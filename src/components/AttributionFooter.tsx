@@ -48,7 +48,7 @@ export const NOTICE_URL = 'https://www.tradingview.com/';
 // pb value still minimizes the overshoot rather than adding more on top of
 // it, same reasoning as the single-line case.
 export const AttributionFooter: React.FC = () => (
-    <footer className="mx-auto w-full max-w-3xl flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:max-w-none lg:min-h-6 lg:px-6">
+    <footer className="mx-auto w-full flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:min-h-6 lg:px-6">
         {NOTICE_LINE_1} &middot; {NOTICE_LINE_2}{' '}
         <a href={NOTICE_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-200">
             {NOTICE_URL}
@@ -67,7 +67,7 @@ export const REPO_URL = 'https://github.com/daggerok/gex';
  */
 export const RepoFooter: React.FC = () => {
     return (
-        <footer className="mx-auto w-full max-w-3xl flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:max-w-none lg:min-h-6 lg:px-6">
+        <footer className="mx-auto w-full flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:min-h-6 lg:px-6">
             <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-slate-600 dark:hover:text-slate-200">
                 daggerok &copy; {new Date().getFullYear()}
             </a>
