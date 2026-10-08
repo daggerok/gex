@@ -276,7 +276,7 @@ const coloredTick = (colorOf: (v: number) => string, format: (v: number) => stri
  * the button would do once enabled) would never show. The native `title` is left off on
  * purpose, it would pop up a second, duplicate tooltip.
  */
-const Tip: React.FC<{ text: string; side?: 'below' | 'left'; children: React.ReactNode }> = ({ text, side = 'below', children }) => {
+const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; wrapperClassName?: string; children: React.ReactNode }> = ({ text, side = 'below', wrap = false, wrapperClassName = 'inline-flex', children }) => {
     const wrapRef = useRef<HTMLSpanElement>(null);
     const tipRef = useRef<HTMLDivElement>(null);
     const tooltipId = useId();
@@ -302,7 +302,7 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; children: React.Rea
         setOpen(true);
     };
     return (
-        <span ref={wrapRef} className="inline-flex" onMouseEnter={show} onMouseLeave={() => setOpen(false)} onFocus={show} onBlur={() => setOpen(false)} aria-describedby={tooltipId}>
+        <span ref={wrapRef} className={wrapperClassName} onMouseEnter={show} onMouseLeave={() => setOpen(false)} onFocus={show} onBlur={() => setOpen(false)} aria-describedby={tooltipId}>
             {children}
             {createPortal(
                 <div
@@ -311,7 +311,8 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; children: React.Rea
                     role="tooltip"
                     style={{ top: pos.top, left: pos.left, transform: pos.placement === 'left' ? 'translate(-100%, -50%)' : `translate(-50%, ${pos.placement === 'top' ? '-100%' : '0%'})` }}
                     className={
-                        'pointer-events-none fixed z-50 w-max max-w-[calc(100vw-16px)] whitespace-nowrap rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-100 shadow-lg ' +
+                        'pointer-events-none fixed z-50 max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-100 shadow-lg ' +
+                        (wrap ? 'w-80 whitespace-normal ' : 'w-max whitespace-nowrap ') +
                         'transition-opacity duration-200 ease-out dark:border-slate-600 ' +
                         (open ? 'opacity-100' : 'opacity-0')
                     }
@@ -984,6 +985,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
         if (typeof state?.activeLabel === 'number') { setDragStart(state.activeLabel); setDragEnd(state.activeLabel); }
     };
+    const chartGuides = [tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys')].join(' | ');
     // Hover-intent for the chart tooltip: it shows only once the cursor has stopped for
     // TOOLTIP_DELAY_MS, fades out as soon as the cursor moves again or leaves the chart.
     const [tooltipArmed, setTooltipArmed] = useState(false);
@@ -1868,9 +1870,11 @@ export const GexView: React.FC<GexViewProps> = ({
                         )}
                     </div>
                     {/* Guides under the chart, separated by " | " */}
-                    <p className="mt-1 hidden text-center text-xs text-slate-400 sm:block">
-                        {[tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys')].join(' | ')}
-                    </p>
+                    {/* One line; when the screen is too narrow it is cut with an ellipsis and the
+                        whole text shows in a tooltip on hover. */}
+                    <Tip text={chartGuides} wrap wrapperClassName="mt-1 flex w-full min-w-0 justify-center">
+                        <p className="min-w-0 truncate text-center text-xs text-slate-400">{chartGuides}</p>
+                    </Tip>
                 </section>
 
                 {/* ---- Values: what every level means on its own strike. One table
