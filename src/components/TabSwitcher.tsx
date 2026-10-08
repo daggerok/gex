@@ -42,7 +42,7 @@ export const TabSwitcher: React.FC<{
         ? 'bg-emerald-500 text-white shadow-sm'
         : 'bg-indigo-600 text-white shadow-sm';
     return (
-        <nav aria-label={t('tabs.label')} className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6">
+        <nav aria-label={t('tabs.label')} className="mx-auto w-full px-4 pt-4 lg:px-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 {/* size="md": the shared <Pill/> (TopBar.tsx) defaults to a
                     compact 28px-tall rendering sized for TopBar's own CACHE/
@@ -82,7 +82,7 @@ export const TabSwitcher: React.FC<{
 export const TabStub: React.FC<{ tab: Exclude<AppTab, 'desk'> }> = ({ tab }) => {
     const { t } = useI18n();
     return (
-        <main className="mx-auto w-full max-w-3xl px-4 py-4 lg:max-w-none lg:px-6">
+        <main className="mx-auto w-full px-4 py-4 lg:px-6">
             <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
                 {t('tabs.stub.' + tab)}
             </div>

@@ -60,7 +60,7 @@ export const DeskView: React.FC<DeskViewProps> = ({
             comment for the bug this replaced). The onboarding/placeholder
             branches intentionally do NOT get flex-1 - they stay natural
             (centered, py-16) content, unchanged from before. */
-        <main className="mx-auto w-full max-w-3xl px-4 pt-4 lg:max-w-none lg:px-6 h-full flex flex-col min-h-0">
+        <main className="mx-auto w-full px-4 pt-4 lg:px-6 h-full flex flex-col min-h-0">
             {/* ---- Controls: STEP 1 result (Cancel/spot) — the expiration
                 picker + Load button (STEP 2) now live in the shared panel in
                 main.tsx, in the same row as the Desk/GEX/Chart tab pills,
