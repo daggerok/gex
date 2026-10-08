@@ -33,14 +33,16 @@ This document describes the development, build, and test process for the project
 
 We use `uv` to manage the Python environment.
 
+Scripts are executable and run directly: `./scripts/options-data.py` (a `uv run --script` shebang with inline dependencies, no `--with` flags needed) and `./scripts/options-local-proxy.ts` (bun shebang).
+
 1. **Run the full cache update cycle:**
    ```bash
-   uv run --with yfinance --with requests python scripts/options-data.py
+   ./scripts/options-data.py
    ```
 
 2. **Spot-check specific tickers:**
    ```bash
-   TICKERS=AAPL,MSFT MAX_FETCHES=2 uv run --with yfinance --with requests python scripts/options-data.py
+   TICKERS=AAPL,MSFT MAX_FETCHES=2 ./scripts/options-data.py
    ```
 
 ## Greeks architecture
