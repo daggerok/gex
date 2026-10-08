@@ -1,5 +1,5 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
@@ -1056,6 +1056,32 @@ export const GexView: React.FC<GexViewProps> = ({
     const chartBoxRef = useRef<HTMLDivElement | null>(null);
     // Height of the chart box in px: the Strikes caption strip is a fixed pixel height, the Net GEX domain is padded by its share of the plot
     const [chartBoxH, setChartBoxH] = useState(0);
+    // Center of the AG axis tick labels (px from the chart box's left edge): the labels are left aligned and as wide as
+    // their text, so the caption is centered over the real text instead of over the axis column
+    const [agCaptionX, setAgCaptionX] = useState<number | null>(null);
+    useLayoutEffect(() => {
+        const box = chartBoxRef.current;
+        if (!box) return;
+        // recharts draws its ticks after this component renders, so measure again whenever the chart's DOM changes
+        const measure = () => {
+            const grid = box.querySelector('.recharts-cartesian-grid');
+            let next: number | null = null;
+            if (grid) {
+                const plotRight = grid.getBoundingClientRect().right;
+                let lo = Infinity, hi = -Infinity;
+                box.querySelectorAll('.recharts-wrapper text').forEach((t) => {
+                    const r = t.getBoundingClientRect();
+                    if (r.width > 0 && r.left >= plotRight - 1 && r.left < plotRight + Y_AXIS_WIDTH) { lo = Math.min(lo, r.left); hi = Math.max(hi, r.right); }
+                });
+                if (hi > lo) next = (lo + hi) / 2 - box.getBoundingClientRect().left;
+            }
+            setAgCaptionX((prev) => (next === null || prev === null ? next : Math.abs(next - prev) > 0.5 ? next : prev));
+        };
+        measure();
+        const mo = new MutationObserver(measure);
+        mo.observe(box, { subtree: true, childList: true, characterData: true, attributes: true });
+        return () => mo.disconnect();
+    }, [!!chart]);
     const wheelAccRef = useRef(0);
     const wheelHandlerRef = useRef<(e: WheelEvent) => void>(() => {});
     wheelHandlerRef.current = (e: WheelEvent) => {
@@ -1820,8 +1846,10 @@ export const GexView: React.FC<GexViewProps> = ({
                         )}
                         {chart && metrics.includes('absoluteGamma') && (
                             <span
-                                className="pointer-events-none absolute top-0 z-10 translate-x-1/2 whitespace-nowrap text-sm font-semibold"
-                                style={{ right: CHART_MARGIN.right + secondaryWidth + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH / 2, color: metricColors.absoluteGamma }}
+                                className={'pointer-events-none absolute top-0 z-10 whitespace-nowrap text-sm font-semibold ' + (agCaptionX === null ? 'translate-x-1/2' : '-translate-x-1/2')}
+                                style={agCaptionX === null
+                                    ? { right: CHART_MARGIN.right + secondaryWidth + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH / 2, color: metricColors.absoluteGamma }
+                                    : { left: agCaptionX, color: metricColors.absoluteGamma }}
                             >
                                 {metricLabel('absoluteGamma')}
                             </span>
