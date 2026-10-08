@@ -220,7 +220,7 @@ function renderRotatedLevelLabel(group: LevelLabelGroup) {
         const vy = props.viewBox?.y;
         const vh = props.viewBox?.height;
         if (vx == null || vy == null || vh == null) return <React.Fragment />;
-        const BOTTOM_GAP = 28; // clears recharts' own numeric X-axis tick labels below the axis line
+        const BOTTOM_GAP = 28 + STRIKES_CAPTION_H; // clears the Strikes caption strip and recharts' own numeric X-axis tick labels
         const x = vx + 4;
         const y = vy + vh + BOTTOM_GAP;
         // Levels on the same price share one label (see level-labels.ts): one line
@@ -251,6 +251,9 @@ function renderRotatedLevelLabel(group: LevelLabelGroup) {
         );
     };
 }
+
+/** Height of the strip under the X axis line that holds the "Strikes" caption. */
+const STRIKES_CAPTION_H = 20;
 
 /** Heading style shared by the sidebar cards and the chart title. */
 const HEADING_CLASS = 'text-base font-semibold text-slate-800 dark:text-slate-100';
@@ -387,7 +390,11 @@ const TOOLTIP_DELAY_MS = 500;
 /** Chart margins and axis widths. The Net GEX and AG captions are positioned from them: the left axis
  *  column starts at CHART_MARGIN.left and is Y_AXIS_WIDTH wide, the AG axis is the first one on the right,
  *  after the shared secondary column (SECONDARY_AXIS_WIDTH + the 1px ratio axis). */
-const CHART_MARGIN = { top: 24, right: 16, bottom: 110, left: 8 };
+const CHART_MARGIN = { top: 24, right: 16, bottom: 110 + STRIKES_CAPTION_H, left: 8 };
+/** The X axis band under the plot is STRIKES_CAPTION_H taller than the default 30px: the "Strikes" caption sits
+ *  right under the axis line in that extra strip and the strike numbers are pushed below it, so the plot ends
+ *  above the caption and no bar can reach it. */
+const X_AXIS_HEIGHT = 30 + STRIKES_CAPTION_H;
 const Y_AXIS_WIDTH = 64;
 const RATIO_AXIS_WIDTH = 1;
 
@@ -1706,6 +1713,21 @@ export const GexView: React.FC<GexViewProps> = ({
                         onMouseDownCapture={onChartPointerDownCapture}
                         onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
+                        {/* "Strikes": centered under the plot, in the strip right under the X axis line, above the
+                            strike numbers (see X_AXIS_HEIGHT). */}
+                        {chart && (
+                            <span
+                                className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-white"
+                                style={{
+                                    left: `calc(50% + ${(CHART_MARGIN.left + Y_AXIS_WIDTH - (CHART_MARGIN.right + SECONDARY_AXIS_WIDTH + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH)) / 2}px)`,
+                                    bottom: CHART_MARGIN.bottom + X_AXIS_HEIGHT - STRIKES_CAPTION_H - 2,
+                                    height: STRIKES_CAPTION_H,
+                                    lineHeight: `${STRIKES_CAPTION_H}px`,
+                                }}
+                            >
+                                {tr('gex.axis.strikes')}
+                            </span>
+                        )}
                         {/* Axis captions, centered over the value labels of their axes */}
                         {chart && metrics.includes('netGex') && (
                             <span
@@ -1787,6 +1809,8 @@ export const GexView: React.FC<GexViewProps> = ({
                                         zoom, and a very tight zoom - see the PR. */}
                                     <XAxis
                                         dataKey="strike"
+                                        height={X_AXIS_HEIGHT}
+                                        tickMargin={2 + STRIKES_CAPTION_H}
                                         type="number"
                                         domain={xDomain}
                                         allowDataOverflow
@@ -2054,7 +2078,6 @@ export const GexView: React.FC<GexViewProps> = ({
                         )}
                     </div>
                     {/* Guides under the chart, separated by " | " */}
-                    <p className="mt-1 text-center text-sm font-medium text-slate-800 dark:text-white">{tr('gex.axis.strikes')}</p>
                     {/* One line; when the screen is too narrow it is cut with an ellipsis and the
                         whole text shows in a tooltip on hover. */}
                     <Tip text={chartGuides} wrap onlyWhenCut wrapperClassName="mt-1 flex w-full min-w-0 justify-center">
