@@ -1575,6 +1575,10 @@ export const GexView: React.FC<GexViewProps> = ({
                                     // keeps every label fully on-screen, not clipped by the
                                     // chart's own bottom edge.
                                     margin={{ top: 24, right: 16, bottom: 110, left: 8 }}
+                                    // No recharts accessibility layer: it makes the svg focusable (tabindex 0), so a click
+                                    // on the chart drew the browser's bright focus ring, and it moves the tooltip with the
+                                    // arrow keys, which the chart's own keyboard shortcuts already use.
+                                    accessibilityLayer={false}
                                     stackOffset="sign"
                                     barCategoryGap="15%"
                                     onMouseDown={onChartMouseDown}
