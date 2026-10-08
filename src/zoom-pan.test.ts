@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canPanRange, chartKeyAction, clickStep, ESCAPE_RUN_MS, panRange, panRangeBy, recordEscape, zoomRange, zoomStep } from './zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, ESCAPE_RUN_MS, panRange, panRangeBy, recordEscape, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from './zoom-pan';
 
 const base: [number, number] = [0, 100];
 
@@ -137,5 +137,55 @@ describe('recordEscape: runs of Escape presses within a second', () => {
     expect(recordEscape([0, 600], 1300)).toEqual([600, 1300]);
     // the press exactly ESCAPE_RUN_MS old still counts
     expect(recordEscape([0], ESCAPE_RUN_MS)).toEqual([0, ESCAPE_RUN_MS]);
+  });
+});
+
+describe('zoomRangeAt: zoom anchored at the cursor', () => {
+  test('frac 0.5 is the middle, same as zoomRange with the per-edge step', () => {
+    expect(zoomRangeAt([40, 60], base, 'in', 1, 3, 0.5)).toEqual(zoomRange([40, 60], base, 'in', 1, 3));
+    expect(zoomRangeAt([40, 60], base, 'out', 1, 3, 0.5)).toEqual(zoomRange([40, 60], base, 'out', 1, 3));
+  });
+
+  test('the strike under the cursor stays where it is: the nearer edge moves less', () => {
+    // cursor at 25% of [40, 60] = strike 45, total change 4 -> left edge +1, right edge -3
+    expect(zoomRangeAt([40, 60], base, 'in', 2, 3, 0.25)).toEqual([41, 57]);
+    const [a, b] = zoomRangeAt([40, 60], base, 'in', 2, 3, 0.25)!;
+    expect((45 - a) / (b - a)).toBeCloseTo(0.25, 9);
+    // cursor on the left edge: that edge stays, the right edge takes the whole change; mirrored on the right
+    expect(zoomRangeAt([40, 60], base, 'in', 2, 3, 0)).toEqual([40, 56]);
+    expect(zoomRangeAt([40, 60], base, 'in', 2, 3, 1)).toEqual([44, 60]);
+  });
+
+  test('zoom out is clamped to the data and returns null at the full range', () => {
+    expect(zoomRangeAt([1, 20], base, 'out', 2, 3, 0.1)![0]).toBeCloseTo(0.6, 9);
+    expect(zoomRangeAt([1, 20], base, 'out', 2, 3, 0.1)![1]).toBeCloseTo(23.6, 9);
+    expect(zoomRangeAt([1, 20], base, 'out', 2, 3, 0)).toEqual([1, 24]);
+    expect(zoomRangeAt([0.5, 20], base, 'out', 2, 3, 1)).toEqual([0, 20]);
+    expect(zoomRangeAt([1, 99], base, 'out', 2, 3, 0.5)).toBeNull();
+  });
+
+  test('zoom in stops at the minimum width, frac outside 0..1 is clamped', () => {
+    expect(zoomRangeAt([40, 44], base, 'in', 2, 3, 0.5)).toEqual([40, 44]);
+    expect(zoomRangeAt([40, 60], base, 'in', 2, 3, 7)).toEqual([44, 60]);
+  });
+});
+
+describe('wheelSteps', () => {
+  test('scrolling down zooms in (positive steps), up zooms out (negative)', () => {
+    expect(wheelSteps(0, 100, false, 50)).toEqual({ steps: 2, acc: 0 });
+    expect(wheelSteps(0, -100, false, 50)).toEqual({ steps: -2, acc: 0 });
+  });
+
+  test('small smooth-scroll deltas add up until they pass the threshold', () => {
+    let r = { steps: 0, acc: 0 };
+    const seen: number[] = [];
+    for (let i = 0; i < 10; i++) { r = wheelSteps(r.acc, 12, false, 50); seen.push(r.steps); }
+    expect(seen.reduce((s, x) => s + x, 0)).toBe(2); // 120 px = 2 steps, 20 px left over
+    expect(r.acc).toBe(20);
+  });
+
+  test('a pinch (Ctrl held) is the opposite sign: pinch out zooms in', () => {
+    expect(wheelSteps(0, -100, true, 50)).toEqual({ steps: 2, acc: 0 });
+    expect(wheelSteps(0, 100, true, 50)).toEqual({ steps: -2, acc: 0 });
   });
 });
