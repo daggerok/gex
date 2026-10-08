@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, zoomRange, zoomStep } from './zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, ESCAPE_RUN_MS, panRange, panRangeBy, recordEscape, zoomRange, zoomStep } from './zoom-pan';
 
 const base: [number, number] = [0, 100];
 
@@ -112,5 +112,30 @@ describe('chartKeyAction', () => {
   test('Cmd is left to the browser (back and forward)', () => {
     expect(chartKeyAction(k('ArrowLeft', { metaKey: true }))).toBeNull();
     expect(chartKeyAction(k('ArrowRight', { metaKey: true, shiftKey: true }))).toBeNull();
+  });
+});
+
+describe('recordEscape: runs of Escape presses within a second', () => {
+  test('a single press is a run of one', () => {
+    expect(recordEscape([], 1000)).toEqual([1000]);
+  });
+
+  test('presses within a second build up the run', () => {
+    const r1 = recordEscape([], 1000);
+    const r2 = recordEscape(r1, 1400);
+    const r3 = recordEscape(r2, 1900);
+    expect(r2).toEqual([1000, 1400]);
+    expect(r3).toEqual([1000, 1400, 1900]);
+  });
+
+  test('a press more than a second after the earlier ones starts the run again', () => {
+    expect(recordEscape([1000, 1400], 1400 + ESCAPE_RUN_MS + 1)).toEqual([1400 + ESCAPE_RUN_MS + 1]);
+  });
+
+  test('the window slides: the oldest press drops out when it is too old', () => {
+    // 0, 600, 1300: at 1300 the press at 0 is 1300 ms old and drops out, 600 stays
+    expect(recordEscape([0, 600], 1300)).toEqual([600, 1300]);
+    // the press exactly ESCAPE_RUN_MS old still counts
+    expect(recordEscape([0], ESCAPE_RUN_MS)).toEqual([0, ESCAPE_RUN_MS]);
   });
 });

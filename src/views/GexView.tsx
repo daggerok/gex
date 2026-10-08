@@ -4,7 +4,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, zoomRange, zoomStep } from '../zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, zoomRange, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
@@ -929,6 +929,8 @@ export const GexView: React.FC<GexViewProps> = ({
     // arrow buttons (only while zoomed), Ctrl / Alt(Option) / Shift + Right or Up zoom in, + Left or
     // Down zoom out (chartKeyAction). The listener is registered once and calls the latest handlers.
     const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+    // The current run of Escape presses (performance.now() times), for the double-Escape zoom reset.
+    const escapeRunRef = useRef<number[]>([]);
     keyHandlerRef.current = (e: KeyboardEvent) => {
         // Escape while a drag is in progress cancels it: a range selection is dropped without
         // zooming, a Cmd/Option move puts the chart back where it was.
@@ -937,6 +939,16 @@ export const GexView: React.FC<GexViewProps> = ({
             setDragStart(null);
             setDragEnd(null);
             cancelPanRef.current?.();
+            escapeRunRef.current = []; // cancelling a drag is not the first press of a run
+            return;
+        }
+        // Escape twice within a second (not typing in an input) resets the chart zoom. A third press
+        // is handled app-wide (main.tsx): it resets every reset button, this view included.
+        if (e.key === 'Escape' && !e.repeat) {
+            const el = e.target as HTMLElement | null;
+            if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+            escapeRunRef.current = recordEscape(escapeRunRef.current, performance.now());
+            if (escapeRunRef.current.length === 2 && xZoom) { e.preventDefault(); setXZoomAndPersist(null); }
             return;
         }
         if (e.defaultPrevented || !chart) return;
@@ -953,10 +965,15 @@ export const GexView: React.FC<GexViewProps> = ({
             zoomX(action === 'zoomIn' ? 'in' : 'out');
         }
     };
+    // Triple Escape (main.tsx) resets every reset button: this view resets Metrics, Levels and the zoom.
+    const resetAllRef = useRef<() => void>(() => {});
+    resetAllRef.current = () => { resetMetricsPanel(); resetLevelsPanel(); setXZoomAndPersist(null); };
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => keyHandlerRef.current(e);
+        const onResetAll = () => resetAllRef.current();
         window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
+        window.addEventListener(RESET_ALL_EVENT, onResetAll);
+        return () => { window.removeEventListener('keydown', onKey); window.removeEventListener(RESET_ALL_EVENT, onResetAll); };
     }, []);
 
     // Mouse drag with Cmd or Option held moves the chart with the cursor (grab and drag) instead of
