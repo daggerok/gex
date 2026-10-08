@@ -804,6 +804,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
 import { pickExpirations } from './expiration-select';
+import { recordEscape, RESET_ALL_EVENT } from './zoom-pan';
 import { AttributionFooter, RepoFooter } from './components/AttributionFooter';
 import type { ChainSection } from './components/ChainTable';
 import { ExpirationChips } from './components/ExpirationChips';
@@ -1206,6 +1207,28 @@ const App: React.FC = () => {
         setSelectedExps([meta.expirations[0]]);
         patchSettings({ selectedExps: [meta.expirations[0]] });
     }, [meta, patchSettings]);
+
+    // Escape three times within a second (not typing in an input) presses every Reset button on the
+    // page: the expirations panel here, and the views that listen for RESET_ALL_EVENT (GEX: Metrics,
+    // Levels, zoom). Works on every tab.
+    const resetExpirationsRef = useRef(resetExpirations);
+    resetExpirationsRef.current = resetExpirations;
+    useEffect(() => {
+        let run: number[] = [];
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape' || e.repeat) return;
+            const el = e.target as HTMLElement | null;
+            if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) { run = []; return; }
+            run = recordEscape(run, performance.now());
+            if (run.length >= 3) {
+                run = [];
+                resetExpirationsRef.current();
+                window.dispatchEvent(new CustomEvent(RESET_ALL_EVENT));
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
 
     /** Wraps the shared ExpirationChips' "All"/"None" setter so that action
      *  also persists into Settings, same as toggleExpiration above. */

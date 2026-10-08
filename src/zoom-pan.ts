@@ -77,3 +77,17 @@ export function chartKeyAction(e: { key: string; ctrlKey: boolean; altKey: boole
     if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') return 'zoomOut';
     return null;
 }
+
+/** Escape presses closer together than this many milliseconds count as one run:
+ *  two in a run reset the chart zoom, three reset every reset button on the page. */
+export const ESCAPE_RUN_MS = 1000;
+
+/** The Escape run after a press at `now`: the earlier presses that are still within ESCAPE_RUN_MS of
+ *  `now`, plus this one. Its length is how many presses are in the current run. */
+export function recordEscape(history: readonly number[], now: number): number[] {
+    return [...history.filter((t) => now - t <= ESCAPE_RUN_MS), now];
+}
+
+/** Name of the app-wide event the triple Escape fires after resetting the expirations: every panel
+ *  that has a Reset button listens and resets itself. */
+export const RESET_ALL_EVENT = 'app:reset-all';
