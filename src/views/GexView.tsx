@@ -764,10 +764,12 @@ export const GexView: React.FC<GexViewProps> = ({
             : m === 'absoluteGamma' ? `${fmtCompact(v)} ${tr('gex.unit')}`
                 : fmtInt(v)
     );
-    const selectedLabels = metrics.map(metricLabelFull);
-    const chartTitle = metrics.length === 1
-        ? tr('gex.chart.title', { metric: selectedLabels[0] })
-        : tr('gex.chart.titleMulti', { metrics: selectedLabels.join(', ') });
+    // Chart captions: top left the left-axis metric (Net GEX), top right every other selected metric,
+    // bottom the strike axis. Each is empty when there is nothing to show.
+    // Colored like the value labels of the axis they belong to: Net GEX in its two colors (green for
+    // positive, red for negative, split half and half), every other metric in its own series color.
+    const leftCaption = metrics.includes('netGex') ? metricLabelFull('netGex') : '';
+    const rightMetrics = metrics.filter((m) => m !== 'netGex');
 
     // ---- Key Levels: toggleable + colorable <ReferenceLine>s ---------------
     // Same pattern as the metrics panel above: per-level show/hide + a color
@@ -1567,12 +1569,19 @@ export const GexView: React.FC<GexViewProps> = ({
                 {/* ---- Main chart ---- */}
                 <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3">
-                    {/* Header: title on the left (drag hint under it), the HORIZONTAL zoom
-                        row centered above the chart as `-  x  +` (zoom out, reset, zoom in),
-                        Reset Zoom (both axes) on the right. */}
+                    {/* Header: the left-axis metric (Net GEX) at the top left, the HORIZONTAL zoom row
+                        centered above the chart as `<- - x + ->`, every other selected metric at the
+                        top right. The strike axis caption is at the bottom. */}
                     <div className="mb-2 grid grid-cols-[1fr_auto_1fr] items-start gap-2">
                         <div className="min-w-0">
-                            <h3 className={HEADING_CLASS}>{chartTitle}</h3>
+                            <h3
+                                className={HEADING_CLASS + ' inline-block'}
+                                // Net GEX is two-colored on its axis (green positive, red negative): the caption is
+                                // split in the same two colors, half and half.
+                                style={{ backgroundImage: `linear-gradient(90deg, ${metricColors.netGexPos} 0 50%, ${metricColors.netGexNeg} 50% 100%)`, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}
+                            >
+                                {leftCaption}
+                            </h3>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-slate-400">
                             <Tip text={tr('gex.zoom.panLeft')}>
@@ -1611,7 +1620,16 @@ export const GexView: React.FC<GexViewProps> = ({
                                 </button>
                             </Tip>
                         </div>
-                        <div />
+                        <div className="min-w-0 text-right">
+                            <h3 className={HEADING_CLASS}>
+                                {rightMetrics.map((m, i) => (
+                                    <React.Fragment key={m}>
+                                        {i > 0 && <span className="text-slate-400">, </span>}
+                                        <span style={{ color: metricColors[m] }}>{metricLabelFull(m)}</span>
+                                    </React.Fragment>
+                                ))}
+                            </h3>
+                        </div>
                     </div>
                     {/* select-none: dragging across the chart to zoom (onChartMouseDown/
                         onChartMouseUp below) is a mousedown+drag+mouseup gesture over plain
@@ -1953,6 +1971,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         )}
                     </div>
                     {/* Guides under the chart, separated by " | " */}
+                    <p className="mt-1 text-center text-sm font-medium text-slate-800 dark:text-white">{tr('gex.axis.strikes')}</p>
                     {/* One line; when the screen is too narrow it is cut with an ellipsis and the
                         whole text shows in a tooltip on hover. */}
                     <Tip text={chartGuides} wrap onlyWhenCut wrapperClassName="mt-1 flex w-full min-w-0 justify-center">
