@@ -1517,9 +1517,9 @@ const App: React.FC = () => {
                             onClick={resetExpirations}
                             disabled={meta.expirations.length === 0}
                             title={tr('controls.resetTooltip')}
-                            className={`shrink-0 rounded-md ${ax.btn} px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 ${ax.focusRingOffset}`}
+                            className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium disabled:opacity-50 ' + ax.chipIdle}
                         >
-                            {expLoading ? tr('controls.loading') : tr('controls.reset')}
+                            {tr('controls.reset')}
                         </button>
                     </div>
                 ) : null}
