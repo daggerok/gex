@@ -4,7 +4,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { canPanRange, clickStep, panRange, zoomRange } from '../zoom-pan';
+import { canPanRange, clickStep, panRange, zoomRange, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
@@ -849,8 +849,8 @@ export const GexView: React.FC<GexViewProps> = ({
     // the dataKey value under the cursor - works regardless of how many Y
     // axes are in play), shown live with a ReferenceArea, and committed to
     // `xZoom` on mouseup (overriding the auto-windowed `chart.domain`).
-    // The +/- buttons zoom the strike range by 1% of the full range per side per click
-    // (zoomRange, clickStep), the arrows move it by the same 1%. There is no vertical zoom. It resets whenever the loaded
+    // The +/- buttons zoom the strike range by 2% of the full range per side per click
+    // (zoomRange, zoomStep), the arrows move it by 1% (clickStep). There is no vertical zoom. It resets whenever the loaded
     // ticker or expiration selection changes (UNLESS a persisted zoom for
     // THIS symbol is restored instead - see the effect below), so a stale
     // window never outlives the data it was drawn against.
@@ -921,7 +921,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const zoomX = (dir: 'in' | 'out') => {
         const base = chart?.domain;
         if (!base) return;
-        setXZoomAndPersist(zoomRange(xZoom ?? base, base, dir, clickStep(base), 4 * (chart?.strikeStep ?? 1)));
+        setXZoomAndPersist(zoomRange(xZoom ?? base, base, dir, zoomStep(base), 4 * (chart?.strikeStep ?? 1)));
     };
 
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {

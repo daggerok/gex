@@ -11,12 +11,20 @@ export function panRange(range: [number, number], base: [number, number], dir: -
     return [a + shift, b + shift];
 }
 
-/** Share of the FULL strike range that one arrow or zoom click moves each edge by (1%). */
+/** Share of the FULL strike range that one arrow click moves the view by (1%). */
 export const STEP_PCT = 0.01;
 
-/** The price step of one click for a full data range `base`: 1% of its width. */
+/** Share of the FULL strike range that one zoom click moves EACH edge by (2%, twice the arrow step). */
+export const ZOOM_STEP_PCT = 0.02;
+
+/** The price step of one arrow click for a full data range `base`: 1% of its width. */
 export function clickStep(base: [number, number]): number {
     return (base[1] - base[0]) * STEP_PCT;
+}
+
+/** The price step of one zoom click for a full data range `base`: 2% of its width per edge. */
+export function zoomStep(base: [number, number]): number {
+    return (base[1] - base[0]) * ZOOM_STEP_PCT;
 }
 
 /** One zoom click: "in" moves BOTH edges of the visible strike range `[a, b]` toward the middle by
