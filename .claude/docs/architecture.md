@@ -19,6 +19,8 @@ src/
   components/         TopBar, TabSwitcher, ExpirationChips, ChainTable, AttributionFooter, ...
 scripts/
   options-data.py              yfinance fetch + CBOE 1st-order greeks overlay -> data/options/*.json
+  options-data.ts              Bun port of the same fetcher (raw Yahoo calls, no deps), byte-identical output, see spec-ts-fetcher.md
+  options-parity/              temporary py vs ts parity harness, deleted together with options-data.py
   options-local-proxy.ts       local relay (bun)
   options-cloudflare-proxy.js  hosted relay (Worker)
 data/options/*.json            committed cache, about 330 tickers
@@ -38,7 +40,7 @@ If the app spot is missing, `estimateSpot` derives one from put-call parity on t
 
 - 1st order: from CBOE in the fetch script, or computed in the UI
 - 2nd and 3rd order and lambda: computed only client-side in `src/greeks.ts` (`HIGHER_ORDER_GREEK_KEYS`)
-- Python must never compute greeks, GEX, flip, walls or max pain (rule R1)
+- The fetchers (`scripts/options-data.py` and `scripts/options-data.ts`) must never compute greeks, GEX, flip, walls or max pain (rule R1)
 
 ## Index and futures-priced symbols
 
