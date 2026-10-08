@@ -400,8 +400,8 @@ const ZOOM_BTN = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium lead
 
 /** Sidebar table in the same style as the Values table: one bordered box whose first row is the centered
  *  heading, with a divider under it, then tight rows. */
-const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-    <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+const Card: React.FC<{ title: string; className?: string; children: React.ReactNode }> = ({ title, className = '', children }) => (
+    <section className={'rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 ' + className}>
         <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{title}</h3>
         <div className="space-y-1.5 border-t border-slate-200 dark:border-slate-700 px-3 py-2.5">
             {children}
@@ -1546,13 +1546,18 @@ export const GexView: React.FC<GexViewProps> = ({
                 </div>
             )}
 
-            <div className="flex flex-col gap-4 lg:flex-1 lg:flex-row">
+            {/* Big screens: sidebar (Metrics, Cursor, Levels) on the left, chart and Values on the right.
+                Small screens: one column in this order, Metrics, chart, then Levels and Values side by
+                side in ONE row (a two column grid), Values always open and scrolling sideways inside its
+                column. The sidebar and the right column are `display: contents` there, so their
+                children are the grid items and `order` puts Levels and Values after the chart. */}
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-0 gap-y-4 lg:flex lg:flex-1 lg:flex-row lg:gap-4">
                 {/* ---- Sidebar: Metrics table + Levels ---- */}
-                <aside className="flex w-full flex-col gap-4 lg:w-[320px] lg:shrink-0">
+                <aside className="contents lg:flex lg:w-[320px] lg:shrink-0 lg:flex-col lg:gap-4">
                     {/* One Metrics table instead of the old OI Volume / GEX Analysis /
                         P/C Ratio cards: every total in one place, each row with the
                         color of the matching chart series (custom colors included). */}
-                    <Card title={tr('gex.sidebar.metrics')}>
+                    <Card title={tr('gex.sidebar.metrics')} className="order-1 col-span-2 lg:order-none lg:col-auto">
                         {/* Total Net GEX first, then Regime, then one total per metric in the
                             order of the metric toggles above the chart (GEX_METRICS): AG, Call
                             OI, Put OI, Call Volume, Put Volume, P/C OI, P/C Volume. */}
@@ -1583,7 +1588,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     </Card>
                     {/* Cursor: the data of the strike under the mouse, live while the cursor moves over the chart.
                         It takes all the space between Metrics and Levels (flex-1), its rows share that height. */}
-                    <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+                    <section className="hidden min-h-0 flex-1 flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 lg:flex">
                         <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{tr('gex.sidebar.cursor')}</h3>
                         <div className="flex flex-1 flex-col border-t border-slate-200 dark:border-slate-700 px-3 py-1">
                             {cursorRows.map((r) => (
@@ -1599,7 +1604,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     </section>
                     {/* Levels sits at the bottom of the sidebar (mt-auto), level by level beside the Values
                         table under the chart: the same row heights and order, Values continues each row. */}
-                    <section className="mt-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+                    <section className="order-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 max-lg:rounded-r-none max-lg:border-r-0 lg:order-none lg:mt-auto">
                         <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{tr('gex.sidebar.keyLevels')}</h3>
                         <div className="border-t border-slate-200 dark:border-slate-700">
                             <div className={`flex ${LEVEL_ROW_H} items-center justify-between border-b border-slate-200 dark:border-slate-700 px-3 text-xs text-slate-500 dark:text-slate-400`}>
@@ -1622,8 +1627,8 @@ export const GexView: React.FC<GexViewProps> = ({
                 </aside>
 
                 {/* ---- Main chart ---- */}
-                <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3">
+                <div className="contents lg:flex lg:min-w-0 lg:flex-1 lg:flex-col lg:gap-4">
+                <section className="order-2 col-span-2 flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3 lg:order-none lg:col-auto">
                     {/* Header: the HORIZONTAL zoom row centered above the chart as `<- - x + ->`, the
                         metrics other than Net GEX and AG at the top right (those two are written above
                         their own axes inside the chart). The strike axis caption is at the bottom. */}
@@ -2049,17 +2054,17 @@ export const GexView: React.FC<GexViewProps> = ({
                     it and the whole table grows upward from the bottom edge. The
                     state is remembered in localStorage. ---- */}
                 {valueRows.some((r) => r.point) && (
-                    <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
+                    <section className="order-3 min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 max-lg:rounded-l-none lg:order-none">
                         <button
                             type="button"
                             aria-expanded={valuesOpen}
                             onClick={toggleValues}
-                            className={'flex w-full items-center justify-center gap-2 rounded-lg px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 ' + HEADING_CLASS}
+                            className={'flex w-full items-center justify-center gap-2 rounded-lg px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 max-lg:pointer-events-none ' + HEADING_CLASS}
                         >
-                            <span aria-hidden="true" className="text-xs">{valuesOpen ? '▼' : '▲'}</span>
+                            <span aria-hidden="true" className="text-xs max-lg:hidden">{valuesOpen ? '▼' : '▲'}</span>
                             {tr('gex.values.title')}
                         </button>
-                        <div className={'grid transition-[grid-template-rows] duration-300 ease-out ' + (valuesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+                        <div className={'grid transition-[grid-template-rows] duration-300 ease-out ' + (valuesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] max-lg:grid-rows-[1fr]')}>
                             <div className="overflow-hidden">
                                 <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-700">
                                     <table className="w-full border-separate border-spacing-0 whitespace-nowrap text-sm tabular-nums">
