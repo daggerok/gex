@@ -1098,6 +1098,13 @@ export const GexView: React.FC<GexViewProps> = ({
     // Strike under the cursor, for the Cursor table in the sidebar. Updated on every mouse move over the chart
     // (no hover delay, unlike the tooltip), null once the cursor leaves the chart.
     const [cursorStrike, setCursorStrike] = useState<number | null>(null);
+    // 'touch' or 'mouse', from the last press on the chart: on a touch screen the tapped strike stays in the
+    // Cursor table when the finger lifts (there is no mouse leave), so it can be read after scrolling down.
+    const pointerTypeRef = useRef<string>('mouse');
+    // A tap or a finger moving over the chart (touch screens): recharts gives the strike under the finger.
+    const onChartClick = (state: { activeLabel?: string | number }) => {
+        if (typeof state?.activeLabel === 'number') setCursorStrike(state.activeLabel);
+    };
     const onChartMouseMove = (state: { activeLabel?: string | number }) => {
         rearmTooltip();
         setCursorStrike(typeof state?.activeLabel === 'number' ? state.activeLabel : null);
@@ -1274,24 +1281,25 @@ export const GexView: React.FC<GexViewProps> = ({
         return { key: l.key, point: hit ? hit.point : null, exact: hit ? hit.exact : true, pc: hit ? pcRatioByStrike(hit.point) : null };
     });
 
-    // Cursor table rows: the profile row of the strike under the mouse, dashes while the cursor is off the chart.
+    // Cursor table rows: the profile row of the strike under the mouse (or the tapped one on a touch screen),
+    // empty while there is none. A ratio with no call side on a real strike still shows the dash.
     const cursorPoint = cursorStrike != null ? profile.find((p) => p.strike === cursorStrike) ?? null : null;
     const cursorPc = cursorPoint ? pcRatioByStrike(cursorPoint) : null;
     const cursorRows: Array<{ label: string; value: string; color: string; valueClass?: string }> = [
         {
             label: tr('gex.metric.netGex'),
-            value: cursorPoint ? fmtSignedCompact(cursorPoint.netGex) : na,
+            value: cursorPoint ? fmtSignedCompact(cursorPoint.netGex) : '',
             color: cursorPoint && cursorPoint.netGex < 0 ? metricColors.netGexNeg : metricColors.netGexPos,
             valueClass: cursorPoint ? (cursorPoint.netGex > 0 ? 'text-green-600 dark:text-green-400' : cursorPoint.netGex < 0 ? 'text-red-600 dark:text-red-400' : undefined) : undefined,
         },
-        { label: tr('gex.values.strike'), value: cursorPoint ? fmt(cursorPoint.strike) : na, color: '#94a3b8' },
-        { label: tr('gex.metric.absoluteGamma'), value: cursorPoint ? fmtCompact(cursorPoint.absGamma) : na, color: metricColors.absoluteGamma },
-        { label: tr('gex.metric.callOi'), value: cursorPoint ? fmtInt(cursorPoint.callOi) : na, color: metricColors.callOi },
-        { label: tr('gex.metric.putOi'), value: cursorPoint ? fmtInt(cursorPoint.putOi) : na, color: metricColors.putOi },
-        { label: tr('gex.metric.callVolume'), value: cursorPoint ? fmtInt(cursorPoint.callVolume) : na, color: metricColors.callVolume },
-        { label: tr('gex.metric.putVolume'), value: cursorPoint ? fmtInt(cursorPoint.putVolume) : na, color: metricColors.putVolume },
-        { label: tr('gex.metric.pcRatioOi'), value: cursorPc && cursorPc.byOi != null ? fmt(cursorPc.byOi) : na, color: metricColors.pcRatioOi },
-        { label: tr('gex.metric.pcRatioVolume'), value: cursorPc && cursorPc.byVolume != null ? fmt(cursorPc.byVolume) : na, color: metricColors.pcRatioVolume },
+        { label: tr('gex.values.strike'), value: cursorPoint ? fmt(cursorPoint.strike) : '', color: '#94a3b8' },
+        { label: tr('gex.metric.absoluteGamma'), value: cursorPoint ? fmtCompact(cursorPoint.absGamma) : '', color: metricColors.absoluteGamma },
+        { label: tr('gex.metric.callOi'), value: cursorPoint ? fmtInt(cursorPoint.callOi) : '', color: metricColors.callOi },
+        { label: tr('gex.metric.putOi'), value: cursorPoint ? fmtInt(cursorPoint.putOi) : '', color: metricColors.putOi },
+        { label: tr('gex.metric.callVolume'), value: cursorPoint ? fmtInt(cursorPoint.callVolume) : '', color: metricColors.callVolume },
+        { label: tr('gex.metric.putVolume'), value: cursorPoint ? fmtInt(cursorPoint.putVolume) : '', color: metricColors.putVolume },
+        { label: tr('gex.metric.pcRatioOi'), value: cursorPc ? (cursorPc.byOi != null ? fmt(cursorPc.byOi) : na) : '', color: metricColors.pcRatioOi },
+        { label: tr('gex.metric.pcRatioVolume'), value: cursorPc ? (cursorPc.byVolume != null ? fmt(cursorPc.byVolume) : na) : '', color: metricColors.pcRatioVolume },
     ];
 
     const box = 'flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5';
@@ -1588,23 +1596,25 @@ export const GexView: React.FC<GexViewProps> = ({
                     </Card>
                     {/* Cursor: the data of the strike under the mouse, live while the cursor moves over the chart.
                         It takes all the space between Metrics and Levels (flex-1), its rows share that height. */}
-                    <section className="hidden min-h-0 flex-1 flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 lg:flex">
-                        <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{tr('gex.sidebar.cursor')}</h3>
-                        <div className="flex flex-1 flex-col border-t border-slate-200 dark:border-slate-700 px-3 py-1">
-                            {cursorRows.map((r) => (
-                                <div key={r.label} className={`flex min-h-7 flex-1 items-center justify-between gap-3 text-sm`}>
-                                    <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                                        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} aria-hidden="true" />
-                                        {r.label}
-                                    </span>
-                                    <span className={'font-medium tabular-nums ' + (r.valueClass ?? 'text-slate-800 dark:text-slate-100')}>{r.value}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
+                    {cursorPoint && (
+                        <section className="order-3 col-span-2 flex min-h-0 flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 lg:order-none lg:col-auto lg:flex-1">
+                            <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{tr('gex.sidebar.cursor')}</h3>
+                            <div className="flex flex-1 flex-col border-t border-slate-200 dark:border-slate-700 px-3 py-1">
+                                {cursorRows.map((r) => (
+                                    <div key={r.label} className={`flex min-h-7 flex-1 items-center justify-between gap-3 text-sm`}>
+                                        <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                                            <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} aria-hidden="true" />
+                                            {r.label}
+                                        </span>
+                                        <span className={'font-medium tabular-nums ' + (r.valueClass ?? 'text-slate-800 dark:text-slate-100')}>{r.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
                     {/* Levels sits at the bottom of the sidebar (mt-auto), level by level beside the Values
                         table under the chart: the same row heights and order, Values continues each row. */}
-                    <section className="order-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 max-lg:rounded-r-none max-lg:border-r-0 lg:order-none lg:mt-auto">
+                    <section className="order-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 max-lg:rounded-r-none max-lg:border-r-0 lg:order-none lg:mt-auto">
                         <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{tr('gex.sidebar.keyLevels')}</h3>
                         <div className="border-t border-slate-200 dark:border-slate-700">
                             <div className={`flex ${LEVEL_ROW_H} items-center justify-between border-b border-slate-200 dark:border-slate-700 px-3 text-xs text-slate-500 dark:text-slate-400`}>
@@ -1692,6 +1702,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     <div
                         ref={chartBoxRef}
                         className={'relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
+                        onPointerDownCapture={(e) => { pointerTypeRef.current = e.pointerType; }}
                         onMouseDownCapture={onChartPointerDownCapture}
                         onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
@@ -1749,7 +1760,10 @@ export const GexView: React.FC<GexViewProps> = ({
                                     barCategoryGap="15%"
                                     onMouseDown={onChartMouseDown}
                                     onMouseMove={onChartMouseMove}
-                                    onMouseLeave={() => { disarmTooltip(); setCursorStrike(null); }}
+                                    onClick={onChartClick}
+                                    onTouchStart={onChartClick}
+                                    onTouchMove={onChartClick}
+                                    onMouseLeave={() => { disarmTooltip(); if (pointerTypeRef.current !== 'touch') setCursorStrike(null); }}
                                     onMouseUp={onChartMouseUp}
                                 >
                                     <CartesianGrid stroke="#94a3b8" strokeOpacity={0.15} vertical={false} />
@@ -2054,7 +2068,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     it and the whole table grows upward from the bottom edge. The
                     state is remembered in localStorage. ---- */}
                 {valueRows.some((r) => r.point) && (
-                    <section className="order-3 min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 max-lg:rounded-l-none lg:order-none">
+                    <section className="order-4 min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 max-lg:rounded-l-none lg:order-none">
                         <button
                             type="button"
                             aria-expanded={valuesOpen}
