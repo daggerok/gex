@@ -1646,6 +1646,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         ref={chartBoxRef}
                         className={'relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
                         onMouseDownCapture={onChartPointerDownCapture}
+                        onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
