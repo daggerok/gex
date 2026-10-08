@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canPanRange, clickStep, panRange, zoomRange, zoomStep } from './zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, zoomRange, zoomStep } from './zoom-pan';
 
 const base: [number, number] = [0, 100];
 
@@ -58,5 +58,44 @@ describe('canPanRange', () => {
     expect(canPanRange([0, 20], base, 1)).toBe(true);
     expect(canPanRange([80, 100], base, 1)).toBe(false);
     expect(canPanRange([80, 100], base, -1)).toBe(true);
+  });
+});
+
+describe('panRangeBy: free shift for the mouse drag', () => {
+  test('shifts by any amount and keeps the width', () => {
+    expect(panRangeBy([40, 60], base, 7.5)).toEqual([47.5, 67.5]);
+    expect(panRangeBy([40, 60], base, -12)).toEqual([28, 48]);
+  });
+
+  test('is clamped to the data range', () => {
+    expect(panRangeBy([40, 60], base, 100)).toEqual([80, 100]);
+    expect(panRangeBy([40, 60], base, -100)).toEqual([0, 20]);
+    expect(panRangeBy([0, 20], base, -5)).toEqual([0, 20]);
+  });
+});
+
+describe('chartKeyAction', () => {
+  const k = (key: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }> = {}) => ({ key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
+
+  test('plain Left and Right move the chart, other keys are not ours', () => {
+    expect(chartKeyAction(k('ArrowLeft'))).toBe('panLeft');
+    expect(chartKeyAction(k('ArrowRight'))).toBe('panRight');
+    expect(chartKeyAction(k('ArrowUp'))).toBeNull();
+    expect(chartKeyAction(k('a'))).toBeNull();
+  });
+
+  test('with Ctrl, Alt or Shift: Right and Up zoom in, Left and Down zoom out', () => {
+    for (const mod of ['ctrlKey', 'altKey', 'shiftKey'] as const) {
+      expect(chartKeyAction(k('ArrowRight', { [mod]: true }))).toBe('zoomIn');
+      expect(chartKeyAction(k('ArrowUp', { [mod]: true }))).toBe('zoomIn');
+      expect(chartKeyAction(k('ArrowLeft', { [mod]: true }))).toBe('zoomOut');
+      expect(chartKeyAction(k('ArrowDown', { [mod]: true }))).toBe('zoomOut');
+    }
+    expect(chartKeyAction(k('Enter', { shiftKey: true }))).toBeNull();
+  });
+
+  test('Cmd is left to the browser (back and forward)', () => {
+    expect(chartKeyAction(k('ArrowLeft', { metaKey: true }))).toBeNull();
+    expect(chartKeyAction(k('ArrowRight', { metaKey: true, shiftKey: true }))).toBeNull();
   });
 });
