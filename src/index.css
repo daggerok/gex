@@ -584,9 +584,14 @@ body {
 /* TODO: future surfaces (charts, greeks heatmap) should reuse these tokens. */
 
 /* The charts are not keyboard targets (their shortcuts are window-level): never draw the browser focus
-   ring around a clicked chart, it was a bright white/blue frame on the dark theme. */
+   ring inside or around a clicked chart. recharts makes its layers (`g.recharts-zIndex-layer_*`) focusable
+   (tabindex -1), so clicking a bar, a line, an axis label or the AG area focused the whole layer and the
+   browser outlined its bounding box: a bright blue and white frame, which for the AG layer reaches past
+   the plot and shows as two lines across the whole chart on the dark theme. */
 .recharts-wrapper,
 .recharts-wrapper:focus,
+.recharts-wrapper :focus,
+.recharts-wrapper :focus-visible,
 .recharts-surface,
 .recharts-surface:focus,
 .recharts-surface:focus-visible {
