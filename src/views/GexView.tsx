@@ -355,6 +355,30 @@ const ZoomIcon: React.FC<{ kind: ZoomIconKind }> = ({ kind }) => (
  *  or P/C metrics never changes the plot width. */
 const SECONDARY_AXIS_WIDTH = 100;
 
+/**
+ * Box of the chart's hover tooltip: fades in and out. It stays mounted and starts at opacity 0, the
+ * visible value is applied one frame later, because an element created already at its final style
+ * never transitions (so the first hover would pop in).
+ */
+const TooltipFade: React.FC<{ shown: boolean; children: React.ReactNode }> = ({ shown, children }) => {
+    const [on, setOn] = useState(false);
+    useEffect(() => {
+        const id = requestAnimationFrame(() => setOn(shown));
+        return () => cancelAnimationFrame(id);
+    }, [shown]);
+    return (
+        <div
+            style={{ opacity: on ? 1 : 0 }}
+            className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs shadow transition-opacity duration-200 ease-out"
+        >
+            {children}
+        </div>
+    );
+};
+
+/** How long the cursor must rest on the chart before the hover tooltip appears. */
+const TOOLTIP_DELAY_MS = 500;
+
 /** Small borderless zoom button holding a ZoomIcon. */
 const ZOOM_BTN = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium leading-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 disabled:cursor-default';
 
@@ -831,6 +855,8 @@ export const GexView: React.FC<GexViewProps> = ({
     // THIS symbol is restored instead - see the effect below), so a stale
     // window never outlives the data it was drawn against.
     const [xZoom, setXZoom] = useState<[number, number] | null>(null);
+    // Last row the chart tooltip showed, kept so the tooltip can fade out on it (see the Tooltip below).
+    const lastTooltipRow = useRef<Record<string, number | null> | null>(null);
     const [dragStart, setDragStart] = useState<number | null>(null);
     const [dragEnd, setDragEnd] = useState<number | null>(null);
 
@@ -901,7 +927,23 @@ export const GexView: React.FC<GexViewProps> = ({
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
         if (typeof state?.activeLabel === 'number') { setDragStart(state.activeLabel); setDragEnd(state.activeLabel); }
     };
+    // Hover-intent for the chart tooltip: it shows only once the cursor has stopped for
+    // TOOLTIP_DELAY_MS, fades out as soon as the cursor moves again or leaves the chart.
+    const [tooltipArmed, setTooltipArmed] = useState(false);
+    const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const rearmTooltip = () => {
+        setTooltipArmed(false);
+        if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+        tooltipTimer.current = setTimeout(() => setTooltipArmed(true), TOOLTIP_DELAY_MS);
+    };
+    const disarmTooltip = () => {
+        if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+        tooltipTimer.current = null;
+        setTooltipArmed(false);
+    };
+    useEffect(() => () => { if (tooltipTimer.current) clearTimeout(tooltipTimer.current); }, []);
     const onChartMouseMove = (state: { activeLabel?: string | number }) => {
+        rearmTooltip();
         if (dragStart == null) return;
         if (typeof state?.activeLabel === 'number') setDragEnd(state.activeLabel);
     };
@@ -1475,6 +1517,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     barCategoryGap="15%"
                                     onMouseDown={onChartMouseDown}
                                     onMouseMove={onChartMouseMove}
+                                    onMouseLeave={disarmTooltip}
                                     onMouseUp={onChartMouseUp}
                                 >
                                     <CartesianGrid stroke="#94a3b8" strokeOpacity={0.15} vertical={false} />
@@ -1576,13 +1619,22 @@ export const GexView: React.FC<GexViewProps> = ({
                                         width={1}
                                         tickFormatter={(v: number) => fmt(v)}
                                     />
+                                    {/* Hover tooltip: fades in and out like every other tooltip, no gliding. recharts
+                                        hides its wrapper instantly (visibility) and slides it between positions (a
+                                        transform transition), so the wrapper is forced visible and not animated
+                                        (`isAnimationActive` off, `wrapperStyle`) and the CONTENT fades through its own
+                                        opacity, keeping the last hovered row on screen while it fades out. */}
                                     <Tooltip
                                         cursor={{ fill: '#94a3b8', fillOpacity: 0.12 }}
+                                        isAnimationActive={false}
+                                        wrapperStyle={{ visibility: 'visible', pointerEvents: 'none' }}
                                         content={({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: Record<string, number | null> }> }) => {
-                                            const row = active && payload && payload[0] ? payload[0].payload : null;
+                                            const live = active && payload && payload[0] ? payload[0].payload : null;
+                                            if (live) lastTooltipRow.current = live;
+                                            const row = lastTooltipRow.current;
                                             if (!row) return null;
                                             return (
-                                                <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs shadow">
+                                                <TooltipFade shown={!!live && tooltipArmed}>
                                                     <div className="text-slate-500 dark:text-slate-400">{tr('chain.strike')} {fmt(row.strike as number)}</div>
                                                     {metrics.map((m) => (
                                                         <div key={m} className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
@@ -1594,7 +1646,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                             {metricLabelFull(m)}: {fmtMetricValue(m, metricValue(m, row))}
                                                         </div>
                                                     ))}
-                                                </div>
+                                                </TooltipFade>
                                             );
                                         }}
                                     />
