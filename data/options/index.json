@@ -70,6 +70,7 @@
     "DELL",
     "DGRO",
     "DGRW",
+    "DIA",
     "DIS",
     "DIVO",
     "DJX",
@@ -136,6 +137,7 @@
     "ITW",
     "IVV",
     "IVZ",
+    "IWM",
     "JEPQ",
     "JNJ",
     "JPM",
@@ -225,6 +227,7 @@
     "PWR",
     "PYPL",
     "QCOM",
+    "QQQ",
     "QQQI",
     "QQQM",
     "QRVO",
@@ -343,7 +346,7 @@
     "ZETA",
     "ZM"
   ],
-  "count": 342,
+  "count": 345,
   "names": {},
   "no_options": {
     "AGMI": "2026-10-05",
