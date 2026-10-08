@@ -582,3 +582,13 @@ body {
 }
 
 /* TODO: future surfaces (charts, greeks heatmap) should reuse these tokens. */
+
+/* The charts are not keyboard targets (their shortcuts are window-level): never draw the browser focus
+   ring around a clicked chart, it was a bright white/blue frame on the dark theme. */
+.recharts-wrapper,
+.recharts-wrapper:focus,
+.recharts-surface,
+.recharts-surface:focus,
+.recharts-surface:focus-visible {
+    outline: none;
+}
