@@ -1,13 +1,13 @@
 # GEX — Русская документация
 
-> **Языки:** [English](README.en.md) · Русский (текущий) · корневой [`README.md`](../README.md)
+> **Языки:** [English](README.en.md) · Русский (текущий) · корневой [`README.md`](../../README.md)
 
 Одностраничная **опционная доска**: вводишь тикер, получаешь даты экспираций, выбираешь одну или несколько дат и смотришь цепочку **Calls | Strike | Puts** с bid / mid / ask, IV, объёмом, OI и греками там, где источник их отдаёт. Приложение статическое: React + TypeScript + Tailwind CSS v4, сборка Parcel, деплой на GitHub Pages.
 
 ---
 
 - Гид разработчика: [русский](./DEVELOPMENT.ru.md) или [английский](./DEVELOPMENT.en.md).
-- [CLAUDE.md](../CLAUDE.md): правила проекта для Claude Code.
+- [project rules](../rules/project.md): правила проекта для Claude Code.
 
 Для работы используются **Bun** (JS/TS) и **uv** (Python). **Важно:** всегда используйте `bun` вместо `npm`.
 
@@ -209,8 +209,8 @@ scripts/
   github-pages.yml            # деплой Pages
 package.json                  # Bun/Parcel scripts
 pyproject.toml                # Python deps для options-data.py
-README.md                     # TOC со ссылками на docs/README.en.md и docs/README.ru.md
-docs/
+README.md                     # TOC со ссылками на .claude/docs/README.en.md и .claude/docs/README.ru.md
+.claude/docs/
   README.en.md                # Английская документация
   README.ru.md                # Русская документация (этот файл)
   DEVELOPMENT.en.md / .ru.md  # Гайд разработчика

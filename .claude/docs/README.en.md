@@ -1,13 +1,13 @@
 # GEX — English Documentation
 
-> **Languages:** English (current) · [Русский](README.ru.md) · root [`README.md`](../README.md)
+> **Languages:** English (current) · [Русский](README.ru.md) · root [`README.md`](../../README.md)
 
 A single-page **options board**: enter a ticker, get expirations, select one or more dates, and view the classic **Calls | Strike | Puts** chain with bid / mid / ask, IV, volume, open interest and greeks where the provider supplies them. The app is a static React + TypeScript + Tailwind CSS v4 site built by Parcel and deployable to GitHub Pages.
 
 ---
 
 - Developer guide: [English](./DEVELOPMENT.en.md) or [Russian](./DEVELOPMENT.ru.md).
-- [CLAUDE.md](../CLAUDE.md): project rules for Claude Code.
+- [project rules](../rules/project.md): project rules for Claude Code.
 
 We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** Always use `bun` instead of `npm`.
 
@@ -211,8 +211,8 @@ scripts/
   github-pages.yml            # Pages deployment
 package.json                  # Bun/Parcel scripts
 pyproject.toml                # Python deps for options-data.py
-README.md                     # TOC pointing to docs/README.en.md and docs/README.ru.md
-docs/
+README.md                     # TOC pointing to .claude/docs/README.en.md and .claude/docs/README.ru.md
+.claude/docs/
   README.en.md                # English documentation (this file)
   README.ru.md                # Russian documentation
   DEVELOPMENT.en.md / .ru.md  # Developer guide
