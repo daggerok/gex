@@ -64,14 +64,13 @@ type ToggleableLevelKey = GexLevelKey;
  *  `keyLevels` below), this array is just the base/reset order. */
 const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'spot'];
 
-/** Default ON selection (revised again - the user narrowed this further
- *  after seeing it live): only 75% Sum Net GEX+ / 75% Sum Net GEX- / Net GEX+ / Net GEX- /
- *  Gamma Flip start ON. Max Net GEX / Min Net GEX stay OFF (redundant with just looking at the
- *  chart's own tallest bars - unchanged from the earlier revision). Max
- *  Pain and Spot now ALSO start OFF - the user wants a quieter default
- *  view; both remain one click away in the Key Levels panel like every
- *  other level. */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = [...ALL_LEVEL_KEYS];
+/** Levels that start OFF: the four outer levels (Net GEX+ / Net GEX- and 75% Sum Net GEX+ /
+ *  75% Sum Net GEX-). They stay one click away in the Levels panel like every other level. */
+const DEFAULT_OFF_LEVELS: ToggleableLevelKey[] = ['netGexPlus', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus'];
+
+/** Default ON selection: every level except DEFAULT_OFF_LEVELS (so Max / Min Net GEX, Gamma Flip,
+ *  Max Pain and Spot). Reset restores it. */
+const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ALL_LEVEL_KEYS.filter((k) => !DEFAULT_OFF_LEVELS.includes(k));
 
 /** i18n key for each level's sidebar/toggle-panel label. */
 const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
