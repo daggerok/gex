@@ -1056,26 +1056,35 @@ export const GexView: React.FC<GexViewProps> = ({
     const chartBoxRef = useRef<HTMLDivElement | null>(null);
     // Height of the chart box in px: the Strikes caption strip is a fixed pixel height, the Net GEX domain is padded by its share of the plot
     const [chartBoxH, setChartBoxH] = useState(0);
-    // Center of the AG axis tick labels (px from the chart box's left edge): the labels are left aligned and as wide as
-    // their text, so the caption is centered over the real text instead of over the axis column
-    const [agCaptionX, setAgCaptionX] = useState<number | null>(null);
+    // Edges of the axis tick labels (px from the chart box's left edge): the Net GEX caption lines up with the RIGHT edge of
+    // the left labels, the AG caption with the LEFT edge of the right labels. The labels are only as wide as their text, so
+    // the real text is measured instead of the axis column
+    const [captionX, setCaptionX] = useState<{ net: number | null; ag: number | null }>({ net: null, ag: null });
     useLayoutEffect(() => {
         const box = chartBoxRef.current;
         if (!box) return;
         // recharts draws its ticks after this component renders, so measure again whenever the chart's DOM changes
         const measure = () => {
             const grid = box.querySelector('.recharts-cartesian-grid');
-            let next: number | null = null;
+            let net: number | null = null;
+            let ag: number | null = null;
             if (grid) {
-                const plotRight = grid.getBoundingClientRect().right;
-                let lo = Infinity, hi = -Infinity;
+                const g = grid.getBoundingClientRect();
+                const boxLeft = box.getBoundingClientRect().left;
+                let agLo = Infinity, netHi = -Infinity;
                 box.querySelectorAll('.recharts-wrapper text').forEach((t) => {
                     const r = t.getBoundingClientRect();
-                    if (r.width > 0 && r.left >= plotRight - 1 && r.left < plotRight + Y_AXIS_WIDTH) { lo = Math.min(lo, r.left); hi = Math.max(hi, r.right); }
+                    if (r.width === 0) return;
+                    if (r.left >= g.right - 1 && r.left < g.right + Y_AXIS_WIDTH) agLo = Math.min(agLo, r.left);
+                    if (r.right <= g.left + 1 && r.right > g.left - Y_AXIS_WIDTH) netHi = Math.max(netHi, r.right);
                 });
-                if (hi > lo) next = (lo + hi) / 2 - box.getBoundingClientRect().left;
+                if (agLo < Infinity) ag = agLo - boxLeft;
+                if (netHi > -Infinity) net = netHi - boxLeft;
             }
-            setAgCaptionX((prev) => (next === null || prev === null ? next : Math.abs(next - prev) > 0.5 ? next : prev));
+            setCaptionX((prev) => {
+                const same = (x: number | null, y: number | null) => (x === null || y === null ? x === y : Math.abs(x - y) <= 0.5);
+                return same(prev.net, net) && same(prev.ag, ag) ? prev : { net, ag };
+            });
         };
         measure();
         const mo = new MutationObserver(measure);
@@ -1835,21 +1844,21 @@ export const GexView: React.FC<GexViewProps> = ({
                                 {tr('gex.axis.strikes')}
                             </span>
                         )}
-                        {/* Axis captions, centered over the value labels of their axes */}
+                        {/* Axis captions: Net GEX ends at the right edge of its labels, AG starts at the left edge of its labels */}
                         {chart && metrics.includes('netGex') && (
                             <span
-                                className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap text-sm font-semibold"
-                                style={{ left: CHART_MARGIN.left + Y_AXIS_WIDTH / 2, color: net > 0 ? metricColors.netGexPos : metricColors.netGexNeg }}
+                                className={'pointer-events-none absolute top-0 z-10 whitespace-nowrap text-sm font-semibold ' + (captionX.net === null ? '-translate-x-1/2' : '-translate-x-full')}
+                                style={{ left: captionX.net ?? CHART_MARGIN.left + Y_AXIS_WIDTH / 2, color: net > 0 ? metricColors.netGexPos : metricColors.netGexNeg }}
                             >
                                 {metricLabel('netGex')}
                             </span>
                         )}
                         {chart && metrics.includes('absoluteGamma') && (
                             <span
-                                className={'pointer-events-none absolute top-0 z-10 whitespace-nowrap text-sm font-semibold ' + (agCaptionX === null ? 'translate-x-1/2' : '-translate-x-1/2')}
-                                style={agCaptionX === null
+                                className={'pointer-events-none absolute top-0 z-10 whitespace-nowrap text-sm font-semibold ' + (captionX.ag === null ? 'translate-x-1/2' : '')}
+                                style={captionX.ag === null
                                     ? { right: CHART_MARGIN.right + secondaryWidth + RATIO_AXIS_WIDTH + Y_AXIS_WIDTH / 2, color: metricColors.absoluteGamma }
-                                    : { left: agCaptionX, color: metricColors.absoluteGamma }}
+                                    : { left: captionX.ag, color: metricColors.absoluteGamma }}
                             >
                                 {metricLabel('absoluteGamma')}
                             </span>
