@@ -60,7 +60,8 @@ export function panRangeBy(range: [number, number], base: [number, number], shif
 
 export type ChartKeyAction = 'panLeft' | 'panRight' | 'zoomIn' | 'zoomOut';
 
-/** What a key press does on the GEX chart. Plain Left / Right move the chart like the arrow buttons.
+/** What a key press does on the GEX chart. Plain Left / Right move the chart like the arrow buttons,
+ *  plain Up zooms in and Down zooms out (like TradingView).
  *  With Ctrl, Alt (Option) or Shift held, Right and Up zoom in, Left and Down zoom out. The + (or =)
  *  key zooms in and the - (or _) key zooms out, like the plus and minus buttons, unless Cmd, Ctrl or
  *  Alt is held: those are the browser's page zoom. Cmd (Meta) is otherwise left alone too:
@@ -72,7 +73,7 @@ export function chartKeyAction(e: { key: string; ctrlKey: boolean; altKey: boole
         if (e.key === '-' || e.key === '_') return 'zoomOut';
     }
     const modified = e.ctrlKey || e.altKey || e.shiftKey;
-    if (!modified) return e.key === 'ArrowLeft' ? 'panLeft' : e.key === 'ArrowRight' ? 'panRight' : null;
+    if (!modified) return e.key === 'ArrowLeft' ? 'panLeft' : e.key === 'ArrowRight' ? 'panRight' : e.key === 'ArrowUp' ? 'zoomIn' : e.key === 'ArrowDown' ? 'zoomOut' : null;
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') return 'zoomIn';
     if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') return 'zoomOut';
     return null;
