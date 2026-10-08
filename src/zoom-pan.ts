@@ -46,3 +46,28 @@ export function zoomRange(range: [number, number], base: [number, number], dir: 
 export function canPanRange(range: [number, number], base: [number, number], dir: -1 | 1): boolean {
     return dir < 0 ? range[0] > base[0] + 1e-9 : range[1] < base[1] - 1e-9;
 }
+
+/** Moves the visible strike range `[a, b]` by `shift` price units (negative = toward lower strikes),
+ *  clamped so it never leaves the full data range `base` and keeps its width. Used by the mouse
+ *  drag, where the shift is not a whole click step. */
+export function panRangeBy(range: [number, number], base: [number, number], shift: number): [number, number] {
+    const [a, b] = range;
+    let s = shift;
+    if (a + s < base[0]) s = base[0] - a;
+    if (b + s > base[1]) s = base[1] - b;
+    return [a + s, b + s];
+}
+
+export type ChartKeyAction = 'panLeft' | 'panRight' | 'zoomIn' | 'zoomOut';
+
+/** What a key press does on the GEX chart. Plain Left / Right move the chart like the arrow buttons.
+ *  With Ctrl, Alt (Option) or Shift held, Right and Up zoom in, Left and Down zoom out. Cmd (Meta) is
+ *  left alone: Cmd+Left / Right is the browser's back and forward. Anything else is not ours (null). */
+export function chartKeyAction(e: { key: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }): ChartKeyAction | null {
+    if (e.metaKey) return null;
+    const modified = e.ctrlKey || e.altKey || e.shiftKey;
+    if (!modified) return e.key === 'ArrowLeft' ? 'panLeft' : e.key === 'ArrowRight' ? 'panRight' : null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') return 'zoomIn';
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') return 'zoomOut';
+    return null;
+}

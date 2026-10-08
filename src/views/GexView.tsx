@@ -4,7 +4,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { canPanRange, clickStep, panRange, zoomRange, zoomStep } from '../zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, zoomRange, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
@@ -924,6 +924,63 @@ export const GexView: React.FC<GexViewProps> = ({
         setXZoomAndPersist(zoomRange(xZoom ?? base, base, dir, zoomStep(base), 4 * (chart?.strikeStep ?? 1)));
     };
 
+    // Keyboard on the GEX tab (not while typing in an input): Left / Right move the chart like the
+    // arrow buttons (only while zoomed), Ctrl / Alt(Option) / Shift + Right or Up zoom in, + Left or
+    // Down zoom out (chartKeyAction). The listener is registered once and calls the latest handlers.
+    const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+    keyHandlerRef.current = (e: KeyboardEvent) => {
+        if (e.defaultPrevented || !chart) return;
+        const el = e.target as HTMLElement | null;
+        if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+        const action = chartKeyAction(e);
+        if (!action) return;
+        if (action === 'panLeft' || action === 'panRight') {
+            if (!xZoom) return; // nothing to move at the full range, leave the key alone
+            e.preventDefault();
+            panX(action === 'panLeft' ? -1 : 1);
+        } else {
+            e.preventDefault();
+            zoomX(action === 'zoomIn' ? 'in' : 'out');
+        }
+    };
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => keyHandlerRef.current(e);
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    // Mouse drag with Cmd or Option held moves the chart with the cursor (grab and drag) instead of
+    // selecting a range to zoom into. Only while zoomed. The capture handler on the chart box runs
+    // before recharts' own handlers and stops them, window listeners follow the drag outside the box.
+    const [panning, setPanning] = useState(false);
+    const onChartPointerDownCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.button !== 0 || !(e.metaKey || e.altKey) || !xZoom || !chart) return;
+        const axisLine = e.currentTarget.querySelector('.recharts-xAxis .recharts-cartesian-axis-line');
+        const plotWidth = axisLine ? axisLine.getBoundingClientRect().width : 0;
+        if (plotWidth <= 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX;
+        const startRange = xZoom;
+        const base = chart.domain;
+        const perPx = (startRange[1] - startRange[0]) / plotWidth;
+        let last: [number, number] = startRange;
+        setPanning(true);
+        const onMove = (m: MouseEvent) => {
+            // the chart follows the cursor: dragging right shows lower strikes
+            last = panRangeBy(startRange, base, -(m.clientX - startX) * perPx);
+            setXZoom(last);
+        };
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            setPanning(false);
+            persistZoom({ xZoom: last });
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    };
+
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
         if (typeof state?.activeLabel === 'number') { setDragStart(state.activeLabel); setDragEnd(state.activeLabel); }
     };
@@ -1483,7 +1540,10 @@ export const GexView: React.FC<GexViewProps> = ({
                         visibly highlighting those labels mid-drag. Scoped to just this chart
                         container, not the whole page, so text elsewhere (inputs, sidebar
                         values, etc.) stays normally selectable. */}
-                    <div className="relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none">
+                    <div
+                        className={'relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : '')}
+                        onMouseDownCapture={onChartPointerDownCapture}
+                    >
                         {chartMessage || !chart ? (
                             <div className={emptyBox}>{chartMessage}</div>
                         ) : (
@@ -1807,7 +1867,10 @@ export const GexView: React.FC<GexViewProps> = ({
                             </ResponsiveContainer>
                         )}
                     </div>
-                    <p className="mt-1 hidden text-center text-xs text-slate-400 sm:block">{tr('gex.zoom.hint')}</p>
+                    {/* Guides under the chart, separated by " | " */}
+                    <p className="mt-1 hidden text-center text-xs text-slate-400 sm:block">
+                        {[tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys')].join(' | ')}
+                    </p>
                 </section>
 
                 {/* ---- Values: what every level means on its own strike. One table
