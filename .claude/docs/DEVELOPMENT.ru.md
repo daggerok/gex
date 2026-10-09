@@ -45,6 +45,12 @@
    TICKERS=AAPL,MSFT MAX_FETCHES=2 ./scripts/options-data.py
    ```
 
+3. **Bun-fetcher с параллельными воркерами** (`scripts/options-data.ts`, те же переменные окружения, что у Python-скрипта):
+   ```bash
+   CONCURRENCY=3 TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
+   ```
+   `CONCURRENCY` - целое число >= 1 (по умолчанию 1), каждый воркер ждет `REQUEST_SLEEP` после своей записи. `SOFT_DEADLINE_SECONDS` (по умолчанию 0, выключено) прекращает запуск новых тикеров через указанное число секунд. `VERBOSE=1` дополнительно печатает старые строки прогресса с временем. Запуск печатает блок `[ config   ]`, по строке статуса на тикер (`new`, `updated`, `unchanged`, `no-options`, `failed`) и итог `[ done     ]`
+
 ## Архитектура greeks
 - **1-й порядок:** Загружается из CBOE (в fetch-скрипте) или считается в UI.
 - **2-й и 3-й порядок + λ:** Считаются **только** на стороне клиента в `src/greeks.ts`.

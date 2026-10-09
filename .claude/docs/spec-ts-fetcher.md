@@ -99,6 +99,29 @@ Notes:
 
 When parity is accepted, `.github/workflows/update-data.yml` needs: Bun instead of uv in the two fetch steps (`./.github/actions/uv` replaced by a Bun setup step), the commands `TICKERS=$(cat data/All.txt) bun scripts/options-data.ts` and `TICKERS=$(cat data/Indices.txt) bun scripts/options-data.ts` (a multi-line `TICKERS` works, any whitespace separates symbols), `PYTHONUNBUFFERED` can go. `ci.yaml` and `dependency-updates.yml` keep the `py_compile` step until `scripts/options-data.py` is deleted. After that remove `scripts/options-data.py` and `scripts/options-parity/`, the `pyproject.toml` and `uv.lock` entries need a separate look
 
+## 9. Console output and CONCURRENCY (2026-10-08)
+
+Presentation copied from the sibling updaters (the Stocks updater and the ARK `output*` prelude): labels are 9 characters wide inside brackets, one line per ticker printed when it finishes with its queue position, status vocabulary `new`, `updated`, `unchanged`, `no-options`, `failed`, final `[ done     ]` line. Status is decided by comparing the new JSON with the previous file content with the top-level `updated` key removed (keys sorted). The file is still written on every successful fetch: the freshness rules read `updated`, so skipping the write for `unchanged` content would leave the old date in place and the ticker would be refetched on every run. The trade-off is one rewritten file per fetch (a git diff of one timestamp line for unchanged tickers, which the workflow already commits today). Skipping those writes later needs a freshness source other than `updated` (for example a `checked` stamp in `index.json`, which is a schema change, rule R3), a decision for the owner
+
+`CONCURRENCY` (integer >= 1, default 1) and `SOFT_DEADLINE_SECONDS` (default 0, off):
+
+- `runPool` in `scripts/options-data.ts`: workers take the next queue index, each worker sleeps `REQUEST_SLEEP` after its own successful write only (the old behavior per lane), so the request rate grows with the worker count. Skiplist and `index.json` are written once after the pool drains
+- Budget: a slot is reserved when a ticker starts (`written + in flight < MAX_FETCHES`), a no-options or failed ticker releases it. Workers wait instead of starting a ticker that could overshoot
+- Failure stop: one shared streak of consecutive failures, reset by any non-failed result. At `RATE_LIMIT_HITS` no worker starts a new ticker, tickers already running finish and are written. With N workers up to N - 1 extra tickers can already be running when the streak trips
+- Yahoo session: `ensureYahooSession` shares one in-flight cookie and crumb exchange, a worker that sees HTTP 400 or higher only refreshes when the session it used is still the current one
+- Results and the `UPDATED FILES` list are in queue order, status lines are in finish order
+- Soft deadline: small and safe (one check before taking a ticker), so it is included. Tickers not started are left for the next run, the index is still written
+- Legacy timestamped lines (`FETCH`, `NO_OPTIONS`, `STOP`, ...) need `VERBOSE=1`. `run.sh` sets it for the ts side and filters the new-style lines before the log diff, nothing else in the harness changed
+
+Parity with the new code (2026-10-08, `scripts/options-parity/run.sh`):
+
+| Run | Result |
+|---|---|
+| `replay explicit`, `CONCURRENCY=1` | 94 requests IDENTICAL, `exact=1346 structural-only=0 different=0` |
+| `replay explicit`, `CONCURRENCY=3` | `exact=1346 structural-only=0 different=0` |
+| `live`, py then ts | `exact=1345 structural-only=0 different=1`, SPX `mid` null in py vs a value in ts on one put, the same difference appears with the unmodified fetcher from `main`, it is live data timing, not this change |
+| ts only, 10 tickers, default `REQUEST_SLEEP=0.6`, `CONCURRENCY=1` vs `3` | data files `exact=1346 different=0`, wall time 24.9 s vs 10.7 s |
+
 ## 8. Tests
 
-`src/options-data.test.ts` covers the pure helpers (formatting, symbols, freshness and skiplist, queue, index planning, Cboe overlay, chart parsing, a mocked Yahoo client including the 429 retry). The fetcher source layout is also checked in `src/data-paths.test.ts`
+`src/options-data.test.ts` covers the pure helpers (formatting, symbols, freshness and skiplist, queue, index planning, Cboe overlay, chart parsing, a mocked Yahoo client including the 429 retry, status classification, config redaction, the worker pool and the shared Yahoo session). The fetcher source layout is also checked in `src/data-paths.test.ts`

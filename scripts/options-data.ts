@@ -13,6 +13,10 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t2 - Sibling-style console output ([ config   ] / [ queue    ] / one status line per
+ *        ticker / [ done     ]) and CONCURRENCY workers, each with its own REQUEST_SLEEP lane.
+ *        The legacy timestamped lines moved behind VERBOSE=1. Files are still written on every
+ *        successful fetch (freshness reads `updated`); only the status label is new.
  *   t1 - Initial port of options-data.py v13:
  *        * No dependencies: Bun fetch only (no yfinance, no requests, no pandas).
  *        * Output files are byte-compatible with the Python ones: key order,
@@ -64,13 +68,16 @@
  *   CBOE_GREEKS_TIMEOUT default 10       seconds per Cboe request
  *   SYMBOL_ALIASES     default ""        "SCREENER=YAHOO" pairs, comma separated
  *   TIMEZONE           default America/New_York   market tz for today / working days
+ *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
+ *   SOFT_DEADLINE_SECONDS default 0      stop starting new tickers after N seconds (0 = off)
+ *   VERBOSE            default off       also print the legacy timestamped progress lines
  *   TICKERS / TICKER   explicit universe override
  * =============================================================================
  */
 
 /// <reference types="bun" />
 /// <reference types="node" />
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
 // ---- Python-compatible number and JSON formatting ---------------------------
@@ -192,6 +199,20 @@ function envFloat(name: string, def: string): number {
     return v;
 }
 
+/** Strict integer >= 1 (CONCURRENCY): invalid input is an error, never a silent fallback. */
+function envPositiveInt(name: string, def: string): number {
+    const v = envInt(name, def);
+    if (v < 1) throw new Error(`${name} must be an integer >= 1, got ${v}`);
+    return v;
+}
+
+/** Strict number >= 0 (SOFT_DEADLINE_SECONDS, 0 = off). */
+function envNonNegativeFloat(name: string, def: string): number {
+    const v = envFloat(name, def);
+    if (!(v >= 0)) throw new Error(`${name} must be a number >= 0, got ${v}`);
+    return v;
+}
+
 // ---- Market timezone ---------------------------------------------------------
 
 const MARKET_TZ_NAME = process.env.TIMEZONE ?? "America/New_York";
@@ -290,8 +311,13 @@ function nowIso(): string {
     return isoWithOffset(new Date());
 }
 
+/** Presentation only: the legacy timestamped progress lines are printed when VERBOSE is on (the parity harness sets it). */
+export function isVerbose(env: Record<string, string | undefined> = process.env): boolean {
+    return /^(1|true|yes|on)$/i.test(env.VERBOSE ?? "");
+}
+
 function log(message: string): void {
-    console.log(`[${nowIso()}] ${message}`);
+    if (isVerbose()) console.log(`[${nowIso()}] ${message}`);
 }
 
 function logErr(message: string): void {
@@ -316,6 +342,8 @@ const cfg = {
     SKIP_RECHECK_DAYS: envInt("SKIP_RECHECK_DAYS", "30"),
     CBOE_GREEKS: !["0", "false", "no", "off"].includes((process.env.CBOE_GREEKS ?? "1").toLowerCase()),
     CBOE_GREEKS_TIMEOUT: envFloat("CBOE_GREEKS_TIMEOUT", "10"),
+    CONCURRENCY: envPositiveInt("CONCURRENCY", "1"),
+    SOFT_DEADLINE_SECONDS: envNonNegativeFloat("SOFT_DEADLINE_SECONDS", "0"),
 };
 
 // ---- Ticker symbol aliases ---------------------------------------------------
@@ -564,16 +592,35 @@ async function newYahooSession(): Promise<YahooSession> {
     return { cookie, crumb };
 }
 
+let yahooSessionFlight: Promise<YahooSession> | null = null;
+
+/**
+ * Shared crumb/cookie session. `stale` is the session a caller just saw fail: when another worker already replaced it
+ * the current one is returned, and concurrent refreshes share one in-flight request (no thundering herd).
+ * `onRateLimit` maps a 429 on the crumb request to the degraded session instead of an error.
+ */
+async function ensureYahooSession(stale: YahooSession | null, onRateLimit: (old: YahooSession | null) => YahooSession): Promise<YahooSession> {
+    if (yahooSession && yahooSession !== stale) return yahooSession;
+    if (!yahooSessionFlight) {
+        const old = yahooSession;
+        yahooSessionFlight = (async () => {
+            try {
+                yahooSession = await newYahooSession();
+            } catch (e) {
+                if (!(e instanceof YahooRateLimitError)) throw e;
+                yahooSession = onRateLimit(old);
+            }
+            return yahooSession;
+        })().finally(() => {
+            yahooSessionFlight = null;
+        });
+    }
+    return yahooSessionFlight;
+}
+
 /** yfinance YfData.get: crumb + cookie, one retry with a fresh session on HTTP >= 400, 429 -> error. */
 export async function yahooGet(url: string, timeoutMs = 30000): Promise<{ status: number; text: string }> {
-    if (!yahooSession) {
-        try {
-            yahooSession = await newYahooSession();
-        } catch (e) {
-            if (e instanceof YahooRateLimitError) yahooSession = { cookie: "", crumb: null };
-            else throw e;
-        }
-    }
+    const first = await ensureYahooSession(null, () => ({ cookie: "", crumb: null }));
     const withCrumb = (s: YahooSession) =>
         s.crumb ? `${url}${url.includes("?") ? "&" : "?"}crumb=${encodeURIComponent(s.crumb)}` : url;
     const doGet = async (s: YahooSession) => {
@@ -583,15 +630,10 @@ export async function yahooGet(url: string, timeoutMs = 30000): Promise<{ status
         });
         return { status: res.status, text: await res.text() };
     };
-    let r = await doGet(yahooSession);
+    let r = await doGet(first);
     if (r.status >= 400) {
-        try {
-            yahooSession = await newYahooSession();
-        } catch (e) {
-            if (!(e instanceof YahooRateLimitError)) throw e;
-            yahooSession = { cookie: yahooSession.cookie, crumb: null };
-        }
-        r = await doGet(yahooSession);
+        const fresh = await ensureYahooSession(first, (old) => ({ cookie: old?.cookie ?? "", crumb: null }));
+        r = await doGet(fresh);
         if (r.status === 429) throw new YahooRateLimitError();
     }
     return r;
@@ -600,6 +642,7 @@ export async function yahooGet(url: string, timeoutMs = 30000): Promise<{ status
 /** Test hook: lets the fixture harness drop the cached session. */
 export function resetYahooSession(): void {
     yahooSession = null;
+    yahooSessionFlight = null;
 }
 
 /** pd.Timestamp(exp, unit="s").strftime("%Y-%m-%d") */
@@ -1041,17 +1084,19 @@ export function mergeUniverse(nasdaq: string[], cboe: string[], size: number): s
     return dedupe(FALLBACK_UNIVERSE.map((s) => canonical(s))).slice(0, size);
 }
 
-async function loadUniverse(): Promise<string[]> {
+async function loadUniverse(): Promise<{ symbols: string[]; source: string }> {
     const override = tickersOverride();
     if (override) {
         const preview = override.slice(0, 20).join(", ") + (override.length > 20 ? `, ... (+${override.length - 20} more)` : "");
         log(`universe/override: using ${override.length} symbols from TICKERS/TICKER env: ${preview}`);
-        return override;
+        return { symbols: override, source: "TICKERS override" };
     }
     const cboe = await liveCboeUniverse();
     const nasdaq = await liveNasdaqUniverse();
     const full = mergeUniverse(nasdaq, cboe, Infinity);
     const syms = full.slice(0, cfg.UNIVERSE_SIZE);
+    const source =
+        nasdaq.length && cboe.length ? "NASDAQ market-cap order + Cboe optionable" : nasdaq.length ? "NASDAQ only" : cboe.length ? "Cboe only" : "built-in fallback";
     if (nasdaq.length && cboe.length) {
         log(`universe/final: ${full.length} optionable symbols (NASDAQ market-cap ordered + Cboe append); top: ${syms.slice(0, 5).join(", ")}`);
     } else if (nasdaq.length) {
@@ -1061,7 +1106,7 @@ async function loadUniverse(): Promise<string[]> {
     } else {
         logErr("universe/fallback: all live universe sources failed; using tiny built-in fallback");
     }
-    return syms;
+    return { symbols: syms, source };
 }
 
 // ---- Per-ticker fetch -----------------------------------------------------------
@@ -1300,27 +1345,246 @@ function writeIndex(skip: Record<string, string> | null): boolean {
     return true;
 }
 
+// ---- Console presentation (no effect on requests, files or freshness) ------------
+
+const outputClean = (value: unknown): string => String(value ?? "null").replace(/[\r\n\t]+/g, " ");
+
+/** Bracketed label, 9 characters wide like the sibling updaters: "[ config   ]". */
+export const outputLabel = (label: string): string => `[ ${label.padEnd(9)}]`;
+
+/** Effective env knobs, canonical names, one per entry. */
+export function outputConfigEntries(
+    c: typeof cfg = cfg,
+    env: Record<string, string | undefined> = process.env,
+): Array<[string, string]> {
+    return [
+        ["MAX_FETCHES", String(c.MAX_FETCHES)],
+        ["REQUEST_SLEEP", pyFloatRepr(c.REQUEST_SLEEP)],
+        ["CONCURRENCY", String(c.CONCURRENCY)],
+        ["SOFT_DEADLINE_SECONDS", pyFloatRepr(c.SOFT_DEADLINE_SECONDS)],
+        ["RATE_LIMIT_HITS", String(c.RATE_LIMIT_HITS)],
+        ["MAX_EXPIRATIONS", String(c.MAX_EXPIRATIONS)],
+        ["UNIVERSE_SIZE", String(c.UNIVERSE_SIZE)],
+        ["MIN_MARKET_CAP", pyFloatRepr(c.MIN_MARKET_CAP)],
+        ["NASDAQ_TIMEOUT", pyFloatRepr(c.NASDAQ_TIMEOUT)],
+        ["SKIP_RECHECK_DAYS", String(c.SKIP_RECHECK_DAYS)],
+        ["CBOE_GREEKS", String(c.CBOE_GREEKS)],
+        ["CBOE_GREEKS_TIMEOUT", pyFloatRepr(c.CBOE_GREEKS_TIMEOUT)],
+        ["SYMBOL_ALIASES", env.SYMBOL_ALIASES ?? ""],
+        ["TIMEZONE", env.TIMEZONE ?? "America/New_York"],
+        ["TICKERS", env.TICKERS ?? env.TICKER ?? ""],
+        ["VERBOSE", String(isVerbose(env))],
+    ];
+}
+
+const SECRET_KEY_RE = /TOKEN|PASSWORD|SECRET|COOKIE|API_?KEY|^SEC_UA$/i;
+
+/** The `[ config   ]` block; values of secret-looking knobs are replaced by <redacted>. */
+export function outputConfigBlock(entries: Array<[string, string]>, brand = "GEX"): string {
+    const rows = entries.map(([k, v]) => `              ${k}=${SECRET_KEY_RE.test(k) ? "<redacted>" : outputClean(v) || "(unset)"}`);
+    return `${outputLabel("config")} ${brand} updater:\n${rows.join("\n")}`;
+}
+
+export type TickerStatus = "new" | "updated" | "unchanged" | "no-options" | "failed";
+
+function stableForCompare(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(stableForCompare);
+    if (value && typeof value === "object") {
+        const o = value as Record<string, unknown>;
+        return Object.fromEntries(Object.keys(o).sort().map((k) => [k, stableForCompare(o[k])]));
+    }
+    return value;
+}
+
+/**
+ * new = no previous file, unchanged = same content ignoring the top-level `updated` stamp (stable key order),
+ * updated = anything else (an unreadable previous file counts as updated). Both texts are the JSON file contents.
+ */
+export function classifyPayload(previousText: string | null, nextText: string): "new" | "updated" | "unchanged" {
+    if (previousText === null) return "new";
+    try {
+        const strip = (t: string) => {
+            const o = JSON.parse(t) as Record<string, unknown>;
+            delete o.updated;
+            return JSON.stringify(stableForCompare(o));
+        };
+        return strip(previousText) === strip(nextText) ? "unchanged" : "updated";
+    } catch {
+        return "updated";
+    }
+}
+
+/** `[ 03/25  ] SPY   updated   expirations=32 quotes=10307 cboe=9800/10307 spot=589.12 in=2.1s` */
+export function outputTickerLine(
+    position: number,
+    total: number,
+    sym: string,
+    status: TickerStatus,
+    detail: { payload?: Payload | null; elapsed?: number; reason?: string } = {},
+): string {
+    const width = Math.max(2, String(total).length);
+    const p = detail.payload;
+    const parts: string[] = [];
+    if (p) {
+        parts.push(`expirations=${p.expirations.length}`, `quotes=${p.quotes.length}`, `cboe=${p.greeks.cboeMatched.value}/${p.quotes.length}`);
+        if (p.underlyingPrice !== null) parts.push(`spot=${p.underlyingPrice.toFixed(2)}`);
+    }
+    if (detail.elapsed !== undefined) parts.push(`in=${pyFixed1(detail.elapsed)}s`);
+    if (detail.reason) parts.push(`reason=${outputClean(detail.reason)}`);
+    return `[ ${String(position).padStart(width)}/${String(total).padEnd(width)}  ] ${outputClean(sym).padEnd(5)} ${status.padEnd(9)}${parts.length ? ` ${parts.join(" ")}` : ""}`;
+}
+
+export interface RunCounts {
+    new: number;
+    updated: number;
+    unchanged: number;
+    "no-options": number;
+    failed: number;
+}
+
+export function outputDoneLine(counts: RunCounts, elapsedSeconds: number, stopped: StopReason | null): string {
+    const tail = stopped ? ` stopped=${stopped}` : "";
+    return `${outputLabel("done")} new=${counts.new} updated=${counts.updated} unchanged=${counts.unchanged} no-options=${counts["no-options"]} failed=${counts.failed} elapsed=${pyFixed1(elapsedSeconds)}s${tail}`;
+}
+
+// ---- Worker pool -----------------------------------------------------------------
+
+export type StopReason = "max-fetches" | "rate-limit" | "deadline";
+
+export interface PoolResult {
+    kind: "written" | "no-options" | "failed";
+}
+
+export interface PoolOptions<R extends PoolResult> {
+    queue: string[];
+    concurrency: number;
+    /** Successful-write budget, never exceeded: slots are reserved when a ticker starts. */
+    maxFetches: number;
+    /** Consecutive failures (shared by all workers) that stop the run. */
+    rateLimitHits: number;
+    requestSleepMs: number;
+    /** 0 = off. No new ticker is started after this many ms; running ones finish. */
+    softDeadlineMs: number;
+    /** Does the work for one ticker (including the file write). A throw counts as a failure. */
+    work: (sym: string, position: number, state: { fetched: number }) => Promise<R>;
+    /** Called synchronously when a ticker finishes, after the shared counters were updated. */
+    onDone?: (position: number, sym: string, result: R, state: { fetched: number; failStreak: number }) => void;
+    sleep?: (ms: number) => Promise<void>;
+    now?: () => number;
+}
+
+export interface PoolSummary<R extends PoolResult> {
+    /** Indexed by queue position - 1, in queue order whatever the finish order was; undefined = never started. */
+    results: Array<R | undefined>;
+    fetched: number;
+    failStreak: number;
+    stopped: StopReason | null;
+    /** Number of tickers that were never started. */
+    notStarted: number;
+}
+
+/**
+ * CONCURRENCY workers over one queue. Each worker is its own request lane: after a successful write it waits
+ * REQUEST_SLEEP before it takes the next ticker, so the request rate scales with the worker count the way the sibling
+ * updaters do. With one worker this is exactly the old sequential loop.
+ */
+export async function runPool<R extends PoolResult>(o: PoolOptions<R>): Promise<PoolSummary<R>> {
+    const sleepFn = o.sleep ?? sleep;
+    const now = o.now ?? (() => Date.now());
+    const startedAt = now();
+    const results: Array<R | undefined> = new Array(o.queue.length).fill(undefined);
+    const state = { fetched: 0, failStreak: 0 };
+    let next = 0;
+    let inflight = 0;
+    let stopped: StopReason | null = null;
+    let waiters: Array<() => void> = [];
+    const wakeAll = () => {
+        const w = waiters;
+        waiters = [];
+        for (const f of w) f();
+    };
+    const halt = (reason: StopReason) => {
+        stopped ??= reason;
+        wakeAll();
+    };
+
+    const worker = async (): Promise<void> => {
+        for (;;) {
+            if (stopped || next >= o.queue.length) return;
+            if (o.softDeadlineMs > 0 && now() - startedAt >= o.softDeadlineMs) return halt("deadline");
+            if (state.fetched >= o.maxFetches) return halt("max-fetches");
+            if (state.fetched + inflight >= o.maxFetches) {
+                // Every remaining slot belongs to a ticker in flight: wait to see whether it is written or released.
+                await new Promise<void>((resolve) => waiters.push(resolve));
+                continue;
+            }
+            const index = next++;
+            inflight++;
+            let result: R;
+            try {
+                result = await o.work(o.queue[index], index + 1, { fetched: state.fetched });
+            } catch (e) {
+                result = { kind: "failed", reason: e instanceof Error ? e.message : String(e) } as unknown as R;
+            }
+            inflight--;
+            results[index] = result;
+            if (result.kind === "failed") state.failStreak++;
+            else state.failStreak = 0;
+            if (result.kind === "written") state.fetched++;
+            o.onDone?.(index + 1, o.queue[index], result, state);
+            if (result.kind === "failed" && state.failStreak >= o.rateLimitHits) halt("rate-limit");
+            wakeAll();
+            if (result.kind === "written") await sleepFn(o.requestSleepMs);
+        }
+    };
+
+    const n = Math.max(1, Math.min(o.concurrency, o.queue.length));
+    await Promise.all(Array.from({ length: n }, () => worker()));
+    return {
+        results,
+        fetched: state.fetched,
+        failStreak: state.failStreak,
+        stopped,
+        notStarted: results.filter((r) => r === undefined).length,
+    };
+}
+
 // ---- Main loop ------------------------------------------------------------------
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function pyFixed1(n: number): string {
     return n.toFixed(1);
 }
 
+interface TickerResult extends PoolResult {
+    status: TickerStatus;
+    payload?: Payload | null;
+    elapsed: number;
+    reason?: string;
+    path?: string;
+}
+
 export async function main(): Promise<void> {
+    const runStarted = performance.now();
     mkdirSync(DATA_DIR, { recursive: true });
-    const universe = await loadUniverse();
+    console.log(outputConfigBlock(outputConfigEntries()));
+    const { symbols: universe, source: universeSource } = await loadUniverse();
 
     const { queue, nMissing, nStale, nFresh } = buildWorkQueue(universe);
     const skip = loadSkiplist();
 
-    let fetched = 0;
-    let consecutiveFail = 0;
-    const updatedFiles: string[] = [];
     const noOptionSyms: string[] = [];
     const rel = (p: string) => relative(dirname(DATA_DIR), p);
+    const counts: RunCounts = { new: 0, updated: 0, unchanged: 0, "no-options": 0, failed: 0 };
+    const newTickers: string[] = [];
 
+    if (tickersOverride()) console.log(`${outputLabel("filter")} TICKERS override: ${universe.length} symbols`);
+    console.log(`${outputLabel("universe")} ${universe.length} symbols (${universeSource}), today=${dateIso(todayDate())}, timezone=${MARKET_TZ_NAME}`);
+    console.log(
+        `${outputLabel("queue")} ${queue.length} queued = ${nMissing} missing + ${nStale} stale (oldest first); ${nFresh} fresh skipped; ` +
+            `${Object.keys(skip).length} on no-options skiplist; budget=${cfg.MAX_FETCHES} writes, concurrency=${cfg.CONCURRENCY}`,
+    );
     log(`Smart fetch v11: budget=${cfg.MAX_FETCHES} successful writes, universe=${universe.length}, today=${dateIso(todayDate())}, timezone=${MARKET_TZ_NAME}`);
     log(
         `queue: ${nMissing} missing (coverage) + ${nStale} stale (refresh, oldest-first); ${nFresh} fresh skipped; ` +
@@ -1328,53 +1592,71 @@ export async function main(): Promise<void> {
     );
     if (nMissing === 0 && nStale) log("coverage complete - cycling oldest files for refresh");
 
-    for (let i = 0; i < queue.length; i++) {
-        const position = i + 1;
-        const sym = queue[i];
-        if (fetched >= cfg.MAX_FETCHES) {
-            log(`STOP: reached MAX_FETCHES=${cfg.MAX_FETCHES}; stopping (resume next run)`);
-            break;
-        }
+    const work = async (sym: string, position: number, st: { fetched: number }): Promise<TickerResult> => {
         const path = join(DATA_DIR, `${sym}.json`);
         const phase = position <= nMissing ? "coverage" : "refresh";
         const started = performance.now();
-        log(`FETCH [${position}/${queue.length}] ${phase} ${sym}: fetching option chain (writes=${fetched}/${cfg.MAX_FETCHES}, file=data/options/${sym}.json)`);
-
-        let errored = false;
+        log(`FETCH [${position}/${queue.length}] ${phase} ${sym}: fetching option chain (writes=${st.fetched}/${cfg.MAX_FETCHES}, file=data/options/${sym}.json)`);
+        let previousText: string | null = null;
+        try {
+            previousText = readFileSync(path, "utf8");
+        } catch {
+            previousText = null;
+        }
         let payload: Payload | null;
         try {
             payload = await fetchTicker(sym);
         } catch (e) {
-            payload = null;
-            errored = true;
-            logErr(`ERROR [${position}/${queue.length}] ${phase} ${sym}: ${e instanceof Error ? e.message : e}`);
+            const reason = e instanceof Error ? e.message : String(e);
+            logErr(`ERROR [${position}/${queue.length}] ${phase} ${sym}: ${reason}`);
+            return { kind: "failed", status: "failed", elapsed: (performance.now() - started) / 1000, reason };
         }
-
         const elapsed = (performance.now() - started) / 1000;
-        if (payload === null) {
-            if (errored) {
-                consecutiveFail++;
-                log(`ERROR [${position}/${queue.length}] ${phase} ${sym}: fetch failed after ${pyFixed1(elapsed)}s (fail streak ${consecutiveFail}/${cfg.RATE_LIMIT_HITS})`);
-                if (consecutiveFail >= cfg.RATE_LIMIT_HITS) {
-                    log(`STOP: ${cfg.RATE_LIMIT_HITS} consecutive errors - assuming rate-limited/blocked; will resume next run`);
-                    break;
-                }
-            } else {
-                consecutiveFail = 0;
+        if (payload === null) return { kind: "no-options", status: "no-options", elapsed };
+        // The file is written on every successful fetch even when nothing but `updated` moved: freshness reads it.
+        const text = pyJsonDumps(payload);
+        const status = classifyPayload(previousText, text);
+        writeFileSync(path, text);
+        return { kind: "written", status, payload, elapsed, path };
+    };
+
+    const pool = await runPool<TickerResult>({
+        queue,
+        concurrency: cfg.CONCURRENCY,
+        maxFetches: cfg.MAX_FETCHES,
+        rateLimitHits: cfg.RATE_LIMIT_HITS,
+        requestSleepMs: cfg.REQUEST_SLEEP * 1000,
+        softDeadlineMs: cfg.SOFT_DEADLINE_SECONDS * 1000,
+        work,
+        onDone: (position, sym, r, st) => {
+            const phase = position <= nMissing ? "coverage" : "refresh";
+            counts[r.status]++;
+            if (r.kind === "written") {
+                delete skip[sym];
+                if (r.status === "new") newTickers.push(sym);
+            } else if (r.kind === "no-options") {
                 skip[sym] = dateIso(todayDate());
                 noOptionSyms.push(sym);
-                log(`NO_OPTIONS [${position}/${queue.length}] ${phase} ${sym}: checked in ${pyFixed1(elapsed)}s; added to skiplist (re-check in ${cfg.SKIP_RECHECK_DAYS}d)`);
+                log(`NO_OPTIONS [${position}/${queue.length}] ${phase} ${sym}: checked in ${pyFixed1(r.elapsed)}s; added to skiplist (re-check in ${cfg.SKIP_RECHECK_DAYS}d)`);
+            } else {
+                log(`ERROR [${position}/${queue.length}] ${phase} ${sym}: fetch failed after ${pyFixed1(r.elapsed)}s (fail streak ${st.failStreak}/${cfg.RATE_LIMIT_HITS})`);
             }
-            continue;
-        }
-
-        consecutiveFail = 0;
-        delete skip[sym];
-        writeFileSync(path, pyJsonDumps(payload));
-        fetched++;
-        updatedFiles.push(rel(path));
-        await sleep(cfg.REQUEST_SLEEP * 1000);
+            console.log(outputTickerLine(position, queue.length, sym, r.status, { payload: r.payload, elapsed: r.elapsed, reason: r.reason }));
+        },
+    });
+    if (pool.stopped === "max-fetches") {
+        log(`STOP: reached MAX_FETCHES=${cfg.MAX_FETCHES}; stopping (resume next run)`);
+        console.log(`${outputLabel("stop")} reached MAX_FETCHES=${cfg.MAX_FETCHES}, ${pool.notStarted} ticker(s) left for the next run`);
+    } else if (pool.stopped === "rate-limit") {
+        log(`STOP: ${cfg.RATE_LIMIT_HITS} consecutive errors - assuming rate-limited/blocked; will resume next run`);
+        console.log(`${outputLabel("stop")} ${cfg.RATE_LIMIT_HITS} consecutive errors, assuming rate-limited or blocked, ${pool.notStarted} ticker(s) left for the next run`);
+    } else if (pool.stopped === "deadline") {
+        log(`STOP: soft deadline of ${cfg.SOFT_DEADLINE_SECONDS}s reached`);
+        console.log(`${outputLabel("deadline")} soft deadline of ${Math.round(cfg.SOFT_DEADLINE_SECONDS)}s reached, ${pool.notStarted} ticker(s) not started, the index is still written`);
     }
+    const fetched = pool.fetched;
+    // Queue order whatever the finish order was.
+    const updatedFiles: string[] = pool.results.flatMap((r) => (r?.kind === "written" && r.path ? [rel(r.path)] : []));
 
     log(`skiplist: saving ${Object.keys(skip).length} entries to data/options/index.json (no_options)`);
     log("index: rebuilding data/options/index.json manifest if files/names/skiplist changed");
@@ -1396,6 +1678,20 @@ export async function main(): Promise<void> {
 
     const total = cachedSymbols().length;
     log(`DONE RUN: writes=${fetched}, missing_left_estimate=${Math.max(0, nMissing - fetched)}, no_options_added=${noOptionSyms.length}, total_cached=${total}`);
+    console.log(`${outputDoneLine(counts, (performance.now() - runStarted) / 1000, pool.stopped)} total_cached=${total}`);
+
+    if (newTickers.length) {
+        const line = `NEW TICKERS (${newTickers.length}): ${newTickers.join(", ")}`;
+        console.log(line);
+        const summary = process.env.GITHUB_STEP_SUMMARY;
+        if (summary) {
+            try {
+                appendFileSync(summary, `${line}\n`);
+            } catch (e) {
+                logErr(`could not append to GITHUB_STEP_SUMMARY: ${e instanceof Error ? e.message : e}`);
+            }
+        }
+    }
 
     console.log("\n=== UPDATED FILES (copy & replace these) ===");
     if (updatedFiles.length) {

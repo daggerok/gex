@@ -19,7 +19,7 @@ src/
   components/         TopBar, TabSwitcher, ExpirationChips, ChainTable, AttributionFooter, ...
 scripts/
   options-data.py              yfinance fetch + CBOE 1st-order greeks overlay -> data/options/*.json
-  options-data.ts              Bun port of the same fetcher (raw Yahoo calls, no deps), byte-identical output, see spec-ts-fetcher.md
+  options-data.ts              Bun port of the same fetcher (raw Yahoo calls, no deps), byte-identical output, sibling-style console output, optional `CONCURRENCY` worker pool, see spec-ts-fetcher.md
   options-parity/              temporary py vs ts parity harness, deleted together with options-data.py
   options-local-proxy.ts       local relay (bun)
   options-cloudflare-proxy.js  hosted relay (Worker)
@@ -35,6 +35,10 @@ data/options/*.json            committed cache, about 330 tickers
 5. Switching tabs never refetches the chain. Only the Chart tab fetches new data (OHLC from the Yahoo chart endpoint through the proxy), so it needs a running proxy, there is no cached OHLC
 
 If the app spot is missing, `estimateSpot` derives one from put-call parity on the nearest selected expiration, and the UI marks it as estimated
+
+## Fetcher run (`scripts/options-data.ts`)
+
+Universe, then a queue (missing symbols first, then stale files oldest first, skiplist honored), then `runPool` over the queue with `CONCURRENCY` workers (default 1 = the old sequential loop). Each worker is its own request lane and waits `REQUEST_SLEEP` after its own successful write. The `MAX_FETCHES` write budget is reserved when a ticker starts, so it is never overshot, `RATE_LIMIT_HITS` consecutive failures are counted across all workers and stop new starts, the Yahoo cookie and crumb session is shared with a single in-flight refresh. The per-ticker status line is printed when the ticker finishes, the skiplist and `index.json` are written once after the pool drains. Presentation helpers (`outputConfigBlock`, `outputTickerLine`, `classifyPayload`) never change requests, files or freshness. Details and parity evidence in `spec-ts-fetcher.md`
 
 ## Greeks
 

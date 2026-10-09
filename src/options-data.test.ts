@@ -6,6 +6,13 @@ import { join } from 'node:path';
 import {
   PyInt,
   YahooTicker,
+  classifyPayload,
+  outputConfigBlock,
+  outputConfigEntries,
+  outputDoneLine,
+  outputTickerLine,
+  runPool,
+  type PoolResult,
   applyCboeRows,
   buildQueue,
   canonical,
@@ -494,6 +501,215 @@ describe('YahooTicker over a mocked network', () => {
     const seen = mockYahoo({ '/options/RL': () => ({ status: 429, body: 'Too Many Requests' }) });
     await expect(new YahooTicker('RL').options()).rejects.toThrow('Too Many Requests');
     expect(seen.length).toBe(2);
+  });
+});
+
+describe('console output', () => {
+  test('classifyPayload ignores the updated stamp and key order', () => {
+    const a = JSON.stringify({ symbol: 'SPY', updated: '2026-10-08T10:00:00-04:00', quotes: [{ strike: 1, bid: 2 }] });
+    const sameButNewStamp = JSON.stringify({ quotes: [{ bid: 2, strike: 1 }], updated: '2026-10-09T10:00:00-04:00', symbol: 'SPY' });
+    const changed = JSON.stringify({ symbol: 'SPY', updated: '2026-10-08T10:00:00-04:00', quotes: [{ strike: 1, bid: 3 }] });
+    expect(classifyPayload(null, a)).toBe('new');
+    expect(classifyPayload(a, sameButNewStamp)).toBe('unchanged');
+    expect(classifyPayload(a, changed)).toBe('updated');
+    expect(classifyPayload('not json', a)).toBe('updated');
+    // only the top-level key is ignored
+    expect(classifyPayload('{"a":{"updated":1}}', '{"a":{"updated":2}}')).toBe('updated');
+  });
+
+  test('config block lists every knob and redacts secrets', () => {
+    const entries = outputConfigEntries();
+    const names = entries.map(([k]) => k);
+    for (const k of ['MAX_FETCHES', 'REQUEST_SLEEP', 'CONCURRENCY', 'SOFT_DEADLINE_SECONDS', 'RATE_LIMIT_HITS', 'TICKERS', 'VERBOSE']) expect(names).toContain(k);
+    const block = outputConfigBlock([...entries, ['API_TOKEN', 'hunter2'], ['SEC_UA', 'me me@x.y'], ['COOKIE', 'abc']]);
+    expect(block.startsWith('[ config   ] GEX updater:\n')).toBe(true);
+    expect(block).toContain('              API_TOKEN=<redacted>');
+    expect(block).toContain('              SEC_UA=<redacted>');
+    expect(block).toContain('              COOKIE=<redacted>');
+    expect(block).not.toContain('hunter2');
+    expect(block).toContain('              CONCURRENCY=1');
+  });
+
+  test('ticker and done lines follow the sibling layout', () => {
+    expect(outputTickerLine(3, 25, 'SPY', 'unchanged')).toBe('[  3/25  ] SPY   unchanged');
+    expect(outputTickerLine(3, 25, 'XYZ', 'failed', { reason: 'boom\nline', elapsed: 1.26 })).toBe('[  3/25  ] XYZ   failed    in=1.3s reason=boom line');
+    const counts = { new: 1, updated: 2, unchanged: 3, 'no-options': 4, failed: 5 };
+    expect(outputDoneLine(counts, 12.34, null)).toBe('[ done     ] new=1 updated=2 unchanged=3 no-options=4 failed=5 elapsed=12.3s');
+    expect(outputDoneLine(counts, 1, 'rate-limit')).toContain(' stopped=rate-limit');
+  });
+});
+
+describe('worker pool', () => {
+  type R = PoolResult & { sym: string };
+  const base = { rateLimitHits: 3, requestSleepMs: 0, softDeadlineMs: 0, sleep: async () => {} };
+  const syms = (n: number) => Array.from({ length: n }, (_, i) => `S${i + 1}`);
+  /** Work that finishes after a macrotask, tracking how many run at once. */
+  function tracker(kind: (sym: string) => R['kind'] = () => 'written') {
+    const t = { started: [] as string[], inflight: 0, peak: 0 };
+    const work = async (sym: string): Promise<R> => {
+      t.started.push(sym);
+      t.peak = Math.max(t.peak, ++t.inflight);
+      await new Promise((r) => setTimeout(r, 1));
+      t.inflight--;
+      return { kind: kind(sym), sym };
+    };
+    return { t, work };
+  }
+
+  test('CONCURRENCY=1 is the old sequential loop, N runs N at once', async () => {
+    const one = tracker();
+    const r1 = await runPool<R>({ ...base, queue: syms(5), concurrency: 1, maxFetches: 100, work: one.work });
+    expect(one.t.peak).toBe(1);
+    expect(one.t.started).toEqual(syms(5));
+    expect(r1.fetched).toBe(5);
+    expect(r1.stopped).toBeNull();
+    const three = tracker();
+    await runPool<R>({ ...base, queue: syms(9), concurrency: 3, maxFetches: 100, work: three.work });
+    expect(three.t.peak).toBe(3);
+  });
+
+  test('MAX_FETCHES is never overshot, not even by workers in flight', async () => {
+    const { t, work } = tracker();
+    const r = await runPool<R>({ ...base, queue: syms(20), concurrency: 6, maxFetches: 4, work });
+    expect(r.fetched).toBe(4);
+    expect(t.started.length).toBe(4);
+    expect(r.stopped).toBe('max-fetches');
+    expect(r.notStarted).toBe(16);
+  });
+
+  test('a slot freed by a no-options ticker is reused for the budget', async () => {
+    const { t, work } = tracker((s) => (s === 'S1' || s === 'S2' ? 'no-options' : 'written'));
+    const r = await runPool<R>({ ...base, queue: syms(10), concurrency: 3, maxFetches: 3, work });
+    expect(r.fetched).toBe(3);
+    expect(r.results.filter((x) => x?.kind === 'written').length).toBe(3);
+    expect(t.started.length).toBeLessThanOrEqual(5);
+  });
+
+  test('MAX_FETCHES=0 starts nothing', async () => {
+    const { t, work } = tracker();
+    const r = await runPool<R>({ ...base, queue: syms(3), concurrency: 2, maxFetches: 0, work });
+    expect(t.started).toEqual([]);
+    expect(r.stopped).toBe('max-fetches');
+  });
+
+  test('consecutive failures are counted across workers and stop all of them', async () => {
+    const { t, work } = tracker(() => 'failed');
+    const r = await runPool<R>({ ...base, queue: syms(30), concurrency: 3, maxFetches: 100, work });
+    expect(r.stopped).toBe('rate-limit');
+    // workers that failed before the streak reached 3 had already taken one more ticker each (at most concurrency - 1)
+    expect(t.started.length).toBeGreaterThanOrEqual(3);
+    expect(t.started.length).toBeLessThanOrEqual(5);
+    expect(r.notStarted).toBe(30 - t.started.length);
+  });
+
+  test('a success resets the failure streak, a thrown error is a failure', async () => {
+    const kinds: Record<string, R['kind']> = { S1: 'failed', S2: 'failed', S3: 'written', S4: 'failed', S5: 'failed', S6: 'written' };
+    const ok = await runPool<R>({ ...base, queue: syms(6), concurrency: 1, maxFetches: 100, work: async (sym) => ({ kind: kinds[sym], sym }) });
+    expect(ok.stopped).toBeNull();
+    expect(ok.fetched).toBe(2);
+    const thrown = await runPool<R>({
+      ...base,
+      queue: syms(10),
+      concurrency: 1,
+      maxFetches: 100,
+      work: async () => {
+        throw new Error('network down');
+      },
+    });
+    expect(thrown.stopped).toBe('rate-limit');
+    expect(thrown.results.filter(Boolean).length).toBe(3);
+  });
+
+  test('results follow queue order while onDone follows finish order', async () => {
+    const gates = new Map<string, () => void>();
+    const done: string[] = [];
+    const run = runPool<R>({
+      ...base,
+      queue: ['A', 'B', 'C'],
+      concurrency: 3,
+      maxFetches: 100,
+      work: (sym) => new Promise<R>((resolve) => gates.set(sym, () => resolve({ kind: 'written', sym }))),
+      onDone: (_p, sym) => void done.push(sym),
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    gates.get('C')!();
+    gates.get('A')!();
+    gates.get('B')!();
+    const r = await run;
+    expect(done).toEqual(['C', 'A', 'B']);
+    expect(r.results.map((x) => x?.sym)).toEqual(['A', 'B', 'C']);
+  });
+
+  test('each worker waits REQUEST_SLEEP after its own successful write only', async () => {
+    const sleeps: number[] = [];
+    await runPool<R>({
+      ...base,
+      queue: syms(6),
+      concurrency: 2,
+      maxFetches: 100,
+      requestSleepMs: 600,
+      sleep: async (ms) => void sleeps.push(ms),
+      work: async (sym) => ({ kind: sym === 'S2' ? 'no-options' : 'written', sym }),
+    });
+    expect(sleeps).toEqual([600, 600, 600, 600, 600]);
+  });
+
+  test('soft deadline stops new starts only', async () => {
+    let clock = 0;
+    const started: string[] = [];
+    const r = await runPool<R>({
+      ...base,
+      queue: syms(6),
+      concurrency: 1,
+      maxFetches: 100,
+      softDeadlineMs: 2500,
+      now: () => clock,
+      work: async (sym) => {
+        started.push(sym);
+        clock += 1000;
+        return { kind: 'written', sym };
+      },
+    });
+    expect(started).toEqual(['S1', 'S2', 'S3']);
+    expect(r.stopped).toBe('deadline');
+  });
+});
+
+describe('shared Yahoo session', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    resetYahooSession();
+  });
+
+  test('parallel first requests share one cookie and crumb exchange', async () => {
+    const crumbCalls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      await new Promise((r) => setTimeout(r, 2));
+      if (url.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=x; Path=/' } });
+      if (url.includes('getcrumb')) {
+        crumbCalls.push(url);
+        return new Response('CRUMB');
+      }
+      return new Response(JSON.stringify({ optionChain: { result: [], error: null } }));
+    }) as typeof fetch;
+    await Promise.all(['A', 'B', 'C', 'D'].map((s) => new YahooTicker(s).options()));
+    expect(crumbCalls.length).toBe(1);
+  });
+
+  test('parallel HTTP 401 retries refresh the session once', async () => {
+    let crumbs = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      await new Promise((r) => setTimeout(r, 2));
+      if (url.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=x; Path=/' } });
+      if (url.includes('getcrumb')) return new Response(`CRUMB${++crumbs}`);
+      if (url.includes('crumb=CRUMB1')) return new Response('{}', { status: 401 });
+      return new Response(JSON.stringify({ optionChain: { result: [], error: null } }));
+    }) as typeof fetch;
+    await Promise.all(['A', 'B', 'C'].map((s) => new YahooTicker(s).options()));
+    expect(crumbs).toBe(2);
   });
 });
 
