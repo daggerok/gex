@@ -45,6 +45,12 @@ Scripts are executable and run directly: `./scripts/options-data.py` (a `uv run 
    TICKERS=AAPL,MSFT MAX_FETCHES=2 ./scripts/options-data.py
    ```
 
+3. **Bun fetcher with parallel workers** (`scripts/options-data.ts`, same env vars as the Python one):
+   ```bash
+   CONCURRENCY=3 TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
+   ```
+   `CONCURRENCY` is an integer >= 1 (default 1), each worker waits `REQUEST_SLEEP` after its own write. `SOFT_DEADLINE_SECONDS` (default 0, off) stops starting new tickers after that many seconds. `VERBOSE=1` also prints the old timestamped progress lines. The run prints a `[ config   ]` block, one status line per ticker (`new`, `updated`, `unchanged`, `no-options`, `failed`) and a `[ done     ]` summary
+
 ## Greeks architecture
 - **1st order:** Loaded from CBOE (in the fetch script) or computed in the UI.
 - **2nd and 3rd order + λ:** Computed **only** on the client side in `src/greeks.ts`.
