@@ -46,7 +46,7 @@ if [ "$mode" = live ]; then
   seed "$d"
   export TICKERS="${TICKERS:-SPY AAPL BRK-B SPX QQQ ZZZZNOPE}" MAX_FETCHES="${MAX_FETCHES:-10}" MAX_EXPIRATIONS="${MAX_EXPIRATIONS:-15}" REQUEST_SLEEP=0
   (cd "$d/py" && py scripts/options-data.py > "$d/py.log" 2>&1)
-  (cd "$d/ts" && bun scripts/options-data.ts > "$d/ts.log" 2>&1)
+  (cd "$d/ts" && VERBOSE=1 bun scripts/options-data.ts > "$d/ts.log" 2>&1)
   bun "$HERE/compare.ts" "$d/py/data/options" "$d/ts/data/options" | grep -v '^EXACT'
   exit "${PIPESTATUS[0]}"
 fi
@@ -67,7 +67,7 @@ if [ "$mode" = record ]; then
 fi
 
 [ "$mode" = replay ] || { echo "usage: run.sh live | record <scenario> | replay <scenario>"; exit 2; }
-(cd "$d/ts" && REQLOG="$d/ts.reqlog" bun --preload "$HERE/net-preload.ts" scripts/options-data.ts > "$d/ts.log" 2>&1)
+(cd "$d/ts" && VERBOSE=1 REQLOG="$d/ts.reqlog" bun --preload "$HERE/net-preload.ts" scripts/options-data.ts > "$d/ts.log" 2>&1)
 (cd "$d/py" && REQLOG="$d/py.reqlog" py "$HERE/net_harness.py" scripts/options-data.py > "$d/py.log" 2>&1)
 
 echo "== request sequence ($(grep -c TZLOOKUP "$d/py.reqlog") yfinance tz lookups ignored)"
@@ -75,7 +75,8 @@ grep -v TZLOOKUP "$d/py.reqlog" > "$d/py.reqlog.f"
 if diff "$d/py.reqlog.f" "$d/ts.reqlog" > "$d/reqdiff.txt"; then echo "IDENTICAL ($(grep -c . "$d/ts.reqlog") requests)"; else echo "DIFFERS"; head -20 "$d/reqdiff.txt"; fi
 
 echo "== log lines (timestamps and durations masked)"
-for k in py ts; do sed -E 's/^\[[^]]*\] //; s/[0-9]+\.[0-9]+s/Ns/g' "$d/$k.log" > "$d/$k.norm"; done
+# the ts log also carries the sibling-style "[ label  ]" lines and "NEW TICKERS", python has none of them
+for k in py ts; do grep -Ev '^(\[ |              [A-Z_]+=|NEW TICKERS)' "$d/$k.log" | sed -E 's/^\[[^]]*\] //; s/[0-9]+\.[0-9]+s/Ns/g' > "$d/$k.norm"; done
 diff "$d/py.norm" "$d/ts.norm" | head -20
 
 echo "== output files"
