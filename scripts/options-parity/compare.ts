@@ -5,6 +5,8 @@
 //             style) but some values differ, drift is quantified per numeric quote field
 // DIFFERENT   anything else, the first differing position is printed
 // Exit code 1 when any file is DIFFERENT or missing. Temporary tool: delete together with options-data.py.
+/// <reference types="bun" />
+/// <reference types="node" />
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 

@@ -37,6 +37,9 @@
  * =============================================================================
  */
 
+/// <reference types="bun" />
+/// <reference types="node" />
+
 const PORT = Number(process.env.PORT ?? 8787);
 
 // ─── Yahoo session state (crumb + cookies), refreshed periodically ───────────

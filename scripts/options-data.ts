@@ -68,6 +68,8 @@
  * =============================================================================
  */
 
+/// <reference types="bun" />
+/// <reference types="node" />
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
@@ -298,10 +300,10 @@ function logErr(message: string): void {
 
 // ---- Configuration -----------------------------------------------------------
 
-const REPO_ROOT = dirname(import.meta.dir);
+const REPO_ROOT = dirname(import.meta.dirname);
 export const DATA_DIR = join(REPO_ROOT, "data", "options");
 export const INDEX_PATH = join(DATA_DIR, "index.json");
-const LEGACY_SKIP_PATH = join(import.meta.dir, "no_options.json");
+const LEGACY_SKIP_PATH = join(import.meta.dirname, "no_options.json");
 
 const cfg = {
     MAX_FETCHES: envInt("MAX_FETCHES", "500"),

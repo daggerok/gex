@@ -2,6 +2,8 @@
 // is blocked for scripted clients), Yahoo and Cboe error paths, and odd-value chains.
 //   bun scripts/options-parity/make-synth.ts <out.json>
 // Temporary tool: delete together with options-data.py.
+/// <reference types="bun" />
+/// <reference types="node" />
 import { writeFileSync } from "node:fs";
 
 const out: Record<string, { status: number; b64: string; enc: string }> = {};

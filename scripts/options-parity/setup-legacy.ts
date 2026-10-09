@@ -1,6 +1,8 @@
 // Seeds one working copy (arg: its root dir) for the "legacy" parity scenario: legacy index.json shape
 // (files as a map plus `generated`), a legacy scripts/no_options.json, and cache files with a missing,
 // empty, naive, offset or date-only `updated`, so the oldest-first ordering and the mtime fallback are exercised.
+/// <reference types="bun" />
+/// <reference types="node" />
 import { readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 

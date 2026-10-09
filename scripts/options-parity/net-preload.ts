@@ -3,6 +3,8 @@
 //   default   serve FIXTURES, a request without a fixture throws and is logged as MISSING
 //   SYNTH     optional JSON of synthetic fixtures consulted before the network while recording
 //   REQLOG    append every normalized request key, compared against net_harness.py (same keys)
+/// <reference types="bun" />
+/// <reference types="node" />
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 type Fixture = { status: number; b64: string; enc: string };
