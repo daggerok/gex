@@ -195,7 +195,7 @@ export const translations: Record<Language, Record<string, string>> = {
             '3. Run the proxy: bun ./scripts/options-local-proxy.ts\n' +
             '4. Set Proxy base URL in Settings to http://localhost:8787\n\n' +
             'Or deploy scripts/options-cloudflare-proxy.js and set the Worker URL instead.\n\n' +
-            'See docs/README.en.md for detailed instructions.',
+            'See .claude/docs/README.en.md for detailed instructions.',
         'error.friendly.networkCors':
             'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use CACHE (static data).',
         'error.friendly.networkGeneric':
@@ -517,7 +517,7 @@ export const translations: Record<Language, Record<string, string>> = {
             '3. Запусти прокси: bun ./scripts/options-local-proxy.ts\n' +
             '4. Укажи Proxy base URL в настройках: http://localhost:8787\n\n' +
             'Или задеплой scripts/options-cloudflare-proxy.js и укажи URL Worker.\n\n' +
-            'Подробности — в docs/README.en.md.',
+            'Подробности — в .claude/docs/README.en.md.',
         'error.friendly.networkCors':
             'Ошибка сети/CORS при обращении к прокси. Попробуй другой CORS-прокси в настройках или используй CACHE (статичные данные).',
         'error.friendly.networkGeneric':

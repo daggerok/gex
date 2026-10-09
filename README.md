@@ -10,5 +10,5 @@ A single-page **options board** with English / Russian interface: enter a ticker
 
 | Document / Документ | English | Русский |
 |---|---|---|
-| Overview & usage | [README](docs/README.en.md) | [README](docs/README.ru.md) |
-| Developer guide | [DEVELOPMENT](docs/DEVELOPMENT.en.md) | [DEVELOPMENT](docs/DEVELOPMENT.ru.md) |
+| Overview & usage | [README](.claude/docs/README.en.md) | [README](.claude/docs/README.ru.md) |
+| Developer guide | [DEVELOPMENT](.claude/docs/DEVELOPMENT.en.md) | [DEVELOPMENT](.claude/docs/DEVELOPMENT.ru.md) |
