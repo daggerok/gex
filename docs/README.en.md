@@ -173,7 +173,7 @@ For a deployable proxy that doesn't require local setup:
 
 These files are optional infrastructure outside the core app source:
 
-- `scripts/options-data.ts` — smart Yahoo fetcher. Builds/refreshes `data/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/options/index.json` with `{ files, count, names, no_options }`.
+- `scripts/options-data.ts` — smart Yahoo fetcher. Builds/refreshes `data/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/options/index.json` with `{ files, count, names, no_options }`. After the options pass it also writes `data/charts/<SYM>.json` (1Y of daily candles, ~12 KB per ticker, SPY, SPX, QQQ, NDX first, `CHART_MAX_FETCHES` per run), so the Chart tab works from the CACHE provider without a proxy.
 - `.github/workflows/update-data.yml` — scheduled/manual data refresh workflow.
 - `scripts/options-local-proxy.ts` — local **Bun** proxy serving:
   - `/api/options` — Yahoo optionChain with crumb/cookie handling.
