@@ -19,7 +19,7 @@ import { DEFAULT_CHART_INTERVAL, fetchOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
 import type { GexLevels, OhlcBar, Settings } from '../types';
 import { fmt } from '../utils';
-import { CHART_RANGES, initialVisibleRange, type ChartRange } from './chart-range';
+import { CHART_RANGES, LOAD_RANGE, visibleRangeFor, type ChartRange } from './chart-range';
 
 // ============================================================================
 // CHART VIEW (Tab 3) - plan section 8.2 (`agentic-workspace docs/repos/gex/spec-gex-app.md`). Daily candles of the loaded symbol (OHLC from the companion
@@ -36,6 +36,9 @@ import { CHART_RANGES, initialVisibleRange, type ChartRange } from './chart-rang
  * off-scale (still listed in the legend; drag the price axis to see it).
  */
 const LEVEL_AUTOSCALE_PAD_PCT = 0.25;
+
+/** Empty share of the pane above the highest and below the lowest value on the price scale (library default is 0.2 / 0.1). */
+const PRICE_SCALE_MARGINS = { top: 0.04, bottom: 0.04 };
 
 /** Price-line order and labels match the GEX tab's Key Levels card. */
 const LEVEL_LINES: Array<{ key: Exclude<GexLevelKey, 'spot'>; label: string; secondary?: boolean }> = [
@@ -111,14 +114,14 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     // Level prices the autoscale provider may pull into view (read lazily).
     const levelPricesRef = useRef<number[]>([]);
 
-    // ---- OHLC fetch (symbol + range; interval fixed at 1d for v1) ----
-    const fetchKey = `${symbol}|${range}|${settings.proxyBase}`;
+    // ---- OHLC fetch (symbol; always LOAD_RANGE of daily bars, the range buttons only change the visible part) ----
+    const fetchKey = `${symbol}|${LOAD_RANGE}|${settings.proxyBase}`;
     const [state, setState] = useState<FetchState>({ key: '', status: 'loading' });
     useEffect(() => {
         if (!symbol) return;
         const ac = new AbortController();
         setState({ key: fetchKey, status: 'loading' });
-        fetchOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range, interval: DEFAULT_CHART_INTERVAL })
+        fetchOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range: LOAD_RANGE, interval: DEFAULT_CHART_INTERVAL })
             .then((bars) => { if (!ac.signal.aborted) setState({ key: fetchKey, status: 'ok', bars }); })
             .catch((e: unknown) => {
                 if (ac.signal.aborted) return;
@@ -143,7 +146,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             autoSize: true,
             layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#94a3b8', fontSize: 11 },
             grid: { vertLines: { color: 'rgba(148, 163, 184, 0.15)' }, horzLines: { color: 'rgba(148, 163, 184, 0.15)' } },
-            rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.4)' },
+            rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.4)', scaleMargins: PRICE_SCALE_MARGINS },
             timeScale: { borderColor: 'rgba(148, 163, 184, 0.4)' },
         });
         const series = chart.addSeries(CandlestickSeries, {
@@ -187,8 +190,13 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close,
         }));
         series.setData(data);
-        if (data.length) chartRef.current?.timeScale().setVisibleLogicalRange(initialVisibleRange(data.length));
     }, [bars, hasSymbol]);
+
+    // ---- Visible part: the chosen range of the loaded history (new data or a range click resets pan and zoom) ----
+    useEffect(() => {
+        if (!bars?.length) return;
+        chartRef.current?.timeScale().setVisibleLogicalRange(visibleRangeFor(bars.map((b) => b.time), range));
+    }, [bars, range, hasSymbol]);
 
     // ---- Level price lines: remove the previous set, then draw the new one ----
     useEffect(() => {
