@@ -14,7 +14,10 @@ import {
   runPool,
   type PoolResult,
   applyCboeRows,
+  buildChartFile,
+  buildChartQueue,
   buildQueue,
+  yahooChartCandidates,
   PRIORITY_SYMBOLS,
   canonical,
   cboeSymbolCandidates,
@@ -736,5 +739,56 @@ describe('repo wiring', () => {
     const src = readFileSync(join(root, 'scripts/options-data.ts'), 'utf8');
     expect(src.startsWith('#!/usr/bin/env bun\n')).toBe(true);
     expect(src).toContain('"data", "options"');
+  });
+});
+
+describe('chart cache', () => {
+  test('buildChartFile keeps complete OHLC rows only, rounds prices and keeps a missing volume as null', () => {
+    const body = {
+      chart: {
+        result: [{
+          meta: { gmtoffset: -14400 },
+          timestamp: [1, 2, 3, 4],
+          indicators: { quote: [{
+            open: [1.123456, null, 3, 4], high: [2, 2, 3, 4], low: [1, 1, 3, 4], close: [1.5, 1.5, 3, 4], volume: [10, 20, null, 40],
+          }] },
+        }],
+        error: null,
+      },
+    };
+    expect(buildChartFile('SPY', 'u', body)).toEqual({
+      symbol: 'SPY', updated: 'u', gmtoffset: -14400,
+      timestamp: [1, 3, 4], open: [1.1235, 3, 4], high: [2, 3, 4], low: [1, 3, 4], close: [1.5, 3, 4], volume: [10, null, 40],
+    });
+  });
+
+  test('buildChartFile returns null without a result or without complete rows', () => {
+    expect(buildChartFile('X', 'u', { chart: { result: null, error: { code: 'Not Found' } } })).toBeNull();
+    expect(buildChartFile('X', 'u', { chart: { result: [{ timestamp: [1], indicators: { quote: [{ open: [null], high: [1], low: [1], close: [1] }] } }] } })).toBeNull();
+    expect(buildChartFile('X', 'u', null)).toBeNull();
+  });
+
+  test('cash indices are asked in caret form first', () => {
+    expect(yahooChartCandidates('SPX')).toEqual(['^SPX', 'SPX']);
+    expect(yahooChartCandidates('qqq')).toEqual(['QQQ']);
+  });
+
+  test('chart queue: priority, then no chart file, then stale oldest first, fresh skipped', () => {
+    const updated: Record<string, string> = { OLD: '2026-10-01', NEWER: '2026-10-05' };
+    const q = buildChartQueue(['AAPL', 'MSFT', 'NEWER', 'OLD', 'FRESH'], {
+      cached: ['AAPL', 'MSFT', 'NEWER', 'OLD', 'FRESH', 'SPY'],
+      explicit: false,
+      hasChart: (s) => s in updated || s === 'FRESH',
+      isFresh: (s) => s === 'FRESH',
+      updatedOf: (s) => updated[s] ?? '',
+    });
+    expect(q).toEqual(['SPY', 'SPX', 'QQQ', 'NDX', 'AAPL', 'MSFT', 'OLD', 'NEWER']);
+  });
+
+  test('chart queue with an explicit list stays inside it and still puts priority symbols first', () => {
+    const q = buildChartQueue(['AAPL', 'QQQ'], {
+      cached: ['AAPL', 'QQQ', 'OTHER'], explicit: true, hasChart: () => false, isFresh: () => false, updatedOf: () => '',
+    });
+    expect(q).toEqual(['QQQ', 'AAPL']);
   });
 });

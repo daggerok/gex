@@ -15,7 +15,7 @@ import {
 } from 'lightweight-charts';
 import { GEX_LEVEL_COLORS, type GexLevelKey } from '../gex-colors';
 import { useI18n } from '../i18n';
-import { DEFAULT_CHART_INTERVAL, fetchOhlc } from '../providers/chart';
+import { DEFAULT_CHART_INTERVAL, loadOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
 import type { GexLevels, OhlcBar, Settings } from '../types';
 import { fmt } from '../utils';
@@ -115,13 +115,13 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     const levelPricesRef = useRef<number[]>([]);
 
     // ---- OHLC fetch (symbol; always LOAD_RANGE of daily bars, the range buttons only change the visible part) ----
-    const fetchKey = `${symbol}|${LOAD_RANGE}|${settings.proxyBase}`;
+    const fetchKey = `${symbol}|${LOAD_RANGE}|${settings.proxyBase}|${settings.providerId}`;
     const [state, setState] = useState<FetchState>({ key: '', status: 'loading' });
     useEffect(() => {
         if (!symbol) return;
         const ac = new AbortController();
         setState({ key: fetchKey, status: 'loading' });
-        fetchOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range: LOAD_RANGE, interval: DEFAULT_CHART_INTERVAL })
+        loadOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range: LOAD_RANGE, interval: DEFAULT_CHART_INTERVAL }, settings.providerId === 'static')
             .then((bars) => { if (!ac.signal.aborted) setState({ key: fetchKey, status: 'ok', bars }); })
             .catch((e: unknown) => {
                 if (ac.signal.aborted) return;

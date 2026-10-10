@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { fetchOhlc, parseYahooChart, yahooChartSymbol } from './chart';
+import { fetchCachedOhlc, fetchOhlc, loadOhlc, parseYahooChart, yahooChartSymbol } from './chart';
 
 // Trimmed from a real response of
 //   GET https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1mo
@@ -112,4 +112,69 @@ describe('fetchOhlc', () => {
         await expect(fetchOhlc('SPY', ctx, { range: '7mo' })).rejects.toThrow('unsupported range: 7mo');
         await expect(fetchOhlc('SPY', { proxyBase: '' })).rejects.toThrow('Proxy base URL');
     });
+});
+
+describe('chart cache file and source order', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = realFetch; });
+  // what scripts/options-data.ts writes to data/charts/SPY.json
+  const FILE = {
+    symbol: 'SPY', updated: '2026-10-10T04:00:00-04:00', gmtoffset: -14400,
+    timestamp: [1788442200, 1788528600], open: [767.9, 772.01], high: [774.03, 772.87], low: [766.5, 768.1],
+    close: [773.17, 770.19], volume: [43531600, null],
+  };
+  const calls: string[] = [];
+  const mock = (cacheStatus: number) => {
+    calls.length = 0;
+    globalThis.fetch = (async (url: string) => {
+      calls.push(url);
+      if (url.startsWith('data/charts/')) {
+        return cacheStatus === 200 ? new Response(JSON.stringify(FILE)) : new Response('', { status: cacheStatus });
+      }
+      return new Response(JSON.stringify(SPY_BODY));
+    }) as unknown as typeof fetch;
+  };
+
+  test('fetchCachedOhlc rebuilds bars through parseYahooChart (daily bars land on the exchange-local date)', async () => {
+    mock(200);
+    const bars = await fetchCachedOhlc('spy');
+    expect(calls).toEqual(['data/charts/SPY.json']);
+    expect(bars).toEqual([
+      { time: 1788393600, open: 767.9, high: 774.03, low: 766.5, close: 773.17, volume: 43531600 },
+      { time: 1788480000, open: 772.01, high: 772.87, low: 768.1, close: 770.19, volume: null },
+    ]);
+  });
+
+  test('CACHE provider reads the file first and never touches the proxy when it exists', async () => {
+    mock(200);
+    await loadOhlc('SPY', { proxyBase: 'http://localhost:8787' }, {}, true);
+    expect(calls).toEqual(['data/charts/SPY.json']);
+  });
+
+  test('CACHE provider falls back to the proxy for a ticker outside the cache', async () => {
+    mock(404);
+    const bars = await loadOhlc('SPY', { proxyBase: 'http://localhost:8787' }, {}, true);
+    expect(calls[0]).toBe('data/charts/SPY.json');
+    expect(calls[1]).toContain('http://localhost:8787/api/chart');
+    expect(bars.length).toBe(3);
+  });
+
+  test('a live provider asks the proxy first and uses the cache when the proxy fails', async () => {
+    calls.length = 0;
+    globalThis.fetch = (async (url: string) => {
+      calls.push(url);
+      if (url.startsWith('data/charts/')) return new Response(JSON.stringify(FILE));
+      throw new TypeError('connection refused');
+    }) as unknown as typeof fetch;
+    const bars = await loadOhlc('SPY', { proxyBase: 'http://localhost:8787' }, {}, false);
+    expect(calls[0]).toContain('/api/chart');
+    expect(calls[1]).toBe('data/charts/SPY.json');
+    expect(bars.length).toBe(2);
+  });
+
+  test('without a proxy only the cache is tried and its error is reported', async () => {
+    mock(404);
+    await expect(loadOhlc('SPY', { proxyBase: '' }, {}, false)).rejects.toThrow('not in the static cache');
+    expect(calls).toEqual(['data/charts/SPY.json']);
+  });
 });

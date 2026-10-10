@@ -14,6 +14,9 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t5 - Chart cache: after the options pass every cached ticker (SPY, SPX, QQQ, NDX first) gets
+ *        data/charts/<SYM>.json with 1Y of daily bars from Yahoo v8 chart, so the Chart tab works
+ *        without a proxy. Missing files first, then oldest, at most CHART_MAX_FETCHES per run.
  *   t4 - SPY, SPX, QQQ and NDX are always queued first (PRIORITY_SYMBOLS, unless fresh), before the
  *        coverage and refresh phases; with an explicit TICKERS list only those in the list.
  *   t3 - Python fetcher removed. Cboe requests share one throttle (CBOE_MIN_INTERVAL), a 429 pauses
@@ -78,6 +81,8 @@
  *                                        (counts toward RATE_LIMIT_HITS and its file is NOT overwritten)
  *   SYMBOL_ALIASES     default ""        "SCREENER=YAHOO" pairs, comma separated
  *   TIMEZONE           default America/New_York   market tz for today / working days
+ *   CHART_CACHE        default 1         also write data/charts/<SYM>.json (1Y of daily bars) after the options pass
+ *   CHART_MAX_FETCHES  default 500       chart files written per run (missing first, then oldest)
  *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
  *   SOFT_DEADLINE_SECONDS default 0      stop starting new tickers after N seconds (0 = off)
  *   VERBOSE            default off       also print the legacy timestamped progress lines
@@ -355,6 +360,8 @@ const cfg = {
     CBOE_BACKOFF: envNonNegativeFloat("CBOE_BACKOFF", "30"),
     CBOE_RETRIES: envInt("CBOE_RETRIES", "3"),
     CONCURRENCY: envPositiveInt("CONCURRENCY", "1"),
+    CHART_MAX_FETCHES: envInt("CHART_MAX_FETCHES", "500"),
+    CHART_CACHE: !["0", "false", "no", "off"].includes((process.env.CHART_CACHE ?? "1").toLowerCase()),
     SOFT_DEADLINE_SECONDS: envNonNegativeFloat("SOFT_DEADLINE_SECONDS", "0"),
 };
 
@@ -1420,6 +1427,8 @@ export function outputConfigEntries(
         ["MAX_FETCHES", String(c.MAX_FETCHES)],
         ["REQUEST_SLEEP", pyFloatRepr(c.REQUEST_SLEEP)],
         ["CONCURRENCY", String(c.CONCURRENCY)],
+        ["CHART_CACHE", String(c.CHART_CACHE)],
+        ["CHART_MAX_FETCHES", String(c.CHART_MAX_FETCHES)],
         ["SOFT_DEADLINE_SECONDS", pyFloatRepr(c.SOFT_DEADLINE_SECONDS)],
         ["RATE_LIMIT_HITS", String(c.RATE_LIMIT_HITS)],
         ["MAX_EXPIRATIONS", String(c.MAX_EXPIRATIONS)],
@@ -1627,6 +1636,149 @@ interface TickerResult extends PoolResult {
     path?: string;
 }
 
+// ---- Chart cache: data/charts/<SYM>.json ----------------------------------------------
+
+export const CHARTS_DIR = join(REPO_ROOT, "data", "charts");
+const CHART_RANGE = "1y";
+
+/** Yahoo symbols to try for a chart: cash indices only exist in caret form (^SPX). */
+export function yahooChartCandidates(symbol: string): string[] {
+    const s = symbol.toUpperCase();
+    return CBOE_INDEX_SET.has(s) ? [`^${s}`, s] : [s];
+}
+
+export interface ChartFile {
+    symbol: string;
+    updated: string;
+    /** Exchange offset in seconds, the app needs it to put daily bars on the exchange-local date. */
+    gmtoffset: number;
+    timestamp: number[];
+    open: number[];
+    high: number[];
+    low: number[];
+    close: number[];
+    volume: Array<number | null>;
+}
+
+const round4 = (n: number) => Math.round(n * 10000) / 10000;
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Compact chart file from a Yahoo v8 chart body, or null when it has no complete OHLC rows. */
+export function buildChartFile(symbol: string, updated: string, body: unknown): ChartFile | null {
+    const result = (body as { chart?: { result?: unknown[] | null; error?: unknown } } | null)?.chart?.result?.[0] as
+        | { meta?: { gmtoffset?: unknown }; timestamp?: unknown[]; indicators?: { quote?: Array<Record<string, unknown[]>> } }
+        | undefined;
+    if (!result) return null;
+    const q = result.indicators?.quote?.[0] ?? {};
+    const gmtoffset = result.meta?.gmtoffset;
+    const out: ChartFile = {
+        symbol,
+        updated,
+        gmtoffset: finite(gmtoffset) ? gmtoffset : 0,
+        timestamp: [],
+        open: [],
+        high: [],
+        low: [],
+        close: [],
+        volume: [],
+    };
+    (result.timestamp ?? []).forEach((ts, i) => {
+        const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i], v = q.volume?.[i];
+        if (!finite(ts) || !finite(o) || !finite(h) || !finite(l) || !finite(c)) return;
+        out.timestamp.push(ts);
+        out.open.push(round4(o));
+        out.high.push(round4(h));
+        out.low.push(round4(l));
+        out.close.push(round4(c));
+        out.volume.push(finite(v) ? v : null);
+    });
+    return out.timestamp.length ? out : null;
+}
+
+export interface ChartQueueDeps {
+    /** Symbols that have an options file. */
+    cached: string[];
+    explicit: boolean;
+    /** Chart file exists. */
+    hasChart: (sym: string) => boolean;
+    isFresh: (sym: string) => boolean;
+    updatedOf: (sym: string) => string;
+    priority?: string[];
+}
+
+/** Priority symbols, then tickers without a chart file (universe order), then stale ones oldest first. Fresh ones are skipped. */
+export function buildChartQueue(universe: string[], d: ChartQueueDeps): string[] {
+    const cachedSet = new Set(d.cached);
+    const priority = (d.priority ?? PRIORITY_SYMBOLS).filter((s) => !d.explicit || universe.includes(s));
+    const candidates = d.explicit
+        ? dedupe([...priority, ...universe])
+        : dedupe([...priority, ...universe.filter((s) => cachedSet.has(s)), ...[...d.cached].sort()]);
+    const todo = candidates.filter((s) => !d.isFresh(s));
+    const prioritySet = new Set(priority);
+    const head = todo.filter((s) => prioritySet.has(s));
+    const rest = todo.filter((s) => !prioritySet.has(s));
+    const missing = rest.filter((s) => !d.hasChart(s));
+    const stale = rest.filter((s) => d.hasChart(s)).map((s): [string, string] => [s, d.updatedOf(s)]).sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+    return [...head, ...missing, ...stale.map(([s]) => s)];
+}
+
+export async function fetchChartFile(symbol: string): Promise<ChartFile | null> {
+    for (const cand of yahooChartCandidates(symbol)) {
+        const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(cand)}?range=${CHART_RANGE}&interval=1d&includePrePost=false`;
+        const r = await yahooGet(url, 15000);
+        if (r.status >= 400) continue;
+        let body: unknown;
+        try {
+            body = JSON.parse(r.text);
+        } catch {
+            continue;
+        }
+        const file = buildChartFile(symbol, nowIso(), body);
+        if (file) return file;
+    }
+    return null;
+}
+
+/** Writes data/charts/<SYM>.json for the queue with CONCURRENCY workers. A streak of RATE_LIMIT_HITS failures stops the pass. */
+async function runChartPass(queue: string[]): Promise<{ written: number; failed: number; stopped: boolean }> {
+    mkdirSync(CHARTS_DIR, { recursive: true });
+    let next = 0, reserved = 0, written = 0, failed = 0, streak = 0, stopped = false;
+    const worker = async () => {
+        for (;;) {
+            if (stopped || next >= queue.length || reserved >= cfg.CHART_MAX_FETCHES) return;
+            const index = next++;
+            const sym = queue[index];
+            reserved++;
+            const started = performance.now();
+            let file: ChartFile | null = null;
+            let reason = "";
+            try {
+                file = await fetchChartFile(sym);
+                if (!file) reason = "no chart data";
+            } catch (e) {
+                reason = e instanceof Error ? e.message : String(e);
+            }
+            const secs = pyFixed1((performance.now() - started) / 1000);
+            const pos = `${String(index + 1).padStart(4)}/${queue.length}`;
+            if (file) {
+                writeFileSync(join(CHARTS_DIR, `${sym}.json`), JSON.stringify(file));
+                written++;
+                streak = 0;
+                console.log(`${outputLabel("chart")} ${pos} ${sym.padEnd(5)} written    bars=${file.timestamp.length} in=${secs}s`);
+                await sleep(cfg.REQUEST_SLEEP * 1000);
+            } else {
+                reserved--;
+                failed++;
+                streak++;
+                console.log(`${outputLabel("chart")} ${pos} ${sym.padEnd(5)} failed     ${reason} in=${secs}s`);
+                if (streak >= cfg.RATE_LIMIT_HITS) stopped = true;
+            }
+        }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(cfg.CONCURRENCY, queue.length)) }, worker));
+    return { written, failed, stopped };
+}
+
 export async function main(): Promise<void> {
     const runStarted = performance.now();
     mkdirSync(DATA_DIR, { recursive: true });
@@ -1753,6 +1905,19 @@ export async function main(): Promise<void> {
                 logErr(`could not append to GITHUB_STEP_SUMMARY: ${e instanceof Error ? e.message : e}`);
             }
         }
+    }
+
+    if (cfg.CHART_CACHE && pool.stopped !== "rate-limit") {
+        const chartQueue = buildChartQueue(universe, {
+            cached: cachedSymbols(),
+            explicit: Boolean(process.env.TICKERS || process.env.TICKER),
+            hasChart: (s) => existsSync(join(CHARTS_DIR, `${s}.json`)),
+            isFresh: (s) => isFresh(join(CHARTS_DIR, `${s}.json`)),
+            updatedOf: (s) => fileUpdated(join(CHARTS_DIR, `${s}.json`)),
+        });
+        console.log(`${outputLabel("charts")} ${chartQueue.length} queued, budget=${cfg.CHART_MAX_FETCHES} writes`);
+        const charts = await runChartPass(chartQueue);
+        console.log(`${outputLabel("charts")} written=${charts.written} failed=${charts.failed}${charts.stopped ? " (stopped: consecutive failures)" : ""}`);
     }
 
     console.log("\n=== UPDATED FILES (copy & replace these) ===");
