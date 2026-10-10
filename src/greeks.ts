@@ -63,7 +63,7 @@ export function dividendYieldForSymbol(symbol: string | null | undefined): numbe
 // Real Black-76 futures-priced greeks (src/vix-pricing.ts) are available
 // opt-in via settings.vixFuturesPricing (default OFF) — see
 // enrichQuotesWithModelGreeks below and
-// .claude/docs/spec-vix-futures.md.
+// agentic-workspace docs/repos/gex/spec-vix-futures.md.
 export const FUTURES_PRICED_SYMBOLS: ReadonlySet<string> = new Set(['VIX', 'VXN']);
 /** True when `symbol` is a futures-priced volatility index (see FUTURES_PRICED_SYMBOLS). */
 export function isFuturesPricedSymbol(symbol: string | null | undefined): boolean {

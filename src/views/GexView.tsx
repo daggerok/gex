@@ -18,7 +18,7 @@ import type { DataProvider, GexLevels, GexPoint, OptionQuote, Settings } from '.
 import { fmt, fmtInt } from '../utils';
 
 // ============================================================================
-// GEX VIEW (Tab 2) - plan section 8.1 (`.claude/docs/spec-gex-app.md`). A pure consumer of chain data App already holds: it never
+// GEX VIEW (Tab 2) - plan section 8.1 (`agentic-workspace docs/repos/gex/spec-gex-app.md`). A pure consumer of chain data App already holds: it never
 // fetches, and every number comes from src/gex.ts (rule R1) - this file only
 // selects which quotes to pass in and formats the results.
 // ============================================================================

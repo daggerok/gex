@@ -4,7 +4,7 @@ import type { GexLevels, GexPoint, OptionQuote } from './types';
 // ---------------------------------------------------------------------------
 // Gamma exposure (GEX) math - SINGLE SOURCE OF TRUTH for GEX-derived levels
 // ---------------------------------------------------------------------------
-// Spec: .claude/docs/spec-gex-app.md section 7. Pure functions, zero
+// Spec: agentic-workspace docs/repos/gex/spec-gex-app.md section 7. Pure functions, zero
 // React/DOM dependencies. Never duplicate any of this in scripts/options-data.py
 // or in the proxy scripts (architecture rule R1).
 //
@@ -17,7 +17,7 @@ import type { GexLevels, GexPoint, OptionQuote } from './types';
 // commercial GEX product, so expect numbers in the same ballpark as other
 // public GEX tools, not an exact match (plan section 17 item 3).
 //
-// Per-quote reference price (Phase 3 of .claude/docs/spec-vix-futures.md,
+// Per-quote reference price (Phase 3 of agentic-workspace docs/repos/gex/spec-vix-futures.md,
 // section 9): for almost every symbol one shared `spot` is the
 // right reference price for every quote in the chain. VIX/VXN (futures-priced
 // - see FUTURES_PRICED_SYMBOLS in src/greeks.ts) are the exception: each
@@ -378,7 +378,7 @@ export interface NetGexLevels {
  * the GEX-relevant sense once multiple expirations/forwards are in play, so
  * the caller (src/use-gex-levels.ts) passes the nearest selected
  * expiration's forward instead of the true spot index level (design
- * decision, Phase 3 of .claude/docs/spec-vix-futures.md section
+ * decision, Phase 3 of agentic-workspace docs/repos/gex/spec-vix-futures.md section
  * 9: strikes live in futures-space for these symbols, so a futures-space
  * reference price makes the distance threshold meaningful; the true spot VIX
  * index is still shown separately in the UI).

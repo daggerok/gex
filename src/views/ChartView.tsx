@@ -22,7 +22,7 @@ import { fmt } from '../utils';
 import { CHART_RANGES, type ChartRange } from './chart-range';
 
 // ============================================================================
-// CHART VIEW (Tab 3) - plan section 8.2 (`.claude/docs/spec-gex-app.md`). Daily candles of the loaded symbol (OHLC from the companion
+// CHART VIEW (Tab 3) - plan section 8.2 (`agentic-workspace docs/repos/gex/spec-gex-app.md`). Daily candles of the loaded symbol (OHLC from the companion
 // proxy's /api/chart via providers/chart.ts) with the SAME GexLevels object
 // the GEX tab renders, drawn as horizontal price lines. This view never
 // computes levels (rule R1): App computes them once (useGexLevels) and passes

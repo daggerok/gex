@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Parity check of scripts/options-data.py against scripts/options-data.ts. Temporary: delete this folder
-# together with options-data.py once the Python fetcher is retired. See .claude/docs/spec-ts-fetcher.md.
+# together with options-data.py once the Python fetcher is retired. See agentic-workspace docs/repos/gex/spec-ts-fetcher.md.
 #
 #   scripts/options-parity/run.sh live                 py then ts back to back on the real network
 #   scripts/options-parity/run.sh record <scenario>    TS run on the real network, responses stored as fixtures

@@ -211,8 +211,8 @@ scripts/
   github-pages.yml            # Pages deployment
 package.json                  # Bun/Parcel scripts
 pyproject.toml                # Python deps for options-data.py
-README.md                     # TOC pointing to .claude/docs/README.en.md and .claude/docs/README.ru.md
-.claude/docs/
+README.md                     # TOC pointing to docs/README.en.md and docs/README.ru.md
+docs/
   README.en.md                # English documentation (this file)
   README.ru.md                # Russian documentation
   DEVELOPMENT.en.md / .ru.md  # Developer guide

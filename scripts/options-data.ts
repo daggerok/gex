@@ -5,7 +5,7 @@
  * =============================================================================
  *
  * Same job and same output as scripts/options-data.py (py and ts coexist until
- * parity is proven, see .claude/docs/spec-ts-fetcher.md). Differences are only
+ * parity is proven, see agentic-workspace docs/repos/gex/spec-ts-fetcher.md). Differences are only
  * in how Yahoo is reached: yfinance is replaced by raw Yahoo calls
  * (cookie + crumb, then v7 options and v8 chart), everything else is a 1:1 port.
  *

@@ -72,7 +72,7 @@ describe('yahooChartSymbol', () => {
         expect(yahooChartSymbol('SPY')).toBe('SPY');
     });
 
-    // Part A of Phase 3 (.claude/docs/spec-vix-futures.md section 9):
+    // Part A of Phase 3 (agentic-workspace docs/repos/gex/spec-vix-futures.md section 9):
     // VIX/VXN are futures-priced (FUTURES_PRICED_SYMBOLS), not spot indices
     // (INDEX_SYMBOLS), but Yahoo's /chart endpoint still needs the same ^
     // prefix for them — confirmed live, 2026-10-04: ^VIX/^VXN -> HTTP 200,

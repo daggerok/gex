@@ -17,7 +17,7 @@ import { estimateSpot, num } from './utils';
 // volatility-index options priced off a futures curve per expiration, not the
 // spot index level — the spot-based blackScholesGreeks in src/greeks.ts is
 // simply the wrong model for them. This module implements the correct model
-// (Black 1976) per .claude/docs/spec-vix-futures.md sections 6-7.
+// (Black 1976) per agentic-workspace docs/repos/gex/spec-vix-futures.md sections 6-7.
 //
 // PHASE 1 shipped the pure math below (black76Price/black76Greeks/
 // impliedVolBlack76/impliedForward) with nothing wired into a live path.

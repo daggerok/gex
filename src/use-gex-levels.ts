@@ -12,7 +12,7 @@ import { estimateSpot } from './utils';
 // (price lines), so the two tabs always show the same numbers. Neither view
 // recomputes levels itself (rule R1).
 //
-// Phase 3 of .claude/docs/spec-vix-futures.md (section 9): a
+// Phase 3 of agentic-workspace docs/repos/gex/spec-vix-futures.md (section 9): a
 // futures-priced symbol (VIX/VXN, isFuturesPricedSymbol) used to ALWAYS get
 // `levels: null` here, regardless of settings.vixFuturesPricing. Now it only
 // stays null when real levels genuinely aren't available for it - the toggle

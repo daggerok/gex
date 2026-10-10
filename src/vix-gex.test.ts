@@ -5,7 +5,7 @@ import type { OptionQuote } from './types';
 import { black76Greeks, black76Price, enrichFuturesPricedQuotes } from './vix-pricing';
 
 // ---------------------------------------------------------------------------
-// Integration test for Phase 3 of .claude/docs/spec-vix-futures.md
+// Integration test for Phase 3 of agentic-workspace docs/repos/gex/spec-vix-futures.md
 // (section 9 "GEX and chart implications"): a REAL multi-expiration VIX chain
 // - built the same way Phase 2's enrichFuturesPricedQuotes tests build one
 //   (src/vix-pricing.test.ts: synthetic bid/ask priced exactly off a known
@@ -124,7 +124,7 @@ describe('GEX for a multi-expiration VIX chain (Phase 3, section 9)', () => {
     // Hand-verified arithmetic (same rigor as gex.test.ts's FIXTURE comment):
     // gexCall(gamma, OI, F) = gamma * OI * 100 * F^2 * 0.01 = gamma * OI * F^2.
     // Black-76 gamma at K=18, computed directly from the INPUT forward/sigma
-    // (not solved back), per .claude/docs/spec-vix-futures.md 6.2:
+    // (not solved back), per agentic-workspace docs/repos/gex/spec-vix-futures.md 6.2:
     //   gammaA(F=17.648, sigma=0.92, T=20/365) = 0.104696440...
     //   gammaB(F=20.417, sigma=0.40, T=202/365) = 0.054377089...
     // so with OI=1000 on both call legs:

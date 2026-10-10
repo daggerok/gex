@@ -450,7 +450,7 @@ describe('computeOiVolumeTotals', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 3 of .claude/docs/spec-vix-futures.md: a quote carrying
+// Phase 3 of agentic-workspace docs/repos/gex/spec-vix-futures.md: a quote carrying
 // its own `forward` (VIX/VXN with settings.vixFuturesPricing on and Black-76
 // enrichment succeeding, src/vix-pricing.ts) must use THAT forward in place
 // of the shared `spot` parameter — section 9's "GEX for VIX" fix. Every test
