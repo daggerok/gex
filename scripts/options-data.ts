@@ -1,18 +1,24 @@
 #!/usr/bin/env bun
 /**
  * =============================================================================
- * GEX - build-time options data fetcher (Bun TypeScript port of options-data.py)
+ * GEX - build-time options data fetcher (Bun TypeScript)
  * =============================================================================
  *
- * Same job and same output as scripts/options-data.py (py and ts coexist until
- * parity is proven, see agentic-workspace docs/repos/gex/spec-ts-fetcher.md). Differences are only
- * in how Yahoo is reached: yfinance is replaced by raw Yahoo calls
- * (cookie + crumb, then v7 options and v8 chart), everything else is a 1:1 port.
+ * The only fetcher (the Python/yfinance version was removed 2026-10-10, history in
+ * agentic-workspace docs/repos/gex/spec-ts-fetcher.md). Yahoo is reached with raw calls
+ * (cookie + crumb, then v7 options and v8 chart), Cboe delayed greeks are overlaid.
+ * Output files keep the byte layout the Python version wrote (key order, Python float
+ * repr, ensure_ascii escapes), so existing data/options/*.json files stay valid.
  *
  * Keep this header in sync with behavior on every change.
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t4 - SPY, SPX, QQQ and NDX are always queued first (PRIORITY_SYMBOLS, unless fresh), before the
+ *        coverage and refresh phases; with an explicit TICKERS list only those in the list.
+ *   t3 - Python fetcher removed. Cboe requests share one throttle (CBOE_MIN_INTERVAL), a 429 pauses
+ *        every worker (CBOE_BACKOFF, CBOE_RETRIES) and, once retries run out, fails the ticker so its
+ *        file is not rewritten without greeks.
  *   t2 - Sibling-style console output ([ config   ] / [ queue    ] / one status line per
  *        ticker / [ done     ]) and CONCURRENCY workers, each with its own REQUEST_SLEEP lane.
  *        The legacy timestamped lines moved behind VERBOSE=1. Files are still written on every
@@ -66,6 +72,10 @@
  *   SKIP_RECHECK_DAYS  default 30        days before a no-options ticker is retried
  *   CBOE_GREEKS        default 1         Cboe delayed greeks overlay
  *   CBOE_GREEKS_TIMEOUT default 10       seconds per Cboe request
+ *   CBOE_MIN_INTERVAL  default 1         min seconds between Cboe requests, shared by all workers (0 = off)
+ *   CBOE_BACKOFF       default 30        first pause after a Cboe 429, doubles per retry; all workers wait
+ *   CBOE_RETRIES       default 3         retries of one Cboe request after 429; then the ticker fails
+ *                                        (counts toward RATE_LIMIT_HITS and its file is NOT overwritten)
  *   SYMBOL_ALIASES     default ""        "SCREENER=YAHOO" pairs, comma separated
  *   TIMEZONE           default America/New_York   market tz for today / working days
  *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
@@ -341,6 +351,9 @@ const cfg = {
     SKIP_RECHECK_DAYS: envInt("SKIP_RECHECK_DAYS", "30"),
     CBOE_GREEKS: !["0", "false", "no", "off"].includes((process.env.CBOE_GREEKS ?? "1").toLowerCase()),
     CBOE_GREEKS_TIMEOUT: envFloat("CBOE_GREEKS_TIMEOUT", "10"),
+    CBOE_MIN_INTERVAL: envNonNegativeFloat("CBOE_MIN_INTERVAL", "1"),
+    CBOE_BACKOFF: envNonNegativeFloat("CBOE_BACKOFF", "30"),
+    CBOE_RETRIES: envInt("CBOE_RETRIES", "3"),
     CONCURRENCY: envPositiveInt("CONCURRENCY", "1"),
     SOFT_DEADLINE_SECONDS: envNonNegativeFloat("SOFT_DEADLINE_SECONDS", "0"),
 };
@@ -856,23 +869,58 @@ function httpErrorText(r: Response, url: string): string {
 
 type CboeRow = Record<string, unknown>;
 
-async function fetchCboeGreeks(symbol: string, matched?: string | null): Promise<Map<string, CboeRow>> {
+/** Cboe kept answering 429 after every retry: the ticker must fail instead of being written without greeks. */
+export class CboeRateLimitError extends Error {}
+
+// One throttle shared by every worker: Cboe limits per IP by request rate (~80-90 per minute), not by concurrency.
+let cboeNextSlot = 0;
+let cboeCooldownUntil = 0;
+
+/** Wait for the next free Cboe slot (>= CBOE_MIN_INTERVAL after the previous one) and for any active 429 cooldown. */
+async function cboeAcquire(): Promise<void> {
+    for (;;) {
+        const now = Date.now();
+        const at = Math.max(now, cboeNextSlot, cboeCooldownUntil);
+        cboeNextSlot = at + cfg.CBOE_MIN_INTERVAL * 1000;
+        if (at > now) await sleep(at - now);
+        if (Date.now() >= cboeCooldownUntil) return;
+    }
+}
+
+function cboeCooldown(ms: number): void {
+    cboeCooldownUntil = Math.max(cboeCooldownUntil, Date.now() + ms);
+}
+
+export async function fetchCboeGreeks(symbol: string, matched?: string | null): Promise<Map<string, CboeRow>> {
     if (!cfg.CBOE_GREEKS) return new Map();
     for (const cand of cboeSymbolCandidates(symbol, matched)) {
         const url = CBOE_OPTIONS_URL.replace("{symbol}", pyQuote(cand));
-        try {
-            const r = await fetch(url, { headers: CBOE_HEADERS, signal: AbortSignal.timeout(cfg.CBOE_GREEKS_TIMEOUT * 1000) });
-            if (r.status === 404) continue;
-            if (r.status >= 400) throw new Error(httpErrorText(r, url));
-            const j = (await r.json()) as { data?: { options?: CboeRow[] } | null };
-            const rows = j.data?.options || [];
-            if (!rows.length) continue;
-            if (cand !== symbol) log(`GREEKS ${symbol}: using Cboe symbol '${cand}'`);
-            const map = new Map<string, CboeRow>();
-            for (const o of rows) if (o.option) map.set(String(o.option).toUpperCase(), o);
-            return map;
-        } catch (e) {
-            logErr(`GREEKS ${symbol}: Cboe candidate '${cand}' failed: ${e instanceof Error ? e.message : e}`);
+        for (let attempt = 0; ; attempt++) {
+            try {
+                await cboeAcquire();
+                const r = await fetch(url, { headers: CBOE_HEADERS, signal: AbortSignal.timeout(cfg.CBOE_GREEKS_TIMEOUT * 1000) });
+                if (r.status === 404) break;
+                if (r.status === 429) {
+                    const retryAfter = Number(r.headers.get("retry-after"));
+                    const waitMs = Math.max(Number.isFinite(retryAfter) ? retryAfter * 1000 : 0, cfg.CBOE_BACKOFF * 1000 * 2 ** attempt);
+                    if (attempt >= cfg.CBOE_RETRIES) throw new CboeRateLimitError(httpErrorText(r, url));
+                    cboeCooldown(waitMs);
+                    log(`GREEKS ${symbol}: Cboe 429 for '${cand}', all workers pause ${Math.round(waitMs / 1000)}s (retry ${attempt + 1}/${cfg.CBOE_RETRIES})`);
+                    continue;
+                }
+                if (r.status >= 400) throw new Error(httpErrorText(r, url));
+                const j = (await r.json()) as { data?: { options?: CboeRow[] } | null };
+                const rows = j.data?.options || [];
+                if (!rows.length) break;
+                if (cand !== symbol) log(`GREEKS ${symbol}: using Cboe symbol '${cand}'`);
+                const map = new Map<string, CboeRow>();
+                for (const o of rows) if (o.option) map.set(String(o.option).toUpperCase(), o);
+                return map;
+            } catch (e) {
+                if (e instanceof CboeRateLimitError) throw e;
+                logErr(`GREEKS ${symbol}: Cboe candidate '${cand}' failed: ${e instanceof Error ? e.message : e}`);
+                break;
+            }
         }
     }
     return new Map();
@@ -1229,8 +1277,13 @@ function cachedSymbols(): string[] {
         .map((f) => f.slice(0, -5));
 }
 
+/** Always fetched first (when not fresh), before coverage and refresh: the four most used chains. */
+export const PRIORITY_SYMBOLS = ["SPY", "SPX", "QQQ", "NDX"];
+
 export interface WorkQueue {
     queue: string[];
+    /** Leading priority entries of `queue` (not counted in nMissing or nStale). */
+    nPriority: number;
     nMissing: number;
     nStale: number;
     nFresh: number;
@@ -1243,13 +1296,19 @@ export interface QueueDeps {
     isFresh: (sym: string) => boolean;
     updatedOf: (sym: string) => string;
     skipActive: (last: unknown) => boolean;
+    /** Symbols queued first; defaults to PRIORITY_SYMBOLS. */
+    priority?: string[];
 }
 
-/** Two-phase queue: missing first (universe order), then stale oldest-updated first. */
+/**
+ * Priority symbols first (SPY, SPX, QQQ, NDX unless fresh; with an explicit TICKERS list only those in it),
+ * then missing (universe order), then stale oldest-updated first.
+ */
 export function buildQueue(universe: string[], d: QueueDeps): WorkQueue {
     const cachedSet = new Set(d.cached);
     const blocked = (s: string) => Object.prototype.hasOwnProperty.call(d.skip, s) && d.skipActive(d.skip[s]);
-    const missing = universe.filter((s) => !cachedSet.has(s) && !blocked(s));
+    const prioritySet = new Set((d.priority ?? PRIORITY_SYMBOLS).filter((s) => !d.explicit || universe.includes(s)));
+    const missing = universe.filter((s) => !cachedSet.has(s) && !blocked(s) && !prioritySet.has(s));
     const missingSet = new Set(missing);
     // The Python script iterates a set here (random order for equal timestamps); sorted is deterministic.
     const candidates = d.explicit ? universe : [...d.cached].sort();
@@ -1260,11 +1319,12 @@ export function buildQueue(universe: string[], d: QueueDeps): WorkQueue {
             freshSkipped++;
             continue;
         }
-        if (missingSet.has(sym)) continue;
+        if (missingSet.has(sym) || prioritySet.has(sym)) continue;
         stale.push([sym, d.updatedOf(sym)]);
     }
     stale.sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)); // stable, plain string order
-    return { queue: [...missing, ...stale.map(([s]) => s)], nMissing: missing.length, nStale: stale.length, nFresh: freshSkipped };
+    const priority = [...prioritySet].filter((s) => !d.isFresh(s));
+    return { queue: [...priority, ...missing, ...stale.map(([s]) => s)], nPriority: priority.length, nMissing: missing.length, nStale: stale.length, nFresh: freshSkipped };
 }
 
 function buildWorkQueue(universe: string[]): WorkQueue {
@@ -1369,6 +1429,9 @@ export function outputConfigEntries(
         ["SKIP_RECHECK_DAYS", String(c.SKIP_RECHECK_DAYS)],
         ["CBOE_GREEKS", String(c.CBOE_GREEKS)],
         ["CBOE_GREEKS_TIMEOUT", pyFloatRepr(c.CBOE_GREEKS_TIMEOUT)],
+        ["CBOE_MIN_INTERVAL", pyFloatRepr(c.CBOE_MIN_INTERVAL)],
+        ["CBOE_BACKOFF", pyFloatRepr(c.CBOE_BACKOFF)],
+        ["CBOE_RETRIES", String(c.CBOE_RETRIES)],
         ["SYMBOL_ALIASES", env.SYMBOL_ALIASES ?? ""],
         ["TIMEZONE", env.TIMEZONE ?? "America/New_York"],
         ["TICKERS", env.TICKERS ?? env.TICKER ?? ""],
@@ -1570,7 +1633,7 @@ export async function main(): Promise<void> {
     console.log(outputConfigBlock(outputConfigEntries()));
     const { symbols: universe, source: universeSource } = await loadUniverse();
 
-    const { queue, nMissing, nStale, nFresh } = buildWorkQueue(universe);
+    const { queue, nPriority, nMissing, nStale, nFresh } = buildWorkQueue(universe);
     const skip = loadSkiplist();
 
     const noOptionSyms: string[] = [];
@@ -1593,7 +1656,7 @@ export async function main(): Promise<void> {
 
     const work = async (sym: string, position: number, st: { fetched: number }): Promise<TickerResult> => {
         const path = join(DATA_DIR, `${sym}.json`);
-        const phase = position <= nMissing ? "coverage" : "refresh";
+        const phase = position <= nPriority ? "priority" : position <= nPriority + nMissing ? "coverage" : "refresh";
         const started = performance.now();
         log(`FETCH [${position}/${queue.length}] ${phase} ${sym}: fetching option chain (writes=${st.fetched}/${cfg.MAX_FETCHES}, file=data/options/${sym}.json)`);
         let previousText: string | null = null;

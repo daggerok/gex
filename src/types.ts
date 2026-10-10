@@ -11,7 +11,7 @@ import type { Language } from './i18n';
  *  `marketdata` / `dolthub` tags. */
 export type GreeksSource = 'cboe' | 'black-scholes' | 'black-76' | 'marketdata' | 'dolthub' | null;
 
-/** Top-level greeks enrichment summary written by scripts/options-data.py. */
+/** Top-level greeks enrichment summary written by scripts/options-data.ts. */
 export interface GreeksSummary {
     enabled?: boolean;
     primarySource?: string | null;
@@ -71,7 +71,7 @@ export interface OptionQuote {
     /**
      * Per-expiration futures/forward price used to price this quote under
      * Black-76 (VIX/VXN only, when settings.vixFuturesPricing is on). Client
-     * computed, never written by scripts/options-data.py or persisted to
+     * computed, never written by scripts/options-data.ts or persisted to
      * data/options/*.json. Null/absent for every non-futures-priced quote.
      */
     forward?: number | null;

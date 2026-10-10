@@ -5,7 +5,7 @@ import type { GexLevels, GexPoint, OptionQuote } from './types';
 // Gamma exposure (GEX) math - SINGLE SOURCE OF TRUTH for GEX-derived levels
 // ---------------------------------------------------------------------------
 // Spec: agentic-workspace docs/repos/gex/spec-gex-app.md section 7. Pure functions, zero
-// React/DOM dependencies. Never duplicate any of this in scripts/options-data.py
+// React/DOM dependencies. Never duplicate any of this in scripts/options-data.ts
 // or in the proxy scripts (architecture rule R1).
 //
 // Convention: the "SpotGamma-style" public convention - calls contribute

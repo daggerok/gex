@@ -126,7 +126,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'setupBadge.needsProxy': 'Needs proxy',
 
         'providerDescription.static':
-            'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
+            'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS greeks). ' +
             'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
         'providerDescription.yahoo':
             'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts or Cloudflare Worker. ' +
@@ -448,7 +448,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'setupBadge.needsProxy': 'Нужен прокси',
 
         'providerDescription.static':
-            'Локальный статический кэш — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS греки). ' +
+            'Локальный статический кэш — same-origin data/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS греки). ' +
             'Без прокси и ключей. Лучший default для GitHub Pages. Показываются только закэшированные тикеры.',
         'providerDescription.yahoo':
             'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывают scripts/options-local-proxy.ts или Cloudflare Worker. ' +

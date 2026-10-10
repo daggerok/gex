@@ -11,9 +11,9 @@ import { enrichFuturesPricedQuotes } from './vix-pricing';
 // ---------------------------------------------------------------------------
 // Client-side Black-Scholes greeks — SINGLE SOURCE OF TRUTH for model math
 // ---------------------------------------------------------------------------
-// scripts/options-data.py may attach provider Cboe 1st-order only. All model work
+// scripts/options-data.ts may attach provider Cboe 1st-order only. All model work
 // (missing 1st-order + λ + 2nd/3rd-order) happens here after every provider
-// fetch, including CACHE. Do not reintroduce BS in Python — that duplicates this.
+// fetch, including CACHE. Do not reintroduce BS in the fetcher — that duplicates this.
 // Conventions: theta per calendar day; vega/rho per 1 vol-point / 1pp rate.
 export const BS_RISK_FREE_RATE = 0.045;
 export const BS_DIVIDEND_YIELD = 0.0;
@@ -91,7 +91,7 @@ export function normCdf(x: number): number {
     return 0.5 * (1 + erf(x / Math.SQRT2));
 }
 
-/** Years to expiration (calendar), +1 day floor — same rule as options-data.py. */
+/** Years to expiration (calendar), +1 day floor — same rule as the old Python fetcher. */
 export function yearsToExpiration(expiration: string, now: Date = new Date()): number | null {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(expiration || ''));
     if (!m) return null;

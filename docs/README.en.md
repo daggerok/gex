@@ -9,7 +9,7 @@ A single-page **options board**: enter a ticker, get expirations, select one or 
 - Developer guide: [English](./DEVELOPMENT.en.md) or [Russian](./DEVELOPMENT.ru.md).
 - [project rules](../rules/project.md): project rules for Claude Code.
 
-We use **Bun** for JavaScript/TypeScript and **uv** for Python. **Important:** Always use `bun` instead of `npm`.
+We use **Bun** for JavaScript/TypeScript, including the data fetcher. **Important:** Always use `bun` instead of `npm`.
 
 ---
 
@@ -82,7 +82,7 @@ Only four sources. Short uppercase labels in the API dropdown.
 
 | UI label | Setup | Coverage | Greeks | Notes |
 |---|---|---|---|---|
-| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `data/options/*.json` | CBOE/model-enriched as files refresh | Same-origin static JSON from GitHub Actions/yfinance + CBOE delayed 1st-order greeks. Model/higher-order greeks computed in the browser. No CORS, no keys. |
+| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `data/options/*.json` | CBOE/model-enriched as files refresh | Same-origin static JSON from GitHub Actions/Yahoo + CBOE delayed 1st-order greeks. Model/higher-order greeks computed in the browser. No CORS, no keys. |
 | **CBOE** *(default on localhost)* | Needs proxy | CBOE delayed options | Yes (provider + client BS higher-order) | Richest delayed feed (greeks/IV/OI/spot). Requires Proxy base URL (`/api/cboe`). |
 | **NASDAQ** | Needs proxy | NASDAQ option-chain | No IV → no model greeks | Full chain in one call: bid/ask/last/volume/OI. Proxy `/api/nasdaq`. |
 | **YAHOO** | Needs proxy | Yahoo symbol search / option chains | Client Black-Scholes from IV | Lazy per-expiration. Companion proxy handles crumb/cookies (`/api/options`). |
@@ -106,7 +106,7 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 **Single source of truth for model greeks: the browser** (`src/greeks.ts`).
 
-- `scripts/options-data.py` writes yfinance quotes and, when available, **Cboe delayed 1st-order** greeks (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
+- `scripts/options-data.ts` writes Yahoo quotes and, when available, **Cboe delayed 1st-order** greeks (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
 - It does **not** compute λ / Vanna / Vomma / Charm / Speed / Zomma / Color or full Black-Scholes fallback — that would duplicate the UI.
 - After any provider fetch (including **CACHE**), the app runs client-side Black-Scholes enrichment: fills missing 1st-order when IV+spot allow, and always fills higher-order when possible.
 - Remaining gaps use `greeksMissingReason` (from fetcher or client).
@@ -116,10 +116,10 @@ Removed from the live registry (changelog only): marketdata.app, DoltHub, Tradie
 
 1. Enable Pages in repo **Settings → Pages**.
 2. Allow Actions to commit: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-3. The scheduled **Update options data** workflow runs `scripts/options-data.py`, self-discovers an optionable universe, refreshes/grows `data/options/*.json`, updates `data/options/index.json`, and commits changes back to `main`.
+3. The scheduled **Update options data** workflow runs `scripts/options-data.ts`, self-discovers an optionable universe, refreshes/grows `data/options/*.json`, updates `data/options/index.json`, and commits changes back to `main`.
 4. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`.
 
-You do **not** need to maintain a ticker list. For a one-off/manual data run, set `TICKERS="AAPL MSFT SPY"` when running `scripts/options-data.py`; the default scheduled workflow uses self-discovery.
+You do **not** need to maintain a ticker list. For a one-off/manual data run, set `TICKERS="AAPL MSFT SPY"` when running `scripts/options-data.ts`; the default scheduled workflow uses self-discovery.
 
 ## Proxy setup for GitHub Pages
 
@@ -173,7 +173,7 @@ For a deployable proxy that doesn't require local setup:
 
 These files are optional infrastructure outside the core app source:
 
-- `scripts/options-data.py` — smart yfinance fetcher. Builds/refreshes `data/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/options/index.json` with `{ files, count, names, no_options }`.
+- `scripts/options-data.ts` — smart Yahoo fetcher. Builds/refreshes `data/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), and maintains `data/options/index.json` with `{ files, count, names, no_options }`.
 - `.github/workflows/update-data.yml` — scheduled/manual data refresh workflow.
 - `scripts/options-local-proxy.ts` — local **Bun** proxy serving:
   - `/api/options` — Yahoo optionChain with crumb/cookie handling.
@@ -202,7 +202,7 @@ data/
   index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # one option-chain cache file per ticker, with greeks metadata when refreshed
 scripts/
-  options-data.py               # yfinance -> data/options/*.json + data/options/index.json
+  options-data.py               # Yahoo -> data/options/*.json + data/options/index.json
   options-local-proxy.ts              # local Bun proxy: Yahoo/NASDAQ/CBOE/search
   options-cloudflare-proxy.js        # Cloudflare Worker proxy: Yahoo/NASDAQ/CBOE/search/raw
 .github/workflows/
@@ -210,7 +210,6 @@ scripts/
   update-data.yml             # scheduled data refresh
   github-pages.yml            # Pages deployment
 package.json                  # Bun/Parcel scripts
-pyproject.toml                # Python deps for options-data.py
 README.md                     # TOC pointing to docs/README.en.md and docs/README.ru.md
 docs/
   README.en.md                # English documentation (this file)
