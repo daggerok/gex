@@ -375,7 +375,7 @@ describe('enrichFuturesPricedQuotes', () => {
     const strikes = [16, 17, 18, 19, 20];
     const quotes = chain(expiration, F, SIGMA, strikes);
     // Shape one quote like Cboe's own feed: real 1st-order greeks + a
-    // greeksSource tag already set, same as scripts/options-data.py writes.
+    // greeksSource tag already set, same as scripts/options-data.ts writes.
     const target = quotes.find((x) => x.side === 'put' && x.strike === 20)!;
     target.delta = -0.6708; target.gamma = 0.0922; target.theta = -0.0377; target.vega = 0.0144;
     target.greeksSource = 'cboe';

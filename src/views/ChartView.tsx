@@ -19,7 +19,7 @@ import { DEFAULT_CHART_INTERVAL, fetchOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
 import type { GexLevels, OhlcBar, Settings } from '../types';
 import { fmt } from '../utils';
-import { CHART_RANGES, type ChartRange } from './chart-range';
+import { CHART_RANGES, initialVisibleRange, type ChartRange } from './chart-range';
 
 // ============================================================================
 // CHART VIEW (Tab 3) - plan section 8.2 (`agentic-workspace docs/repos/gex/spec-gex-app.md`). Daily candles of the loaded symbol (OHLC from the companion
@@ -187,7 +187,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close,
         }));
         series.setData(data);
-        if (data.length) chartRef.current?.timeScale().fitContent();
+        if (data.length) chartRef.current?.timeScale().setVisibleLogicalRange(initialVisibleRange(data.length));
     }, [bars, hasSymbol]);
 
     // ---- Level price lines: remove the previous set, then draw the new one ----

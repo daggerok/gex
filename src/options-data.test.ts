@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   PyInt,
@@ -15,6 +15,7 @@ import {
   type PoolResult,
   applyCboeRows,
   buildQueue,
+  PRIORITY_SYMBOLS,
   canonical,
   cboeSymbolCandidates,
   cleanCompanyName,
@@ -227,6 +228,7 @@ describe('work queue', () => {
     isFresh: () => false,
     updatedOf: () => '',
     skipActive: () => true,
+    priority: [],
   };
 
   test('missing symbols come first in universe order, then stale oldest first', () => {
@@ -234,6 +236,22 @@ describe('work queue', () => {
     const q = buildQueue(['Z', 'A', 'Y', 'X'], { ...base, cached: ['A', 'B', 'C'], updatedOf: (s) => updated[s] ?? '' });
     expect(q.queue).toEqual(['Z', 'Y', 'X', 'B', 'C', 'A']);
     expect([q.nMissing, q.nStale, q.nFresh]).toEqual([3, 3, 0]);
+  });
+
+  test('SPY, SPX, QQQ and NDX go first unless fresh, even when cached, missing or outside the universe', () => {
+    const q = buildQueue(['AAPL', 'QQQ', 'SPY'], { ...base, priority: PRIORITY_SYMBOLS, cached: ['SPY', 'NDX', 'ZZZ'], updatedOf: (s) => (s === 'SPY' ? '9' : '1') });
+    // priority order is fixed (SPY SPX QQQ NDX), then missing, then stale oldest first
+    expect(q.queue).toEqual(['SPY', 'SPX', 'QQQ', 'NDX', 'AAPL', 'ZZZ']);
+    expect([q.nPriority, q.nMissing, q.nStale]).toEqual([4, 1, 1]);
+    const fresh = buildQueue(['AAPL'], { ...base, priority: PRIORITY_SYMBOLS, cached: ['SPY'], isFresh: (s) => s === 'SPY' });
+    expect(fresh.queue).toEqual(['SPX', 'QQQ', 'NDX', 'AAPL']);
+    expect(fresh.nFresh).toBe(1);
+  });
+
+  test('with an explicit list only the priority symbols inside it are moved to the front', () => {
+    const q = buildQueue(['AAPL', 'QQQ', 'MSFT'], { ...base, priority: PRIORITY_SYMBOLS, explicit: true, cached: ['AAPL'], updatedOf: () => '1' });
+    expect(q.queue).toEqual(['QQQ', 'MSFT', 'AAPL']);
+    expect(q.nPriority).toBe(1);
   });
 
   test('active skiplist entries are not queued as missing, expired ones are', () => {
@@ -718,6 +736,5 @@ describe('repo wiring', () => {
     const src = readFileSync(join(root, 'scripts/options-data.ts'), 'utf8');
     expect(src.startsWith('#!/usr/bin/env bun\n')).toBe(true);
     expect(src).toContain('"data", "options"');
-    expect(existsSync(join(root, 'scripts/options-data.py'))).toBe(true);
   });
 });

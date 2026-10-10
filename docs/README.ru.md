@@ -9,7 +9,7 @@
 - Гид разработчика: [русский](./DEVELOPMENT.ru.md) или [английский](./DEVELOPMENT.en.md).
 - [project rules](../rules/project.md): правила проекта для Claude Code.
 
-Для работы используются **Bun** (JS/TS) и **uv** (Python). **Важно:** всегда используйте `bun` вместо `npm`.
+Для работы используются **Bun** (JS/TS, включая сборщик данных). **Важно:** всегда используйте `bun` вместо `npm`.
 
 ---
 
@@ -82,7 +82,7 @@ bun run build-github-pages
 
 | UI label | Настройка | Покрытие | Греки | Заметки |
 |---|---|---|---|---|
-| **CACHE** *(default на GitHub Pages)* | Без настройки | Тикеры из `data/options/*.json` | CBOE/model-enriched по мере refresh | Same-origin static JSON (GitHub Actions/yfinance + CBOE delayed 1st-order). Model/higher-order greeks считает браузер. Без CORS и ключей. |
+| **CACHE** *(default на GitHub Pages)* | Без настройки | Тикеры из `data/options/*.json` | CBOE/model-enriched по мере refresh | Same-origin static JSON (GitHub Actions/Yahoo + CBOE delayed 1st-order). Model/higher-order greeks считает браузер. Без CORS и ключей. |
 | **CBOE** *(default на localhost)* | Нужен прокси | CBOE delayed options | Да (provider + client BS higher-order) | Самый богатый delayed-фид (greeks/IV/OI/spot). Нужен Proxy base URL (`/api/cboe`). |
 | **NASDAQ** | Нужен прокси | NASDAQ option-chain | Нет IV → нет model greeks | Полная цепочка за один запрос: bid/ask/last/volume/OI. Прокси `/api/nasdaq`. |
 | **YAHOO** | Нужен прокси | Yahoo symbol search / option chains | Client Black-Scholes из IV | Lazy по expiration. Прокси обрабатывает crumb/cookies (`/api/options`). |
@@ -106,7 +106,7 @@ bun run build-github-pages
 
 **Единый источник model greeks — браузер** (`src/greeks.ts`).
 
-- `scripts/options-data.py` пишет yfinance quotes и, если есть, **Cboe delayed 1st-order** (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
+- `scripts/options-data.ts` пишет Yahoo quotes и, если есть, **Cboe delayed 1st-order** (`delta`/`gamma`/`theta`/`vega`/`rho`, `greeksSource: "cboe"`).
 - Скрипт **не** считает λ / Vanna / Vomma / Charm / Speed / Zomma / Color и не делает full Black-Scholes fallback — это дубль UI.
 - После любого fetch (включая **CACHE**) приложение считает client-side Black-Scholes: missing 1st-order при наличии IV+spot и higher-order когда возможно.
 - Пропуски — `greeksMissingReason` (fetcher или client).
@@ -116,10 +116,10 @@ bun run build-github-pages
 
 1. Включи Pages: **Settings → Pages**.
 2. Разреши Actions коммитить: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-3. Workflow **Update options data** запускает `scripts/options-data.py`, сам находит universe тикеров, обновляет/расширяет `data/options/*.json`, обновляет `data/options/index.json` и коммитит изменения в `main`.
+3. Workflow **Update options data** запускает `scripts/options-data.ts`, сам находит universe тикеров, обновляет/расширяет `data/options/*.json`, обновляет `data/options/index.json` и коммитит изменения в `main`.
 4. Workflow **GitHub Pages** собирает приложение через `bun run build-github-pages` и деплоит `dist/`.
 
-Ручной список тикеров поддерживается только для разовых запусков: `TICKERS="AAPL MSFT SPY" python scripts/options-data.py`. Плановый workflow использует самообнаружение.
+Ручной список тикеров поддерживается только для разовых запусков: `TICKERS="AAPL MSFT SPY" bun scripts/options-data.ts`. Плановый workflow использует самообнаружение.
 
 ## Настройка прокси для GitHub Pages
 
@@ -171,7 +171,7 @@ bun ./scripts/options-local-proxy.ts
 
 ## Вспомогательная инфраструктура
 
-- `scripts/options-data.py` — умный yfinance-сборщик. Создаёт/обновляет `data/options/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/options/index.json` с `{ files, count, names, no_options }`.
+- `scripts/options-data.ts` — умный Yahoo-сборщик. Создаёт/обновляет `data/options/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/options/index.json` с `{ files, count, names, no_options }`.
 - `.github/workflows/update-data.yml` — плановый/ручной refresh данных.
 - `scripts/options-local-proxy.ts` — локальный **Bun**-прокси:
   - `/api/options` — Yahoo optionChain с crumb/cookies.
@@ -200,7 +200,7 @@ data/
   index.json                  # { files, count, names, no_options }
   AAPL.json, SPY.json, ...    # один cache-файл цепочки на тикер, с greeks metadata после refresh
 scripts/
-  options-data.py               # yfinance -> data/options/*.json + data/options/index.json
+  options-data.py               # Yahoo -> data/options/*.json + data/options/index.json
   options-local-proxy.ts              # локальный Bun proxy: Yahoo/NASDAQ/CBOE/search
   options-cloudflare-proxy.js        # Cloudflare Worker: Yahoo/NASDAQ/CBOE/search/raw
 .github/workflows/
@@ -208,7 +208,6 @@ scripts/
   update-data.yml             # обновление данных по расписанию
   github-pages.yml            # деплой Pages
 package.json                  # Bun/Parcel scripts
-pyproject.toml                # Python deps для options-data.py
 README.md                     # TOC со ссылками на docs/README.en.md и docs/README.ru.md
 docs/
   README.en.md                # Английская документация

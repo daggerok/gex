@@ -32,7 +32,7 @@ export async function fetchStaticJson(url: string, signal?: AbortSignal, label?:
     if (res.status === 404) {
         throw new Error(
             `"${name}" is not in the static cache (data/${name}.json → 404). ` +
-            `Pick a cached ticker from the list, or run scripts/options-data.py to add it.`,
+            `Pick a cached ticker from the list, or run scripts/options-data.ts to add it.`,
         );
     }
     if (!res.ok) {
@@ -53,7 +53,7 @@ export async function fetchStaticJson(url: string, signal?: AbortSignal, label?:
     } catch {
         throw new Error(
             `Static file ${url} is not valid JSON (it may be truncated or contain ` +
-            `NaN/Infinity). Re-run scripts/options-data.py to rebuild it.`,
+            `NaN/Infinity). Re-run scripts/options-data.ts to rebuild it.`,
         );
     }
 }
@@ -174,14 +174,14 @@ export function dedupeTickerSuggestions(items: TickerSuggestion[], limit = 24): 
  *                            is the sorted keys of `files`. No legacy shape kept.
  *                            `names` powers local company-name suggestions;
  *                            `no_options` is surfaced as "(no options)".)
- *   ./data/options/{TICKER}.json  -> ChainResult-like payload (see scripts/options-data.py)
- * Data is refreshed by the GitHub Action. Greeks may be null (yfinance source).
+ *   ./data/options/{TICKER}.json  -> ChainResult-like payload (see scripts/options-data.ts)
+ * Data is refreshed by the GitHub Action. Greeks may be null (Yahoo source).
  */
 export const staticProvider: DataProvider = {
     id: 'static',
     label: 'CACHE',
     description:
-        'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + yfinance + CBOE/BS greeks). ' +
+        'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS greeks). ' +
         'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
     mode: 'bulk',
     setup: 'none',
@@ -216,7 +216,7 @@ export const staticProvider: DataProvider = {
         if (!j || !Array.isArray(j.quotes)) {
             throw new Error(
                 `Static file data/${raw}.json loaded but has no "quotes" array. ` +
-                `The file may be truncated or in an old format — re-run scripts/options-data.py to rebuild it.`,
+                `The file may be truncated or in an old format — re-run scripts/options-data.ts to rebuild it.`,
             );
         }
         const quotes: OptionQuote[] = j.quotes.map((q: any) => ({

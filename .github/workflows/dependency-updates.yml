@@ -54,9 +54,7 @@ jobs:
         run: bun run test
 
       - name: Validate data script syntax
-        run: |
-          python3 -m py_compile scripts/options-data.py
-          node --check scripts/options-cloudflare-proxy.js
+        run: node --check scripts/options-cloudflare-proxy.js
 
       - name: Validate application build
         run: bun run build

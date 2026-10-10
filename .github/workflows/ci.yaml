@@ -31,7 +31,7 @@ jobs:
       - run: bun install -E
       - name: Unit tests (blocks pipeline on failure)
         run: bun run test
-      - run: python3 -m py_compile scripts/options-data.py
+      - run: bun build --target=bun scripts/options-data.ts --outfile=/dev/null
       - run: node --check scripts/options-cloudflare-proxy.js
       - run: bun run build
       - run: bun run build-github-pages

@@ -283,7 +283,7 @@
  * v0.9.34 - Ticker input selects all text on focus/click so typing a new
  *          symbol replaces the previous ticker without manual clear.
  * v0.9.33 - Single source of truth for model greeks (UI only):
- *          - scripts/options-data.py no longer runs Black-Scholes / higher-order
+ *          - scripts/options-data.ts no longer runs Black-Scholes / higher-order
  *            math; it only attaches Cboe delayed 1st-order when available.
  *          - λ + 2nd/3rd-order + full BS fallback remain exclusively in this
  *            file (blackScholesGreeks / enrichQuotesWithModelGreeks) so live
@@ -295,7 +295,7 @@
  *          - Settings migration: unknown/removed providerId resets to host default.
  * v0.9.31 - Client-side Black-Scholes greeks enrichment for live providers:
  *          - Higher-order greeks (λ, vanna, vomma, charm, speed, zomma, color)
- *            used to exist only on Static cache because scripts/options-data.py
+ *            used to exist only on Static cache because scripts/options-data.ts
  *            pre-computed them at build time. Live providers (CBOE/Yahoo/
  *            NASDAQ) now get the same model enrichment in the browser after
  *            fetch, using spot + IV + strike + side + expiration.
@@ -738,7 +738,7 @@
  *            provider/ticker. Aborts are shown as a calm notice, not an error.
  *          - NEW PROVIDER "Static cache (data.json)" [BULK, no setup]: reads the
  *            site's OWN ./data/options/{TICKER}.json (produced by the GitHub Action +
- *            scripts/options-data.py, yfinance). 100% CORS-free on GitHub Pages,
+ *            scripts/options-data.ts, yfinance). 100% CORS-free on GitHub Pages,
  *            no keys. Ships with a ticker picker sourced from ./data/options/index.json.
  *          - NEW PROVIDER "Yahoo (via proxy)" [LAZY, needs proxy base]: calls a
  *            small proxy that handles Yahoo's crumb/cookie flow — either the
@@ -771,7 +771,7 @@
  * ---------------------------------------------------------------------------
  *
  * COMPANION INFRASTRUCTURE (optional; outside the 3 app source files):
- *   - scripts/options-data.py           yfinance -> data/options/*.json + data/options/index.json
+ *   - scripts/options-data.ts           yfinance -> data/options/*.json + data/options/index.json
  *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
  *   - scripts/options-local-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
  *   - scripts/options-cloudflare-proxy.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)

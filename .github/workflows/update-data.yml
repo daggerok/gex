@@ -3,7 +3,7 @@
 # -----------------------------------------------------------------------------
 # INFRASTRUCTURE (not part of the 3-file app source). Implements the
 # "GitHub Actions build-time caching" strategy:
-#   1. Runs scripts/options-data.py (yfinance) on a schedule.
+#   1. Runs scripts/options-data.ts (Bun, raw Yahoo calls) on a schedule.
 #   2. The script SELF-DISCOVERS a market-cap-ranked US universe, then (v4) works
 #      COVERAGE-FIRST: it fetches every MISSING ticker down the cap-ranked list
 #      (resuming where the last run stopped), and only once nothing is missing
@@ -63,17 +63,18 @@ jobs:
       MIN_MARKET_CAP: "9000000"   # Microcap floor ($10M); drops nano-caps
       MAX_EXPIRATIONS: "50"       # expirations stored per ticker (keeps JSON small)
       REQUEST_SLEEP: "0.5"        # politeness delay between fetches (seconds)
-      PYTHONUNBUFFERED: "1"       # stream Python progress logs to Actions immediately
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 2          # The refresh only needs the current tree and a minimal history for its push.
 
-      - uses: ./.github/actions/uv
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Fetch option chains
-        run: TICKERS=$(cat data/All.txt) uv run --with yfinance --with requests python scripts/options-data.py
+        run: TICKERS=$(cat data/All.txt) bun scripts/options-data.ts
 
       # Index options (data/Indices.txt: SPX, XSP, NDX, DJX, RUT) run as their OWN
       # step with a smaller expiration cap: an index chain is far larger than an
@@ -88,14 +89,14 @@ jobs:
         env:
           MAX_EXPIRATIONS: "15"
           MAX_FETCHES: "10"
-        run: TICKERS=$(cat data/Indices.txt) uv run --with yfinance --with requests python scripts/options-data.py
+        run: TICKERS=$(cat data/Indices.txt) bun scripts/options-data.ts
 
       - name: Commit updated data
         run: |
           git config user.name  "Maksim Kostromin"
           git config user.email "daggerok@gmail.com"
           # Stage the refreshed chains + data/options/index.json (which also holds the
-          # no-options skiplist under the `no_options` key since options-data.py v9).
+          # no-options skiplist under the `no_options` key since options-data v9).
           git add data/ || true
           # Check if there are changes to commit
           if git diff --staged --quiet; then
