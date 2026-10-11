@@ -14,6 +14,8 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (SPY, SPX, QQQ, NDX,
+ *        DIA, DJX, IWM, RUT). `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins.
  *   t5 - Chart cache: after the options pass every cached ticker (SPY, SPX, QQQ, NDX first) gets
  *        data/charts/<SYM>.json with 1Y of daily bars from Yahoo v8 chart, so the Chart tab works
  *        without a proxy. Missing files first, then oldest, at most CHART_MAX_FETCHES per run.
@@ -36,6 +38,7 @@
  *
  * WHAT IT DOES
  *   1. Builds a UNIVERSE of optionable US underlyings: TICKERS override, else
+ *      DEFAULT_SYMBOLS unless the `all` argument is given, else
  *      the NASDAQ screener (market-cap order) merged with the Cboe optionable
  *      directory, else Cboe alone, else the tiny built-in list.
  *   2. Builds a WORK QUEUE: missing symbols first (universe order), then stale
@@ -60,7 +63,8 @@
  *   bar, that is Yahoo's adjclose). This port does the same on purpose.
  *
  * USAGE
- *   ./scripts/options-data.ts                       # smart auto-universe run
+ *   ./scripts/options-data.ts                       # only the default index/ETF set (DEFAULT_SYMBOLS)
+ *   ./scripts/options-data.ts all                   # smart auto-universe run (everything)
  *   TICKERS="AAPL MSFT" ./scripts/options-data.ts   # only these
  *   MAX_FETCHES=50 MAX_EXPIRATIONS=8 ./scripts/options-data.ts
  *
@@ -86,7 +90,7 @@
  *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
  *   SOFT_DEADLINE_SECONDS default 0      stop starting new tickers after N seconds (0 = off)
  *   VERBOSE            default off       also print the legacy timestamped progress lines
- *   TICKERS / TICKER   explicit universe override
+ *   TICKERS / TICKER   explicit universe override (wins over the default set and over `all`)
  * =============================================================================
  */
 
@@ -1138,12 +1142,28 @@ export function mergeUniverse(nasdaq: string[], cboe: string[], size: number): s
     return dedupe(FALLBACK_UNIVERSE.map((s) => canonical(s))).slice(0, size);
 }
 
+/** Run without args: only SP500, Nasdaq 100, Dow Jones and Russell 2000, each as index and ETF. */
+export const DEFAULT_SYMBOLS = ["SPY", "SPX", "QQQ", "NDX", "DIA", "DJX", "IWM", "RUT"];
+
+/** True when the CLI asks for the full auto-universe (`all`, any case). Anything else is rejected. */
+export function wantsAll(argv: string[] = process.argv.slice(2)): boolean {
+    const unknown = argv.filter((a) => a.toLowerCase() !== "all");
+    if (unknown.length) throw new Error(`unknown argument: ${unknown.join(" ")} (only "all" is supported)`);
+    return argv.length > 0;
+}
+
+/** Universe is a fixed list (TICKERS override or the default set) instead of the discovered one. */
+function explicitUniverse(): boolean {
+    return Boolean(tickersOverride()) || !wantsAll();
+}
+
 async function loadUniverse(): Promise<{ symbols: string[]; source: string }> {
-    const override = tickersOverride();
+    const override = tickersOverride() ?? (wantsAll() ? null : DEFAULT_SYMBOLS);
     if (override) {
         const preview = override.slice(0, 20).join(", ") + (override.length > 20 ? `, ... (+${override.length - 20} more)` : "");
-        log(`universe/override: using ${override.length} symbols from TICKERS/TICKER env: ${preview}`);
-        return { symbols: override, source: "TICKERS override" };
+        const source = tickersOverride() ? "TICKERS override" : "default set (pass `all` for everything)";
+        log(`universe/override: using ${override.length} symbols from ${source}: ${preview}`);
+        return { symbols: override, source };
     }
     const cboe = await liveCboeUniverse();
     const nasdaq = await liveNasdaqUniverse();
@@ -1338,7 +1358,7 @@ function buildWorkQueue(universe: string[]): WorkQueue {
     return buildQueue(universe, {
         cached: cachedSymbols(),
         skip: loadSkiplist(),
-        explicit: Boolean(process.env.TICKERS || process.env.TICKER),
+        explicit: explicitUniverse(),
         isFresh: (s) => isFresh(join(DATA_DIR, `${s}.json`)),
         updatedOf: (s) => fileUpdated(join(DATA_DIR, `${s}.json`)),
         skipActive: (last) => skipIsActive(last),
@@ -1793,7 +1813,7 @@ export async function main(): Promise<void> {
     const counts: RunCounts = { new: 0, updated: 0, unchanged: 0, "no-options": 0, failed: 0 };
     const newTickers: string[] = [];
 
-    if (tickersOverride()) console.log(`${outputLabel("filter")} TICKERS override: ${universe.length} symbols`);
+    if (explicitUniverse()) console.log(`${outputLabel("filter")} ${universeSource}: ${universe.length} symbols`);
     console.log(`${outputLabel("universe")} ${universe.length} symbols (${universeSource}), today=${dateIso(todayDate())}, timezone=${MARKET_TZ_NAME}`);
     console.log(
         `${outputLabel("queue")} ${queue.length} queued = ${nMissing} missing + ${nStale} stale (oldest first); ${nFresh} fresh skipped; ` +
@@ -1910,7 +1930,7 @@ export async function main(): Promise<void> {
     if (cfg.CHART_CACHE && pool.stopped !== "rate-limit") {
         const chartQueue = buildChartQueue(universe, {
             cached: cachedSymbols(),
-            explicit: Boolean(process.env.TICKERS || process.env.TICKER),
+            explicit: explicitUniverse(),
             hasChart: (s) => existsSync(join(CHARTS_DIR, `${s}.json`)),
             isFresh: (s) => isFresh(join(CHARTS_DIR, `${s}.json`)),
             updatedOf: (s) => fileUpdated(join(CHARTS_DIR, `${s}.json`)),
