@@ -148,7 +148,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'onboarding.previewDemo': 'or get {{symbol}}’s dates now (no key needed)',
         'onboarding.previewCache': 'or switch to CACHE (AAPL static data)',
 
-        'controls.tickerPlaceholder': 'Ticker or company (e.g. AAPL, Tesla, SPX)',
+        'controls.tickerPlaceholder': 'SPY, SPX, QQQ, NDX, DJX, RUT, DIA, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, etc...',
         'controls.expirations': 'Expirations',
         'controls.loading': 'Loading…',
         'controls.reset': 'Reset',
@@ -470,7 +470,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'onboarding.previewDemo': 'или получить даты для {{symbol}} прямо сейчас (без ключа)',
         'onboarding.previewCache': 'или переключиться на CACHE (статичные данные AAPL)',
 
-        'controls.tickerPlaceholder': 'Тикер или компания (например, AAPL, Tesla, SPX)',
+        'controls.tickerPlaceholder': 'SPY, SPX, QQQ, NDX, DJX, RUT, DIA, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG и др...',
         'controls.expirations': 'Экспирации',
         'controls.loading': 'Загрузка…',
         'controls.reset': 'Сбросить',
