@@ -171,7 +171,7 @@ bun ./scripts/options-local-proxy.ts
 
 ## Вспомогательная инфраструктура
 
-- `scripts/options-data.ts` — умный Yahoo-сборщик. Создаёт/обновляет `data/options/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/options/index.json` с `{ files, count, names, no_options }`.
+- `scripts/options-data.ts` — умный Yahoo-сборщик. Создаёт/обновляет `data/options/*.json`, вешает Cboe delayed **1st-order** greeks (model greeks только в UI) и ведёт `data/options/index.json` с `{ files, count, names, no_options }`. После прохода по опционам пишет ещё `data/charts/<SYM>.json` (1 год дневных свечей, ~12 КБ на тикер, сначала SPY, SPX, QQQ, NDX, до `CHART_MAX_FETCHES` за запуск), поэтому вкладка Chart работает из провайдера CACHE без прокси.
 - `.github/workflows/update-data.yml` — плановый/ручной refresh данных.
 - `scripts/options-local-proxy.ts` — локальный **Bun**-прокси:
   - `/api/options` — Yahoo optionChain с crumb/cookies.

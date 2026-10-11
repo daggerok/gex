@@ -1,6 +1,7 @@
 import { FUTURES_PRICED_SYMBOLS, INDEX_SYMBOLS } from '../greeks';
 import type { OhlcBar, ProviderContext } from '../types';
 import { dbg, num } from '../utils';
+import { fetchStaticJson } from './cache';
 
 /**
  * OHLC price history client for the Chart tab (plan section 6.3).
@@ -107,4 +108,51 @@ export async function fetchOhlc(
     // Proxy-level errors ({ error: "..." }) or a non-JSON upstream body.
     const err = typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`;
     throw new Error(`Chart proxy failed for "${symbol}": ${err}`);
+}
+
+/**
+ * Chart file written by scripts/options-data.ts: data/charts/<SYM>.json with 1Y of daily bars, compact column arrays
+ * (`timestamp`, `open`, `high`, `low`, `close`, `volume`, `gmtoffset`). Rebuilt into the Yahoo body shape so
+ * parseYahooChart stays the only place that turns candles into OhlcBar.
+ */
+export async function fetchCachedOhlc(symbol: string, ctx: Pick<ProviderContext, 'signal'> = {}): Promise<OhlcBar[]> {
+    const raw = symbol.toUpperCase().trim().replace(/^[.^]/, '');
+    const file = await fetchStaticJson(`data/charts/${encodeURIComponent(raw)}.json`, ctx.signal, `charts/${raw}`);
+    const body = {
+        chart: {
+            result: [{
+                meta: { gmtoffset: file?.gmtoffset ?? 0 },
+                timestamp: file?.timestamp ?? [],
+                indicators: { quote: [{ open: file?.open, high: file?.high, low: file?.low, close: file?.close, volume: file?.volume }] },
+            }],
+            error: null,
+        },
+    };
+    return parseYahooChart(body, DEFAULT_CHART_INTERVAL);
+}
+
+/**
+ * Daily candles for the Chart tab. With the CACHE provider (`preferCache`) the static file comes first and the proxy
+ * is the fallback for tickers outside the cache; with a live provider the proxy comes first and the cache is the
+ * fallback, so the tab also works when the proxy is down or not set.
+ */
+export async function loadOhlc(
+    symbol: string,
+    ctx: Pick<ProviderContext, 'proxyBase' | 'signal'>,
+    req: ChartRequest,
+    preferCache: boolean,
+): Promise<OhlcBar[]> {
+    const hasProxy = Boolean((ctx.proxyBase || '').trim());
+    const sources: Array<'cache' | 'live'> = preferCache || !hasProxy ? ['cache', 'live'] : ['live', 'cache'];
+    let firstError: unknown;
+    for (const source of sources) {
+        if (source === 'live' && !hasProxy) continue;
+        try {
+            return source === 'cache' ? await fetchCachedOhlc(symbol, ctx) : await fetchOhlc(symbol, ctx, req);
+        } catch (e) {
+            if (ctx.signal?.aborted || (e as { name?: string })?.name === 'AbortError') throw e;
+            firstError ??= e;
+        }
+    }
+    throw firstError;
 }
