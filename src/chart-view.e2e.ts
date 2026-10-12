@@ -68,7 +68,8 @@ try {
     assert.ok(saved?.SPY, 'the window is saved for SPY');
 
     await openChart();
-    assert.equal(await view(), changed, 'after a refresh the chart is where it was left');
+    const restored = await view();
+    assert.equal(restored, changed, `after a refresh the chart is where it was left (saved ${JSON.stringify(saved)}, was ${changed}, now ${restored})`);
 
     // ---- a double click on the time axis: back to the interval with empty space right of the last candle ----
     const after = (await page.locator('[data-last-bar]').boundingBox())!;
