@@ -17,7 +17,14 @@ try {
     await page.getByText('💾').first().click(); // cached data from the header pill
     assert.equal(await page.locator('select').count(), 0, 'no dropdown in the header or anywhere while the menu is closed');
 
+    assert.equal(await page.locator('[data-proxy-indicators]').count(), 0, 'no proxy dots in the header');
+    assert.equal(await page.locator('button[aria-label="Debug"]').count(), 0, 'no debug button in the header');
+
     await page.locator('button[aria-label="Settings"]').click();
+    const debug = page.locator('[data-debug-info]');
+    assert.equal(await debug.count(), 1, 'debug info and the proxy status are in the menu');
+    assert.equal(await page.locator('[data-proxy-indicators]').getAttribute('data-proxy-indicators'), 'disabled', 'cached data: the proxy status is muted');
+    assert.ok((await debug.innerText()).includes('CACHE'), 'debug info shows the provider');
     const cached = page.locator('[data-data-source="cache"]');
     const online = page.locator('[data-data-source="live"]');
     const select = page.locator('[data-provider-select]');
@@ -38,6 +45,9 @@ try {
     await select.selectOption('yahoo');
     assert.equal(await select.inputValue(), 'yahoo');
 
+    assert.equal(await page.locator('[data-proxy-indicators]').getAttribute('data-proxy-indicators'), 'live', 'online data: the proxy status is live');
+    const debugBox = (await debug.boundingBox())!;
+    assert.ok(debugBox.y > (await online.boundingBox())!.y, 'debug info is below the data source block, the last block of the menu');
     await cached.click();
     assert.equal(await select.isDisabled(), true);
     assert.equal(await select.inputValue(), 'static');

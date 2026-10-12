@@ -94,7 +94,8 @@
  *   MAX_EXPIRATIONS    default 12        expirations stored per ticker (the nearest ones are fetched)
  *   KEEP_EXPIRATIONS   default 0         1 = keep the later expirations already cached for the ticker (see t8)
  *   HISTORY            default 0         1 = after the run write the files of the DEFAULT_SYMBOLS into the zip of the day (see t10)
- *   HISTORY_KEEP_DAYS  default 14        daily archives older than this many days are deleted (0 = keep all); backups made by hand stay
+ *   HISTORY_KEEP_DAYS  default 14        daily archives older than this many days are deleted (0 = keep all)
+ *   HISTORY_KEEP_BACKUP_DAYS default 14  the same for backups made on demand (YYYY-MM-DD-HH-mm.zip, by the date in the id; 0 = keep all)
  *   RATE_LIMIT_HITS    default 3         consecutive errors that mean "blocked"
  *   REQUEST_SLEEP      default 0.6       seconds after each successful write
  *   SKIP_RECHECK_DAYS  default 30        days before a no-options ticker is retried
@@ -117,7 +118,7 @@
 
 /// <reference types="node" />
 import { DEFAULT_TICKERS } from "../src/default-tickers";
-import { archiveDay, pruneDailyArchives } from "./history-archive";
+import { archiveDay, pruneArchives } from "./history-archive";
 import { marketDay as sharedMarketDay } from "../src/backtest/snapshot";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -382,6 +383,7 @@ const cfg = {
     KEEP_EXPIRATIONS: ["1", "true", "yes", "on"].includes((process.env.KEEP_EXPIRATIONS ?? "0").toLowerCase()),
     HISTORY: ["1", "true", "yes", "on"].includes((process.env.HISTORY ?? "0").toLowerCase()),
     HISTORY_KEEP_DAYS: envNonNegativeFloat("HISTORY_KEEP_DAYS", "14"),
+    HISTORY_KEEP_BACKUP_DAYS: envNonNegativeFloat("HISTORY_KEEP_BACKUP_DAYS", "14"),
     RATE_LIMIT_HITS: envInt("RATE_LIMIT_HITS", "3"),
     REQUEST_SLEEP: envFloat("REQUEST_SLEEP", "0.6"),
     NASDAQ_TIMEOUT: envFloat("NASDAQ_TIMEOUT", "20"),
@@ -2009,8 +2011,8 @@ export async function main(): Promise<void> {
         const archived = archiveDay({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: DEFAULT_SYMBOLS, day, dayOf: fileDay });
         const n = archived.added[day]?.length ?? 0;
         console.log(`${outputLabel("history")} ${day}: ${n} file(s) written to the day zip, ${archived.already} already in it`);
-        const dropped = pruneDailyArchives(HISTORY_DIR, day, cfg.HISTORY_KEEP_DAYS);
-        if (dropped.length) console.log(`${outputLabel("history")} ${dropped.length} day zip(s) older than ${cfg.HISTORY_KEEP_DAYS} days deleted: ${dropped.join(", ")}`);
+        const dropped = pruneArchives(HISTORY_DIR, day, cfg.HISTORY_KEEP_DAYS, cfg.HISTORY_KEEP_BACKUP_DAYS);
+        if (dropped.length) console.log(`${outputLabel("history")} ${dropped.length} zip(s) rotated out (daily older than ${cfg.HISTORY_KEEP_DAYS} days, backups older than ${cfg.HISTORY_KEEP_BACKUP_DAYS}): ${dropped.join(", ")}`);
     }
 
     log(`skiplist: saving ${Object.keys(skip).length} entries to api/options/index.json (no_options)`);

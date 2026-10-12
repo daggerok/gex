@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
-import { liveLabel, mergeEntries, parseLatest, parseSiteIndex, siteZipPath } from './entries';
+import { liveLabel, mergeEntries, parseLatest, parseSiteIndex, pickTickerForSnapshot, siteZipPath } from './entries';
 
 describe('siteZipPath', () => {
   test('the zip of a day and of a backup sit in the folder of their month', () => {
@@ -54,5 +54,24 @@ describe('liveLabel and parseLatest', () => {
   test('api/latest.json: only a real date counts', () => {
     expect(parseLatest({ version: 1, date: '2026-10-09' })).toBe('2026-10-09');
     for (const j of [null, {}, { date: 5 }, { date: '10/09/2026' }]) expect(parseLatest(j)).toBeNull();
+  });
+});
+
+describe('pickTickerForSnapshot', () => {
+  test('a single-ticker backup opens that ticker, whatever was open before', () => {
+    expect(pickTickerForSnapshot(['XYZ'], 'SPY')).toBe('XYZ');
+    expect(pickTickerForSnapshot(['XYZ'], null)).toBe('XYZ');
+  });
+
+  test('two or more: the stored ticker when the snapshot has it (any case), else the first one of the list', () => {
+    expect(pickTickerForSnapshot(['AAPL', 'QQQ', 'SPY'], 'QQQ')).toBe('QQQ');
+    expect(pickTickerForSnapshot(['AAPL', 'QQQ', 'SPY'], ' spy ')).toBe('SPY');
+    expect(pickTickerForSnapshot(['AAPL', 'QQQ', 'SPY'], 'NVDA')).toBe('AAPL');
+    expect(pickTickerForSnapshot(['AAPL', 'QQQ', 'SPY'], '')).toBe('AAPL');
+    expect(pickTickerForSnapshot(['AAPL', 'QQQ'], undefined)).toBe('AAPL');
+  });
+
+  test('a snapshot without tickers gives none', () => {
+    expect(pickTickerForSnapshot([], 'SPY')).toBeNull();
   });
 });

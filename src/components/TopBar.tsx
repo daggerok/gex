@@ -129,7 +129,6 @@ export const TopBar: React.FC<{
     proxyOk, proxyChecking, asOfSlot,
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
-    const [showDebug, setShowDebug] = useState(false);
     const { t, lang, setLang } = useI18n();
     const hasKey = !!(settings.tokens[provider.id]) &&
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
@@ -151,14 +150,12 @@ export const TopBar: React.FC<{
         return () => obs.disconnect();
     }, [settings.theme]);
 
-    const debugRef = useRef<HTMLDivElement | null>(null);
     const settingsRef = useRef<HTMLDivElement | null>(null);
     const showTickerSuggestions = tickerSuggestionsOpen && (tickerSuggestionsLoading || tickerSuggestions.length > 0);
 
     useEffect(() => {
         const h = (e: MouseEvent) => {
             const n = e.target as Node;
-            if (debugRef.current && !debugRef.current.contains(n)) setShowDebug(false);
             if (settingsRef.current && !settingsRef.current.contains(n)) setOpenSettings(false);
         };
         document.addEventListener('mousedown', h);
@@ -218,71 +215,6 @@ export const TopBar: React.FC<{
         <div className={`sticky top-0 z-50 ${bg} backdrop-blur-md border-b ${bdr}`}>
             <div className="px-4 xl:px-8">
                 <div className="flex items-center gap-2 sm:gap-3 py-3">
-                    {/* 1. Debug — same as fundamentals ⌘ */}
-                    <div className="relative flex-shrink-0" ref={debugRef}>
-                        <button
-                            type="button"
-                            onClick={() => setShowDebug((v) => !v)}
-                            title={t('topBar.debug')}
-                            aria-label={t('topBar.debug')}
-                            aria-expanded={showDebug}
-                            className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${
-                                showDebug
-                                    ? dark ? chipActiveDark : chipActiveLight
-                                    : dark
-                                        ? 'text-slate-600 hover:text-slate-400 hover:bg-slate-800'
-                                        : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
-                            }`}
-                        >
-                            ⌘
-                        </button>
-                        {showDebug && (
-                            <div
-                                role="dialog"
-                                aria-label={t('topBar.debug')}
-                                className={`absolute left-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3`}
-                            >
-                                <div className={`font-bold text-sm ${t1}`}>⌘ {t('topBar.debug')}</div>
-                                <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>Overview</div>
-                                <div className={`rounded-lg border ${bdr} divide-y ${bdr}`}>
-                                    <div className="flex items-start justify-between gap-3 px-3 py-2">
-                                        <span className={`text-xs ${mt}`}>Provider</span>
-                                        <span className={`text-xs font-mono text-right ${t1}`}>{provider.label}</span>
-                                    </div>
-                                    <div className="grid grid-cols-2 divide-x divide-inherit">
-                                        <div className="px-3 py-2">
-                                            <div className={`text-[10px] ${mt}`}>Mode</div>
-                                            <div className={`text-xs font-mono font-semibold ${t1}`}>{isCache ? 'CACHE' : 'LIVE'}</div>
-                                        </div>
-                                        <div className="px-3 py-2">
-                                            <div className={`text-[10px] ${mt}`}>Proxy</div>
-                                            <div className={`text-xs font-mono font-semibold ${proxyStatusCls}`}>{proxyStatusLabel}</div>
-                                        </div>
-                                    </div>
-                                    <div className="px-3 py-2">
-                                        <div className={`text-[10px] ${mt}`}>proxyBase</div>
-                                        <div className={`mt-1 text-[10px] font-mono break-all ${t2}`}>{settings.proxyBase || '—'}</div>
-                                    </div>
-                                    <div className="px-3 py-2">
-                                        <div className={`text-[10px] ${mt}`}>Ticker</div>
-                                        <div className={`text-xs font-mono font-semibold ${t1}`}>{tickerInput || '—'}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* 2. Proxy dots — fundamentals size/spacing */}
-                    <div
-                        className="flex gap-1.5 flex-shrink-0"
-                        data-proxy-indicators={isCache ? 'disabled' : 'live'}
-                        title={isCache ? `${t('topBar.proxy')} (${t('topBar.cache')} — ${t('topBar.proxyDisabled')})` : t('topBar.proxy')}
-                        aria-label={t('topBar.proxy')}
-                    >
-                        <div className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
-                        <div className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
-                    </div>
-
                     {/* 3. Ticker — fundamentals mono input */}
                     <div className="flex-1 min-w-0 relative" title={t('topBar.ticker')}>
                         <input
@@ -537,6 +469,41 @@ export const TopBar: React.FC<{
                                     </div>
                                     <div className={`text-[10px] ${mt}`}>
                                         {isCache ? t('topBar.proxyDisabled') : t('settings.providerHint')}
+                                    </div>
+                                </div>
+
+                                {/* Status and debug, the last block of the menu: they used to be a button and two dots in the header.
+                                    One dot is enough, both dots always showed the same /health probe. */}
+                                <div className={`border-t ${bdr} pt-2 space-y-2`} data-debug-info>
+                                    <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>⌘ {t('topBar.debug')}</div>
+                                    <div className={`rounded-lg border ${bdr} divide-y ${bdr}`}>
+                                        <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                            <span className={`text-xs ${mt}`}>{t('topBar.proxy')}</span>
+                                            <span
+                                                className={`flex items-center gap-2 text-xs font-mono font-semibold ${proxyStatusCls}`}
+                                                data-proxy-indicators={isCache ? 'disabled' : 'live'}
+                                                title={isCache ? `${t('topBar.proxy')} (${t('topBar.cache')} — ${t('topBar.proxyDisabled')})` : t('topBar.proxy')}
+                                            >
+                                                <span className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
+                                                {proxyStatusLabel.replace('● ', '')}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                            <span className={`text-xs ${mt}`}>Provider</span>
+                                            <span className={`text-xs font-mono text-right ${t1}`}>{provider.label}</span>
+                                        </div>
+                                        <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                            <span className={`text-xs ${mt}`}>Mode</span>
+                                            <span className={`text-xs font-mono font-semibold ${t1}`}>{isCache ? 'CACHE' : 'LIVE'}</span>
+                                        </div>
+                                        <div className="px-3 py-2">
+                                            <div className={`text-[10px] ${mt}`}>proxyBase</div>
+                                            <div className={`mt-1 text-[10px] font-mono break-all ${t2}`}>{settings.proxyBase || '—'}</div>
+                                        </div>
+                                        <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                            <span className={`text-xs ${mt}`}>{t('topBar.ticker')}</span>
+                                            <span className={`text-xs font-mono font-semibold ${t1}`}>{tickerInput || '—'}</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

@@ -813,7 +813,7 @@ import { BacktestManager } from './components/BacktestManager';
 import { ExpirationChips } from './components/ExpirationChips';
 import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
-import { liveLabel } from './backtest/entries';
+import { liveLabel, pickTickerForSnapshot } from './backtest/entries';
 import { makeBackup, type BackupProgress } from './backtest/maker';
 import { saveBackupChoice, type BackupChoice } from './backtest/prefs';
 import { DEFAULT_TICKERS } from './default-tickers';
@@ -1096,14 +1096,27 @@ const App: React.FC = () => {
         }
     }, [provider, settings, patchSettings]);
 
-    // Entering or leaving a backtest reloads the ticker on screen from the new source (a ticker that is not in the archive
-    // shows the error of the as-of provider). Not on the first render: the boot restore does that.
+    // Entering, changing or leaving a backtest reloads a ticker from the new source. Opening a snapshot picks the ticker: the
+    // only one of a single-ticker backup; with two or more, the stored last ticker when the snapshot has it, else the first one
+    // of its list (pickTickerForSnapshot). Leaving puts back the ticker that was open before the backtest. A ticker that is
+    // not in the archive shows the error of the as-of provider. Not on the first render: the boot restore does that.
     const asOfId = asOf?.id ?? null;
     const asOfFirst = useRef(true);
+    const beforeBacktestTicker = useRef<string | null>(null);
     useEffect(() => {
         if (asOfFirst.current) { asOfFirst.current = false; return; }
-        const sym = (tickerInput || settings.lastTicker).trim();
-        if (sym) void getDates(sym);
+        let sym: string;
+        if (asOf) {
+            if (beforeBacktestTicker.current === null) beforeBacktestTicker.current = settings.lastTicker;
+            sym = pickTickerForSnapshot(asOf.snapshot.tickers, beforeBacktestTicker.current) ?? settings.lastTicker;
+        } else {
+            sym = beforeBacktestTicker.current ?? settings.lastTicker;
+            beforeBacktestTicker.current = null;
+        }
+        sym = sym.trim();
+        if (!sym) return;
+        setTickerInput(sym);
+        void getDates(sym);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [asOfId]);
 

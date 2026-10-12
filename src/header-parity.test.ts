@@ -34,11 +34,21 @@ describe('header parity + CACHE-muted proxies (gex)', () => {
     expect(main).toContain('rounded-lg p-0.5 border');
   });
 
-  test('debug + settings popovers use fundamentals card shell', () => {
+  test('the settings popover uses the fundamentals card shell', () => {
     expect(main).toContain('w-[min(92vw,22rem)] z-[60]');
     expect(main).toContain('rounded-xl shadow-xl p-3 space-y-3');
     expect(main).toContain("bg-slate-800 border-slate-600 text-slate-100");
     expect(main).toContain("bg-white border-slate-200 text-slate-900 shadow-sm");
+  });
+
+  test('debug info and the proxy status are the last block of the settings menu, the header has no debug button and no dots', () => {
+    const topBar = readFileSync(join(import.meta.dir, 'components/TopBar.tsx'), 'utf8');
+    const header = topBar.slice(0, topBar.indexOf('{openSettings && ('));
+    const menu = topBar.slice(topBar.indexOf('{openSettings && ('));
+    expect(header).not.toContain('data-proxy-indicators');
+    expect(header).not.toContain("t('topBar.debug')");
+    expect(menu).toContain('data-debug-info');
+    expect(menu.indexOf('data-debug-info')).toBeGreaterThan(menu.indexOf('data-data-source'));
   });
 
   test('the provider select lives in the settings menu (Online data / Cached data buttons), not in the header', () => {

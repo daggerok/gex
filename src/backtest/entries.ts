@@ -67,3 +67,14 @@ export function parseLatest(json: unknown): string | null {
     const date = (json as { version?: unknown; date?: unknown } | null)?.date;
     return typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 }
+
+/**
+ * The ticker to show when a snapshot is opened: the only ticker of a single-ticker backup; otherwise the ticker stored as the
+ * last one (`preferred`) when the snapshot has it; otherwise the first ticker of the snapshot. Null when it has none.
+ */
+export function pickTickerForSnapshot(tickers: readonly string[], preferred: string | null | undefined): string | null {
+    if (!tickers.length) return null;
+    if (tickers.length === 1) return tickers[0];
+    const want = (preferred ?? '').trim().toUpperCase();
+    return want && tickers.includes(want) ? want : tickers[0];
+}

@@ -95,6 +95,9 @@ jobs:
         if: steps.window.outputs.run == 'true'
         env:
           HISTORY: ${{ steps.window.outputs.final == 'true' && '1' || '0' }}
+          # rotation of the archive: daily zips and backups made on demand, days kept (repository variables override the 14)
+          HISTORY_KEEP_DAYS: ${{ vars.HISTORY_KEEP_DAYS || '14' }}
+          HISTORY_KEEP_BACKUP_DAYS: ${{ vars.HISTORY_KEEP_BACKUP_DAYS || '14' }}
         run: bun scripts/options-data.ts
 
       # Backtest backup of the data just fetched, only when the repository variable BACKTEST_TICKERS is set

@@ -18,6 +18,7 @@ const SPOT = 700.5;
 const site = await startTestSite({
     latest: '2026-09-30',
     snapshots: [
+        { id: '2026-09-28', tickers: ['QQQ'], spot: SPOT - 1 },
         { id: '2026-09-29', tickers: ['SPY'], spot: SPOT },
         { id: '2026-09-30', tickers: ['SPY', 'QQQ'], spot: SPOT + 1 },
     ],
@@ -86,6 +87,15 @@ try {
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('[data-backup-tickers]').count(), 0, 'Esc cancels');
 
+    // ---- opening a snapshot opens its ticker: a single-ticker backup opens that ticker, with two or more the stored one ----
+    await pick('2026-09-28');
+    assert.equal(await ticker.inputValue(), 'QQQ', 'a single-ticker snapshot opens its ticker, not the stored SPY');
+    await pick('2026-09-30');
+    assert.equal(await ticker.inputValue(), 'SPY', 'two tickers: the stored ticker (SPY) is opened');
+    await banner.getByRole('button').click();
+    await page.waitForTimeout(1500);
+    assert.equal(await ticker.inputValue(), 'SPY', 'back to latest keeps the ticker that was open before');
+
     // ---- backtest on a site snapshot: amber, banner, the data of that day ----
     await pick('2026-09-29');
     assert.equal(await page.locator('[data-asof-select]').getAttribute('data-asof-select'), 'backtest');
@@ -119,10 +129,10 @@ try {
     await openMenu();
     await page.getByText('Backtest data...').click();
     const rows = page.locator('[data-backtest-row]');
-    assert.deepEqual(await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-backtest-row'))), [backupId, '2026-09-30', '2026-09-29'].sort((a, b) => (a < b ? 1 : -1)), 'newest first');
+    assert.deepEqual(await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-backtest-row'))), [backupId, '2026-09-30', '2026-09-29', '2026-09-28'].sort((a, b) => (a < b ? 1 : -1)), 'newest first');
     const held = (id: string) => page.locator(`label:has([data-backtest-row="${id}"])`).innerText().then((t) => /\d (KB|MB)/.test(t));
     assert.equal(await held('2026-09-29'), true, 'the opened site day is kept in the browser');
-    assert.equal(await held('2026-09-30'), false, 'a site day that was not opened is not');
+    assert.equal(await held('2026-09-30'), true, 'every site day that was opened is kept');
     // download two as ONE zip that holds both snapshots
     await page.locator('[data-backtest-row="2026-09-29"]').check();
     await page.locator('[data-backtest-row="2026-09-30"]').check();
@@ -135,6 +145,8 @@ try {
     await page.getByRole('button', { name: 'Remove', exact: true }).click();
     await page.waitForTimeout(500);
     assert.equal(await held('2026-09-29'), false, 'the older day is no longer held in the browser (it is still on the site)');
+    assert.equal(await held('2026-09-28'), false, 'and so is the one before it');
+    assert.equal(await held('2026-09-30'), true, 'the day itself stays');
     assert.equal(await held(backupId), true, 'the backup, a later day, stays');
     assert.equal(await banner.count(), 1, 'the open snapshot is on the site, so the mode is not dropped')
     await page.keyboard.press('Escape');

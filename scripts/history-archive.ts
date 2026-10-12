@@ -201,15 +201,18 @@ function daysBefore(day: string, n: number): string {
 }
 
 /**
- * Keeps the automatic daily archives of the last `keepDays` days (counted back from `today`, `today` included in the
- * count) and deletes the older ones. Backups made on demand (`YYYY-MM-DD-HH-mm.zip`) are NEVER deleted here, they are
- * the owner's to clean up. A month folder left empty is removed, then index.json follows the disk. `keepDays` <= 0 keeps
- * everything. Returns the deleted day ids.
+ * Rotation of the archive: keeps the automatic daily archives (`YYYY-MM-DD.zip`) of the last `keepDays` days and the backups
+ * made on demand (`YYYY-MM-DD-HH-mm.zip`) of the last `keepBackupDays` days, both counted back from `today` with `today`
+ * included, and deletes the older ones. A backup counts by the calendar date in its id. A month folder left empty is
+ * removed, then index.json follows the disk. A count <= 0 keeps that kind forever. Returns the deleted ids.
  */
-export function pruneDailyArchives(historyDir: string, today: string, keepDays: number): string[] {
-    if (!(keepDays > 0)) return [];
-    const oldest = daysBefore(today, keepDays - 1);
-    const dropped = snapshotsOnDisk(historyDir).filter((id) => id.length === 10 && id < oldest);
+export function pruneArchives(historyDir: string, today: string, keepDays: number, keepBackupDays: number): string[] {
+    const oldestDaily = keepDays > 0 ? daysBefore(today, keepDays - 1) : null;
+    const oldestBackup = keepBackupDays > 0 ? daysBefore(today, keepBackupDays - 1) : null;
+    const dropped = snapshotsOnDisk(historyDir).filter((id) => {
+        const oldest = id.length === 10 ? oldestDaily : oldestBackup;
+        return oldest !== null && id.slice(0, 10) < oldest;
+    });
     for (const id of dropped) {
         rmSync(zipPathFor(id, historyDir), { force: true });
         const month = join(historyDir, id.slice(0, 7));
