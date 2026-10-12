@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /// <reference types="bun" />
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { buildZip, extractEntry, parseZipDirectory } from "../src/history-zip";
@@ -194,4 +194,34 @@ export function readArchived(historyDir: string, day: string, symbol: string): s
     const entries = readDayZip(zipPathFor(day, historyDir));
     const data = entries.get(`${day}/${symbol}.json`);
     return data ? dec.decode(data) : null;
+}
+
+/** The calendar day `n` days before `day` (`YYYY-MM-DD`). */
+function daysBefore(day: string, n: number): string {
+    const d = new Date(`${day}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - n);
+    return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Keeps the automatic daily archives of the last `keepDays` days (counted back from `today`, `today` included in the
+ * count) and deletes the older ones. Backups made on demand (`YYYY-MM-DD-HH-mm.zip`) are NEVER deleted here, they are
+ * the owner's to clean up. A month folder left empty is removed, then index.json follows the disk. `keepDays` <= 0 keeps
+ * everything. Returns the deleted day ids.
+ */
+export function pruneDailyArchives(historyDir: string, today: string, keepDays: number): string[] {
+    if (!(keepDays > 0)) return [];
+    const oldest = daysBefore(today, keepDays - 1);
+    const dropped = snapshotsOnDisk(historyDir).filter((id) => id.length === 10 && id < oldest);
+    for (const id of dropped) {
+        rmSync(zipPathFor(id, historyDir), { force: true });
+        const month = join(historyDir, id.slice(0, 7));
+        try {
+            if (!readdirSync(month).length) rmSync(month, { recursive: true, force: true });
+        } catch {
+            // already gone
+        }
+    }
+    if (dropped.length) syncHistoryIndex(historyDir);
+    return dropped;
 }

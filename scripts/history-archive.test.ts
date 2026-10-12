@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { extractEntry, parseZipDirectory } from '../src/history-zip';
-import { archiveEarlierDays, snapshotsOnDisk, readArchived, readHistoryIndex, syncHistoryIndex, zipPathFor } from './history-archive';
+import { archiveEarlierDays, pruneDailyArchives, snapshotsOnDisk, readArchived, readHistoryIndex, syncHistoryIndex, zipPathFor } from './history-archive';
 import { fileDay } from './options-data';
 
 const setup = () => {
@@ -168,5 +168,39 @@ describe('the layout is a plain folder tree that can be cleaned up by deleting f
     const empty = setup();
     expect(syncHistoryIndex(empty.historyDir)).toBe(false);
     expect(existsSync(empty.historyDir)).toBe(false);
+  });
+});
+
+describe('pruneDailyArchives keeps the last days only', () => {
+  const day = (d: ReturnType<typeof setup>, id: string) => {
+    put(d.optionsDir, 'SPY', id);
+    run(d, ['SPY'], '2099-01-01');
+  };
+
+  test('keeps 14 days counted back from today (today included), deletes older days, the month folder and the index entry', () => {
+    const d = setup();
+    for (const id of ['2026-09-20', '2026-09-30', '2026-10-01', '2026-10-14']) day(d, id);
+    // today 2026-10-14, 14 days = 2026-10-01 .. 2026-10-14
+    expect(pruneDailyArchives(d.historyDir, '2026-10-14', 14)).toEqual(['2026-09-20', '2026-09-30']);
+    expect(snapshotsOnDisk(d.historyDir)).toEqual(['2026-10-01', '2026-10-14']);
+    expect(existsSync(join(d.historyDir, '2026-09'))).toBe(false);
+    expect(Object.keys(readHistoryIndex(d.historyDir).snapshots)).toEqual(['2026-10-01', '2026-10-14']);
+  });
+
+  test('a backup made on demand is never deleted, however old', () => {
+    const d = setup();
+    day(d, '2026-01-05');
+    writeFileSync(join(d.historyDir, '2026-01', '2026-01-06-15-42.zip'), new Uint8Array([1]));
+    expect(pruneDailyArchives(d.historyDir, '2026-10-14', 14)).toEqual(['2026-01-05']);
+    expect(existsSync(join(d.historyDir, '2026-01', '2026-01-06-15-42.zip'))).toBe(true);
+  });
+
+  test('crosses a month and a year boundary, 0 keeps everything', () => {
+    const d = setup();
+    for (const id of ['2025-12-31', '2026-01-01']) day(d, id);
+    expect(pruneDailyArchives(d.historyDir, '2026-01-02', 3)).toEqual([]); // 12-31 .. 01-02
+    expect(pruneDailyArchives(d.historyDir, '2026-01-03', 3)).toEqual(['2025-12-31']);
+    expect(pruneDailyArchives(d.historyDir, '2030-01-01', 0)).toEqual([]);
+    expect(snapshotsOnDisk(d.historyDir)).toEqual(['2026-01-01']);
   });
 });

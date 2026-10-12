@@ -89,6 +89,7 @@
  *   MAX_EXPIRATIONS    default 12        expirations stored per ticker (the nearest ones are fetched)
  *   KEEP_EXPIRATIONS   default 0         1 = keep the later expirations already cached for the ticker (see t8)
  *   HISTORY            default 1         0 = do not archive the previous day's file of the DEFAULT_SYMBOLS (see t9)
+ *   HISTORY_KEEP_DAYS  default 14        daily archives older than this many days are deleted (0 = keep all); backups made by hand stay
  *   RATE_LIMIT_HITS    default 3         consecutive errors that mean "blocked"
  *   REQUEST_SLEEP      default 0.6       seconds after each successful write
  *   SKIP_RECHECK_DAYS  default 30        days before a no-options ticker is retried
@@ -110,7 +111,7 @@
  */
 
 /// <reference types="node" />
-import { archiveEarlierDays } from "./history-archive";
+import { archiveEarlierDays, pruneDailyArchives } from "./history-archive";
 import { marketDay as sharedMarketDay } from "../src/backtest/snapshot";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -374,6 +375,7 @@ const cfg = {
     MAX_EXPIRATIONS: envInt("MAX_EXPIRATIONS", "12"),
     KEEP_EXPIRATIONS: ["1", "true", "yes", "on"].includes((process.env.KEEP_EXPIRATIONS ?? "0").toLowerCase()),
     HISTORY: !["0", "false", "no", "off"].includes((process.env.HISTORY ?? "1").toLowerCase()),
+    HISTORY_KEEP_DAYS: envNonNegativeFloat("HISTORY_KEEP_DAYS", "14"),
     RATE_LIMIT_HITS: envInt("RATE_LIMIT_HITS", "3"),
     REQUEST_SLEEP: envFloat("REQUEST_SLEEP", "0.6"),
     NASDAQ_TIMEOUT: envFloat("NASDAQ_TIMEOUT", "20"),
@@ -1896,6 +1898,8 @@ export async function main(): Promise<void> {
             const n = days.reduce((sum, d) => sum + archived.added[d].length, 0);
             console.log(`${outputLabel("history")} ${n} files archived into ${days.length} day zip(s): ${days.join(", ")}`);
         }
+        const dropped = pruneDailyArchives(HISTORY_DIR, marketDay(), cfg.HISTORY_KEEP_DAYS);
+        if (dropped.length) console.log(`${outputLabel("history")} ${dropped.length} day zip(s) older than ${cfg.HISTORY_KEEP_DAYS} days deleted: ${dropped.join(", ")}`);
     }
 
     const { queue, nPriority, nMissing, nStale, nFresh } = buildWorkQueue(universe);

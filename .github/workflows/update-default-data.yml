@@ -5,19 +5,22 @@
 # DEFAULT_SYMBOLS (the indices, ETFs and mega caps the ticker search field hints),
 # not the whole universe. The full refresh stays in update-data.yml.
 #
-# WHEN: Mon-Fri at 9:30, 10:30, ..., 15:30 and 16:15 New York time.
+# WHEN: Mon-Fri at 9:45, 10:45, ..., 16:45 New York time (8 runs a day).
 # GitHub cron is UTC only and has no time zone, and New York switches between
-# UTC-4 (EDT) and UTC-5 (EST), so both UTC hours are scheduled and the
-# "Market window" step skips the one that does not match New York time. Scheduled
-# runs can start a few minutes late, the window allows for that. Market holidays
-# are not skipped (the data is simply refreshed with the last prices).
+# UTC-4 (EDT) and UTC-5 (EST), so the UTC hours of both are scheduled (13:45-21:45)
+# and the "Market window" step skips the one that does not match New York time
+# (13:45 UTC in winter, 21:45 UTC in summer). Scheduled runs can start many minutes late,
+# the window allows for that. Market holidays are not skipped (the data is simply
+# refreshed with the last prices).
+#
+# SPEED: the job is kept as short as possible, it is billed per started minute. The default 18 tickers take about
+# 20 s with CONCURRENCY=4 (55 s one by one), plus a few seconds of checkout and setup, so a run is billed 1 minute.
 # =============================================================================
 name: Update default options data
 
 on:
   schedule:
-    - cron: "30 13-21 * * 1-5" # :30 slots, 9:30-15:30 New York in summer (13:30-19:30 UTC) and in winter (14:30-20:30 UTC)
-    - cron: "15 20,21 * * 1-5" # the 16:15 slot, 20:15 UTC in summer and 21:15 UTC in winter
+    - cron: "45 13-21 * * 1-5" # :45 slots, 9:45-16:45 New York in summer (13:45-20:45 UTC) and in winter (14:45-21:45 UTC)
   workflow_dispatch: {} # manual run, always refreshes
 
 permissions:
@@ -38,6 +41,10 @@ jobs:
       # interest and volume are refreshed, a full run (update-data.yml) refreshes everything else.
       MAX_EXPIRATIONS: "15"
       KEEP_EXPIRATIONS: "1"
+      # 4 tickers at a time and a short pause: 20 s instead of 55 s for the 18 tickers, no failures (measured, 6 workers
+      # were not faster, the slowest ticker sets the time)
+      CONCURRENCY: "4"
+      REQUEST_SLEEP: "0.1"
     steps:
       - name: Market window
         id: window
@@ -49,13 +56,8 @@ jobs:
           mins=$((10#${now%:*} * 60 + 10#${now#*:}))
           run=true
           if [ -n "$SCHEDULE" ]; then
-            if [ "$SCHEDULE" = "15 20,21 * * 1-5" ]; then
-              # 16:15 slot: accept 16:10 - 16:25 (late start allowed)
-              if [ "$mins" -lt 970 ] || [ "$mins" -gt 985 ]; then run=false; fi
-            else
-              # :30 slots: accept 9:25 - 15:55 (the 16:30 and 17:30 ones, and the early winter one, are skipped)
-              if [ "$mins" -lt 565 ] || [ "$mins" -gt 955 ]; then run=false; fi
-            fi
+            # accept 9:40 - 17:15 (a start up to 30 minutes late is still the 16:45 slot, the 8:45 and 17:45 ones are skipped)
+            if [ "$mins" -lt 580 ] || [ "$mins" -gt 1035 ]; then run=false; fi
           fi
           echo "New York time $now, schedule '${SCHEDULE:-manual}' -> run=$run"
           echo "run=$run" >> "$GITHUB_OUTPUT"
