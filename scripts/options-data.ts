@@ -8,7 +8,7 @@
  * agentic-workspace docs/repos/gex/spec-ts-fetcher.md). Yahoo is reached with raw calls
  * (cookie + crumb, then v7 options and v8 chart), Cboe delayed greeks are overlaid.
  * Output files keep the byte layout the Python version wrote (key order, Python float
- * repr, ensure_ascii escapes), so existing data/options/*.json files stay valid.
+ * repr, ensure_ascii escapes), so existing api/options/*.json files stay valid.
  *
  * Keep this header in sync with behavior on every change.
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
@@ -17,7 +17,7 @@
  *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (SPY, SPX, QQQ, NDX,
  *        DIA, DJX, IWM, RUT). `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins.
  *   t5 - Chart cache: after the options pass every cached ticker (SPY, SPX, QQQ, NDX first) gets
- *        data/charts/<SYM>.json with 1Y of daily bars from Yahoo v8 chart, so the Chart tab works
+ *        api/charts/<SYM>.json with 1Y of daily bars from Yahoo v8 chart, so the Chart tab works
  *        without a proxy. Missing files first, then oldest, at most CHART_MAX_FETCHES per run.
  *   t4 - SPY, SPX, QQQ and NDX are always queued first (PRIORITY_SYMBOLS, unless fresh), before the
  *        coverage and refresh phases; with an explicit TICKERS list only those in the list.
@@ -45,9 +45,9 @@
  *      cached files oldest-updated first. The skiplist of no-options tickers is
  *      honored for SKIP_RECHECK_DAYS.
  *   3. Fetches the chain from Yahoo, overlays Cboe delayed greeks, open
- *      interest and volume by OCC symbol, writes data/options/{SYMBOL}.json.
+ *      interest and volume by OCC symbol, writes api/options/{SYMBOL}.json.
  *      Stops at MAX_FETCHES writes or after RATE_LIMIT_HITS consecutive errors.
- *   4. Rewrites data/options/index.json only when the ticker set, names or
+ *   4. Rewrites api/options/index.json only when the ticker set, names or
  *      skiplist changed.
  *
  * YAHOO ENDPOINT MAPPING (what yfinance did, now done directly)
@@ -85,7 +85,7 @@
  *                                        (counts toward RATE_LIMIT_HITS and its file is NOT overwritten)
  *   SYMBOL_ALIASES     default ""        "SCREENER=YAHOO" pairs, comma separated
  *   TIMEZONE           default America/New_York   market tz for today / working days
- *   CHART_CACHE        default 1         also write data/charts/<SYM>.json (1Y of daily bars) after the options pass
+ *   CHART_CACHE        default 1         also write api/charts/<SYM>.json (1Y of daily bars) after the options pass
  *   CHART_MAX_FETCHES  default 500       chart files written per run (missing first, then oldest)
  *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
  *   SOFT_DEADLINE_SECONDS default 0      stop starting new tickers after N seconds (0 = off)
@@ -345,7 +345,7 @@ function logErr(message: string): void {
 // ---- Configuration -----------------------------------------------------------
 
 const REPO_ROOT = dirname(import.meta.dirname);
-export const DATA_DIR = join(REPO_ROOT, "data", "options");
+export const DATA_DIR = join(REPO_ROOT, "api", "options");
 export const INDEX_PATH = join(DATA_DIR, "index.json");
 const LEGACY_SKIP_PATH = join(import.meta.dirname, "no_options.json");
 
@@ -1282,7 +1282,7 @@ function loadSkiplist(): Record<string, string> {
     try {
         const legacy = JSON.parse(readFileSync(LEGACY_SKIP_PATH, "utf8"));
         if (legacy && typeof legacy === "object" && !Array.isArray(legacy) && Object.keys(legacy).length) {
-            log(`skiplist: migrating ${Object.keys(legacy).length} entries from scripts/no_options.json -> data/options/index.json`);
+            log(`skiplist: migrating ${Object.keys(legacy).length} entries from scripts/no_options.json -> api/options/index.json`);
             return { ...legacy };
         }
     } catch {
@@ -1656,9 +1656,9 @@ interface TickerResult extends PoolResult {
     path?: string;
 }
 
-// ---- Chart cache: data/charts/<SYM>.json ----------------------------------------------
+// ---- Chart cache: api/charts/<SYM>.json ----------------------------------------------
 
-export const CHARTS_DIR = join(REPO_ROOT, "data", "charts");
+export const CHARTS_DIR = join(REPO_ROOT, "api", "charts");
 const CHART_RANGE = "1y";
 
 /** Yahoo symbols to try for a chart: cash indices only exist in caret form (^SPX). */
@@ -1759,7 +1759,7 @@ export async function fetchChartFile(symbol: string): Promise<ChartFile | null> 
     return null;
 }
 
-/** Writes data/charts/<SYM>.json for the queue with CONCURRENCY workers. A streak of RATE_LIMIT_HITS failures stops the pass. */
+/** Writes api/charts/<SYM>.json for the queue with CONCURRENCY workers. A streak of RATE_LIMIT_HITS failures stops the pass. */
 async function runChartPass(queue: string[]): Promise<{ written: number; failed: number; stopped: boolean }> {
     mkdirSync(CHARTS_DIR, { recursive: true });
     let next = 0, reserved = 0, written = 0, failed = 0, streak = 0, stopped = false;
@@ -1830,7 +1830,7 @@ export async function main(): Promise<void> {
         const path = join(DATA_DIR, `${sym}.json`);
         const phase = position <= nPriority ? "priority" : position <= nPriority + nMissing ? "coverage" : "refresh";
         const started = performance.now();
-        log(`FETCH [${position}/${queue.length}] ${phase} ${sym}: fetching option chain (writes=${st.fetched}/${cfg.MAX_FETCHES}, file=data/options/${sym}.json)`);
+        log(`FETCH [${position}/${queue.length}] ${phase} ${sym}: fetching option chain (writes=${st.fetched}/${cfg.MAX_FETCHES}, file=api/options/${sym}.json)`);
         let previousText: string | null = null;
         try {
             previousText = readFileSync(path, "utf8");
@@ -1892,8 +1892,8 @@ export async function main(): Promise<void> {
     // Queue order whatever the finish order was.
     const updatedFiles: string[] = pool.results.flatMap((r) => (r?.kind === "written" && r.path ? [rel(r.path)] : []));
 
-    log(`skiplist: saving ${Object.keys(skip).length} entries to data/options/index.json (no_options)`);
-    log("index: rebuilding data/options/index.json manifest if files/names/skiplist changed");
+    log(`skiplist: saving ${Object.keys(skip).length} entries to api/options/index.json (no_options)`);
+    log("index: rebuilding api/options/index.json manifest if files/names/skiplist changed");
     const indexChanged = writeIndex(skip);
     if (indexChanged && existsSync(LEGACY_SKIP_PATH)) {
         try {
@@ -1905,9 +1905,9 @@ export async function main(): Promise<void> {
     }
     if (indexChanged) {
         updatedFiles.push(rel(INDEX_PATH));
-        log("index: wrote data/options/index.json");
+        log("index: wrote api/options/index.json");
     } else {
-        log("index: unchanged; data/options/index.json was not rewritten");
+        log("index: unchanged; api/options/index.json was not rewritten");
     }
 
     const total = cachedSymbols().length;

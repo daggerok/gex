@@ -14,16 +14,16 @@ const main = readdirSync(join(root, 'src'), { recursive: true })
     .map((f) => readFileSync(join(root, 'src', f), 'utf8'))
     .join('\n');
 
-describe('data/options path layout (PR2)', () => {
-  test('fetcher writes under data/options', () => {
-    expect(fetcherTs).toContain('"data", "options"');
-    expect(fetcherTs).toContain('data/options/index.json');
+describe('api/options path layout', () => {
+  test('fetcher writes under api/options', () => {
+    expect(fetcherTs).toContain('"api", "options"');
+    expect(fetcherTs).toContain('api/options/index.json');
     expect(fetcherTs).toContain('cdn.cboe.com');
   });
 
-  test('UI static cache reads data/options/*', () => {
-    expect(main).toContain("fetchStaticJson('data/options/index.json'");
-    expect(main).toContain('data/options/${encodeURIComponent(raw)}.json');
-    expect(main).not.toContain("fetchStaticJson('data/index.json'");
+  test('UI static cache reads api/options/*', () => {
+    expect(main).toContain("fetchStaticJson('api/options/index.json'");
+    expect(main).toContain('api/options/${encodeURIComponent(raw)}.json');
+    expect(main).not.toContain("fetchStaticJson('data/");
   });
 });

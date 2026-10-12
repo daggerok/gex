@@ -23,8 +23,8 @@ export async function startTestSite(): Promise<TestSite> {
     const build = Bun.spawn(['bunx', 'parcel', 'build', '--no-cache', '--no-source-maps', '--dist-dir', dir], { cwd: ROOT, stdout: 'ignore', stderr: 'inherit' });
     if ((await build.exited) !== 0) throw new Error('parcel build failed');
     for (const f of ['options/index.json', 'options/SPY.json', 'charts/SPY.json']) {
-        mkdirSync(join(dir, 'data', f.split('/')[0]), { recursive: true });
-        cpSync(join(ROOT, 'data', f), join(dir, 'data', f));
+        mkdirSync(join(dir, 'api', f.split('/')[0]), { recursive: true });
+        cpSync(join(ROOT, 'api', f), join(dir, 'api', f));
     }
     const server = Bun.serve({
         port: 0,

@@ -11,11 +11,11 @@
 #      fresh today and stops at its budget or when the source rate-limits it.
 #      Each run does NEW work; the next run resumes — so we cache ALL tickers
 #      before re-looping, and never re-loop only the top-cap names.
-#   3. Fetches index option chains (data/Indices.txt, e.g. SPX, NDX) in a SEPARATE
+#   3. Fetches index option chains (api/Indices.txt, e.g. SPX, NDX) in a SEPARATE
 #      step with a smaller MAX_EXPIRATIONS / MAX_FETCHES budget, so large index
 #      chains stay bounded in size and never eat into the equity budget.
-#   4. Commits the fresh data/options/*.json back to the repo.
-# The site (GitHub Pages) then reads its OWN data/options/*.json via the app's
+#   4. Commits the fresh api/options/*.json back to the repo.
+# The site (GitHub Pages) then reads its OWN api/options/*.json via the app's
 # "Static cache" provider — zero CORS issues, zero exposed keys.
 #
 # SETUP:
@@ -74,30 +74,30 @@ jobs:
           bun-version: latest
 
       - name: Fetch option chains
-        run: TICKERS=$(cat data/All.txt) bun scripts/options-data.ts
+        run: TICKERS=$(cat api/All.txt) bun scripts/options-data.ts
 
-      # Index options (data/Indices.txt: SPX, XSP, NDX, DJX, RUT) run as their OWN
+      # Index options (api/Indices.txt: SPX, XSP, NDX, DJX, RUT) run as their OWN
       # step with a smaller expiration cap: an index chain is far larger than an
       # equity's (SPX at MAX_EXPIRATIONS=50 is ~5.4 MB vs ~1.6 MB at 15), and a
       # separate budget means a slow index fetch can never crowd out the equity
       # run above. At 15 expirations all five indices total ~4.3 MB (~0.7 MB
       # gzipped) and fetch in ~15 s. MAX_FETCHES must stay >= the line count of
-      # data/Indices.txt, or the last index silently waits for the next run.
+      # api/Indices.txt, or the last index silently waits for the next run.
       # Indices enter the cache ONLY through this explicit allowlist, never via
       # the script's live universe discovery.
       - name: Fetch index option chains
         env:
           MAX_EXPIRATIONS: "15"
           MAX_FETCHES: "10"
-        run: TICKERS=$(cat data/Indices.txt) bun scripts/options-data.ts
+        run: TICKERS=$(cat api/Indices.txt) bun scripts/options-data.ts
 
       - name: Commit updated data
         run: |
           git config user.name  "Maksim Kostromin"
           git config user.email "daggerok@gmail.com"
-          # Stage the refreshed chains + data/options/index.json (which also holds the
+          # Stage the refreshed chains + api/options/index.json (which also holds the
           # no-options skiplist under the `no_options` key since options-data v9).
-          git add data/ || true
+          git add api/ || true
           # Check if there are changes to commit
           if git diff --staged --quiet; then
             echo "No data changes — nothing to commit."

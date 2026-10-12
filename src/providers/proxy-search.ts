@@ -5,7 +5,7 @@ import { looksLikeTicker, normalizeTickerSymbol } from './cache';
  * Query the companion proxy's unified suggestion endpoint. The local Bun proxy
  * and Cloudflare Worker both expose /api/search?provider=<id>&q=<text>, returning
  * normalized `{ suggestions: TickerSuggestion[] }`. If the proxy is unavailable,
- * callers fall back to data/options/index.json via suggestTickers().
+ * callers fall back to api/options/index.json via suggestTickers().
  */
 export async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'cboe', query: string, ctx: ProviderContext): Promise<TickerSuggestion[]> {
     const q = query.trim();

@@ -735,10 +735,10 @@ describe('shared Yahoo session', () => {
 });
 
 describe('repo wiring', () => {
-  test('the script is executable with a bun shebang and writes under data/options', () => {
+  test('the script is executable with a bun shebang and writes under api/options', () => {
     const src = readFileSync(join(root, 'scripts/options-data.ts'), 'utf8');
     expect(src.startsWith('#!/usr/bin/env bun\n')).toBe(true);
-    expect(src).toContain('"data", "options"');
+    expect(src).toContain('"api", "options"');
   });
 });
 

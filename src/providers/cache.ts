@@ -11,7 +11,7 @@ import { asArray, computeMid, num } from '../utils';
  * Why this exists: the naive `await res.json()` throws an opaque SyntaxError when
  * the server returns something that ISN'T JSON — and the #1 real-world cause of
  * "Bad static data" is a dev/preview or SPA host that serves the app's own
- * index.html (a 200 HTML page) for a missing `data/options/*.json` path instead of a
+ * index.html (a 200 HTML page) for a missing `api/options/*.json` path instead of a
  * 404. Reading the body as TEXT first lets us detect that case (and truncated /
  * malformed files) and raise an ACTIONABLE message telling the user exactly what
  * to fix, rather than a vague failure.
@@ -31,7 +31,7 @@ export async function fetchStaticJson(url: string, signal?: AbortSignal, label?:
     }
     if (res.status === 404) {
         throw new Error(
-            `"${name}" is not in the static cache (data/${name}.json → 404). ` +
+            `"${name}" is not in the static cache (api/options/${name}.json → 404). ` +
             `Pick a cached ticker from the list, or run scripts/options-data.ts to add it.`,
         );
     }
@@ -45,7 +45,7 @@ export async function fetchStaticJson(url: string, signal?: AbortSignal, label?:
         throw new Error(
             `Expected JSON at ${url} but got an HTML page. The server is likely ` +
             `serving index.html for missing files (SPA fallback) — make sure the ` +
-            `data/ folder is deployed alongside the app and reachable at this path.`,
+            `api/ folder is deployed alongside the app and reachable at this path.`,
         );
     }
     try {
@@ -58,15 +58,15 @@ export async function fetchStaticJson(url: string, signal?: AbortSignal, label?:
     }
 }
 
-/** Local manifest shape normalized from data/options/index.json for ticker suggestions. */
+/** Local manifest shape normalized from api/options/index.json for ticker suggestions. */
 export interface StaticTickerManifest {
     options: string[];
     noOptions: string[];
-    /** Optional TICKER -> company / fund / index name, stored in data/options/index.json. */
+    /** Optional TICKER -> company / fund / index name, stored in api/options/index.json. */
     names: Record<string, string>;
 }
 
-/** In-memory copy of data/options/index.json so typing in the ticker box stays instant. */
+/** In-memory copy of api/options/index.json so typing in the ticker box stays instant. */
 export let staticTickerManifestCache: StaticTickerManifest | null = null;
 
 /** Normalize any provider/search symbol into the uppercase value the app submits. */
@@ -80,14 +80,14 @@ export function looksLikeTicker(sym: string): boolean {
 }
 
 /**
- * Read data/options/index.json and normalize BOTH known-with-options (`files`) and
+ * Read api/options/index.json and normalize BOTH known-with-options (`files`) and
  * known-without-options (`no_options`). The latter is deliberately preserved for
  * suggestions so a user can see "XYZ (no options)" while typing and understand
  * that the ticker is valid but the latest cache scan found no listed contracts.
  */
 export async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTickerManifest> {
     if (staticTickerManifestCache) return staticTickerManifestCache;
-    const j: any = await fetchStaticJson('data/options/index.json', ctx.signal);
+    const j: any = await fetchStaticJson('api/options/index.json', ctx.signal);
     // v13: `files` is a sorted ticker list. Legacy v4–v12 used { TICKER: updatedISO }.
     const rawFiles = j?.files;
     const fileSymbols: string[] = Array.isArray(rawFiles)
@@ -144,7 +144,7 @@ export function staticTickerSuggestionsFromManifest(query: string, manifest: Sta
         .map(({ _rank, ...s }) => s);
 }
 
-/** Convenience wrapper for fallback suggestions from data/options/index.json. */
+/** Convenience wrapper for fallback suggestions from api/options/index.json. */
 export async function staticTickerSuggestions(query: string, ctx: ProviderContext, limit = 24): Promise<TickerSuggestion[]> {
     const manifest = await loadStaticTickerManifest(ctx);
     return staticTickerSuggestionsFromManifest(query, manifest, limit);
@@ -166,7 +166,7 @@ export function dedupeTickerSuggestions(items: TickerSuggestion[], limit = 24): 
 /**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
- *   ./data/options/index.json     -> { files: ["<TICKER>", ...],
+ *   ./api/options/index.json     -> { files: ["<TICKER>", ...],
  *                              count, names?, no_options? }
  *                            (v0.9.16: the manifest now records EACH ticker's own
  *                            `updated` timestamp instead of a single global
@@ -174,14 +174,14 @@ export function dedupeTickerSuggestions(items: TickerSuggestion[], limit = 24): 
  *                            is the sorted keys of `files`. No legacy shape kept.
  *                            `names` powers local company-name suggestions;
  *                            `no_options` is surfaced as "(no options)".)
- *   ./data/options/{TICKER}.json  -> ChainResult-like payload (see scripts/options-data.ts)
+ *   ./api/options/{TICKER}.json  -> ChainResult-like payload (see scripts/options-data.ts)
  * Data is refreshed by the GitHub Action. Greeks may be null (Yahoo source).
  */
 export const staticProvider: DataProvider = {
     id: 'static',
     label: 'CACHE',
     description:
-        'Local static cache — same-origin data/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS greeks). ' +
+        'Local static cache — same-origin api/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS greeks). ' +
         'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
     mode: 'bulk',
     setup: 'none',
@@ -207,15 +207,15 @@ export const staticProvider: DataProvider = {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
         const manifest = await loadStaticTickerManifest(ctx).catch(() => null);
         if (manifest?.noOptions.includes(raw)) {
-            throw new Error(`"${raw}" is a valid ticker, but data/options/index.json marks it as (no options) in the latest static-cache scan.`);
+            throw new Error(`"${raw}" is a valid ticker, but api/options/index.json marks it as (no options) in the latest static-cache scan.`);
         }
         // fetchStaticJson reads the body as TEXT first, so we can tell apart the
         // real failure modes (404, HTML SPA fallback, malformed JSON) and report
         // an ACTIONABLE message instead of a vague "Bad static data".
-        const j: any = await fetchStaticJson(`data/options/${encodeURIComponent(raw)}.json`, ctx.signal, raw);
+        const j: any = await fetchStaticJson(`api/options/${encodeURIComponent(raw)}.json`, ctx.signal, raw);
         if (!j || !Array.isArray(j.quotes)) {
             throw new Error(
-                `Static file data/${raw}.json loaded but has no "quotes" array. ` +
+                `Static file api/options/${raw}.json loaded but has no "quotes" array. ` +
                 `The file may be truncated or in an old format — re-run scripts/options-data.ts to rebuild it.`,
             );
         }

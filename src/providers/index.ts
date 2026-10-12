@@ -7,7 +7,7 @@ import { yahooProvider } from './yahoo';
 
 /**
  * Provider registry — only four sources, fixed dropdown order everywhere:
- *   CACHE  = same-origin static data/options/*.json (no proxy)
+ *   CACHE  = same-origin static api/options/*.json (no proxy)
  *   CBOE   = delayed options via proxy /api/cboe
  *   NASDAQ = full chain via proxy /api/nasdaq
  *   YAHOO  = option chain via proxy /api/options (lazy)
@@ -59,7 +59,7 @@ export const PROXY_PRESETS: { label: string; template: string }[] = [
 /**
  * Provider-native suggestion request with local-index fallback. If a provider has
  * no dedicated search/list endpoint, or its proxy is unavailable, the UI still
- * suggests tickers from data/options/index.json and labels `no_options` entries.
+ * suggests tickers from api/options/index.json and labels `no_options` entries.
  */
 export async function suggestTickers(provider: DataProvider, query: string, ctx: ProviderContext, limit = 24): Promise<TickerSuggestion[]> {
     if (provider.suggestTickers) {

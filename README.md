@@ -29,7 +29,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 ## What you get
 
 - **Two-step, quota-friendly loading:** nothing fetches on page open. Type or search a ticker, then **Expirations**; select expiration(s), then **Load**
-- **Ticker suggestions:** searchable ticker and company combobox for every provider. Local static suggestions use `data/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
+- **Ticker suggestions:** searchable ticker and company combobox for every provider. Local static suggestions use `api/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest to latest with sticky expiration headers
 - **Desk UX:** ATM row highlight, sticky Calls / Strike / Puts headers, greeks columns enabled by default, per-side and per-column desk settings, empty cells for missing data, themed scrollbars, collapse and expand controls, and automatic centering on the current strike after load or expand
 - **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Max Pain, Spot) computed once and drawn on both tabs, plus your own custom levels
@@ -77,7 +77,7 @@ Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only:
 
 - **Desk:** the options chain described above
 - **GEX:** gamma exposure by strike with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis
-- **Chart:** daily candles (1 year loaded, 1M / 3M / 6M / 1Y only change the visible part) with the same GEX levels as price lines. From the CACHE provider it reads `data/charts/<SYM>.json`, so it works without a proxy
+- **Chart:** daily candles (1 year loaded, 1M / 3M / 6M / 1Y only change the visible part) with the same GEX levels as price lines. From the CACHE provider it reads `api/charts/<SYM>.json`, so it works without a proxy
 
 ### Custom levels
 
@@ -96,7 +96,7 @@ Only four sources. Short uppercase labels in the API dropdown.
 
 | UI label | Setup | Coverage | Greeks | Notes |
 |---|---|---|---|---|
-| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `data/options/*.json` | CBOE and model-enriched as files refresh | Same-origin static JSON from GitHub Actions (Yahoo + CBOE delayed 1st-order greeks). Model and higher-order greeks are computed in the browser. No CORS, no keys |
+| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `api/options/*.json` | CBOE and model-enriched as files refresh | Same-origin static JSON from GitHub Actions (Yahoo + CBOE delayed 1st-order greeks). Model and higher-order greeks are computed in the browser. No CORS, no keys |
 | **CBOE** *(default on localhost)* | Needs proxy | CBOE delayed options | Yes (provider + client Black-Scholes higher-order) | Richest delayed feed (greeks, IV, OI, spot). Requires Proxy base URL (`/api/cboe`) |
 | **NASDAQ** | Needs proxy | NASDAQ option chain | No IV, so no model greeks | Full chain in one call: bid, ask, last, volume, OI. Proxy `/api/nasdaq` |
 | **YAHOO** | Needs proxy | Yahoo symbol search and option chains | Client Black-Scholes from IV | Lazy per expiration. Companion proxy handles crumb and cookies (`/api/options`) |
@@ -105,7 +105,7 @@ Removed from the live registry: marketdata.app, DoltHub, Tradier, Alpaca, Polygo
 
 ## Ticker suggestions
 
-- Static and local suggestions come from `data/options/index.json`:
+- Static and local suggestions come from `api/options/index.json`:
   - `files`: tickers with cached option chains
   - `names`: ticker to company, fund or index display name
   - `no_options`: valid tickers where the latest data scan found no listed options, shown as **`(no options)`**
@@ -136,18 +136,18 @@ CONCURRENCY=3 TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 
 - Without arguments the run covers only the main indices and their ETFs (S&P 500, Nasdaq 100, Dow Jones, Russell 2000). Pass `all` for the smart auto-universe run: missing symbols first, then the oldest cached files. Any other argument is an error
 - SPY, SPX, QQQ and NDX are always queued first
-- After the options pass every cached ticker gets `data/charts/<SYM>.json` (1 year of daily bars, about 12 KB each, `CHART_MAX_FETCHES` per run), so the Chart tab works from CACHE without a proxy
+- After the options pass every cached ticker gets `api/charts/<SYM>.json` (1 year of daily bars, about 12 KB each, `CHART_MAX_FETCHES` per run), so the Chart tab works from CACHE without a proxy
 - `CONCURRENCY` is an integer >= 1 (default 1), each worker waits `REQUEST_SLEEP` after its own write. Cboe requests share one throttle (`CBOE_MIN_INTERVAL`, default 1 s) and on a 429 every worker pauses (`CBOE_BACKOFF`, `CBOE_RETRIES`), so more workers do not raise the Cboe request rate. A ticker whose Cboe retries run out fails and keeps its old file
 - `SOFT_DEADLINE_SECONDS` (default 0, off) stops starting new tickers after that many seconds. `VERBOSE=1` also prints the old timestamped progress lines
 - The run prints a `[ config   ]` block, one status line per ticker (`new`, `updated`, `unchanged`, `no-options`, `failed`) and a `[ done     ]` summary
 - The full list of tunables (`MAX_FETCHES`, `MAX_EXPIRATIONS`, `UNIVERSE_SIZE`, `SKIP_RECHECK_DAYS` and others) is in the header comment of `scripts/options-data.ts`
-- Running the fetcher changes tracked files in `data/`. For a local check discard them before committing (`git checkout -- data`), a commit should contain only the source change
+- Running the fetcher changes tracked files in `api/`. For a local check discard them before committing (`git checkout -- api`), a commit should contain only the source change
 
 ## Deploy to GitHub Pages
 
 1. Enable Pages in repo **Settings, Pages**
 2. Allow Actions to commit: **Settings, Actions, General, Workflow permissions, Read and write permissions**
-3. The **Update options data** workflow (manual run from the Actions tab, the schedule is commented out) runs `scripts/options-data.ts` for the tickers listed in `data/All.txt`, then for the index options in `data/Indices.txt` as a separate step with a smaller budget, and commits the refreshed `data/options/*.json` back to `main`
+3. The **Update options data** workflow (manual run from the Actions tab, the schedule is commented out) runs `scripts/options-data.ts` for the tickers listed in `api/All.txt`, then for the index options in `api/Indices.txt` as a separate step with a smaller budget, and commits the refreshed `api/options/*.json` back to `main`
 4. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`
 
 ## Proxy setup for GitHub Pages
@@ -192,7 +192,7 @@ For a deployable proxy without a local setup: deploy `scripts/options-cloudflare
 
 Optional files outside the core app source:
 
-- `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `data/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `data/options/index.json` with `{ files, count, names, no_options }` and writes `data/charts/<SYM>.json`
+- `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options }` and writes `api/charts/<SYM>.json`
 - `.github/workflows/update-data.yml`: manual data refresh workflow
 - `scripts/options-local-proxy.ts`: local **Bun** proxy serving:
   - `/api/options`: Yahoo optionChain with crumb and cookie handling
@@ -225,7 +225,7 @@ bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run log
 3. The project builds: `bun run build`
 4. The fetcher bundles: `bun build --target=bun scripts/options-data.ts --outfile=/dev/null`
 5. The Cloudflare Worker is valid: `node --check scripts/options-cloudflare-proxy.js`
-6. No secrets, no leftover debug logs, no changed files in `data/` that you did not mean to commit
+6. No secrets, no leftover debug logs, no changed files in `api/` that you did not mean to commit
 
 Every UI string needs an `en` and a `ru` entry in `src/i18n.tsx`. Never commit `dist/`, `node_modules/` or `.parcel-cache/`.
 
@@ -253,12 +253,12 @@ src/
   views/                      # DeskView, GexView, ChartView
   *.test.ts                   # unit tests
   *.e2e.ts, e2e-site.ts       # browser tests and their site helper
-data/
+api/
   options/                    # one option-chain cache file per ticker, plus index.json
   charts/                     # one file of 1 year of daily bars per ticker
   All.txt, Indices.txt        # ticker lists of the update workflow
 scripts/
-  options-data.ts             # the fetcher: Yahoo and Cboe -> data/options and data/charts
+  options-data.ts             # the fetcher: Yahoo and Cboe -> api/options and api/charts
   options-local-proxy.ts      # local Bun proxy: Yahoo, NASDAQ, CBOE, search
   options-cloudflare-proxy.js # Cloudflare Worker proxy: Yahoo, NASDAQ, CBOE, search, raw
 .github/workflows/
@@ -281,7 +281,7 @@ package.json                  # Bun and Parcel scripts
 - **Nothing loads on open:** expected. Press **Expirations**, then **Load**
 - **Needs proxy or CORS errors:** start `bun ./scripts/options-local-proxy.ts` locally or set a Cloudflare Worker URL in Settings, Proxy base URL
 - **`Unexpected token '<'`:** a proxy or server returned HTML instead of JSON. Check the proxy URL and the provider
-- **CACHE says not cached:** the ticker is absent from `data/options/*.json`. Use another provider, or run the fetcher for it (`TICKERS=XYZ ./scripts/options-data.ts`)
+- **CACHE says not cached:** the ticker is absent from `api/options/*.json`. Use another provider, or run the fetcher for it (`TICKERS=XYZ ./scripts/options-data.ts`)
 - **`(no options)` suggestion:** the ticker is valid in the local manifest, but the latest data scan found no listed options
 - **Proxy connection refused:** make sure the proxy is running and the Proxy base URL is set correctly in Settings
-- **Chart tab empty for a ticker:** it has no `data/charts/<SYM>.json` yet (the fetcher writes it after the options pass) and no proxy is set
+- **Chart tab empty for a ticker:** it has no `api/charts/<SYM>.json` yet (the fetcher writes it after the options pass) and no proxy is set

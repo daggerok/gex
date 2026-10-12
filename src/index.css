@@ -39,7 +39,7 @@
  *          (main.tsx/scripts/data schema change only). Entry recorded to keep
  *          this agentic CSS header synchronized.
  * v0.9.27 - No CSS structural changes for local-index company names in ticker
- *          suggestions (main.tsx/data/index.json/scripts change only). Entry
+ *          suggestions (main.tsx/api/index.json/scripts change only). Entry
  *          recorded to keep this agentic CSS header synchronized.
  * v0.9.26 - No CSS structural changes for the provider-aware ticker suggestion
  *          combobox; it uses Tailwind utilities in main.tsx. Entry recorded to
