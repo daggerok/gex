@@ -19,7 +19,8 @@ import { MetricsPanel } from '../components/MetricsPanel';
 import type { GexMetric } from '../metric-prefs';
 import { useLevelPrefs } from '../level-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor, roundPrice } from '../custom-levels';
-import { useCustomLevels } from '../use-custom-levels';
+import { cutBarsAfter } from '../backtest/bars';
+import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { ChartHeader } from '../components/ChartHeader';
 import { useI18n } from '../i18n';
@@ -88,6 +89,8 @@ export interface ChartViewProps {
     setMetrics: (metrics: GexMetric[]) => void;
     /** Strikes of the loaded chain: a click or a drag puts a custom level on the nearest one, never between two. */
     strikes?: readonly number[];
+    /** Backtest: the archived day (`YYYY-MM-DD`). The candles stop at it and come from the cache files, the live proxy is off. null = live. */
+    asOfDate?: string | null;
 }
 
 type FetchState =
@@ -118,7 +121,7 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [] }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [], asOfDate = null }) => {
     const agEnabled = metrics.includes('absoluteGamma');
     const { t: tr, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
@@ -155,14 +158,14 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     const [draft, setDraft] = useState<LevelDraft | null>(null);
 
     // ---- OHLC fetch (symbol; always LOAD_RANGE of daily bars, the range buttons only change the visible part) ----
-    const fetchKey = `${symbol}|${LOAD_RANGE}|${settings.proxyBase}|${settings.providerId}`;
+    const fetchKey = `${symbol}|${LOAD_RANGE}|${settings.proxyBase}|${settings.providerId}|${asOfDate ?? ''}`;
     const [state, setState] = useState<FetchState>({ key: '', status: 'loading' });
     useEffect(() => {
         if (!symbol) return;
         const ac = new AbortController();
         setState({ key: fetchKey, status: 'loading' });
-        loadOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range: LOAD_RANGE, interval: DEFAULT_CHART_INTERVAL }, settings.providerId === 'static')
-            .then((bars) => { if (!ac.signal.aborted) setState({ key: fetchKey, status: 'ok', bars }); })
+        loadOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range: LOAD_RANGE, interval: DEFAULT_CHART_INTERVAL }, settings.providerId === 'static' || asOfDate !== null)
+            .then((bars) => { if (!ac.signal.aborted) setState({ key: fetchKey, status: 'ok', bars: asOfDate ? cutBarsAfter(bars, asOfDate) : bars }); })
             .catch((e: unknown) => {
                 if (ac.signal.aborted) return;
                 setState({ key: fetchKey, status: 'error', error: e instanceof Error ? e.message : String(e) });
@@ -311,6 +314,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
          * onDown, see there). Returns true when it did, so the caller can stop the browser's own menu.
          */
         const openEditorAt = (e: MouseEvent): boolean => {
+            if (customLevelsLocked()) return false; // a backtest shows the snapshot's levels, read-only
             const pt = plotPoint(e);
             const price = pt && seriesRef.current ? seriesRef.current.coordinateToPrice(pt.y) : null;
             if (!pt || price == null || !Number.isFinite(price)) return false;
@@ -334,7 +338,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 if (openEditorAt(e)) { e.preventDefault(); e.stopPropagation(); }
                 return;
             }
-            if (e.button !== 0) return;
+            if (e.button !== 0 || customLevelsLocked()) return;
             const pt = plotPoint(e);
             const id = pt ? levelAt(pt.y) : null;
             if (!id) return;

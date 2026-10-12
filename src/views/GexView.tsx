@@ -15,7 +15,7 @@ import { MetricsPanel } from '../components/MetricsPanel';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor } from '../custom-levels';
 import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
-import { useCustomLevels } from '../use-custom-levels';
+import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
@@ -766,6 +766,7 @@ export const GexView: React.FC<GexViewProps> = ({
      * so the browser's own menu is left alone there.
      */
     const openLevelEditor = (e: { clientX: number; clientY: number }): boolean => {
+        if (customLevelsLocked()) return false; // a backtest shows the snapshot's levels, read-only
         const strike = cursorStrikeRef.current;
         const box = chartBoxRef.current;
         if (strike == null || !box) return false;

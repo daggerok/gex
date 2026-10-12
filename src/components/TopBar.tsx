@@ -119,12 +119,14 @@ export const TopBar: React.FC<{
     setTickerSuggestionsOpen: (v: boolean) => void;
     proxyOk: boolean | null;
     proxyChecking: boolean;
+    /** The "As of" selector (backtest), rendered next to the provider. */
+    asOfSlot?: React.ReactNode;
 }> = ({
     settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll,
     tickerInput, onTickerInput, onSearch, searching,
     tickerSuggestions, tickerSuggestionsOpen, tickerSuggestionsLoading, activeTickerSuggestion,
     onTickerFocus, onTickerBlur, onTickerKeyDown, onChooseSuggestion, setActiveTickerSuggestion, setTickerSuggestionsOpen,
-    proxyOk, proxyChecking,
+    proxyOk, proxyChecking, asOfSlot,
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
     const [showDebug, setShowDebug] = useState(false);
@@ -370,6 +372,9 @@ export const TopBar: React.FC<{
                             ))}
                         </select>
                     </div>
+
+                    {/* 5b. "As of" selector (backtest), same for all tabs */}
+                    {asOfSlot}
 
                     {/* 6. CACHE / LIVE — fundamentals Pill */}
                     <div title={isCache ? t('topBar.cache') : t('topBar.live')} className="flex-shrink-0">
