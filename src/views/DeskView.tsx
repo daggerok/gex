@@ -47,6 +47,20 @@ export const DeskView: React.FC<DeskViewProps> = ({
 }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(settings.colorTheme);
+    // Underlying spot + provider label: shown in the middle of the chain table's toolbar row, between the expirations
+    // count and the Collapse all button (owner's layout)
+    const summary = chainSymbol ? (
+        <div className="inline-flex flex-wrap items-baseline justify-center gap-2">
+            <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{chainSymbol}</span>
+            {spot != null && (
+                <span className="text-sm text-slate-500 dark:text-slate-400">
+                    {tr('spot.label')} <span className="font-semibold text-slate-800 dark:text-slate-200">${fmt(spot)}</span>
+                    {spotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">{tr('spot.estimated')}</span>}
+                </span>
+            )}
+            <span className="text-xs text-slate-400">{tr('spot.delayed', { provider: provider.label.split(' ')[0] })}</span>
+        </div>
+    ) : null;
     return (
         /* Width: comfortable centered column on phones/tablets, but on LARGE
             screens (laptops/desktops/TVs, lg: ≥1024px) go full-width so the
@@ -65,7 +79,8 @@ export const DeskView: React.FC<DeskViewProps> = ({
                 picker + Load button (STEP 2) now live in the shared panel in
                 main.tsx, in the same row as the Desk/GEX/Chart tab pills,
                 visible from Desk and GEX alike. ---- */}
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+            {/* Only while a request is in flight (Cancel and the loading text): the symbol and its spot are in the table's toolbar row. */}
+            {anyLoading && <div className="mb-4 flex flex-wrap items-center gap-2">
 
                 {/* Cancel — visible only while a request is in flight. */}
                 {anyLoading && (
@@ -78,26 +93,12 @@ export const DeskView: React.FC<DeskViewProps> = ({
                     </button>
                 )}
 
-                {/* Underlying spot + provider label. */}
-                {chainSymbol && (
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{chainSymbol}</span>
-                        {spot != null && (
-                            <span className="text-sm text-slate-500 dark:text-slate-400">
-                                {tr('spot.label')} <span className="font-semibold text-slate-800 dark:text-slate-200">${fmt(spot)}</span>
-                                {spotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">{tr('spot.estimated')}</span>}
-                            </span>
-                        )}
-                        <span className="text-xs text-slate-400">{tr('spot.delayed', { provider: provider.label.split(' ')[0] })}</span>
-                    </div>
-                )}
-
                 {anyLoading && (
                     <span className={`animate-pulse-soft text-xs font-medium ${ax.pulse}`}>
                         {metaLoading ? tr('loading.expirations') : tr('loading.chain')}
                     </span>
                 )}
-            </div>
+            </div>}
 
             {/* Calm notice (e.g. cancelled). */}
             {notice && !error && (
@@ -144,7 +145,7 @@ export const DeskView: React.FC<DeskViewProps> = ({
             {/* Option chain desk (one section per expiration), or guidance. */}
             {!showOnboarding && (
                 chainSymbol && hasRows ? (
-                    <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} />
+                    <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} summary={summary} />
                 ) : meta && !expLoading && !chainSymbol ? (
                     <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
                         {tr('notice.pickExp')}

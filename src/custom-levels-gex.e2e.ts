@@ -203,6 +203,17 @@ try {
         assert.equal(await page.getByText('Expirations').first().isVisible(), true, 'the Expirations panel is on the Chart tab');
         assert.equal((await chartPanel.getByRole('button').first().textContent())?.trim(), chartLevel.name, 'the custom level is a chip of the panel on the Chart tab');
 
+        // Desk: the symbol, its spot and the provider sit in the middle of the toolbar row, between the expirations count and Collapse all
+        await page.getByRole('button', { name: 'Desk' }).first().click();
+        await page.waitForTimeout(1500);
+        const count = (await page.getByText(/^\d+ expirations?$/).first().boundingBox())!;
+        const spotLine = (await page.getByText(/^Spot/).first().boundingBox())!;
+        const collapse = (await page.getByRole('button', { name: /Collapse all|Expand all/ }).first().boundingBox())!;
+        assert.ok(count.x + count.width < spotLine.x && spotLine.x + spotLine.width < collapse.x, 'the spot line is between the expirations count and Collapse all');
+        assert.ok(Math.abs(spotLine.y - count.y) < 20 && Math.abs(spotLine.y - collapse.y) < 20, 'all three are on one row');
+        await page.getByRole('button', { name: 'Chart' }).first().click();
+        await page.waitForTimeout(1500);
+
         // the help (?) of the Chart tab explains it
         await page.locator('button[aria-label="Chart help"]').first().hover();
         assert.ok(await page.getByText('Add your own level: right click the chart').first().isVisible(), 'the ? help of the Chart tab explains the custom level');
