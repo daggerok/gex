@@ -2,8 +2,8 @@
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { deflateRawSync } from 'node:zlib';
-import { ZipError, buildZip, mergeZips, parseZipDirectory } from '../history-zip';
-import { importArchive, isSnapshotId, openSnapshot, snapshotDate, snapshotLabel } from './archive';
+import { ZipError, buildZip, buildZipFromRaw, mergeZips, parseZipDirectory } from '../history-zip';
+import { importArchive, isSnapshotId, openSnapshot, readEntry, snapshotDate, snapshotLabel } from './archive';
 
 const enc = new TextEncoder();
 const deflate = (d: Uint8Array) => new Uint8Array(deflateRawSync(d));
@@ -86,5 +86,16 @@ describe('snapshot ids', () => {
     expect(snapshotDate('2026-10-09-15-42')).toBe('2026-10-09');
     expect(snapshotLabel('2026-10-09-15-42')).toBe('2026-10-09 15:42');
     expect(snapshotLabel('2026-10-09')).toBe('2026-10-09');
+  });
+});
+
+describe('readEntry', () => {
+  test('stops unpacking an entry that inflates past its declared size (a zip bomb)', async () => {
+    const raw = deflate(new Uint8Array(1024 * 1024));
+    const zip = buildZipFromRaw([{ name: '2026-10-09/SPY.json', method: 8, crc32: 0, size: 100, compressedSize: raw.length, raw }], '2026-10-09');
+    const [entry] = parseZipDirectory(zip);
+    const read = readEntry(zip, entry);
+    await expect(read).rejects.toThrow(ZipError);
+    await expect(read).rejects.toThrow('unpacks past its declared size');
   });
 });
