@@ -30,6 +30,9 @@ export const tickerEntryName = (id: string, symbol: string): string => `${id}/${
 /** `<id>/manifest.json` */
 export const manifestEntryName = (id: string): string => `${id}/manifest.json`;
 
+/** `<id>/custom-levels.json`: the user's custom chart levels, only in backups made in the app (a CI backup cannot know them). */
+export const customLevelsEntryName = (id: string): string => `${id}/custom-levels.json`;
+
 /** Text of `<id>/manifest.json`: the same for every kind of snapshot, whoever writes it. */
 export function manifestText(id: string, tickers: readonly string[]): string {
     return JSON.stringify({ version: 1, id, date: snapshotDate(id), tickers: [...tickers].sort() }) + '\n';

@@ -9,6 +9,7 @@ import { createBackup } from '../../scripts/backtest-backup';
 import { chainFromCacheFile } from '../providers/cache';
 import { extractEntry, parseZipDirectory } from '../history-zip';
 import type { ChainResult, OptionQuote } from '../types';
+import { customLevelsFileText, parseCustomLevelsFile } from '../custom-levels';
 import { importArchive, openSnapshot } from './archive';
 import { buildBackupZip, chainToCacheFile } from './backup';
 import { isoMarketTime, marketDay } from './snapshot';
@@ -98,5 +99,43 @@ describe('a backup made in the app has the structure of the one the CI job makes
     await expect(buildBackupZip('2026-10-09', [])).resolves.toBeDefined(); // an end-of-day id is fine too
     await expect(buildBackupZip('latest', [])).rejects.toThrow(/bad snapshot id/);
     await expect(buildBackupZip(ID, [{ symbol: '../x', text: '{}' }])).rejects.toThrow(/not a ticker name/);
+  });
+});
+
+describe('custom levels in a backup', () => {
+  const levels = { SPY: [{ id: 'a', name: 'Level 1', price: 775, color: '#fb7185' }], QQQ: [{ id: 'b', name: 'Q', price: 700 }], TSLA: [{ id: 'c', name: 'Not backed up', price: 1 }] };
+  const files = [{ symbol: 'SPY', text: chainToCacheFile(chain('SPY'), NOW) }, { symbol: 'QQQ', text: chainToCacheFile(chain('QQQ'), NOW) }];
+
+  test('the file holds only the tickers of the backup that have levels, nothing when there are none', () => {
+    expect(JSON.parse(customLevelsFileText(levels, ['SPY', 'QQQ'])!)).toEqual({ version: 1, levels: { QQQ: levels.QQQ, SPY: levels.SPY } });
+    expect(customLevelsFileText(levels, ['NDX'])).toBeNull();
+    expect(customLevelsFileText({}, ['SPY'])).toBeNull();
+  });
+
+  test('the entry sits between the tickers and the manifest, the manifest is the same as without levels', async () => {
+    const withLevels = entries(await buildBackupZip(ID, files, customLevelsFileText(levels, ['SPY', 'QQQ'])));
+    const without = entries(await buildBackupZip(ID, files));
+    expect(withLevels.map((e) => e.name)).toEqual([`${ID}/QQQ.json`, `${ID}/SPY.json`, `${ID}/custom-levels.json`, `${ID}/manifest.json`]);
+    expect(withLevels.find((e) => e.name.endsWith('manifest.json'))).toEqual(without.find((e) => e.name.endsWith('manifest.json')));
+  });
+
+  test('opening the snapshot gives the levels back and does not list the file as a ticker; no file means no levels', async () => {
+    const zip = await buildBackupZip(ID, files, customLevelsFileText(levels, ['SPY', 'QQQ']));
+    const snap = openSnapshot(ID, zip);
+    expect(snap.tickers).toEqual(['QQQ', 'SPY']);
+    expect(await snap.customLevels()).toEqual({ QQQ: levels.QQQ, SPY: levels.SPY });
+    expect(await openSnapshot(ID, await buildBackupZip(ID, files)).customLevels()).toEqual({});
+  });
+
+  test('importing keeps the levels entry', async () => {
+    const zip = await buildBackupZip(ID, files, customLevelsFileText(levels, ['SPY', 'QQQ']));
+    const [imported] = await importArchive(zip);
+    expect(await openSnapshot(imported.id, imported.bytes).customLevels()).toEqual({ QQQ: levels.QQQ, SPY: levels.SPY });
+  });
+
+  test('a damaged or foreign file gives no levels and bad entries are dropped', () => {
+    expect(parseCustomLevelsFile('not json')).toEqual({});
+    expect(parseCustomLevelsFile(JSON.stringify({ version: 2, levels: { SPY: [{ id: 'a', name: 'x', price: 1 }] } }))).toEqual({});
+    expect(parseCustomLevelsFile(JSON.stringify({ version: 1, levels: { SPY: [{ id: 'a', name: 'x', price: 'no' }, { id: 'b', name: 'ok', price: 2 }] } }))).toEqual({ SPY: [{ id: 'b', name: 'ok', price: 2 }] });
   });
 });

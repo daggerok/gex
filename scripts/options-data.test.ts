@@ -1,11 +1,13 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   DEFAULT_SYMBOLS,
   fileDay,
+  writeLatest,
   keepLaterExpirations,
   marketDay,
   PyInt,
@@ -883,5 +885,17 @@ describe('fileDay', () => {
     expect(fileDay('{oops')).toBeNull();
     expect(fileDay('[]')).toBeNull();
     expect(fileDay(JSON.stringify({ symbol: 'SPY' }))).toBeNull();
+  });
+});
+
+describe('writeLatest', () => {
+  test('writes api/latest.json with the date only, again with the same date changes nothing, a bad date writes nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'latest-'));
+    expect(writeLatest(dir, '2026-10-09')).toBe(true);
+    expect(JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8'))).toEqual({ version: 1, date: '2026-10-09' });
+    expect(writeLatest(dir, '2026-10-09')).toBe(false);
+    expect(writeLatest(dir, '2026-10-10')).toBe(true);
+    expect(writeLatest(dir, 'yesterday')).toBe(false);
+    expect(JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8')).date).toBe('2026-10-10');
   });
 });

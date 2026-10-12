@@ -577,6 +577,25 @@ export function marketDay(now: Date = new Date(), tz: string = MARKET_TZ): strin
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * api/latest.json, `{ "version": 1, "date": "YYYY-MM-DD" }`: the trading day of the newest data in the cache. The app shows it as
+ * "As of <date>" in the selector when no live provider is reachable. Only the date, so it changes at most once a day. Returns
+ * true when the file was written.
+ */
+export function writeLatest(apiDir: string, date: string): boolean {
+    if (!DAY_RE.test(date)) return false;
+    const path = join(apiDir, "latest.json");
+    const text = JSON.stringify({ version: 1, date }) + "\n";
+    try {
+        if (readFileSync(path, "utf8") === text) return false;
+    } catch {
+        // none yet
+    }
+    mkdirSync(apiDir, { recursive: true });
+    writeFileSync(path, text);
+    return true;
+}
+
+/**
  * The trading day a cache file's text is about: its `date`, or for a file from before `date` existed the day of its
  * `updated` moment. Null when the text is not a cache file.
  */
@@ -1988,6 +2007,7 @@ export async function main(): Promise<void> {
     const fetched = pool.fetched;
     // Queue order whatever the finish order was.
     const updatedFiles: string[] = pool.results.flatMap((r) => (r?.kind === "written" && r.path ? [rel(r.path)] : []));
+    if (updatedFiles.length) writeLatest(dirname(DATA_DIR), marketDay());
 
     log(`skiplist: saving ${Object.keys(skip).length} entries to api/options/index.json (no_options)`);
     log("index: rebuilding api/options/index.json manifest if files/names/skiplist changed");

@@ -34,6 +34,14 @@ describe('makeBackup', () => {
     expect((await importArchive(out.bytes)).map((s) => s.tickers)).toEqual([['NDX', 'SPY']]);
   });
 
+  test('custom levels of the backed up tickers go into the zip, those of other tickers do not', async () => {
+    const customLevels = { SPY: [{ id: 'a', name: 'Level 1', price: 99 }], TSLA: [{ id: 'b', name: 'Other', price: 5 }] };
+    const out = await makeBackup({ provider: bulkProvider('bulk-levels', ['SPY', 'QQQ']), ctx, symbols: null, taken: new Set(), now: NOW, customLevels });
+    expect(await openSnapshot(out.id, out.bytes).customLevels()).toEqual({ SPY: customLevels.SPY });
+    const plain = await makeBackup({ provider: bulkProvider('bulk-nolevels', ['SPY']), ctx, symbols: null, taken: new Set(), now: NOW });
+    expect(await openSnapshot(plain.id, plain.bytes).customLevels()).toEqual({});
+  });
+
   test('an id that is taken moves forward instead of overwriting', async () => {
     const out = await makeBackup({ provider: bulkProvider('bulk-taken', ['SPY']), ctx, symbols: null, taken: new Set(['2026-10-09-15-42']), now: NOW });
     expect(out.id).toBe('2026-10-09-15-43');

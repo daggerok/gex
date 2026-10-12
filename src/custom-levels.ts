@@ -101,6 +101,30 @@ export function parseCustomLevels(raw: string | null): CustomLevel[] {
     }
 }
 
+/** `{ version: 1, levels: { SPY: [...] } }`, the content of `custom-levels.json` in a backup: only tickers that have levels. */
+export function customLevelsFileText(levels: Readonly<Record<string, readonly CustomLevel[]>>, tickers: readonly string[]): string | null {
+    const out: Record<string, CustomLevel[]> = {};
+    for (const t of [...tickers].sort()) if (levels[t]?.length) out[t] = levels[t].map((l) => ({ ...l }));
+    return Object.keys(out).length ? JSON.stringify({ version: 1, levels: out }) + '\n' : null;
+}
+
+/** Reads the text of `custom-levels.json`; a damaged file or a wrong version gives no levels, and bad entries are dropped. */
+export function parseCustomLevelsFile(text: string | null): Record<string, CustomLevel[]> {
+    const out: Record<string, CustomLevel[]> = {};
+    if (!text) return out;
+    try {
+        const j = JSON.parse(text) as { version?: unknown; levels?: unknown };
+        if (j?.version !== 1 || !j.levels || typeof j.levels !== 'object') return out;
+        for (const [symbol, list] of Object.entries(j.levels as Record<string, unknown>)) {
+            const levels = parseCustomLevels(JSON.stringify(list));
+            if (levels.length) out[symbol] = levels;
+        }
+    } catch {
+        // damaged file: no levels
+    }
+    return out;
+}
+
 export function loadCustomLevels(symbol: string): CustomLevel[] {
     try {
         return parseCustomLevels(localStorage.getItem(STORAGE_PREFIX + symbol));

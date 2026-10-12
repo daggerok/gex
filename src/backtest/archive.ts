@@ -1,4 +1,5 @@
-import { isSnapshotId, isTickerName, snapshotDate, snapshotLabel } from './snapshot';
+import { parseCustomLevelsFile, type CustomLevel } from '../custom-levels';
+import { customLevelsEntryName, isSnapshotId, isTickerName, snapshotDate, snapshotLabel } from './snapshot';
 import {
     ZIP_LIMITS,
     ZipError,
@@ -45,12 +46,16 @@ export interface Snapshot {
     tickers: string[];
     /** The cache file text of a ticker in that snapshot, or null when it is not in it. */
     read(symbol: string): Promise<string | null>;
+    /** The custom levels saved with the snapshot (only backups made in the app have them), by ticker; empty when none. */
+    customLevels(): Promise<Record<string, CustomLevel[]>>;
 }
 
 export function openSnapshot(id: string, bytes: Uint8Array, limits: ZipLimits = ZIP_LIMITS): Snapshot {
     const prefix = `${id}/`;
     const byTicker = new Map<string, ZipEntry>();
+    let levelsEntry: ZipEntry | null = null;
     for (const e of parseZipDirectory(bytes, limits)) {
+        if (e.name === customLevelsEntryName(id)) levelsEntry = e;
         if (!e.name.startsWith(prefix) || !e.name.endsWith('.json')) continue;
         const symbol = e.name.slice(prefix.length, -'.json'.length);
         if (symbol && symbol !== 'manifest' && isTickerName(symbol)) byTicker.set(symbol, e);
@@ -63,6 +68,9 @@ export function openSnapshot(id: string, bytes: Uint8Array, limits: ZipLimits = 
         async read(symbol) {
             const e = byTicker.get(symbol.toUpperCase());
             return e ? decoder.decode(await readEntry(bytes, e)) : null;
+        },
+        async customLevels() {
+            return levelsEntry ? parseCustomLevelsFile(decoder.decode(await readEntry(bytes, levelsEntry))) : {};
         },
     };
 }

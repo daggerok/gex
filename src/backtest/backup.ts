@@ -1,6 +1,6 @@
 import type { ChainResult, OptionQuote } from '../types';
 import { ZipError, buildZipFromRaw, crc32, type RawZipEntry } from '../history-zip';
-import { isoMarketTime, isSnapshotId, isTickerName, manifestEntryName, manifestText, marketDay, sortEntries, tickerEntryName } from './snapshot';
+import { customLevelsEntryName, isoMarketTime, isSnapshotId, isTickerName, manifestEntryName, manifestText, marketDay, sortEntries, tickerEntryName } from './snapshot';
 
 // ============================================================================
 // BACKTEST BACKUP MADE IN THE APP - the same archive the CI job makes with
@@ -71,10 +71,10 @@ export interface BackupFile {
 }
 
 /**
- * The zip of a backup: `<id>/<SYM>.json` for each file and `<id>/manifest.json`, sorted by entry name, compressed in the
+ * The zip of a backup: `<id>/<SYM>.json` for each file and `<id>/manifest.json` (plus `<id>/custom-levels.json` when given), sorted by entry name, compressed in the
  * browser. `id` is `YYYY-MM-DD-HH-mm`. Read back by openSnapshot, importArchive and the CI side alike.
  */
-export async function buildBackupZip(id: string, files: readonly BackupFile[]): Promise<Uint8Array> {
+export async function buildBackupZip(id: string, files: readonly BackupFile[], customLevelsText: string | null = null): Promise<Uint8Array> {
     if (!isSnapshotId(id)) throw new ZipError(`bad snapshot id: ${id}`);
     const bad = files.find((f) => !isTickerName(f.symbol));
     if (bad) throw new ZipError(`not a ticker name: ${bad.symbol}`);
@@ -82,6 +82,8 @@ export async function buildBackupZip(id: string, files: readonly BackupFile[]): 
     const items = sortEntries([
         ...files.map((f) => ({ name: tickerEntryName(id, f.symbol), data: enc.encode(f.text) })),
         { name: manifestEntryName(id), data: enc.encode(manifestText(id, files.map((f) => f.symbol))) },
+        // optional, only when the user has custom levels for the backed up tickers; the manifest stays the same either way
+        ...(customLevelsText ? [{ name: customLevelsEntryName(id), data: enc.encode(customLevelsText) }] : []),
     ]);
     const entries: RawZipEntry[] = [];
     for (const item of items) {

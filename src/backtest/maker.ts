@@ -1,5 +1,6 @@
 import type { ChainResult, DataProvider, OptionQuote, ProviderContext } from '../types';
 import { getBulk, loadExpiration, loadMeta } from '../providers/loader';
+import { customLevelsFileText, type CustomLevel } from '../custom-levels';
 import { buildBackupZip, chainToCacheFile, type BackupFile } from './backup';
 import { nextBackupId } from './snapshot';
 
@@ -47,6 +48,8 @@ export async function makeBackup(opts: {
     taken: ReadonlySet<string>;
     now?: Date;
     vixFuturesPricing?: boolean;
+    /** The user's custom levels by ticker; those of the backed up tickers go into the zip as `custom-levels.json`. */
+    customLevels?: Readonly<Record<string, readonly CustomLevel[]>>;
     concurrency?: number;
     signal?: AbortSignal;
     onProgress?: (p: BackupProgress) => void;
@@ -76,6 +79,7 @@ export async function makeBackup(opts: {
     if (opts.signal?.aborted) throw new DOMException('backup cancelled', 'AbortError');
     if (!files.length) throw new Error(`no ticker could be loaded: ${failed.map((f) => `${f.symbol} (${f.reason})`).join('; ')}`);
     const id = nextBackupId(now, opts.taken);
-    const bytes = await buildBackupZip(id, files);
-    return { id, bytes, tickers: files.map((f) => f.symbol).sort(), failed };
+    const tickers = files.map((f) => f.symbol).sort();
+    const bytes = await buildBackupZip(id, files, opts.customLevels ? customLevelsFileText(opts.customLevels, tickers) : null);
+    return { id, bytes, tickers, failed };
 }
