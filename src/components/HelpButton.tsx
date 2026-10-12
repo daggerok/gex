@@ -2,6 +2,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { createPortal } from 'react-dom';
+import { usePortalHost } from '../use-fullscreen';
 
 /** The look of the button when the caller does not give its own (the same as the zoom buttons of the GEX tab). */
 const DEFAULT_BUTTON = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium leading-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 disabled:cursor-default';
@@ -13,6 +14,7 @@ const PANEL_HEIGHT = 300;
  *  (a click outside closes it). One paragraph per instruction, in a fixed portal panel next to the button so no
  *  `overflow` ancestor clips it. `align` says which side of the button the panel lines up with. */
 export const HelpButton: React.FC<{ label: string; paragraphs: string[]; align: 'left' | 'right'; buttonClass?: string }> = ({ label, paragraphs, align, buttonClass = DEFAULT_BUTTON }) => {
+    const host = usePortalHost(); // the full screen element while the chart is full screen, else the body
     const wrapRef = useRef<HTMLSpanElement>(null);
     const panelId = useId();
     const [hover, setHover] = useState(false);
@@ -61,13 +63,13 @@ export const HelpButton: React.FC<{ label: string; paragraphs: string[]; align: 
                     role="tooltip"
                     style={{ top: pos.top, bottom: pos.bottom, ...(align === 'left' ? { left: pos.left, maxWidth: `calc(100vw - ${pos.left + 8}px)` } : { right: pos.right, maxWidth: `calc(100vw - ${pos.right + 8}px)` }) }}
                     className={
-                        'pointer-events-none fixed z-50 w-96 space-y-1.5 whitespace-normal rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs leading-snug text-slate-100 shadow-lg transition-opacity duration-200 ease-out dark:border-slate-600 ' +
+                        'pointer-events-none fixed z-[70] w-96 space-y-1.5 whitespace-normal rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs leading-snug text-slate-100 shadow-lg transition-opacity duration-200 ease-out dark:border-slate-600 ' +
                         (open ? 'opacity-100' : 'opacity-0')
                     }
                 >
                     {paragraphs.map((t) => <p key={t}>{t}</p>)}
                 </div>,
-                document.body,
+                host,
             )}
         </span>
     );
