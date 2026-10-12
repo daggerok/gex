@@ -300,7 +300,7 @@ export const TopBar: React.FC<{
                             role="combobox"
                             aria-expanded={showTickerSuggestions}
                             aria-label={t('topBar.ticker')}
-                            className={`w-full ${inp} border rounded-lg px-3 py-2 font-mono font-bold text-sm focus:outline-none ${focusBorder} transition-colors uppercase text-ellipsis`}
+                            className={`w-full ${inp} border rounded-lg px-3 py-2 font-mono font-bold text-sm focus:outline-none ${focusBorder} transition-colors uppercase text-ellipsis placeholder:text-ellipsis`}
                         />
                         {showTickerSuggestions && (
                             <div className={`absolute top-full left-0 right-0 mt-1 ${sugBg} border rounded-lg overflow-hidden z-50 max-w-xl`}>
