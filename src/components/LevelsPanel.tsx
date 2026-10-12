@@ -25,13 +25,15 @@ export const LevelsPanel: React.FC<{
     colorTheme: Settings['colorTheme'];
     /** the spot shown is an estimate (put-call parity), its tooltip says so */
     spotEstimated?: boolean;
+    /** the AG metric is on: only then the Max AG level has a chip */
+    showMaxAg?: boolean;
     className?: string;
-}> = ({ levels, symbol, colorTheme, spotEstimated = false, className = 'grow basis-0 min-w-[300px] max-w-fit' }) => {
+}> = ({ levels, symbol, colorTheme, spotEstimated = false, showMaxAg = false, className = 'grow basis-0 min-w-[300px] max-w-fit' }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(colorTheme);
     const { selected, colors } = useLevelPrefs();
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
-    const entries = levelPanelOrder(levels, customLevels);
+    const entries = levelPanelOrder(levels, customLevels, showMaxAg ? [] : ['maxAbsGamma']);
 
     const reset = () => {
         resetLevelPrefs();

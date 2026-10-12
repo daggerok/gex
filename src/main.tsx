@@ -1645,6 +1645,7 @@ const App: React.FC = () => {
                         range={chartRange}
                         setRange={setChartRange}
                         strikes={chartStrikes}
+                        agEnabled={gexMetrics.includes('absoluteGamma')}
                     />
                 </Suspense>
                 </div>

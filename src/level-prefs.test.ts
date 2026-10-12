@@ -6,13 +6,13 @@ import { DEFAULT_SELECTED_LEVELS, getLevelPrefs, levelPanelOrder, resetLevelPref
 import type { GexLevels } from './types';
 
 const levels = (over: Partial<GexLevels> = {}): GexLevels => ({
-  maxNetGex: 780, netGexPlus: 785, gammaFlip: 773.22, minNetGex: 770, netGexMinus: 765, sumNetGexPlus: 784, sumNetGexMinus: 764, maxPain: 774, spot: 778.57, ...over,
+  maxNetGex: 780, netGexPlus: 785, gammaFlip: 773.22, minNetGex: 770, netGexMinus: 765, sumNetGexPlus: 784, sumNetGexMinus: 764, maxPain: 774, maxAbsGamma: 777, spot: 778.57, ...over,
 } as GexLevels);
 const own = (id: string, price: number): CustomLevel => ({ id, name: id, price });
 
 describe('levelPanelOrder', () => {
   test('built-in levels run from the lowest price to the highest (Net GEX- and 75% Sum Net GEX- swapped, see below)', () => {
-    expect(levelPanelOrder(levels()).map((e) => e.key)).toEqual(['netGexMinus', 'sumNetGexMinus', 'minNetGex', 'gammaFlip', 'maxPain', 'spot', 'maxNetGex', 'sumNetGexPlus', 'netGexPlus']);
+    expect(levelPanelOrder(levels()).map((e) => e.key)).toEqual(['netGexMinus', 'sumNetGexMinus', 'minNetGex', 'gammaFlip', 'maxPain', 'maxAbsGamma', 'spot', 'maxNetGex', 'sumNetGexPlus', 'netGexPlus']);
   });
 
   test('Net GEX- stays before 75% Sum Net GEX- even when the 75% level has the lower price', () => {
@@ -26,7 +26,7 @@ describe('levelPanelOrder', () => {
   });
 
   test('no levels at all keeps the base order', () => {
-    expect(levelPanelOrder(null).map((e) => e.key)).toEqual(['maxNetGex', 'netGexPlus', 'gammaFlip', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain']);
+    expect(levelPanelOrder(null).map((e) => e.key)).toEqual(['maxNetGex', 'netGexPlus', 'gammaFlip', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma']);
   });
 
   test("the user's own levels come first, by price, so they are never out of sight at the end of a scrolling row", () => {
@@ -35,7 +35,25 @@ describe('levelPanelOrder', () => {
     expect(entries[0].custom?.price).toBe(750);
     expect(entries[0].builtin).toBeNull();
     expect(entries[2].builtin).toBe('netGexMinus');
-    expect(entries).toHaveLength(11);
+    expect(entries).toHaveLength(12);
+  });
+});
+
+describe('Max AG chip', () => {
+  test('it has a chip only while the AG metric is on (the caller hides it otherwise)', () => {
+    expect(levelPanelOrder(levels()).map((e) => e.key)).toContain('maxAbsGamma');
+    const without = levelPanelOrder(levels(), [], ['maxAbsGamma']).map((e) => e.key);
+    expect(without).not.toContain('maxAbsGamma');
+    expect(without).toHaveLength(9);
+  });
+
+  test('it sits among the others by its price', () => {
+    const keys = levelPanelOrder(levels()).map((e) => e.key);
+    expect(keys.indexOf('maxAbsGamma')).toBe(keys.indexOf('maxPain') + 1); // 777 is between Max Pain 774 and Spot 778.57
+  });
+
+  test('it is on by default, like Max Pain', () => {
+    expect(DEFAULT_SELECTED_LEVELS).toContain('maxAbsGamma');
   });
 });
 

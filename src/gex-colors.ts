@@ -25,7 +25,7 @@
  * comment, and the corresponding math/field removal in src/gex.ts/
  * src/types.ts, done in a separate PR).
  */
-export type GexLevelKey = 'maxNetGex' | 'netGexPlus' | 'gammaFlip' | 'minNetGex' | 'netGexMinus' | 'sumNetGexPlus' | 'sumNetGexMinus' | 'maxPain' | 'spot';
+export type GexLevelKey = 'maxNetGex' | 'netGexPlus' | 'gammaFlip' | 'minNetGex' | 'netGexMinus' | 'sumNetGexPlus' | 'sumNetGexMinus' | 'maxPain' | 'maxAbsGamma' | 'spot';
 
 export interface GexLevelColor {
     hex: string;
@@ -41,6 +41,7 @@ export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
     sumNetGexPlus: { hex: '#22d3ee', dot: 'bg-cyan-400' },  // cyan-400
     sumNetGexMinus: { hex: '#f472b6', dot: 'bg-pink-400' },   // pink-400
     maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },   // yellow-400
+    maxAbsGamma: { hex: '#60a5fa', dot: 'bg-blue-400' }, // blue-400 (the AG series is blue too)
     spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
 };
 
@@ -161,6 +162,7 @@ export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
     sumNetGexPlus: GEX_LEVEL_COLORS.sumNetGexPlus.hex,
     sumNetGexMinus: GEX_LEVEL_COLORS.sumNetGexMinus.hex,
     maxPain: GEX_LEVEL_COLORS.maxPain.hex,
+    maxAbsGamma: GEX_LEVEL_COLORS.maxAbsGamma.hex,
     spot: GEX_LEVEL_COLORS.spot.hex,
 };
 

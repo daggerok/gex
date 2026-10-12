@@ -11,6 +11,7 @@ import {
   computeMaxPain,
   computeOiVolumeTotals,
   computePCRatio,
+  findMaxAbsGamma,
   findNetGexLevels,
   findSumNetGexLevels,
   pcRatioByStrike,
@@ -574,6 +575,7 @@ describe('computeGexLevels (7.7)', () => {
       sumNetGexPlus: null,
       sumNetGexMinus: null,
       maxPain: null,
+      maxAbsGamma: null,
       pcRatioOi: null,
       pcRatioVolume: null,
       totalNetGex: 0,
@@ -728,5 +730,35 @@ describe('sumAbsGamma: total Absolute Gamma of the profile', () => {
 
   test('empty profile -> 0', () => {
     expect(sumAbsGamma([])).toBe(0);
+  });
+});
+
+describe('findMaxAbsGamma (Max AG)', () => {
+  // only strike and absGamma matter here
+  const pt = (strike: number, absGamma: number) => ({ strike, absGamma } as unknown as Parameters<typeof findMaxAbsGamma>[0][number]);
+
+  test('the strike with the largest absolute gamma, whatever the sign of its net GEX', () => {
+    expect(findMaxAbsGamma([pt(770, 1e9), pt(775, 4e9), pt(780, 2e9)])).toBe(775);
+  });
+
+  test('a tie goes to the lowest strike, in any input order', () => {
+    expect(findMaxAbsGamma([pt(780, 5), pt(770, 5), pt(775, 5)])).toBe(770);
+    expect(findMaxAbsGamma([pt(770, 5), pt(780, 5)])).toBe(770);
+  });
+
+  test('an empty profile, or one with no absolute gamma at all, has no Max AG', () => {
+    expect(findMaxAbsGamma([])).toBeNull();
+    expect(findMaxAbsGamma([pt(770, 0), pt(775, 0)])).toBeNull();
+    expect(findMaxAbsGamma([pt(770, NaN)])).toBeNull();
+  });
+
+  test('computeGexLevels carries it: the strike whose contracts hold the most gamma', () => {
+    // 775 has 10x the open interest of 770 on the call and put side alike, so it also has 10x the absolute gamma
+    const q = (strike: number, side: 'call' | 'put', openInterest: number): OptionQuote => ({
+      symbol: `X${strike}${side}`, expiration: '2099-01-15', side, strike, bid: 1, ask: 1, mid: 1, last: 1, volume: 0, openInterest, iv: 0.2,
+      delta: side === 'call' ? 0.5 : -0.5, gamma: 0.01, theta: 0, vega: 0, rho: 0, greeksSource: 'cboe', greeksMissingReason: null,
+    } as unknown as OptionQuote);
+    const levels = computeGexLevels([q(770, 'call', 100), q(770, 'put', 100), q(775, 'call', 1000), q(775, 'put', 1000)], 772);
+    expect(levels.maxAbsGamma).toBe(775);
   });
 });

@@ -32,7 +32,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 - **Ticker suggestions:** searchable ticker and company combobox for every provider. Local static suggestions use `api/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest to latest with sticky expiration headers
 - **Desk UX:** ATM row highlight, sticky Calls / Strike / Puts headers, greeks columns enabled by default, per-side and per-column desk settings, empty cells for missing data, themed scrollbars, collapse and expand controls, and automatic centering on the current strike after load or expand
-- **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Max Pain, Spot) computed once and drawn on both tabs, plus your own custom levels
+- **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Max Pain, Spot, and Max AG, the strike with the largest absolute gamma, while the AG metric is on) computed once and drawn on both tabs, plus your own custom levels
 - **Theme UX:** compact current-theme icon with an animated dropdown for the other themes
 - **Internationalization:** English and Russian UI with a language switcher in the header and in Settings
 - **Provider setup badges:** No setup, Free key, Needs proxy, plus onboarding when a token is required

@@ -26,7 +26,7 @@ export type ToggleableLevelKey = GexLevelKey;
  *  here - its actual rendered position (toggle panel AND sidebar card) is
  *  decided by each one's own by-strike sort (see `levelPanelKeys`/
  *  `keyLevels` below), this array is just the base/reset order. */
-export const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'spot'];
+export const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma', 'spot'];
 
 /** Levels that start OFF: the four outer levels (Net GEX+ / Net GEX- and 75% Sum Net GEX+ /
  *  75% Sum Net GEX-). They stay one click away in the Levels panel like every other level. */
@@ -46,6 +46,7 @@ export const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
     sumNetGexPlus: 'gex.level.sumNetGexPlus',
     sumNetGexMinus: 'gex.level.sumNetGexMinus',
     maxPain: 'gex.level.maxPain',
+    maxAbsGamma: 'gex.level.maxAbsGamma',
     // Reuses the plain 'spot.label' key ("Spot"/"Спот") already shown
     // elsewhere in this file (spot.label/spot.estimated/spot.delayed i18n
     // group) rather than inventing a parallel 'gex.level.spot' string.
@@ -65,6 +66,7 @@ export const LEVEL_CHART_LABEL_KEY: Record<ToggleableLevelKey, string> = {
     sumNetGexPlus: 'gex.chart.sumNetGexPlus',
     sumNetGexMinus: 'gex.chart.sumNetGexMinus',
     maxPain: 'gex.chart.maxPain',
+    maxAbsGamma: 'gex.chart.maxAbsGamma',
     // 'gex.chart.spot' used to read "Spot {{price}}" for the old always-on,
     // never-rotated, plain horizontal <ReferenceLine> label (which had room
     // to spell out the price inline). Now that Spot is just another rotated
@@ -84,6 +86,7 @@ export const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
     sumNetGexPlus: 'gex.level.tooltip.sumNetGexPlus',
     sumNetGexMinus: 'gex.level.tooltip.sumNetGexMinus',
     maxPain: 'gex.level.tooltip.maxPain',
+    maxAbsGamma: 'gex.level.tooltip.maxAbsGamma',
     // Plain (non-estimated) case - see `levelTooltip` below for the
     // 'gex.level.tooltip.spotEstimated' variant used when the spot shown is
     // a put-call-parity estimate rather than the provider's own reported price.
@@ -91,7 +94,7 @@ export const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
 };
 
 /** The built-in levels in the order the panel falls back to when two have no price (see levelPanelOrder). */
-const LEVEL_PANEL_BASE: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain'];
+const LEVEL_PANEL_BASE: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma'];
 
 /** One chip of the Levels panel: a built-in level (`builtin`) or one of the user's own (`custom`). */
 export interface PanelEntry {
@@ -107,10 +110,11 @@ export interface PanelEntry {
  * scrolls, and a level placed by its price could end up out of sight at the far right where nobody finds it. Then the
  * built-in levels ascending by each level's live price, so the lowest strike is leftmost (a level with no price sinks to
  * the far right and keeps the base order among themselves). "Net GEX-" always sits before "75% Sum Net GEX-" (owner
- * request), the two swap places when the price sort would put them the other way.
+ * request), the two swap places when the price sort would put them the other way. `hidden` levels get no chip (Max AG
+ * while the AG metric is off).
  */
-export function levelPanelOrder(levels: GexLevels | null, customLevels: readonly CustomLevel[] = []): PanelEntry[] {
-    const sorted = [...LEVEL_PANEL_BASE].sort((a, b) => {
+export function levelPanelOrder(levels: GexLevels | null, customLevels: readonly CustomLevel[] = [], hidden: readonly ToggleableLevelKey[] = []): PanelEntry[] {
+    const sorted = LEVEL_PANEL_BASE.filter((k) => !hidden.includes(k)).sort((a, b) => {
         const va = levels?.[a] ?? null;
         const vb = levels?.[b] ?? null;
         if (va == null) return vb == null ? 0 : 1;

@@ -59,6 +59,7 @@ const LEVEL_LINES: Array<{ key: GexLevelKey; label: string; secondary?: boolean 
     { key: 'sumNetGexPlus', label: 'gex.level.sumNetGexPlus', secondary: true },
     { key: 'sumNetGexMinus', label: 'gex.level.sumNetGexMinus', secondary: true },
     { key: 'maxPain', label: 'gex.level.maxPain' },
+    { key: 'maxAbsGamma', label: 'gex.level.maxAbsGamma', secondary: true },
     { key: 'spot', label: 'spot.label', secondary: true },
 ];
 
@@ -82,6 +83,8 @@ export interface ChartViewProps {
     setRange: (range: ChartRange) => void;
     /** Strikes of the loaded chain: a click or a drag puts a custom level on the nearest one, never between two. */
     strikes?: readonly number[];
+    /** the AG metric is on (GEX tab): only then the Max AG level is shown */
+    agEnabled?: boolean;
 }
 
 type FetchState =
@@ -112,7 +115,7 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, strikes = [] }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, strikes = [], agEnabled = false }) => {
     const { t: tr, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const dark = useDarkClass();
@@ -234,7 +237,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         const series = seriesRef.current;
         if (!series) return;
         for (const line of priceLinesRef.current) series.removePriceLine(line);
-        const entries = levelEntries(levels).filter((l) => selectedLevels.includes(l.key));
+        const entries = levelEntries(levels).filter((l) => selectedLevels.includes(l.key) && (l.key !== 'maxAbsGamma' || agEnabled));
         priceLinesRef.current = entries.map((l) => series.createPriceLine({
             price: l.price,
             color: levelColors[l.key],
@@ -246,7 +249,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         levelPricesRef.current = entries.map((l) => l.price);
         // Re-run autoscale so newly in-range levels are pulled into view.
         chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-    }, [levels, tr, hasSymbol, selectedLevels, levelColors]);
+    }, [levels, tr, hasSymbol, selectedLevels, levelColors, agEnabled]);
 
     // ---- Custom level price lines ----
     useEffect(() => {
@@ -440,7 +443,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                     </span>
                 )}
                 {entries.length > 0 && isFuturesPriced && <span className="mr-auto text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</span>}
-                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} />
+                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} showMaxAg={agEnabled} />
             </div>
 
             {/* ---- Chart (container always mounted so the instance survives refetches) ---- */}

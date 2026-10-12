@@ -364,6 +364,8 @@ export interface GexLevels {
      */
     sumNetGexMinus: number | null;
     maxPain: number | null;
+    /** "Max AG": the strike with the largest absolute gamma exposure (src/gex.ts findMaxAbsGamma). Shown only while the AG metric is on. */
+    maxAbsGamma: number | null;
     pcRatioOi: number | null;
     pcRatioVolume: number | null;
     totalNetGex: number;

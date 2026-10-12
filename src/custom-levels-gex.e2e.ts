@@ -103,6 +103,17 @@ try {
         await page.mouse.click(wrapper.x + 2, wrapper.y + 2, { button: 'right' });
         assert.equal(await editor(page).count(), 0, 'no editor outside the plot');
 
+        // Max AG: a chip of the Levels panel and a row of the Levels table while the AG metric is on, gone when it is off
+        const maxAgChip = page.getByRole('group', { name: 'Levels' }).first().getByRole('button', { name: /^Max AG/ });
+        assert.equal(await maxAgChip.count(), 1, 'Max AG chip while AG is on');
+        assert.ok(await page.getByText('Max AG').first().isVisible(), 'Max AG is in the Levels table while AG is on');
+        const agMetric = page.getByRole('group', { name: 'Metrics' }).first().getByRole('button', { name: /^AG/ });
+        await agMetric.click();
+        assert.equal(await maxAgChip.count(), 0, 'no Max AG chip when AG is off');
+        assert.equal(await page.getByText('Max AG').count(), 0, 'no Max AG row when AG is off');
+        await agMetric.click();
+        assert.equal(await maxAgChip.count(), 1, 'Max AG is back when AG is turned on again');
+
         // the help (?) of the GEX chart mentions the custom levels
         await page.locator('button[aria-label="Chart controls"]').first().hover();
         assert.ok(await page.getByText('Add your own level: right click a strike').first().isVisible(), 'the ? help explains the custom level');

@@ -1087,6 +1087,8 @@ export const GexView: React.FC<GexViewProps> = ({
         { key: 'sumNetGexPlus', label: levelLabel('sumNetGexPlus'), value: levels?.sumNetGexPlus ?? null, optional: true },
         { key: 'sumNetGexMinus', label: levelLabel('sumNetGexMinus'), value: levels?.sumNetGexMinus ?? null, optional: true },
         { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
+        // Max AG exists only while the AG metric is on (a null optional level is left out of the tables)
+        { key: 'maxAbsGamma', label: levelLabel('maxAbsGamma'), value: metrics.includes('absoluteGamma') ? levels?.maxAbsGamma ?? null : null, optional: true },
     ];
 
     // Values panel open/closed: per-viewer convenience, remembered in localStorage
@@ -1287,7 +1289,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     there is nothing left for `justify-between` to place,
                     and when it is capped by `max-w-fit` the leftover is the
                     gap between the two panels. ---- */}
-                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} spotEstimated={effSpotIsEstimated} />
+                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} spotEstimated={effSpotIsEstimated} showMaxAg={metrics.includes('absoluteGamma')} />
             </div>
 
             {provider.mode === 'lazy' && (
@@ -1815,6 +1817,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         const drawn: LevelLabelItem[] = [];
                                         for (const key of ALL_LEVEL_KEYS) {
                                             if (!selectedLevels.includes(key)) continue;
+                                            if (key === 'maxAbsGamma' && !metrics.includes('absoluteGamma')) continue;
                                             const value = levels?.[key];
                                             if (value == null) continue;
                                             drawn.push({ key, value, text: levelChartLabel(key), color: levelColors[key] });
