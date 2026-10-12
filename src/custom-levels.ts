@@ -13,6 +13,22 @@ export interface CustomLevel {
 
 const STORAGE_PREFIX = 'gex.customLevels.v1.';
 
+/**
+ * The strike nearest to a price (the lower one when the price is exactly between two), or null when there are no strikes.
+ * A click on a chart picks a level on a strike, never between two.
+ */
+export function nearestStrike(price: number, strikes: readonly number[]): number | null {
+    let best: number | null = null;
+    for (const k of strikes) {
+        if (!Number.isFinite(k)) continue;
+        if (best === null) { best = k; continue; }
+        const d = Math.abs(k - price);
+        const bd = Math.abs(best - price);
+        if (d < bd || (d === bd && k < best)) best = k;
+    }
+    return best;
+}
+
 /** Prices are stored with cent precision, a chart click gives a float like 512.3478. */
 export function roundPrice(price: number): number {
     return Math.round(price * 100) / 100;

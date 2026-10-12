@@ -14,9 +14,10 @@ import {
     // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 } from 'lightweight-charts';
 import { CUSTOM_LEVEL_COLOR, GEX_LEVEL_COLORS, type GexLevelKey } from '../gex-colors';
-import { isApplePlatform, nextLevelName, roundPrice } from '../custom-levels';
+import { isApplePlatform, nearestStrike, nextLevelName, roundPrice } from '../custom-levels';
 import { useCustomLevels } from '../use-custom-levels';
-import { Icon } from '../components/Icon';
+import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
+import { HelpButton } from '../components/HelpButton';
 import { useI18n } from '../i18n';
 import { DEFAULT_CHART_INTERVAL, loadOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
@@ -45,9 +46,6 @@ const PRICE_SCALE_MARGINS = { top: 0.04, bottom: 0.04 };
 
 /** Platform of the viewer, read once. */
 const APPLE = isApplePlatform();
-
-/** Icon button of the custom level editor. */
-const DRAFT_BTN = 'grid h-6 w-6 shrink-0 place-items-center rounded';
 
 /** Price-line order and labels match the GEX tab's Key Levels card. */
 const LEVEL_LINES: Array<{ key: Exclude<GexLevelKey, 'spot'>; label: string; secondary?: boolean }> = [
@@ -79,6 +77,8 @@ export interface ChartViewProps {
     levelExpCount: number;
     range: ChartRange;
     setRange: (range: ChartRange) => void;
+    /** Strikes of the loaded chain: a click or a drag puts a custom level on the nearest one, never between two. */
+    strikes?: readonly number[];
 }
 
 type FetchState =
@@ -109,7 +109,7 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, strikes = [] }) => {
     const { t: tr, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const dark = useDarkClass();
@@ -131,10 +131,13 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
     const customRef = useRef(customLevels);
     customRef.current = customLevels;
+    const strikesRef = useRef(strikes);
+    strikesRef.current = strikes;
+    /** A price from the chart as a level price: the nearest strike, or cents when there are no strikes. */
+    const snap = (price: number) => nearestStrike(price, strikesRef.current) ?? roundPrice(price);
     const setCustomRef = useRef(setCustomLevels);
     setCustomRef.current = setCustomLevels;
-    const [draft, setDraft] = useState<{ x: number; y: number; price: number; name: string; editId?: string } | null>(null);
-    const draftInputRef = useRef<HTMLInputElement | null>(null);
+    const [draft, setDraft] = useState<LevelDraft | null>(null);
 
     // ---- OHLC fetch (symbol; always LOAD_RANGE of daily bars, the range buttons only change the visible part) ----
     const fetchKey = `${symbol}|${LOAD_RANGE}|${settings.proxyBase}|${settings.providerId}`;
@@ -258,13 +261,6 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
 
     // A draft belongs to one symbol
     useEffect(() => { setDraft(null); }, [symbol]);
-    useEffect(() => {
-        if (!draft) return;
-        draftInputRef.current?.focus();
-        draftInputRef.current?.select();
-        // only when a draft opens at a new spot, not on every keystroke
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [draft?.x, draft?.y]);
 
     // ---- Right click adds a level, a left-button drag on one moves it ----
     useEffect(() => {
@@ -293,21 +289,35 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             }
             return best?.id ?? null;
         };
-        const onContextMenu = (e: MouseEvent) => {
+        /**
+         * Opens the editor at the pointer (a new level, or the existing one when the pointer is on it). Used by a right
+         * click, a two-finger click on a trackpad (both arrive as `contextmenu`) and Ctrl+click on macOS (handled in
+         * onDown, see there). Returns true when it did, so the caller can stop the browser's own menu.
+         */
+        const openEditorAt = (e: MouseEvent): boolean => {
             const pt = plotPoint(e);
             const price = pt && seriesRef.current ? seriesRef.current.coordinateToPrice(pt.y) : null;
-            if (!pt || price == null || !Number.isFinite(price)) return;
-            e.preventDefault();
+            if (!pt || price == null || !Number.isFinite(price)) return false;
             // Right click on an existing custom level edits its name instead of adding a new one
             const hitId = levelAt(pt.y);
             const hit = hitId ? customRef.current.find((c) => c.id === hitId) : undefined;
             if (hit) {
                 setDraft({ x: pt.x, y: pt.y, price: hit.price, name: hit.name, editId: hit.id });
-                return;
+                return true;
             }
-            setDraft({ x: pt.x, y: pt.y, price: roundPrice(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')) });
+            setDraft({ x: pt.x, y: pt.y, price: snap(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')) });
+            return true;
+        };
+        const onContextMenu = (e: MouseEvent) => {
+            if (openEditorAt(e)) e.preventDefault();
         };
         const onDown = (e: MouseEvent) => {
+            // Ctrl+click is the secondary click on macOS: the browser sends a left-button mousedown with Ctrl held, and its own
+            // menu opens right after. Handle it here and suppress that menu, instead of relying on the `contextmenu` event.
+            if (e.button === 0 && e.ctrlKey && isApplePlatform()) {
+                if (openEditorAt(e)) { e.preventDefault(); e.stopPropagation(); }
+                return;
+            }
             if (e.button !== 0) return;
             const pt = plotPoint(e);
             const id = pt ? levelAt(pt.y) : null;
@@ -323,7 +333,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 const y = Math.min(Math.max(ev.clientY - el.getBoundingClientRect().top, 0), chartRef.current?.paneSize().height ?? 0);
                 const price = series.coordinateToPrice(y);
                 if (price == null || !Number.isFinite(price)) return;
-                const rounded = roundPrice(price);
+                const rounded = snap(price);
                 setCustomRef.current(customRef.current.map((c) => (c.id === dragRef.current ? { ...c, price: rounded } : c)), false);
             };
             const up = () => {
@@ -352,9 +362,8 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         };
     }, [hasSymbol, tr]);
 
-    const commitDraft = () => {
+    const commitDraft = (name: string) => {
         if (!draft) return;
-        const name = (draftInputRef.current?.value ?? draft.name).trim() || draft.name;
         if (draft.editId) {
             setCustomLevels(customLevels.map((c) => (c.id === draft.editId ? { ...c, name } : c)));
             setDraft(null);
@@ -412,6 +421,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 <div className="flex items-baseline gap-2">
                     <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
                     <span className="text-xs text-slate-400">{tr('chart.interval')}</span>
+                    <HelpButton label={tr('chart.help.label')} paragraphs={[tr('chart.help.addLevel'), tr('chart.help.editLevel'), tr('chart.help.moveLevel'), tr('chart.help.removeLevel')]} align="left" />
                 </div>
             </div>
 
@@ -459,45 +469,14 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 <div className="relative">
                     <div ref={containerRef} className="h-[420px] lg:h-[calc(100dvh-270px)] lg:min-h-[420px]" />
                     {draft && (
-                        <div
+                        <CustomLevelEditor
                             key={`${draft.x}:${draft.y}`}
-                            // focus moving between the input and its buttons keeps the editor open, leaving it closes it
-                            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDraft(null); }}
-                            style={{ left: Math.max(0, Math.min(draft.x, (containerRef.current?.clientWidth ?? 240) - 240)), top: Math.max(0, draft.y - 16) }}
-                            className="absolute z-10 flex flex-col gap-1 rounded-md border border-sky-400 bg-white p-1 shadow-lg dark:bg-slate-900"
-                        >
-                            {/* Buttons on top: right on Windows and Linux, left on macOS and iOS */}
-                            <div className={'flex items-center gap-1 ' + (APPLE ? 'justify-start' : 'justify-end')}>
-                                {/* onMouseDown keeps the focus in the input so the editor does not close before the click lands */}
-                                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={commitDraft}
-                                        aria-label={tr('chart.custom.save')} title={tr('chart.custom.save')} className={DRAFT_BTN + ' text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-slate-800'}>
-                                    <Icon.Check className="h-4 w-4" />
-                                </button>
-                                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setDraft(null)}
-                                        aria-label={tr('chart.custom.cancel')} title={tr('chart.custom.cancel')} className={DRAFT_BTN + ' text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}>
-                                    <Icon.PencilOff className="h-4 w-4" />
-                                </button>
-                                {draft.editId && (
-                                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => removeDraftLevel()}
-                                            aria-label={tr('chart.custom.delete')} title={tr('chart.custom.delete')} className={DRAFT_BTN + ' text-red-500 hover:bg-red-50 dark:hover:bg-slate-800'}>
-                                        <Icon.X className="h-4 w-4" />
-                                    </button>
-                                )}
-                            </div>
-                            <input
-                                ref={draftInputRef}
-                                type="text"
-                                defaultValue={draft.name}
-                                aria-label={tr('chart.custom.nameLabel', { price: fmt(draft.price) })}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
-                                    else if (e.key === 'Escape') { e.preventDefault(); setDraft(null); }
-                                }}
-                                spellCheck={false}
-                                maxLength={40}
-                                className="w-44 rounded px-1.5 py-0.5 text-sm font-medium text-slate-900 focus:outline-none dark:bg-slate-900 dark:text-slate-50"
-                            />
-                        </div>
+                            draft={draft}
+                            boxWidth={containerRef.current?.clientWidth ?? 0}
+                            onSave={commitDraft}
+                            onCancel={() => setDraft(null)}
+                            onDelete={removeDraftLevel}
+                        />
                     )}
                 </div>
                 {overlay && (

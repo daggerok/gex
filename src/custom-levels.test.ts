@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
-import { isApplePlatform, nextLevelName, parseCustomLevels, roundPrice } from './custom-levels';
+import { isApplePlatform, nearestStrike, nextLevelName, parseCustomLevels, roundPrice } from './custom-levels';
 
 const named = (...names: string[]) => names.map((name) => ({ name }));
 
@@ -61,5 +61,26 @@ describe('isApplePlatform', () => {
 
   test('no navigator (tests, SSR) is not Apple', () => {
     expect(isApplePlatform(null)).toBe(false);
+  });
+});
+
+describe('nearestStrike', () => {
+  const strikes = [7500, 7510, 7520, 7550, 7600];
+  test('picks the closest strike, never a price between two', () => {
+    expect(nearestStrike(7512.4, strikes)).toBe(7510);
+    expect(nearestStrike(7516, strikes)).toBe(7520);
+    expect(nearestStrike(7535, strikes)).toBe(7520); // exactly between 7520 and 7550 is 7535: the lower one wins
+    expect(nearestStrike(7536, strikes)).toBe(7550);
+  });
+  test('an exact strike stays, far outside the range gives the edge strike', () => {
+    expect(nearestStrike(7550, strikes)).toBe(7550);
+    expect(nearestStrike(100, strikes)).toBe(7500);
+    expect(nearestStrike(9000, strikes)).toBe(7600);
+  });
+  test('works on an unsorted list and with nothing to pick from', () => {
+    expect(nearestStrike(7516, [7600, 7500, 7520, 7510])).toBe(7520);
+    expect(nearestStrike(7515, [7600, 7500, 7520, 7510])).toBe(7510); // exactly between: the lower one
+    expect(nearestStrike(7515, [])).toBeNull();
+    expect(nearestStrike(7515, [NaN])).toBeNull();
   });
 });

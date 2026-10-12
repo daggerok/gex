@@ -6,6 +6,9 @@ import { createPortal } from 'react-dom';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
+import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
+import { HelpButton } from '../components/HelpButton';
+import { isApplePlatform, nearestStrike, nextLevelName } from '../custom-levels';
 import { useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
@@ -333,63 +336,6 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; onl
     );
 };
 
-/** "?" button in the chart card corners: hover or keyboard focus shows the chart controls guide, a click pins it open
- *  (a click outside closes it). One paragraph per instruction, in a fixed portal panel next to the button so no
- *  `overflow` ancestor clips it. `align` says which side of the button the panel lines up with. */
-const HelpButton: React.FC<{ label: string; paragraphs: string[]; align: 'left' | 'right' }> = ({ label, paragraphs, align }) => {
-    const wrapRef = useRef<HTMLSpanElement>(null);
-    const panelId = useId();
-    const [hover, setHover] = useState(false);
-    const [pinned, setPinned] = useState(false);
-    const [pos, setPos] = useState({ bottom: 0, left: 0, right: 0 });
-    const open = hover || pinned;
-    const place = () => {
-        const r = wrapRef.current?.getBoundingClientRect();
-        if (!r) return;
-        setPos({ bottom: window.innerHeight - r.top + 8, left: Math.max(8, r.left), right: Math.max(8, window.innerWidth - r.right) });
-    };
-    useEffect(() => {
-        if (!pinned) return;
-        const onDown = (e: PointerEvent) => { if (!wrapRef.current?.contains(e.target as Node)) setPinned(false); };
-        window.addEventListener('pointerdown', onDown);
-        return () => window.removeEventListener('pointerdown', onDown);
-    }, [pinned]);
-    return (
-        <span ref={wrapRef} className="inline-flex" onMouseEnter={() => { place(); setHover(true); }} onMouseLeave={() => setHover(false)}>
-            <button
-                type="button"
-                aria-label={label}
-                aria-expanded={open}
-                aria-describedby={panelId}
-                onClick={() => { place(); setPinned((v) => !v); }}
-                onFocus={() => { place(); setHover(true); }}
-                onBlur={() => setHover(false)}
-                className={ZOOM_BTN + ' text-slate-500 dark:text-slate-400'}
-            >
-                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" className="block">
-                    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.5" />
-                    <path d="M9.2 9.3a2.9 2.9 0 1 1 4.3 2.5c-.9.6-1.5 1.1-1.5 2.2" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                    <circle cx="12" cy="17.2" r="1.5" fill="currentColor" />
-                </svg>
-            </button>
-            {createPortal(
-                <div
-                    id={panelId}
-                    role="tooltip"
-                    style={{ bottom: pos.bottom, ...(align === 'left' ? { left: pos.left, maxWidth: `calc(100vw - ${pos.left + 8}px)` } : { right: pos.right, maxWidth: `calc(100vw - ${pos.right + 8}px)` }) }}
-                    className={
-                        'pointer-events-none fixed z-50 w-96 space-y-1.5 whitespace-normal rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs leading-snug text-slate-100 shadow-lg transition-opacity duration-200 ease-out dark:border-slate-600 ' +
-                        (open ? 'opacity-100' : 'opacity-0')
-                    }
-                >
-                    {paragraphs.map((t) => <p key={t}>{t}</p>)}
-                </div>,
-                document.body,
-            )}
-        </span>
-    );
-};
-
 /** One icon set for every zoom button: heavy inline SVG strokes and solid heads painted with
  *  `currentColor`, so all of them share one style and follow the theme (the emoji did neither:
  *  some rendered in colored squares, the plus and minus were black on the dark theme). */
@@ -702,7 +648,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const { t: tr } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const na = tr('gex.na');
-    const [customLevels] = useCustomLevels(symbol);
+    const [customLevels, setCustomLevels] = useCustomLevels(symbol);
 
     // quotes / effSpot / levels come from App's useGexLevels (computed once,
     // shared with the Chart tab). The profile below only feeds the bar chart.
@@ -1150,7 +1096,46 @@ export const GexView: React.FC<GexViewProps> = ({
     const [panning, setPanning] = useState(false);
     // Set while a move drag is running: puts the chart back and ends the drag (Escape).
     const cancelPanRef = useRef<(() => void) | null>(null);
+    /**
+     * Opens the custom level editor for the strike under the pointer: a new level on that strike, or the existing level
+     * when one already sits on it (the strike nearest to its price). Returns false when the pointer is not over the plot,
+     * so the browser's own menu is left alone there.
+     */
+    const openLevelEditor = (e: { clientX: number; clientY: number }): boolean => {
+        const strike = cursorStrikeRef.current;
+        const box = chartBoxRef.current;
+        if (strike == null || !box) return false;
+        const rect = box.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const strikes = profile.map((p) => p.strike);
+        const existing = customLevels.find((c) => nearestStrike(c.price, strikes) === strike);
+        setLevelDraft(existing
+            ? { x, y, price: existing.price, name: existing.name, editId: existing.id }
+            : { x, y, price: strike, name: nextLevelName(customLevels, tr('chart.custom.defaultName')) });
+        return true;
+    };
+    const saveLevel = (name: string) => {
+        if (!levelDraft) return;
+        if (levelDraft.editId) setCustomLevels(customLevels.map((c) => (c.id === levelDraft.editId ? { ...c, name } : c)));
+        else {
+            const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()) + Math.random();
+            setCustomLevels([...customLevels, { id, name, price: levelDraft.price }]);
+        }
+        setLevelDraft(null);
+    };
+    const deleteLevel = () => {
+        if (!levelDraft?.editId) return;
+        setCustomLevels(customLevels.filter((c) => c.id !== levelDraft.editId));
+        setLevelDraft(null);
+    };
     const onChartPointerDownCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+        // Ctrl+click is the secondary click on macOS (left-button mousedown with Ctrl held, then the browser's own menu):
+        // open the level editor here and suppress that menu instead of relying on the `contextmenu` event
+        if (e.button === 0 && e.ctrlKey && isApplePlatform()) {
+            if (openLevelEditor(e)) { e.preventDefault(); e.stopPropagation(); }
+            return;
+        }
         if (e.button !== 0 || e.metaKey || e.shiftKey) return; // Cmd / Shift: let recharts select a range
         // a plain press never starts the selection, whether or not there is anything to move
         e.stopPropagation();
@@ -1192,7 +1177,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const onChartMouseDown = (state: { activeLabel?: string | number }) => {
         if (typeof state?.activeLabel === 'number') { setDragStart(state.activeLabel); setDragEnd(state.activeLabel); }
     };
-    const chartGuides = [tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintWheel'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys')];
+    const chartGuides = [tr('gex.zoom.hint'), tr('gex.zoom.hintMove'), tr('gex.zoom.hintWheel'), tr('gex.zoom.hintKeys'), tr('gex.zoom.hintZoomKeys'), tr('gex.help.customLevel'), tr('gex.help.customLevelEdit')];
     // Hover-intent for the chart tooltip: it shows only once the cursor has stopped for
     // TOOLTIP_DELAY_MS, fades out as soon as the cursor moves again or leaves the chart.
     const [tooltipArmed, setTooltipArmed] = useState(false);
@@ -1211,6 +1196,11 @@ export const GexView: React.FC<GexViewProps> = ({
     // Strike under the cursor, for the Cursor table in the sidebar. Updated on every mouse move over the chart
     // (no hover delay, unlike the tooltip), null once the cursor leaves the chart.
     const [cursorStrike, setCursorStrike] = useState<number | null>(null);
+    // The same strike as a ref, read synchronously by a right click (the state may not have re-rendered since the pointer moved)
+    const cursorStrikeRef = useRef<number | null>(null);
+    // Custom level editor: opened at the pointer by a right click, a two-finger click on a trackpad or Ctrl+click on macOS
+    const [levelDraft, setLevelDraft] = useState<LevelDraft | null>(null);
+    useEffect(() => { setLevelDraft(null); }, [symbol]);
     // 'touch' or 'mouse', from the last press on the chart: on a touch screen the tapped strike stays in the
     // Cursor table when the finger lifts (there is no mouse leave), so it can be read after scrolling down.
     const pointerTypeRef = useRef<string>('mouse');
@@ -1220,6 +1210,7 @@ export const GexView: React.FC<GexViewProps> = ({
     };
     const onChartMouseMove = (state: { activeLabel?: string | number }) => {
         rearmTooltip();
+        cursorStrikeRef.current = typeof state?.activeLabel === 'number' ? state.activeLabel : null;
         setCursorStrike(typeof state?.activeLabel === 'number' ? state.activeLabel : null);
         if (dragStart == null) return;
         if (typeof state?.activeLabel === 'number') setDragEnd(state.activeLabel);
@@ -1829,12 +1820,23 @@ export const GexView: React.FC<GexViewProps> = ({
                         className={'relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
                         onPointerDownCapture={(e) => { pointerTypeRef.current = e.pointerType; }}
                         onMouseDownCapture={onChartPointerDownCapture}
+                        onContextMenu={(e) => { if (openLevelEditor(e)) e.preventDefault(); }}
                         onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
+                        {levelDraft && (
+                            <CustomLevelEditor
+                                key={`${levelDraft.x}:${levelDraft.y}`}
+                                draft={levelDraft}
+                                boxWidth={chartBoxRef.current?.clientWidth ?? 0}
+                                onSave={saveLevel}
+                                onCancel={() => setLevelDraft(null)}
+                                onDelete={deleteLevel}
+                            />
+                        )}
                         {/* Chart controls guide: a "?" button in each bottom corner, over the empty strip under the plot
                             (only the level labels use that space), one paragraph per instruction */}
-                        <div className="absolute bottom-0 left-0 z-20"><HelpButton label={tr('gex.help.label')} paragraphs={chartGuides} align="left" /></div>
-                        <div className="absolute bottom-0 right-0 z-20"><HelpButton label={tr('gex.help.label')} paragraphs={chartGuides} align="right" /></div>
+                        <div className="absolute bottom-0 left-0 z-20"><HelpButton label={tr('gex.help.label')} paragraphs={chartGuides} align="left" buttonClass={ZOOM_BTN} /></div>
+                        <div className="absolute bottom-0 right-0 z-20"><HelpButton label={tr('gex.help.label')} paragraphs={chartGuides} align="right" buttonClass={ZOOM_BTN} /></div>
                         {/* "Strikes": centered inside the plot, in the strip right above the X axis line, over the
                             strike numbers. */}
                         {chart && (
@@ -1909,7 +1911,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     onClick={onChartClick}
                                     onTouchStart={onChartClick}
                                     onTouchMove={onChartClick}
-                                    onMouseLeave={() => { disarmTooltip(); if (pointerTypeRef.current !== 'touch') setCursorStrike(null); }}
+                                    onMouseLeave={() => { disarmTooltip(); if (pointerTypeRef.current !== 'touch') { cursorStrikeRef.current = null; setCursorStrike(null); } }}
                                     onMouseUp={onChartMouseUp}
                                 >
                                     <CartesianGrid stroke="#94a3b8" strokeOpacity={0.15} vertical={false} />

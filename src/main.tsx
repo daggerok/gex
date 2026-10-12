@@ -1383,6 +1383,8 @@ const App: React.FC = () => {
     // GexLevels computed ONCE here for the GEX tab's selection and shared by
     // the GEX and Chart tabs (plan 7.7 / 8.2) - no view recomputes them.
     const gex = useGexLevels(spot, spotIsEstimated, gexQuotesByExp, selectedExps, meta?.symbol ?? '', settings.vixFuturesPricing);
+    // Strikes of the chain the levels come from, for the Chart tab: a custom level is put on the nearest strike
+    const chartStrikes = useMemo(() => [...new Set(gex.quotes.map((q) => q.strike))].sort((a, b) => a - b), [gex.quotes]);
     // Chart tab range (plan 8.2), held here so it survives tab switches.
     const [chartRange, setChartRange] = useState<ChartRange>(DEFAULT_RANGE);
 
@@ -1640,6 +1642,7 @@ const App: React.FC = () => {
                         levelExpCount={selectedExps.length}
                         range={chartRange}
                         setRange={setChartRange}
+                        strikes={chartStrikes}
                     />
                 </Suspense>
                 </div>

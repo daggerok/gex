@@ -20,7 +20,7 @@
     "logs": "pm2 logs",
     "stop": "pm2 kill",
     "test": "bun test",
-    "test:e2e": "bun src/custom-levels.e2e.ts && bun src/ticker-hint.e2e.ts"
+    "test:e2e": "bun src/custom-levels.e2e.ts && bun src/custom-levels-gex.e2e.ts && bun src/ticker-hint.e2e.ts"
   },
   "keywords": [
     "npm-run-all",

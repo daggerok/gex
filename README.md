@@ -81,14 +81,16 @@ Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only:
 
 ### Custom levels
 
-On the Chart tab you can add your own named levels. They are stored per symbol in `localStorage` and also appear on the GEX tab (Levels and Values tables and a labelled line on the strike chart)
+You can add your own named levels on the **Chart** tab and on the **GEX** tab. They are stored per symbol in `localStorage` and show on both tabs (on GEX in the Levels and Values tables and as a labelled line on the strike chart)
 
-- **Add:** right click (Ctrl+click on macOS) in the plot. A field opens at the pointer with the default name `Level 1` (or `Level 2` when `Level 1` exists, and so on, the smallest free number) already selected. Enter or the check button saves. Esc, the crossed-out pencil button or a click away cancels and creates nothing
-- **Edit:** right click on an existing custom line. The same editor opens with its name, with save, cancel and a delete (X) button
-- **Move:** drag a custom line with the left mouse button, the new price is saved on drop
-- **Remove:** the x on its legend chip, or the delete button in the editor
+- **How to click:** a right click with the mouse. On a MacBook trackpad it is a **two-finger click** (or a two-finger tap when tapping is on in System Settings), the browser sends the same event as for a right click. **Ctrl+click** works on macOS too. Not over the plot (on an axis, outside the chart), the browser's own menu opens as usual
+- **Add:** click where you want the level. The level goes on the **nearest strike**, never between two (on the GEX tab it is the strike under the pointer, on the Chart tab the strike nearest to the clicked price). A field opens at the pointer with the default name `Level 1` (or `Level 2` when `Level 1` exists, and so on, the smallest free number) already selected. Enter or the check button saves. Esc, the crossed-out pencil button or a click away cancels and creates nothing
+- **Edit:** click the same strike again (Chart tab: right click on the line). The same editor opens with its name, with save, cancel and a delete (X) button
+- **Move (Chart tab):** drag a custom line with the left mouse button, it follows the strikes and the new price is saved on drop
+- **Remove:** the x on its legend chip on the Chart tab, or the delete button in the editor
 - The editor buttons sit in a row above the field, right-aligned on Windows and Linux, left-aligned on macOS and iOS
-- The price is the clicked price rounded to cents (not snapped to a strike). Custom levels are plain prices, they take no part in the GEX math
+- The "?" buttons of both tabs explain this too (in the corners of the GEX chart, next to the ticker on the Chart tab)
+- Custom levels are plain prices on a strike, they take no part in the GEX math
 
 ## Data providers
 
