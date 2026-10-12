@@ -407,7 +407,6 @@ export const DEFAULT_SETTINGS: Settings = {
     colorTheme: DEFAULT_COLOR_THEME,
     proxyTemplate: PROXY_PRESETS[0].template,
     proxyBase: 'http://localhost:8787',    // local Bun Yahoo proxy default
-    workerUrl: '',
     tokens: {},
     secrets: {},
     deskColumns: {
@@ -506,6 +505,9 @@ export function loadSettings(): Settings {
             selectedExps: sanitizeSelectedExps(parsed.selectedExps),
             gexMetrics: sanitizeGexMetrics(parsed.gexMetrics),
         };
+        // The "Your Worker (/raw?url=)" preset was removed with the Cloudflare Worker: a saved {worker} template falls back to the default
+        if (typeof merged.proxyTemplate !== 'string' || merged.proxyTemplate.includes('{worker}')) merged.proxyTemplate = DEFAULT_SETTINGS.proxyTemplate;
+        delete (merged as Settings & { workerUrl?: unknown }).workerUrl;
         // Drop removed providers (marketdata, dolthub, …) → fall back to host default.
         if (!PROVIDERS.some((p) => p.id === merged.providerId)) {
             merged.providerId = hostDefault;

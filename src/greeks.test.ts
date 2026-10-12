@@ -47,10 +47,9 @@ describe('index symbols', () => {
     expect(lines).toEqual([...INDEX_SYMBOLS].sort());
   });
 
-  test('both proxies mirror INDEX_SYMBOLS in SUPPORTED_INDEX_SYMBOLS', () => {
+  test('the local proxy mirrors INDEX_SYMBOLS in SUPPORTED_INDEX_SYMBOLS', () => {
     const expected = [...INDEX_SYMBOLS].sort();
     expect(proxyIndexSymbols(read('scripts/options-local-proxy.ts'))).toEqual(expected);
-    expect(proxyIndexSymbols(read('scripts/options-cloudflare-proxy.js'))).toEqual(expected);
   });
 });
 

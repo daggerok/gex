@@ -11,7 +11,7 @@ import { ASOF_PREFIX, asOfProviderId, isAsOfProviderId, makeAsOfProvider } from 
 import { loadMeta } from './loader';
 
 void deflateRawSync;
-const ctx = { proxyTemplate: '', proxyBase: '', token: '', secret: '', workerUrl: '' } as unknown as ProviderContext;
+const ctx = { proxyTemplate: '', proxyBase: '', token: '', secret: '' } as unknown as ProviderContext;
 const chainText = (symbol: string, price: number) => JSON.stringify({
   symbol, updated: '2026-10-09T15:30:00-04:00', date: '2026-10-09', underlyingPrice: price, expirations: ['2026-10-16'],
   quotes: [{ symbol: `${symbol}261016C00100000`, expiration: '2026-10-16', side: 'call', strike: 100, bid: 1, ask: 1.2, mid: 1.1, last: 1.1, volume: 5, openInterest: 50, iv: 0.2, delta: 0.5, gamma: 0.02, theta: -0.1, vega: 0.1, rho: 0.01, greeksSource: 'cboe', greeksMissingReason: null }],

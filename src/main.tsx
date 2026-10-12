@@ -774,7 +774,6 @@
  *   - scripts/options-data.ts           yfinance -> api/options/*.json + api/options/index.json
  *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
  *   - scripts/options-local-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
- *   - scripts/options-cloudflare-proxy.js    deployable proxy (Yahoo/NASDAQ/CBOE/search/raw)
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
  *   - Dropdown order is fixed: CACHE, CBOE, NASDAQ, YAHOO.
@@ -1032,7 +1031,7 @@ const App: React.FC = () => {
         }, delay);
         return () => { cancelled = true; ac.abort(); window.clearTimeout(timer); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [provider.id, tickerInput, settings.proxyBase, settings.proxyTemplate, settings.workerUrl]);
+    }, [provider.id, tickerInput, settings.proxyBase, settings.proxyTemplate]);
 
     // Reset the view whenever the provider changes (deferred: no auto-fetch).
     useEffect(() => {

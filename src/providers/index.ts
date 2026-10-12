@@ -52,7 +52,6 @@ export const PROXY_PRESETS: { label: string; template: string }[] = [
     { label: 'AllOrigins (raw)', template: 'https://api.allorigins.win/raw?url={url}' },
     { label: 'Corsproxy.io', template: 'https://corsproxy.io/?url={url}' },
     { label: 'Codetabs', template: 'https://api.codetabs.com/v1/proxy/?quest={url}' },
-    { label: 'Your Worker (/raw?url=)', template: '{worker}/raw?url={url}' },
     { label: 'None (direct — will fail unless host allows CORS)', template: '{url}' },
 ];
 
@@ -76,12 +75,10 @@ export async function suggestTickers(provider: DataProvider, query: string, ctx:
 
 /**
  * Build the ProviderContext for a provider from settings.
- * Resolves the {worker} placeholder in the CBOE proxy template using workerUrl.
  */
 export function ctxFor(settings: Settings, provider: DataProvider, signal?: AbortSignal): ProviderContext {
-    const template = settings.proxyTemplate.replace('{worker}', (settings.workerUrl || '').replace(/\/$/, ''));
     return {
-        proxyTemplate: template,
+        proxyTemplate: settings.proxyTemplate,
         proxyBase: settings.proxyBase,
         token: settings.tokens[provider.id] || '',
         secret: settings.secrets[provider.id] || '',

@@ -8,7 +8,7 @@ import { proxyTickerSuggestions } from './proxy-search';
  * Cash indices are prefixed with "_" (_SPX, _VIX...). CBOE's CDN sends NO CORS
  * header, so the browser CANNOT call it directly — it must be relayed. Two ways:
  *   1) A request-handling proxy base (RECOMMENDED): the local Bun server
- *      (scripts/options-local-proxy.ts also serves /api/cboe) or the Cloudflare Worker.
+ *      (scripts/options-local-proxy.ts also serves /api/cboe).
  *      Set "Proxy base URL" in Settings; we call {base}/api/cboe?symbol=XXX.
  *   2) A generic CORS proxy template ({url}) as a fallback (public ones flaky).
  */

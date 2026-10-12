@@ -11,7 +11,7 @@ import { fetchStaticJson } from './cache';
  *
  * Endpoint: GET {proxyBase}/api/chart?symbol=SPY&range=6mo&interval=1d
  *   -> relayed as-is from https://query1.finance.yahoo.com/v8/finance/chart/{symbol}
- *      by scripts/options-local-proxy.ts / scripts/options-cloudflare-proxy.js.
+ *      by scripts/options-local-proxy.ts.
  *   No crumb/cookie session (verified live, unlike the options endpoint).
  *
  * Observed upstream shapes (live, 2026-10-04):
