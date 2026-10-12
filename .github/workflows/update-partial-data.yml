@@ -5,13 +5,11 @@
 # DEFAULT_SYMBOLS (the indices, ETFs and mega caps the ticker search field hints,
 # src/default-tickers.ts), not the whole universe. The full refresh stays in update-data.yml.
 #
-# WHEN: Mon-Fri at 9:45, 10:45, ..., 16:45 New York time (8 runs a day).
-# GitHub cron is UTC only and has no time zone, and New York switches between
-# UTC-4 (EDT) and UTC-5 (EST), so the UTC hours of both are scheduled (13:45-21:45)
-# and the "Market window" step skips the one that does not match New York time
-# (13:45 UTC in winter, 21:45 UTC in summer). Scheduled runs can start many minutes late,
-# the window allows for that. Market holidays are not skipped (the data is simply
-# refreshed with the last prices).
+# WHEN: Mon-Fri at 9:45, 10:45, ..., 16:45 New York time (8 runs a day). The schedule has its own time zone
+# (`timezone: America/New_York`, the owner's fix, 2026-10-12), so the summer and winter time switch needs no extra UTC
+# slots and no skipped runs. The "Market window" step below stays as a guard: it still skips a scheduled run that starts
+# outside 9:40-17:15 New York time. Scheduled runs can start many minutes late, the window allows for that. Market holidays
+# are not skipped (the data is simply refreshed with the last prices).
 #
 # WHAT IS COMMITTED (owner's decision, keeps the repository small): the hourly data is NOT committed. Each run fetches
 # the fresh files into its own checkout, builds the site from them and deploys it to GitHub Pages straight from this
@@ -27,9 +25,10 @@
 name: Update partial options data
 
 on:
-  schedule:
-    - cron: "45 13-21 * * 1-5" # :45 slots, 9:45-16:45 New York in summer (13:45-20:45 UTC) and in winter (14:45-21:45 UTC)
   workflow_dispatch: {} # manual run, always refreshes
+  schedule:
+    - cron: "45 9-16 * * 1-5" # 9:45, 10:45, ..., 16:45 in the time zone below, summer and winter alike
+      timezone: America/New_York
 
 permissions:
   contents: write # the end-of-day archive and a backtest backup are committed
