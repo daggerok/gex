@@ -23,6 +23,7 @@ import { cutBarsAfter } from '../backtest/bars';
 import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { ChartHeader } from '../components/ChartHeader';
+import { FadePresence } from '../components/FadePresence';
 import { useI18n } from '../i18n';
 import { DEFAULT_CHART_INTERVAL, loadOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
@@ -516,16 +517,18 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                     <div className="absolute left-0 top-0 z-20">
                         <ChartHeader symbol={symbol} range={range} setRange={setRange} colorTheme={settings.colorTheme} />
                     </div>
-                    {draft && (
-                        <CustomLevelEditor
-                            key={`${draft.x}:${draft.y}`}
-                            draft={draft}
-                            boxWidth={containerRef.current?.clientWidth ?? 0}
-                            onSave={commitDraft}
-                            onCancel={() => setDraft(null)}
-                            onDelete={removeDraftLevel}
-                        />
-                    )}
+                    <FadePresence value={draft}>
+                        {(d) => (
+                            <CustomLevelEditor
+                                key={`${d.x}:${d.y}`}
+                                draft={d}
+                                boxWidth={containerRef.current?.clientWidth ?? 0}
+                                onSave={commitDraft}
+                                onCancel={() => setDraft(null)}
+                                onDelete={removeDraftLevel}
+                            />
+                        )}
+                    </FadePresence>
                 </div>
                 {overlay && (
                     <div className="absolute inset-2 grid place-items-center whitespace-pre-line rounded-lg bg-white/80 dark:bg-slate-900/80 px-4 text-center text-sm text-slate-500 dark:text-slate-400">

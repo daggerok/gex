@@ -69,7 +69,9 @@ try {
 
     await openChart();
     const restored = await view();
-    assert.equal(restored, changed, `after a refresh the chart is where it was left (saved ${JSON.stringify(saved)}, was ${changed}, now ${restored})`);
+    // the library rounds the window to whole pixels of its bar spacing: a fifth of a bar either way is the same place
+    const near = (a: string | null, b: string | null) => !!a && !!b && a.split(',').every((n, i) => Math.abs(Number(n) - Number(b.split(',')[i])) <= 0.5);
+    assert.ok(near(restored, changed), `after a refresh the chart is where it was left (saved ${JSON.stringify(saved)}, was ${changed}, now ${restored})`);
 
     // ---- a double click on the time axis: back to the interval with empty space right of the last candle ----
     const after = (await page.locator('[data-last-bar]').boundingBox())!;

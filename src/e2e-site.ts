@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /// <reference types="bun" />
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildBackupZip } from './backtest/backup';
@@ -30,8 +30,14 @@ export interface TestSnapshot {
 /** `snapshots` become `api/history/<month>/<id>.zip` plus `api/history/index.json`, and `api/latest.json` gets `latest`. */
 export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?: string } = {}): Promise<TestSite> {
     const dir = mkdtempSync(join(tmpdir(), 'gex-e2e-'));
-    const build = Bun.spawn(['bunx', 'parcel', 'build', '--no-cache', '--no-source-maps', '--dist-dir', dir], { cwd: ROOT, stdout: 'ignore', stderr: 'inherit' });
-    if ((await build.exited) !== 0) throw new Error('parcel build failed');
+    // `bun run test:e2e` (scripts/e2e.ts) builds the app ONCE and hands the folder over, every check copies it (it adds its own
+    // files to the copy); a check run alone builds for itself
+    const shared = process.env.E2E_BUILD;
+    if (shared && existsSync(shared)) cpSync(shared, dir, { recursive: true });
+    else {
+        const build = Bun.spawn(['bunx', 'parcel', 'build', '--no-cache', '--no-source-maps', '--dist-dir', dir], { cwd: ROOT, stdout: 'ignore', stderr: 'inherit' });
+        if ((await build.exited) !== 0) throw new Error('parcel build failed');
+    }
     for (const f of ['options/index.json', 'options/SPY.json', 'charts/SPY.json', 'options/QQQ.json', 'charts/QQQ.json']) {
         mkdirSync(join(dir, 'api', f.split('/')[0]), { recursive: true });
         cpSync(join(ROOT, 'api', f), join(dir, 'api', f));

@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
+import { FadePresence } from '../components/FadePresence';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { LevelsPanel } from '../components/LevelsPanel';
 import { ToggleChip } from '../components/ToggleChip';
@@ -1369,16 +1370,18 @@ export const GexView: React.FC<GexViewProps> = ({
                         onContextMenu={(e) => { if (openLevelEditor(e)) e.preventDefault(); }}
                         onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
-                        {levelDraft && (
-                            <CustomLevelEditor
-                                key={`${levelDraft.x}:${levelDraft.y}`}
-                                draft={levelDraft}
-                                boxWidth={chartBoxRef.current?.clientWidth ?? 0}
-                                onSave={saveLevel}
-                                onCancel={() => setLevelDraft(null)}
-                                onDelete={deleteLevel}
-                            />
-                        )}
+                        <FadePresence value={levelDraft}>
+                            {(d) => (
+                                <CustomLevelEditor
+                                    key={`${d.x}:${d.y}`}
+                                    draft={d}
+                                    boxWidth={chartBoxRef.current?.clientWidth ?? 0}
+                                    onSave={saveLevel}
+                                    onCancel={() => setLevelDraft(null)}
+                                    onDelete={deleteLevel}
+                                />
+                            )}
+                        </FadePresence>
                         {/* Chart controls guide: a "?" button in each bottom corner, over the empty strip under the plot
                             (only the level labels use that space), one paragraph per instruction */}
                         <div className="absolute bottom-0 left-0 z-20"><HelpButton label={tr('gex.help.label')} paragraphs={chartGuides} align="left" buttonClass={ZOOM_BTN} /></div>
