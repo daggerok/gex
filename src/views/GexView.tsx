@@ -951,6 +951,7 @@ export const GexView: React.FC<GexViewProps> = ({
         setTooltipArmed(false);
     };
     useEffect(() => () => { if (tooltipTimer.current) clearTimeout(tooltipTimer.current); }, []);
+    useEffect(() => () => { cancelPanRef.current?.(); }, []); // unmounted mid-drag: drop the window listeners
     // Strike under the cursor, for the Cursor table in the sidebar. Updated on every mouse move over the chart
     // (no hover delay, unlike the tooltip), null once the cursor leaves the chart.
     const [cursorStrike, setCursorStrike] = useState<number | null>(null);
