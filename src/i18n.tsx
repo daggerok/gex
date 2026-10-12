@@ -335,6 +335,13 @@ export const translations: Record<Language, Record<string, string>> = {
         'chart.levels.none': 'none (no gamma data for the selected expirations)',
         'chart.levels.futuresPriced': 'not available for {{symbol}} (futures-priced, not supported by the current model)',
         'chart.levels.futuresPricedHint': '(futures-terms levels - per-expiration forward, not spot)',
+        'chart.custom.hint': 'Right click (Ctrl+click on macOS) the chart to add your own level',
+        'chart.custom.defaultName': 'Level',
+        'chart.custom.nameLabel': 'Level name at {{price}}',
+        'chart.custom.remove': 'Remove level {{name}}',
+        'chart.custom.save': 'Save (Enter)',
+        'chart.custom.cancel': 'Cancel editing (Esc)',
+        'chart.custom.delete': 'Delete level',
     },
     ru: {
         'app.brand': 'GEX',
@@ -649,6 +656,13 @@ export const translations: Record<Language, Record<string, string>> = {
         'chart.levels.none': 'нет (нет данных по гамме для выбранных экспираций)',
         'chart.levels.futuresPriced': 'недоступно для {{symbol}} (цена определяется фьючерсами, текущая модель это не поддерживает)',
         'chart.levels.futuresPricedHint': '(уровни во фьючерсных терминах - форвард по экспирации, не спот)',
+        'chart.custom.hint': 'Правый клик (Ctrl+клик на macOS) по графику добавляет свой уровень',
+        'chart.custom.defaultName': 'Уровень',
+        'chart.custom.nameLabel': 'Название уровня на {{price}}',
+        'chart.custom.remove': 'Удалить уровень {{name}}',
+        'chart.custom.save': 'Сохранить (Enter)',
+        'chart.custom.cancel': 'Отменить редактирование (Esc)',
+        'chart.custom.delete': 'Удалить уровень',
     },
 };
 
