@@ -120,3 +120,24 @@ export function wheelSteps(acc: number, deltaY: number, ctrl: boolean, threshold
     const steps = Math.trunc(total / threshold);
     return { steps, acc: total - steps * threshold };
 }
+
+/**
+ * Two-finger pinch on the GEX chart. `start` is the visible strike range when the fingers touched down (the full range
+ * `base` when not zoomed), `startDist` and `dist` the distance between the fingers then and now, `frac` where the middle
+ * between the fingers is inside the plot (0 = left edge, 1 = right edge). Fingers moving apart (`dist` > `startDist`) zoom in,
+ * together zoom out. The strike under the middle between the fingers stays under it. The width never gets below `minWidth`;
+ * a range as wide as `base` or wider is null (the default view). The range never leaves `base`. Pure.
+ */
+export function pinchRange(start: [number, number], base: [number, number], startDist: number, dist: number, frac: number, minWidth: number): [number, number] | null {
+    if (!(startDist > 0) || !(dist > 0)) return start;
+    const w0 = start[1] - start[0];
+    const width = Math.max(minWidth, (w0 * startDist) / dist);
+    if (width >= base[1] - base[0]) return null;
+    const f = Math.min(1, Math.max(0, frac));
+    const anchor = start[0] + f * w0;
+    let a = anchor - f * width;
+    let b = a + width;
+    if (a < base[0]) { b += base[0] - a; a = base[0]; }
+    if (b > base[1]) { a -= b - base[1]; b = base[1]; }
+    return [Math.max(a, base[0]), Math.min(b, base[1])];
+}

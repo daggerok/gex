@@ -20,6 +20,7 @@ import type { GexMetric } from '../metric-prefs';
 import { useLevelPrefs } from '../level-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor, roundPrice } from '../custom-levels';
 import { cutBarsAfter } from '../backtest/bars';
+import { attachLongPress } from '../long-press';
 import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { ChartHeader } from '../components/ChartHeader';
@@ -452,7 +453,10 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         el.addEventListener('contextmenu', onContextMenu);
         el.addEventListener('mousedown', onDown, true);
         el.addEventListener('mousemove', onHover);
+        // a touch screen has no right click: holding one finger still opens the same editor at the finger
+        const stopLong = attachLongPress(el, (p) => openEditorAt(p as MouseEvent));
         return () => {
+            stopLong();
             el.removeEventListener('contextmenu', onContextMenu);
             el.removeEventListener('mousedown', onDown, true);
             el.removeEventListener('mousemove', onHover);

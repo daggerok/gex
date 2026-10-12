@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canPanRange, chartKeyAction, clickStep, ESCAPE_RUN_MS, panRange, panRangeBy, recordEscape, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from './zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, ESCAPE_RUN_MS, panRange, panRangeBy, pinchRange, recordEscape, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from './zoom-pan';
 
 const base: [number, number] = [0, 100];
 
@@ -188,5 +188,36 @@ describe('wheelSteps', () => {
   test('a pinch (Ctrl held) is the opposite sign: pinch out zooms in', () => {
     expect(wheelSteps(0, -100, true, 50)).toEqual({ steps: 2, acc: 0 });
     expect(wheelSteps(0, 100, true, 50)).toEqual({ steps: -2, acc: 0 });
+  });
+});
+
+describe('pinchRange', () => {
+  const base: [number, number] = [0, 100];
+
+  test('fingers moving apart zoom in around the point between them, together zoom out', () => {
+    // full range, fingers twice as far apart, middle at the centre: the middle half stays
+    expect(pinchRange(base, base, 100, 200, 0.5, 4)).toEqual([25, 75]);
+    // zoomed to [25, 75], fingers half as far apart: back to the full range (the default view)
+    expect(pinchRange([25, 75], base, 200, 100, 0.5, 4)).toBeNull();
+    // zoomed to [40, 60], fingers 1.5x closer: the width grows 1.5x around the centre
+    expect(pinchRange([40, 60], base, 150, 100, 0.5, 4)).toEqual([35, 65]);
+  });
+
+  test('the strike under the middle between the fingers stays under it', () => {
+    const r = pinchRange(base, base, 100, 200, 0.25, 4)!; // middle at a quarter of the plot: strike 25
+    expect(r).toEqual([12.5, 62.5]);
+    expect(r[0] + 0.25 * (r[1] - r[0])).toBe(25);
+  });
+
+  test('never narrower than the minimum width and never outside the full range', () => {
+    expect(pinchRange(base, base, 100, 100_000, 0.5, 4)).toEqual([48, 52]);
+    // pinching out at the left edge keeps the view inside the data: the range is shifted, not cut
+    expect(pinchRange([0, 40], base, 100, 60, 0, 4)).toEqual([0, 66.66666666666667]);
+    expect(pinchRange([60, 100], base, 100, 60, 1, 4)).toEqual([33.33333333333333, 100]);
+  });
+
+  test('a bad distance leaves the range alone', () => {
+    expect(pinchRange([10, 20], base, 0, 50, 0.5, 4)).toEqual([10, 20]);
+    expect(pinchRange([10, 20], base, 50, 0, 0.5, 4)).toEqual([10, 20]);
   });
 });

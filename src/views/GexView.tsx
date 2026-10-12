@@ -4,7 +4,8 @@ import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } f
 import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
+import { attachLongPress } from '../long-press';
+import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, pinchRange, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { FadePresence } from '../components/FadePresence';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
@@ -784,6 +785,70 @@ export const GexView: React.FC<GexViewProps> = ({
             : { x, y, price: strike, name: nextLevelName(customLevels, tr('chart.custom.defaultName')), color: proposeLevelColor(customLevels, strike, levels?.spot ?? effSpot) });
         return true;
     };
+    // ---- Touch screen: long press opens the level editor, two fingers pinch to zoom, one finger drags the zoomed chart ----
+    // (the mouse has right click, the wheel and the drag above). The handlers are native so they can stop the page from scrolling
+    // or zooming while the fingers are on the plot; a vertical drag is left to the browser (touch-action: pan-y on the box).
+    const touchRef = useRef<{ chart: typeof chart; xZoom: typeof xZoom; open: (p: { clientX: number; clientY: number }) => boolean; finish: (next: [number, number] | null) => void }>(null as never);
+    touchRef.current = { chart, xZoom, open: openLevelEditor, finish: (next) => { setXZoom(next); persistZoom({ xZoom: next }); } };
+    useEffect(() => {
+        const el = chartBoxRef.current;
+        if (!el) return;
+        const stopLong = attachLongPress(el, (p) => touchRef.current.open(p));
+        const plot = () => {
+            const r = el.querySelector('.recharts-xAxis .recharts-cartesian-axis-line')?.getBoundingClientRect();
+            return r && r.width > 0 ? r : null;
+        };
+        type Gesture = { kind: 'pinch'; start: [number, number]; dist: number; frac: number; last: [number, number] | null } | { kind: 'pan'; x: number; range: [number, number]; moved: boolean; last: [number, number] };
+        let g: Gesture | null = null;
+        const dist = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        const begin = (e: TouchEvent) => {
+            const { chart: c, xZoom: z } = touchRef.current;
+            const r = plot();
+            if (!c || !r) { g = null; return; }
+            if (e.touches.length === 2) {
+                const mid = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                g = { kind: 'pinch', start: z ?? c.domain, dist: dist(e), frac: (mid - r.left) / r.width, last: z };
+            } else if (e.touches.length === 1 && z) {
+                g = { kind: 'pan', x: e.touches[0].clientX, range: z, moved: false, last: z };
+            } else g = null;
+        };
+        const move = (e: TouchEvent) => {
+            const { chart: c } = touchRef.current;
+            const r = plot();
+            if (!g || !c || !r) return;
+            if (g.kind === 'pinch' && e.touches.length === 2) {
+                const next = pinchRange(g.start, c.domain, g.dist, dist(e), g.frac, 4 * (c.strikeStep ?? 1));
+                g.last = next;
+                setXZoom(next);
+                if (e.cancelable) e.preventDefault();
+            } else if (g.kind === 'pan' && e.touches.length === 1) {
+                const dx = e.touches[0].clientX - g.x;
+                if (!g.moved && Math.abs(dx) < 8) return;
+                g.moved = true;
+                const perPx = (g.range[1] - g.range[0]) / r.width;
+                g.last = panRangeBy(g.range, c.domain, -dx * perPx);
+                setXZoom(g.last);
+                if (e.cancelable) e.preventDefault();
+            }
+        };
+        const end = (e: TouchEvent) => {
+            const done = g;
+            if (done && done.kind === 'pinch' && e.touches.length < 2) { touchRef.current.finish(done.last); g = null; }
+            else if (done && done.kind === 'pan' && e.touches.length === 0) { if (done.moved) touchRef.current.finish(done.last); g = null; }
+        };
+        el.addEventListener('touchstart', begin, { passive: true });
+        el.addEventListener('touchmove', move, { passive: false });
+        el.addEventListener('touchend', end, { passive: true });
+        el.addEventListener('touchcancel', end, { passive: true });
+        return () => {
+            stopLong();
+            el.removeEventListener('touchstart', begin);
+            el.removeEventListener('touchmove', move);
+            el.removeEventListener('touchend', end);
+            el.removeEventListener('touchcancel', end);
+        };
+    }, [!!chart]);
+
     const saveLevel = (name: string, color: string) => {
         if (!levelDraft) return;
         if (levelDraft.editId) setCustomLevels(customLevels.map((c) => (c.id === levelDraft.editId ? { ...c, name, color } : c)));
@@ -1364,7 +1429,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         values, etc.) stays normally selectable. */}
                     <div
                         ref={chartBoxRef}
-                        className={'relative h-[360px] lg:h-auto lg:min-h-[240px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
+                        className={'relative h-[360px] lg:h-auto lg:min-h-[240px] lg:flex-1 select-none touch-pan-y' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
                         onPointerDownCapture={(e) => { pointerTypeRef.current = e.pointerType; }}
                         onMouseDownCapture={onChartPointerDownCapture}
                         onContextMenu={(e) => { if (openLevelEditor(e)) e.preventDefault(); }}
