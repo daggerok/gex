@@ -11,6 +11,8 @@ import { LevelsPanel } from '../components/LevelsPanel';
 import { ToggleChip } from '../components/ToggleChip';
 import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
+import { MetricsPanel } from '../components/MetricsPanel';
+import { DEFAULT_GEX_METRICS, GEX_METRICS, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor } from '../custom-levels';
 import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
 import { useCustomLevels } from '../use-custom-levels';
@@ -31,19 +33,14 @@ import { fmt, fmtInt } from '../utils';
 // selects which quotes to pass in and formats the results.
 // ============================================================================
 
-/** GexPoint field plotted by the bars (metric toggle, section 8.1). */
-export type GexMetric = 'netGex' | 'absoluteGamma' | 'callOi' | 'putOi' | 'callVolume' | 'putVolume' | 'pcRatioOi' | 'pcRatioVolume';
+export type { GexMetric };
+export { GEX_METRICS };
 /** OI and Volume metrics: translucent areas on their own shared counts axis (like AG, other colors). */
 type CountMetric = 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
 /** Per-strike put/call ratio lines on their own ratio axis. */
 type RatioMetric = 'pcRatioOi' | 'pcRatioVolume';
 /** Per-strike ratios above this are drawn at the cap (the hover shows the real value). */
 const RATIO_PLOT_CAP = 5;
-/** 'absoluteGamma' (AG) sits right after 'netGex' - the user's own placement
- *  request from when they first asked for a gamma-related metric - so the
- *  Metrics panel's toggle order reads Net GEX, AG, Call OI, Put OI, Call
- *  Volume, Put Volume. */
-export const GEX_METRICS: GexMetric[] = ['netGex', 'absoluteGamma', 'callOi', 'putOi', 'callVolume', 'putVolume', 'pcRatioOi', 'pcRatioVolume'];
 
 /** The GexPoint (src/gex.ts/src/types.ts) field a metric plots. Identical to
  *  the metric's own name for every metric except 'absoluteGamma', whose
@@ -491,14 +488,8 @@ export const GexView: React.FC<GexViewProps> = ({
     const metricValue = (m: GexMetric, row: Record<string, number | null>): number | null => (m === 'pcRatioOi' || m === 'pcRatioVolume' ? row[m] ?? null : row[metricDataKey(m)] ?? 0);
 
     // ---- Per-metric bar colors (user-customizable, persisted) --------------
-    const [metricColors, setMetricColorsState] = useState<MetricColorSet>(() => loadMetricColors());
-    const setMetricColor = (key: keyof MetricColorSet, value: string) => {
-        setMetricColorsState((prev) => {
-            const next = { ...prev, [key]: value };
-            saveMetricColors(next);
-            return next;
-        });
-    };
+    // The colours are shared with the Chart tab (metric-prefs.ts)
+    const metricColors = useMetricColors();
     const colorFor = (m: GexMetric, sign?: 'pos' | 'neg'): string => {
         if (m === 'netGex') return sign === 'neg' ? metricColors.netGexNeg : metricColors.netGexPos;
         return metricColors[m];
@@ -506,9 +497,8 @@ export const GexView: React.FC<GexViewProps> = ({
     // Metrics-panel "Reset" (distinct from the chart header's "Reset zoom"):
     // back to the original default selection (Net GEX only) and default colors.
     const resetMetricsPanel = () => {
-        setMetrics(['netGex', 'absoluteGamma']);
-        setMetricColorsState(DEFAULT_METRIC_COLORS);
-        saveMetricColors(DEFAULT_METRIC_COLORS);
+        setMetrics([...DEFAULT_GEX_METRICS]);
+        resetMetricColors();
     };
     // AG is a dollar-gamma magnitude, same unit/scale as netGex (just
     // unsigned - no cancellation between call/put) - formatted the same way
@@ -1173,70 +1163,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     capped at half the row, with its own scrollable chip row as the
                     fallback when even that is too tight. No `grow`, Key Levels takes
                     the leftover space. */}
-                <div className={box + ' shrink basis-auto min-w-[260px] max-w-[50%]'} role="group" aria-label={tr('gex.metric.label')}>
-                    <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.metric.label')}</span>
-                    <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
-                        {GEX_METRICS.map((m) => {
-                            const on = metrics.includes(m);
-                            return (
-                                <ToggleChip
-                                    key={m}
-                                    on={on}
-                                    // Independently togglable (not radio buttons); the last
-                                    // remaining selected metric can't be turned off, so the
-                                    // chart is never empty.
-                                    onToggle={() => setMetrics(on ? (metrics.length > 1 ? metrics.filter((x) => x !== m) : metrics) : [...metrics, m])}
-                                    title={tr('gex.metric.tooltip.' + m)}
-                                    activeClass={ax.chipActive}
-                                    idleClass={ax.chipIdle}
-                                    // Per-metric bar color pickers. Net GEX needs two (its
-                                    // signed pos/neg stacked halves); the 4 OI/Volume metrics
-                                    // get one each. Dependency-free <input type="color">,
-                                    // always visible (not gated on `on`) so a color can be
-                                    // set up before toggling the metric on.
-                                    swatches={m === 'netGex' ? (
-                                        <>
-                                            <input
-                                                type="color"
-                                                value={metricColors.netGexPos}
-                                                onChange={(e) => setMetricColor('netGexPos', e.target.value)}
-                                                title={tr('gex.metric.colorNetGexPos')}
-                                                aria-label={tr('gex.metric.colorNetGexPos')}
-                                                className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
-                                            />
-                                            <input
-                                                type="color"
-                                                value={metricColors.netGexNeg}
-                                                onChange={(e) => setMetricColor('netGexNeg', e.target.value)}
-                                                title={tr('gex.metric.colorNetGexNeg')}
-                                                aria-label={tr('gex.metric.colorNetGexNeg')}
-                                                className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
-                                            />
-                                        </>
-                                    ) : (
-                                        <input
-                                            type="color"
-                                            value={metricColors[m]}
-                                            onChange={(e) => setMetricColor(m, e.target.value)}
-                                            title={tr('gex.metric.color', { metric: metricLabelFull(m) })}
-                                            aria-label={tr('gex.metric.color', { metric: metricLabelFull(m) })}
-                                            className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
-                                        />
-                                    )}
-                                >
-                                    {tr('gex.metric.' + m)}
-                                </ToggleChip>
-                            );
-                        })}
-                    </div>
-                    <button
-                        type="button"
-                        onClick={resetMetricsPanel}
-                        className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + ax.chipIdle}
-                    >
-                        {tr('gex.metric.reset')}
-                    </button>
-                </div>
+                <MetricsPanel metrics={metrics} setMetrics={setMetrics} colorTheme={settings.colorTheme} />
 
                 {/* ---- Key Levels toggle+color panel: same per-item
                     affordances as the metrics panel above (toggle button +

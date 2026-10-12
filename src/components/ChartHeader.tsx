@@ -1,0 +1,51 @@
+// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+import React from 'react';
+import { useI18n } from '../i18n';
+import { accentOf } from '../theme';
+import type { Settings } from '../types';
+import { CHART_RANGES, type ChartRange } from '../views/chart-range';
+import { HelpButton } from './HelpButton';
+
+// ============================================================================
+// CHART HEADER - the symbol, "Daily candles", the help (?) button and the range selector (1M, 3M,
+// 6M, 1Y) of the Chart tab, laid over the top left corner of the chart (owner's layout: the tab row
+// and the Expirations panel stay exactly as on the other tabs, the Metrics and Levels panels are the
+// same as on the GEX tab). Rendered by ChartView inside the chart box.
+// ============================================================================
+
+const BOX = 'flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-0.5';
+
+export const ChartHeader: React.FC<{
+    symbol: string;
+    range: ChartRange;
+    setRange: (range: ChartRange) => void;
+    colorTheme: Settings['colorTheme'];
+}> = ({ symbol, range, setRange, colorTheme }) => {
+    const { t: tr } = useI18n();
+    const ax = accentOf(colorTheme);
+    return (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white/85 px-2 py-1 backdrop-blur-sm dark:bg-slate-900/75">
+            <div className="flex items-baseline gap-2">
+                <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
+                <span className="text-xs text-slate-400">{tr('chart.interval')}</span>
+                <HelpButton label={tr('chart.help.label')} paragraphs={[tr('chart.help.addLevel'), tr('chart.help.editLevel'), tr('chart.help.moveLevel'), tr('chart.help.removeLevel')]} align="left" />
+            </div>
+            <div className={BOX} role="group" aria-label={tr('chart.range.label')}>
+                <span className="text-xs text-slate-400">{tr('chart.range.label')}</span>
+                <div className="flex items-center gap-1">
+                    {CHART_RANGES.map((r) => (
+                        <button
+                            key={r}
+                            type="button"
+                            onClick={() => setRange(r)}
+                            aria-pressed={range === r}
+                            className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (range === r ? ax.chipActive : ax.chipIdle)}
+                        >
+                            {tr('chart.range.' + r)}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};

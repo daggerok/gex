@@ -15,17 +15,19 @@ import {
 } from 'lightweight-charts';
 import { type GexLevelKey } from '../gex-colors';
 import { LevelsPanel } from '../components/LevelsPanel';
+import { MetricsPanel } from '../components/MetricsPanel';
+import type { GexMetric } from '../metric-prefs';
 import { useLevelPrefs } from '../level-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor, roundPrice } from '../custom-levels';
 import { useCustomLevels } from '../use-custom-levels';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
-import { HelpButton } from '../components/HelpButton';
+import { ChartHeader } from '../components/ChartHeader';
 import { useI18n } from '../i18n';
 import { DEFAULT_CHART_INTERVAL, loadOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
 import type { GexLevels, OhlcBar, Settings } from '../types';
 import { fmt } from '../utils';
-import { CHART_RANGES, LOAD_RANGE, visibleRangeFor, type ChartRange } from './chart-range';
+import { LOAD_RANGE, visibleRangeFor, type ChartRange } from './chart-range';
 
 // ============================================================================
 // CHART VIEW (Tab 3) - plan section 8.2 (`agentic-workspace docs/repos/gex/spec-gex-app.md`). Daily candles of the loaded symbol (OHLC from the companion
@@ -81,10 +83,11 @@ export interface ChartViewProps {
     levelExpCount: number;
     range: ChartRange;
     setRange: (range: ChartRange) => void;
+    /** The GEX metrics (the Metrics panel above the chart is the same as on the GEX tab). */
+    metrics: GexMetric[];
+    setMetrics: (metrics: GexMetric[]) => void;
     /** Strikes of the loaded chain: a click or a drag puts a custom level on the nearest one, never between two. */
     strikes?: readonly number[];
-    /** the AG metric is on (GEX tab): only then the Max AG level is shown */
-    agEnabled?: boolean;
 }
 
 type FetchState =
@@ -115,7 +118,8 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, strikes = [], agEnabled = false }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [] }) => {
+    const agEnabled = metrics.includes('absoluteGamma');
     const { t: tr, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const dark = useDarkClass();
@@ -412,45 +416,24 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
 
     return (
         <main className="mx-auto w-full px-4 pt-4 lg:px-6">
-            {/* ---- Controls row, laid out like the GEX tab's: the range selector and the symbol on the left, the Levels panel
-                on the right in the same row (`justify-between`, the panel grows leftwards up to its own content width). ---- */}
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                    <div className={box} role="group" aria-label={tr('chart.range.label')}>
-                        <span className="text-xs text-slate-400">{tr('chart.range.label')}</span>
-                        <div className="flex items-center gap-1">
-                            {CHART_RANGES.map((r) => (
-                                <button
-                                    key={r}
-                                    type="button"
-                                    onClick={() => setRange(r)}
-                                    aria-pressed={range === r}
-                                    className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (range === r ? ax.chipActive : ax.chipIdle)}
-                                >
-                                    {tr('chart.range.' + r)}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
-                        <span className="text-xs text-slate-400">{tr('chart.interval')}</span>
-                        <HelpButton label={tr('chart.help.label')} paragraphs={[tr('chart.help.addLevel'), tr('chart.help.editLevel'), tr('chart.help.moveLevel'), tr('chart.help.removeLevel')]} align="left" />
-                    </div>
-                    {entries.length === 0 && (
-                        <span className="text-xs text-slate-400">
-                            {isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}
-                        </span>
-                    )}
-                    {entries.length > 0 && isFuturesPriced && <span className="text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</span>}
-                </div>
+            {/* ---- The Metrics and Levels panels: the same row as on the GEX tab (the symbol and the range selector are on the
+                chart itself, top left, see ChartHeader) ---- */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <MetricsPanel metrics={metrics} setMetrics={setMetrics} colorTheme={settings.colorTheme} />
                 <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} showMaxAg={agEnabled} />
             </div>
+            {entries.length === 0 && (
+                <p className="mb-3 text-xs text-slate-400">{isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}</p>
+            )}
+            {entries.length > 0 && isFuturesPriced && <p className="mb-3 text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</p>}
 
             {/* ---- Chart (container always mounted so the instance survives refetches) ---- */}
             <section className="relative rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-2">
                 <div className="relative">
                     <div ref={containerRef} className="h-[420px] lg:h-[calc(100dvh-270px)] lg:min-h-[420px]" />
+                    <div className="absolute left-2 top-2 z-20">
+                        <ChartHeader symbol={symbol} range={range} setRange={setRange} colorTheme={settings.colorTheme} />
+                    </div>
                     {draft && (
                         <CustomLevelEditor
                             key={`${draft.x}:${draft.y}`}

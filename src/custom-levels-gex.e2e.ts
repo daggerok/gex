@@ -155,6 +155,9 @@ try {
         const page = await open(true);
         await page.getByRole('button', { name: 'GEX' }).first().click();
         await page.waitForTimeout(2000);
+        const panelBox = async (name: string) => { const r = (await page.getByRole('group', { name }).first().boundingBox())!; return [r.x, r.y, r.width, r.height].map(Math.round); };
+        const gexPanels = { metrics: await panelBox('Metrics'), levels: await panelBox('Levels') };
+        const gexTabs = (await page.getByRole('navigation').first().boundingBox())!;
         const p = await gexPoint(page);
         await page.keyboard.down('Control');
         await page.mouse.click(p.x, p.y);
@@ -175,6 +178,24 @@ try {
         await page.keyboard.press('Enter');
         const [chartLevel] = await stored(page);
         assert.ok(strikes.has(chartLevel.price), `a click on the chart picks the nearest strike: ${chartLevel.price}`);
+
+        // the Metrics and Levels panels are exactly where they are on the GEX tab, the tab row is the same
+        assert.deepEqual({ metrics: await panelBox('Metrics'), levels: await panelBox('Levels') }, gexPanels, 'same panels at the same place as on the GEX tab');
+        const chartTabs = (await page.getByRole('navigation').first().boundingBox())!;
+        assert.deepEqual([chartTabs.x, chartTabs.y, chartTabs.width, chartTabs.height].map(Math.round), [gexTabs.x, gexTabs.y, gexTabs.width, gexTabs.height].map(Math.round), 'the tab row is unchanged');
+        // the symbol, "Daily candles" and the ranges are on the chart itself, top left
+        const header = (await page.getByText('Daily candles').first().boundingBox())!;
+        const canvasBox = (await page.locator('canvas').first().boundingBox())!;
+        assert.ok(header.x >= canvasBox.x && header.x < canvasBox.x + 300 && header.y >= canvasBox.y && header.y < canvasBox.y + 80, 'Daily candles is in the top left corner of the chart');
+        assert.ok(await page.getByRole('group', { name: 'Range' }).getByRole('button', { name: '6M' }).isVisible(), 'the range selector is on the chart');
+        // the Metrics panel is shared: turning AG off there turns it off on the GEX tab too
+        await page.getByRole('group', { name: 'Metrics' }).first().getByRole('button', { name: /^AG/ }).click();
+        await page.getByRole('button', { name: 'GEX' }).first().click();
+        await page.waitForTimeout(1500);
+        assert.equal(await page.getByRole('group', { name: 'Metrics' }).first().getByRole('button', { name: /^AG/ }).getAttribute('aria-pressed'), 'false', 'a metric turned off on the Chart tab is off on the GEX tab');
+        await page.getByRole('group', { name: 'Metrics' }).first().getByRole('button', { name: /^AG/ }).click();
+        await page.getByRole('button', { name: 'Chart' }).first().click();
+        await page.waitForTimeout(1500);
 
         // the Chart tab has the same Levels panel (with the custom level) and the Expirations panel next to the tabs
         const chartPanel = page.getByRole('group', { name: 'Levels' }).first();

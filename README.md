@@ -77,7 +77,7 @@ Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only:
 
 - **Desk:** the options chain described above
 - **GEX:** gamma exposure by strike with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis (remembered for each ticker, the last 200 tickers, also after a reload)
-- **Chart:** daily candles (1 year loaded, 1M / 3M / 6M / 1Y only change the visible part) with the same GEX levels as price lines. From the CACHE provider it reads `api/charts/<SYM>.json`, so it works without a proxy
+- **Chart:** daily candles (1 year loaded, the 1M / 3M / 6M / 1Y buttons next to the symbol in the top left corner of the chart only change the visible part; above the chart the same Metrics and Levels panels as on the GEX tab, in the same place) with the same GEX levels as price lines. From the CACHE provider it reads `api/charts/<SYM>.json`, so it works without a proxy
 
 ### Custom levels
 

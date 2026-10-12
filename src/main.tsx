@@ -1644,6 +1644,8 @@ const App: React.FC = () => {
                         levelExpCount={selectedExps.length}
                         range={chartRange}
                         setRange={setChartRange}
+                        metrics={gexMetrics}
+                        setMetrics={changeGexMetrics}
                         strikes={chartStrikes}
                         agEnabled={gexMetrics.includes('absoluteGamma')}
                     />
