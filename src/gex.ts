@@ -605,6 +605,22 @@ export function trimZeroBoundaries<T extends { strike: number }>(
     return points.slice(start, end + 1);
 }
 
+/**
+ * "Max AG": the strike with the largest absolute gamma exposure (`absGamma` of the profile: the call and the put gamma
+ * exposures both taken as positive and added), that is where the most hedging per 1% move sits, whatever its direction.
+ * ORIGINAL definition, a plain argmax with no published standard behind it. Ties go to the lowest strike (the same rule as
+ * Max Net GEX and Min Net GEX). Null for an empty profile or when no strike has any absolute gamma. The profile already
+ * reflects the selected expirations.
+ */
+export function findMaxAbsGamma(profile: readonly GexPoint[]): number | null {
+    let best: GexPoint | null = null;
+    for (const point of profile) {
+        if (!(point.absGamma > 0)) continue;
+        if (best === null || point.absGamma > best.absGamma || (point.absGamma === best.absGamma && point.strike < best.strike)) best = point;
+    }
+    return best ? best.strike : null;
+}
+
 export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, symbol?: string | null): GexLevels {
     const profile = computeGexProfile(quotes, spot);
     const walls = findNetGexLevels(profile, spot, netGexPlusMinusMinDistance(symbol, spot));
@@ -626,6 +642,7 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
         ...walls,
         ...findSumNetGexLevels(profile, spot),
         maxPain: computeMaxPain(quotes),
+        maxAbsGamma: findMaxAbsGamma(profile),
         pcRatioOi: pcr.byOi,
         pcRatioVolume: pcr.byVolume,
         totalNetGex,

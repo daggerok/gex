@@ -13,16 +13,21 @@ import {
     type UTCTimestamp,
     // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 } from 'lightweight-charts';
-import { CUSTOM_LEVEL_COLOR, GEX_LEVEL_COLORS, type GexLevelKey } from '../gex-colors';
-import { isApplePlatform, nextLevelName, roundPrice } from '../custom-levels';
+import { type GexLevelKey } from '../gex-colors';
+import { LevelsPanel } from '../components/LevelsPanel';
+import { MetricsPanel } from '../components/MetricsPanel';
+import type { GexMetric } from '../metric-prefs';
+import { useLevelPrefs } from '../level-prefs';
+import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor, roundPrice } from '../custom-levels';
 import { useCustomLevels } from '../use-custom-levels';
-import { Icon } from '../components/Icon';
+import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
+import { ChartHeader } from '../components/ChartHeader';
 import { useI18n } from '../i18n';
 import { DEFAULT_CHART_INTERVAL, loadOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
 import type { GexLevels, OhlcBar, Settings } from '../types';
 import { fmt } from '../utils';
-import { CHART_RANGES, LOAD_RANGE, visibleRangeFor, type ChartRange } from './chart-range';
+import { LOAD_RANGE, visibleRangeFor, type ChartRange } from './chart-range';
 
 // ============================================================================
 // CHART VIEW (Tab 3) - plan section 8.2 (`agentic-workspace docs/repos/gex/spec-gex-app.md`). Daily candles of the loaded symbol (OHLC from the companion
@@ -46,11 +51,8 @@ const PRICE_SCALE_MARGINS = { top: 0.04, bottom: 0.04 };
 /** Platform of the viewer, read once. */
 const APPLE = isApplePlatform();
 
-/** Icon button of the custom level editor. */
-const DRAFT_BTN = 'grid h-6 w-6 shrink-0 place-items-center rounded';
-
 /** Price-line order and labels match the GEX tab's Key Levels card. */
-const LEVEL_LINES: Array<{ key: Exclude<GexLevelKey, 'spot'>; label: string; secondary?: boolean }> = [
+const LEVEL_LINES: Array<{ key: GexLevelKey; label: string; secondary?: boolean }> = [
     { key: 'maxNetGex', label: 'gex.level.maxNetGex' },
     { key: 'netGexPlus', label: 'gex.level.netGexPlus', secondary: true },
     { key: 'gammaFlip', label: 'gex.level.gammaFlip' },
@@ -59,6 +61,8 @@ const LEVEL_LINES: Array<{ key: Exclude<GexLevelKey, 'spot'>; label: string; sec
     { key: 'sumNetGexPlus', label: 'gex.level.sumNetGexPlus', secondary: true },
     { key: 'sumNetGexMinus', label: 'gex.level.sumNetGexMinus', secondary: true },
     { key: 'maxPain', label: 'gex.level.maxPain' },
+    { key: 'maxAbsGamma', label: 'gex.level.maxAbsGamma', secondary: true },
+    { key: 'spot', label: 'spot.label', secondary: true },
 ];
 
 export interface ChartViewProps {
@@ -79,6 +83,11 @@ export interface ChartViewProps {
     levelExpCount: number;
     range: ChartRange;
     setRange: (range: ChartRange) => void;
+    /** The GEX metrics (the Metrics panel above the chart is the same as on the GEX tab). */
+    metrics: GexMetric[];
+    setMetrics: (metrics: GexMetric[]) => void;
+    /** Strikes of the loaded chain: a click or a drag puts a custom level on the nearest one, never between two. */
+    strikes?: readonly number[];
 }
 
 type FetchState =
@@ -109,7 +118,8 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [] }) => {
+    const agEnabled = metrics.includes('absoluteGamma');
     const { t: tr, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const dark = useDarkClass();
@@ -127,14 +137,22 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     const customPricesRef = useRef<number[]>([]);
     const dragRef = useRef<string | null>(null);
 
+    // Which levels are on and their colours: the Levels panel above the chart, shared with the GEX tab
+    const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
+
     // ---- Custom levels (right click adds, drag moves, shared with the GEX tab) ----
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
     const customRef = useRef(customLevels);
     customRef.current = customLevels;
+    const strikesRef = useRef(strikes);
+    strikesRef.current = strikes;
+    const levelsRef = useRef(levels);
+    levelsRef.current = levels;
+    /** A price from the chart as a level price: the nearest strike, or cents when there are no strikes. */
+    const snap = (price: number) => nearestStrike(price, strikesRef.current) ?? roundPrice(price);
     const setCustomRef = useRef(setCustomLevels);
     setCustomRef.current = setCustomLevels;
-    const [draft, setDraft] = useState<{ x: number; y: number; price: number; name: string; editId?: string } | null>(null);
-    const draftInputRef = useRef<HTMLInputElement | null>(null);
+    const [draft, setDraft] = useState<LevelDraft | null>(null);
 
     // ---- OHLC fetch (symbol; always LOAD_RANGE of daily bars, the range buttons only change the visible part) ----
     const fetchKey = `${symbol}|${LOAD_RANGE}|${settings.proxyBase}|${settings.providerId}`;
@@ -225,10 +243,10 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         const series = seriesRef.current;
         if (!series) return;
         for (const line of priceLinesRef.current) series.removePriceLine(line);
-        const entries = levelEntries(levels);
+        const entries = levelEntries(levels).filter((l) => selectedLevels.includes(l.key) && (l.key !== 'maxAbsGamma' || agEnabled));
         priceLinesRef.current = entries.map((l) => series.createPriceLine({
             price: l.price,
-            color: GEX_LEVEL_COLORS[l.key].hex,
+            color: levelColors[l.key],
             lineWidth: l.secondary ? 1 : 2,
             lineStyle: l.secondary ? LineStyle.Dotted : LineStyle.Dashed,
             axisLabelVisible: true,
@@ -237,34 +255,28 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         levelPricesRef.current = entries.map((l) => l.price);
         // Re-run autoscale so newly in-range levels are pulled into view.
         chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-    }, [levels, tr, hasSymbol]);
+    }, [levels, tr, hasSymbol, selectedLevels, levelColors, agEnabled]);
 
     // ---- Custom level price lines ----
     useEffect(() => {
         const series = seriesRef.current;
         if (!series) return;
         for (const line of customLinesRef.current) series.removePriceLine(line);
-        customLinesRef.current = customLevels.map((c) => series.createPriceLine({
+        const shown = customLevels.filter((c) => !c.hidden);
+        customLinesRef.current = shown.map((c) => series.createPriceLine({
             price: c.price,
-            color: CUSTOM_LEVEL_COLOR.hex,
+            color: levelColorOf(c),
             lineWidth: 2,
             lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
             title: c.name,
         }));
-        customPricesRef.current = customLevels.map((c) => c.price);
+        customPricesRef.current = shown.map((c) => c.price);
         if (!dragRef.current) chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
     }, [customLevels, hasSymbol]);
 
     // A draft belongs to one symbol
     useEffect(() => { setDraft(null); }, [symbol]);
-    useEffect(() => {
-        if (!draft) return;
-        draftInputRef.current?.focus();
-        draftInputRef.current?.select();
-        // only when a draft opens at a new spot, not on every keystroke
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [draft?.x, draft?.y]);
 
     // ---- Right click adds a level, a left-button drag on one moves it ----
     useEffect(() => {
@@ -293,21 +305,35 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             }
             return best?.id ?? null;
         };
-        const onContextMenu = (e: MouseEvent) => {
+        /**
+         * Opens the editor at the pointer (a new level, or the existing one when the pointer is on it). Used by a right
+         * click, a two-finger click on a trackpad (both arrive as `contextmenu`) and Ctrl+click on macOS (handled in
+         * onDown, see there). Returns true when it did, so the caller can stop the browser's own menu.
+         */
+        const openEditorAt = (e: MouseEvent): boolean => {
             const pt = plotPoint(e);
             const price = pt && seriesRef.current ? seriesRef.current.coordinateToPrice(pt.y) : null;
-            if (!pt || price == null || !Number.isFinite(price)) return;
-            e.preventDefault();
+            if (!pt || price == null || !Number.isFinite(price)) return false;
             // Right click on an existing custom level edits its name instead of adding a new one
             const hitId = levelAt(pt.y);
             const hit = hitId ? customRef.current.find((c) => c.id === hitId) : undefined;
             if (hit) {
-                setDraft({ x: pt.x, y: pt.y, price: hit.price, name: hit.name, editId: hit.id });
-                return;
+                setDraft({ x: pt.x, y: pt.y, price: hit.price, name: hit.name, color: levelColorOf(hit), editId: hit.id });
+                return true;
             }
-            setDraft({ x: pt.x, y: pt.y, price: roundPrice(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')) });
+            setDraft({ x: pt.x, y: pt.y, price: snap(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')), color: proposeLevelColor(customRef.current, snap(price), levelsRef.current?.spot) });
+            return true;
+        };
+        const onContextMenu = (e: MouseEvent) => {
+            if (openEditorAt(e)) e.preventDefault();
         };
         const onDown = (e: MouseEvent) => {
+            // Ctrl+click is the secondary click on macOS: the browser sends a left-button mousedown with Ctrl held, and its own
+            // menu opens right after. Handle it here and suppress that menu, instead of relying on the `contextmenu` event.
+            if (e.button === 0 && e.ctrlKey && isApplePlatform()) {
+                if (openEditorAt(e)) { e.preventDefault(); e.stopPropagation(); }
+                return;
+            }
             if (e.button !== 0) return;
             const pt = plotPoint(e);
             const id = pt ? levelAt(pt.y) : null;
@@ -323,7 +349,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 const y = Math.min(Math.max(ev.clientY - el.getBoundingClientRect().top, 0), chartRef.current?.paneSize().height ?? 0);
                 const price = series.coordinateToPrice(y);
                 if (price == null || !Number.isFinite(price)) return;
-                const rounded = roundPrice(price);
+                const rounded = snap(price);
                 setCustomRef.current(customRef.current.map((c) => (c.id === dragRef.current ? { ...c, price: rounded } : c)), false);
             };
             const up = () => {
@@ -352,16 +378,15 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         };
     }, [hasSymbol, tr]);
 
-    const commitDraft = () => {
+    const commitDraft = (name: string, color: string) => {
         if (!draft) return;
-        const name = (draftInputRef.current?.value ?? draft.name).trim() || draft.name;
         if (draft.editId) {
-            setCustomLevels(customLevels.map((c) => (c.id === draft.editId ? { ...c, name } : c)));
+            setCustomLevels(customLevels.map((c) => (c.id === draft.editId ? { ...c, name, color } : c)));
             setDraft(null);
             return;
         }
         const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()) + Math.random();
-        setCustomLevels([...customLevels, { id, name, price: draft.price }]);
+        setCustomLevels([...customLevels, { id, name, price: draft.price, color }]);
         setDraft(null);
     };
 
@@ -390,114 +415,36 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             : bars && bars.length === 0 ? tr('chart.empty.noBars', { symbol }) : null;
 
     return (
-        <main className="mx-auto w-full px-4 pt-4 lg:px-6">
-            {/* ---- Controls: range selector + symbol ---- */}
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-                <div className={box} role="group" aria-label={tr('chart.range.label')}>
-                    <span className="text-xs text-slate-400">{tr('chart.range.label')}</span>
-                    <div className="flex items-center gap-1">
-                        {CHART_RANGES.map((r) => (
-                            <button
-                                key={r}
-                                type="button"
-                                onClick={() => setRange(r)}
-                                aria-pressed={range === r}
-                                className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (range === r ? ax.chipActive : ax.chipIdle)}
-                            >
-                                {tr('chart.range.' + r)}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-                <div className="flex items-baseline gap-2">
-                    <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
-                    <span className="text-xs text-slate-400">{tr('chart.interval')}</span>
-                </div>
+        <main className="mx-auto flex w-full flex-1 flex-col px-4 pt-4 lg:min-h-0 lg:px-6">
+            {/* ---- The Metrics and Levels panels: the same row as on the GEX tab (the symbol and the range selector are on the
+                chart itself, top left, see ChartHeader) ---- */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <MetricsPanel metrics={metrics} setMetrics={setMetrics} colorTheme={settings.colorTheme} />
+                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} showMaxAg={agEnabled} />
             </div>
-
-            {/* ---- Level legend (same labels/colors as the GEX tab's Key Levels) ---- */}
-            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                <span className="text-slate-400">{tr('chart.levels.source', { count: levelExpCount })}</span>
-                <span className="text-slate-400">{tr('chart.custom.hint')}</span>
-                {entries.length === 0 ? (
-                    <span className="text-slate-400">
-                        {isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}
-                    </span>
-                ) : isFuturesPriced && (
-                    // Real levels for a futures-priced symbol (toggle on,
-                    // pricing succeeded): a brief note that these lines are
-                    // futures-terms-based (section 9), not spot-based.
-                    <span className="text-slate-400">{tr('chart.levels.futuresPricedHint')}</span>
-                )}
-                {customLevels.map((c) => (
-                    <span key={c.id} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${CUSTOM_LEVEL_COLOR.dot}`} aria-hidden="true" />
-                        {c.name}
-                        <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{fmt(c.price)}</span>
-                        <button
-                            type="button"
-                            onClick={() => setCustomLevels(customLevels.filter((x) => x.id !== c.id))}
-                            aria-label={tr('chart.custom.remove', { name: c.name })}
-                            title={tr('chart.custom.remove', { name: c.name })}
-                            className="rounded px-1 leading-none text-slate-400 hover:text-red-500"
-                        >
-                            ×
-                        </button>
-                    </span>
-                ))}
-                {entries.map((l) => (
-                    <span key={l.key} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${GEX_LEVEL_COLORS[l.key].dot}`} aria-hidden="true" />
-                        {tr(l.label)}
-                        <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{fmt(l.price)}</span>
-                    </span>
-                ))}
-            </div>
+            {entries.length === 0 && (
+                <p className="mb-3 text-xs text-slate-400">{isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}</p>
+            )}
+            {entries.length > 0 && isFuturesPriced && <p className="mb-3 text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</p>}
 
             {/* ---- Chart (container always mounted so the instance survives refetches) ---- */}
-            <section className="relative rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-2">
-                <div className="relative">
-                    <div ref={containerRef} className="h-[420px] lg:h-[calc(100dvh-270px)] lg:min-h-[420px]" />
+            <section className="relative flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-2 lg:min-h-0 lg:flex-1">
+                {/* The chart takes the height that is left (no hand-made window height formula: it went stale every time the rows above
+                    changed and left a gap above the footer), at least 240 px */}
+                <div className="relative h-[420px] lg:h-auto lg:min-h-[240px] lg:flex-1">
+                    <div ref={containerRef} className="absolute inset-0" />
+                    <div className="absolute left-2 top-2 z-20">
+                        <ChartHeader symbol={symbol} range={range} setRange={setRange} colorTheme={settings.colorTheme} />
+                    </div>
                     {draft && (
-                        <div
+                        <CustomLevelEditor
                             key={`${draft.x}:${draft.y}`}
-                            // focus moving between the input and its buttons keeps the editor open, leaving it closes it
-                            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDraft(null); }}
-                            style={{ left: Math.max(0, Math.min(draft.x, (containerRef.current?.clientWidth ?? 240) - 240)), top: Math.max(0, draft.y - 16) }}
-                            className="absolute z-10 flex flex-col gap-1 rounded-md border border-sky-400 bg-white p-1 shadow-lg dark:bg-slate-900"
-                        >
-                            {/* Buttons on top: right on Windows and Linux, left on macOS and iOS */}
-                            <div className={'flex items-center gap-1 ' + (APPLE ? 'justify-start' : 'justify-end')}>
-                                {/* onMouseDown keeps the focus in the input so the editor does not close before the click lands */}
-                                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={commitDraft}
-                                        aria-label={tr('chart.custom.save')} title={tr('chart.custom.save')} className={DRAFT_BTN + ' text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-slate-800'}>
-                                    <Icon.Check className="h-4 w-4" />
-                                </button>
-                                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setDraft(null)}
-                                        aria-label={tr('chart.custom.cancel')} title={tr('chart.custom.cancel')} className={DRAFT_BTN + ' text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}>
-                                    <Icon.PencilOff className="h-4 w-4" />
-                                </button>
-                                {draft.editId && (
-                                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => removeDraftLevel()}
-                                            aria-label={tr('chart.custom.delete')} title={tr('chart.custom.delete')} className={DRAFT_BTN + ' text-red-500 hover:bg-red-50 dark:hover:bg-slate-800'}>
-                                        <Icon.X className="h-4 w-4" />
-                                    </button>
-                                )}
-                            </div>
-                            <input
-                                ref={draftInputRef}
-                                type="text"
-                                defaultValue={draft.name}
-                                aria-label={tr('chart.custom.nameLabel', { price: fmt(draft.price) })}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
-                                    else if (e.key === 'Escape') { e.preventDefault(); setDraft(null); }
-                                }}
-                                spellCheck={false}
-                                maxLength={40}
-                                className="w-44 rounded px-1.5 py-0.5 text-sm font-medium text-slate-900 focus:outline-none dark:bg-slate-900 dark:text-slate-50"
-                            />
-                        </div>
+                            draft={draft}
+                            boxWidth={containerRef.current?.clientWidth ?? 0}
+                            onSave={commitDraft}
+                            onCancel={() => setDraft(null)}
+                            onDelete={removeDraftLevel}
+                        />
                     )}
                 </div>
                 {overlay && (

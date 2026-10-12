@@ -13,6 +13,8 @@ import React from 'react';
 // appear" - scoping this to the one tab that actually generates that display
 // is the natural reading, not "every page of the app regardless of whether
 // this tab was ever visited". Desk/GEX render `RepoFooter` instead (below).
+// The two footers are ONE design (FOOTER_CLASS and FOOTER_LINK_CLASS): same box, position, size, colours and link look, only
+// the text differs (owner's requirement: every tab has the footer the Desk tab has).
 //
 // NOTICE_* below are the two lines of the upstream NOTICE file, VERBATIM
 // (github.com/tradingview/lightweight-charts/blob/master/NOTICE, identical at
@@ -47,10 +49,14 @@ export const NOTICE_URL = 'https://www.tradingview.com/';
 // there's no room to shrink the legally-required notice text further; this
 // pb value still minimizes the overshoot rather than adding more on top of
 // it, same reasoning as the single-line case.
+/** The one footer design of all three tabs: the box (size, padding, position) and the link. Only the text differs. */
+export const FOOTER_CLASS = 'mx-auto w-full flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:min-h-6 lg:px-6';
+export const FOOTER_LINK_CLASS = 'transition-colors hover:text-slate-600 dark:hover:text-slate-200';
+
 export const AttributionFooter: React.FC = () => (
-    <footer className="mx-auto w-full flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:min-h-6 lg:px-6">
+    <footer className={FOOTER_CLASS}>
         {NOTICE_LINE_1} &middot; {NOTICE_LINE_2}{' '}
-        <a href={NOTICE_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-slate-600 dark:hover:text-slate-200">
+        <a href={NOTICE_URL} target="_blank" rel="noopener noreferrer" className={FOOTER_LINK_CLASS}>
             {NOTICE_URL}
         </a>
     </footer>
@@ -67,8 +73,8 @@ export const REPO_URL = 'https://github.com/daggerok/gex';
  */
 export const RepoFooter: React.FC = () => {
     return (
-        <footer className="mx-auto w-full flex min-h-4 items-center justify-center px-4 text-center text-[0.625rem] leading-tight text-slate-400 lg:min-h-6 lg:px-6">
-            <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-slate-600 dark:hover:text-slate-200">
+        <footer className={FOOTER_CLASS}>
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className={FOOTER_LINK_CLASS}>
                 daggerok &copy; {new Date().getFullYear()}
             </a>
         </footer>

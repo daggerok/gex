@@ -1383,6 +1383,8 @@ const App: React.FC = () => {
     // GexLevels computed ONCE here for the GEX tab's selection and shared by
     // the GEX and Chart tabs (plan 7.7 / 8.2) - no view recomputes them.
     const gex = useGexLevels(spot, spotIsEstimated, gexQuotesByExp, selectedExps, meta?.symbol ?? '', settings.vixFuturesPricing);
+    // Strikes of the chain the levels come from, for the Chart tab: a custom level is put on the nearest strike
+    const chartStrikes = useMemo(() => [...new Set(gex.quotes.map((q) => q.strike))].sort((a, b) => a - b), [gex.quotes]);
     // Chart tab range (plan 8.2), held here so it survives tab switches.
     const [chartRange, setChartRange] = useState<ChartRange>(DEFAULT_RANGE);
 
@@ -1507,14 +1509,18 @@ const App: React.FC = () => {
                 below on the nav wrapper and each tab-content block is additional,
                 redundant insurance against shrinking - only the Desk wrapper (next)
                 actually wants to be shrinkable. */}
-            <div className={`flex-1 flex flex-col ${activeTab === 'desk' ? 'min-h-0' : ''}`}>
+            {/* GEX and Chart also fit the window from `lg` up (no page scroll, the footer stays in view), so `min-h-0` applies to them too
+                from `lg`; below `lg` they keep their natural height and the page scrolls. */}
+            <div className={`flex-1 flex flex-col ${activeTab === 'desk' ? 'min-h-0' : 'lg:min-h-0'}`}>
             <div className="shrink-0">
             <TabSwitcher
                 value={activeTab}
                 onChange={changeTab}
                 colorTheme={settings.colorTheme}
                 /* ---- Shared expiration panel (picker + Load) — one copy, used
-                    by Desk AND GEX (not Chart - it doesn't act on expirations),
+                    by Desk, GEX AND Chart (on Chart the selection decides which
+                    expirations the levels are computed from, owner: the panel must be
+                    seen on every tab),
                     rendered in the SAME row as the tab pills, to their right -
                     one horizontal bar: [Desk|GEX|Chart]  [chips... All] [Load].
                     So selecting expirations and fetching them works the same
@@ -1535,7 +1541,7 @@ const App: React.FC = () => {
                     viewport (confirmed live via Playwright before this fix -
                     see ExpirationChips.tsx's doc comment for the measured
                     root cause). ---- */
-                endSlot={meta && activeTab !== 'chart' ? (
+                endSlot={meta ? (
                     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5">
                         <ExpirationChips
                             expirations={meta.expirations}
@@ -1610,7 +1616,7 @@ const App: React.FC = () => {
                 shrink-0, GEX's own content was squeezed by the flex layout and
                 rendered past/behind the footer instead of pushing it down). */}
             {activeTab === 'gex' && (
-                <div className="flex shrink-0 grow flex-col">
+                <div className="flex shrink-0 grow flex-col lg:min-h-0 lg:shrink">
                 <Suspense fallback={null}>
                     <GexView
                         settings={settings}
@@ -1630,7 +1636,7 @@ const App: React.FC = () => {
             )}
             {/* shrink-0: same reasoning as GEX's wrapper just above. */}
             {activeTab === 'chart' && (
-                <div className="shrink-0">
+                <div className="flex shrink-0 grow flex-col lg:min-h-0 lg:shrink">
                 <Suspense fallback={null}>
                     <ChartView
                         settings={settings}
@@ -1640,6 +1646,10 @@ const App: React.FC = () => {
                         levelExpCount={selectedExps.length}
                         range={chartRange}
                         setRange={setChartRange}
+                        metrics={gexMetrics}
+                        setMetrics={changeGexMetrics}
+                        strikes={chartStrikes}
+                        agEnabled={gexMetrics.includes('absoluteGamma')}
                     />
                 </Suspense>
                 </div>

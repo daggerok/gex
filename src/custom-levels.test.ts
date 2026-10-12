@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
-import { isApplePlatform, nextLevelName, parseCustomLevels, roundPrice } from './custom-levels';
+import { DISCOUNT_COLORS, isApplePlatform, isHexColor, LEVEL_PALETTE, NEUTRAL_COLORS, PREMIUM_COLORS, levelColorOf, nearestStrike, nextLevelName, parseCustomLevels, proposeLevelColor, roundPrice } from './custom-levels';
 
 const named = (...names: string[]) => names.map((name) => ({ name }));
 
@@ -61,5 +61,82 @@ describe('isApplePlatform', () => {
 
   test('no navigator (tests, SSR) is not Apple', () => {
     expect(isApplePlatform(null)).toBe(false);
+  });
+});
+
+describe('nearestStrike', () => {
+  const strikes = [7500, 7510, 7520, 7550, 7600];
+  test('picks the closest strike, never a price between two', () => {
+    expect(nearestStrike(7512.4, strikes)).toBe(7510);
+    expect(nearestStrike(7516, strikes)).toBe(7520);
+    expect(nearestStrike(7535, strikes)).toBe(7520); // exactly between 7520 and 7550 is 7535: the lower one wins
+    expect(nearestStrike(7536, strikes)).toBe(7550);
+  });
+  test('an exact strike stays, far outside the range gives the edge strike', () => {
+    expect(nearestStrike(7550, strikes)).toBe(7550);
+    expect(nearestStrike(100, strikes)).toBe(7500);
+    expect(nearestStrike(9000, strikes)).toBe(7600);
+  });
+  test('works on an unsorted list and with nothing to pick from', () => {
+    expect(nearestStrike(7516, [7600, 7500, 7520, 7510])).toBe(7520);
+    expect(nearestStrike(7515, [7600, 7500, 7520, 7510])).toBe(7510); // exactly between: the lower one
+    expect(nearestStrike(7515, [])).toBeNull();
+    expect(nearestStrike(7515, [NaN])).toBeNull();
+  });
+});
+
+describe('custom level colours', () => {
+  test('a level keeps its colour and its hidden flag through save and load, bad values are dropped', () => {
+    const levels = parseCustomLevels(JSON.stringify([
+      { id: 'a', name: 'A', price: 1, color: '#38bdf8', hidden: true },
+      { id: 'b', name: 'B', price: 2, color: 'red', hidden: 'yes' },
+      { id: 'c', name: 'C', price: 3 },
+    ]));
+    expect(levels).toEqual([{ id: 'a', name: 'A', price: 1, color: '#38bdf8', hidden: true }, { id: 'b', name: 'B', price: 2 }, { id: 'c', name: 'C', price: 3 }]);
+  });
+
+  test('a level saved before colours existed gets the first palette colour', () => {
+    expect(levelColorOf({})).toBe(LEVEL_PALETTE[0]);
+    expect(levelColorOf({ color: '#ff0000' })).toBe('#ff0000');
+    expect(levelColorOf({ color: 'nope' })).toBe(LEVEL_PALETTE[0]);
+  });
+
+  test('a level above the current price starts reddish (premium), below it greenish (discount)', () => {
+    for (const r of [0, 0.4, 0.99]) {
+      expect(PREMIUM_COLORS).toContain(proposeLevelColor([], 790, 778.57, () => r) as never);
+      expect(DISCOUNT_COLORS).toContain(proposeLevelColor([], 770, 778.57, () => r) as never);
+    }
+  });
+
+  test('at the current price, or with no price known, a neutral colour', () => {
+    expect(NEUTRAL_COLORS).toContain(proposeLevelColor([], 778.57, 778.57, () => 0.5) as never);
+    expect(NEUTRAL_COLORS).toContain(proposeLevelColor([], 790, null, () => 0.5) as never);
+    expect(NEUTRAL_COLORS).toContain(proposeLevelColor([], 790, undefined, () => 0.5) as never);
+    expect(NEUTRAL_COLORS).toContain(proposeLevelColor([], 790, NaN, () => 0.5) as never);
+  });
+
+  test('inside its kind it is random among the colours the other levels do not use yet', () => {
+    const used = PREMIUM_COLORS.slice(0, 2).map((color) => ({ color }));
+    expect([0, 0.5, 0.99].map((r) => proposeLevelColor(used, 790, 778, () => r))).toEqual([PREMIUM_COLORS[2], PREMIUM_COLORS[2], PREMIUM_COLORS[2]]);
+    expect(proposeLevelColor([], 790, 778, () => 0)).toBe(PREMIUM_COLORS[0]);
+    expect(proposeLevelColor([], 790, 778, () => 0.999)).toBe(PREMIUM_COLORS[PREMIUM_COLORS.length - 1]);
+    // a colour of the other kind used by another level does not matter
+    expect(proposeLevelColor(DISCOUNT_COLORS.map((color) => ({ color })), 790, 778, () => 0)).toBe(PREMIUM_COLORS[0]);
+  });
+
+  test('when every colour of the kind is taken, any of that kind may come back', () => {
+    const all = PREMIUM_COLORS.map((color) => ({ color }));
+    for (const r of [0, 0.3, 0.7, 0.999]) expect(PREMIUM_COLORS).toContain(proposeLevelColor(all, 790, 778, () => r) as never);
+  });
+
+  test('the proposal is always a palette colour', () => {
+    for (let i = 0; i < 60; i++) {
+      for (const [price, spot] of [[790, 778], [770, 778], [778, 778], [790, null]] as const) expect(LEVEL_PALETTE).toContain(proposeLevelColor([], price, spot) as never);
+    }
+  });
+
+  test('palette colours are valid and none repeats', () => {
+    expect(LEVEL_PALETTE.every(isHexColor)).toBe(true);
+    expect(new Set(LEVEL_PALETTE).size).toBe(LEVEL_PALETTE.length);
   });
 });

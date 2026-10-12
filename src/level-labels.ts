@@ -37,6 +37,24 @@ export function groupLevelLabels(items: readonly LevelLabelItem[]): LevelLabelGr
     return groups;
 }
 
+/**
+ * Groups levels whose lines are closer than `minGap` price units (a few pixels on the screen), so their labels share ONE
+ * text, "A + B", instead of printing over each other, as already done for levels on the same price. Levels are taken
+ * in price order, a chain of close levels joins one group, a group has its lowest price (the label sits on that line) and
+ * lists its levels from the lowest up. `minGap` of 0 groups only equal prices.
+ */
+export function groupNearLevelLabels(items: readonly LevelLabelItem[], minGap: number): LevelLabelGroup[] {
+    const gap = Math.max(minGap, 1e-6);
+    const sorted = [...items].sort((a, b) => a.value - b.value);
+    const groups: LevelLabelGroup[] = [];
+    for (const item of sorted) {
+        const last = groups[groups.length - 1];
+        if (last && item.value - last.items[last.items.length - 1].value <= gap) last.items.push(item);
+        else groups.push({ value: item.value, items: [item] });
+    }
+    return groups;
+}
+
 /** 'inline' = "A + B + C" on one line, 'stacked' = one level per line. A single
  *  level is always inline. */
 export function labelLayout(group: LevelLabelGroup): 'inline' | 'stacked' {

@@ -99,7 +99,7 @@ export function deskMinWidth(callCount: number, putCount: number): string {
 
 /** One data cell in the grid desk. */
 export const Cell: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className }) => (
-    <div className={'px-2 py-1 text-right tabular-nums ' + (className || '')}>{children}</div>
+    <div className={'px-2 py-[3px] text-right tabular-nums ' + (className || '')}>{children}</div>
 );
 export const QuoteCells: React.FC<{ q?: OptionQuote; columns: DeskColumnDef[] }> = ({ q, columns }) => (
     <>
@@ -229,11 +229,11 @@ export const ExpirationSection: React.FC<{
                         }
                     >
                         {callColumns.map((c) => (
-                            <div key={`c${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
+                            <div key={`c${c.key}`} title={c.label} className="px-2 py-[3px] text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
                         <div className="od-strike-cell px-1.5 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
                         {putColumns.map((c) => (
-                            <div key={`p${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
+                            <div key={`p${c.key}`} title={c.label} className="px-2 py-[3px] text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
                     </div>
                     {/* Strike rows: staggered fade-in on open; uniform fade-out on close. */}
@@ -256,7 +256,7 @@ export const ExpirationSection: React.FC<{
                                 <div
                                     title={fmt(strike)}
                                     className={
-                                        'od-strike-cell px-1.5 py-1 text-center font-semibold tabular-nums ' +
+                                        'od-strike-cell px-1.5 py-[3px] text-center font-semibold tabular-nums ' +
                                         (isAtm ? ax.atm : 'text-slate-900 dark:text-slate-100')
                                     }
                                 >
@@ -278,7 +278,15 @@ export const ExpirationSection: React.FC<{
  * PILES UP as you scroll down (un-piles scrolling up). A scroll listener marks
  * the in-view section active so its sub-headers stay pinned below the pile.
  */
-export const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; spot: number | null; columns: DeskColumnSettings; colorTheme?: ColorThemeId }> = ({ symbol, sections, spot, columns, colorTheme = DEFAULT_COLOR_THEME }) => {
+export const ChainTable: React.FC<{
+    symbol: string;
+    sections: ChainSection[];
+    spot: number | null;
+    columns: DeskColumnSettings;
+    colorTheme?: ColorThemeId;
+    /** Shown in the middle of the toolbar row, between the expirations count and the Collapse all button (the symbol, its spot and the provider). */
+    summary?: React.ReactNode;
+}> = ({ symbol, sections, spot, columns, colorTheme = DEFAULT_COLOR_THEME, summary }) => {
     const { t } = useI18n();
     const ax = accentOf(colorTheme);
     const visibleColumns = useMemo(() => deskColumns(columns, t, colorTheme), [columns, t, colorTheme]);
@@ -490,11 +498,12 @@ export const ChainTable: React.FC<{ symbol: string; sections: ChainSection[]; sp
             below guessing a `100dvh - Npx` offset - see `.table-container`'s own
             comment just below for the bug this replaced. */
         <div className="flex flex-1 min-h-0 flex-col" style={{ ['--od-grid' as string]: odGrid }}>
-            {/* Controls ABOVE the desk (full width): count LEFT, toggle RIGHT. */}
-            <div className="mb-2 flex w-full items-center justify-between shrink-0">
+            {/* Controls ABOVE the desk (full width): count LEFT, the symbol and its spot in the MIDDLE, toggle RIGHT. */}
+            <div className="mb-2 flex w-full items-center justify-between gap-3 shrink-0">
                 <span className="text-xs text-slate-400">
                     {sections.length} {sections.length === 1 ? t('chain.expirations') : t('chain.expirationsPlural')}
                 </span>
+                {summary && <div className="min-w-0 flex-1 text-center">{summary}</div>}
                 <button
                     type="button"
                     onClick={toggleAll}

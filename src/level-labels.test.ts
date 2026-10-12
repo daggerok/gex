@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { groupLevelLabels, labelLayout, MAX_INLINE_LABEL_CHARS, type LevelLabelItem } from './level-labels';
+import { groupLevelLabels, groupNearLevelLabels, labelLayout, MAX_INLINE_LABEL_CHARS, type LevelLabelItem } from './level-labels';
 
 const item = (key: string, value: number, text: string): LevelLabelItem => ({ key, value, text, color: '#000' });
 
@@ -19,6 +19,35 @@ describe('groupLevelLabels', () => {
 
   test('empty input -> no groups', () => {
     expect(groupLevelLabels([])).toEqual([]);
+  });
+});
+
+describe('groupNearLevelLabels', () => {
+  test('two levels a few pixels apart share one label, the lower price first', () => {
+    // Gamma Flip 774.68 and Max Pain 774.00 on a chart where 1 price unit is about 17 px: their labels overlapped
+    const groups = groupNearLevelLabels([item('gammaFlip', 774.68, 'Gamma Flip'), item('maxPain', 774, 'Max Pain'), item('spot', 778.57, 'Spot')], 1);
+    expect(groups.map((g) => [g.value, g.items.map((i) => i.key)])).toEqual([[774, ['maxPain', 'gammaFlip']], [778.57, ['spot']]]);
+  });
+
+  test('levels far enough apart keep their own labels', () => {
+    expect(groupNearLevelLabels([item('a', 770, 'A'), item('b', 772.5, 'B')], 1)).toHaveLength(2);
+  });
+
+  test('the gap itself still joins, a chain of close levels is one group', () => {
+    expect(groupNearLevelLabels([item('a', 770, 'A'), item('b', 771, 'B')], 1)).toHaveLength(1);
+    expect(groupNearLevelLabels([item('a', 770, 'A'), item('b', 771, 'B'), item('c', 772, 'C'), item('d', 774, 'D')], 1).map((g) => g.items.length)).toEqual([3, 1]);
+  });
+
+  test('a zero gap groups only equal prices, like groupLevelLabels', () => {
+    const items = [item('a', 778, 'A'), item('b', 775.83, 'B'), item('c', 778, 'C')];
+    expect(groupNearLevelLabels(items, 0).map((g) => g.items.map((i) => i.key))).toEqual([['b'], ['a', 'c']]);
+  });
+
+  test('no levels, no groups; the input is not changed', () => {
+    expect(groupNearLevelLabels([], 5)).toEqual([]);
+    const input = [item('b', 2, 'B'), item('a', 1, 'A')];
+    groupNearLevelLabels(input, 5);
+    expect(input.map((i) => i.key)).toEqual(['b', 'a']);
   });
 });
 

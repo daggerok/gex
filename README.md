@@ -32,7 +32,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 - **Ticker suggestions:** searchable ticker and company combobox for every provider. Local static suggestions use `api/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest to latest with sticky expiration headers
 - **Desk UX:** ATM row highlight, sticky Calls / Strike / Puts headers, greeks columns enabled by default, per-side and per-column desk settings, empty cells for missing data, themed scrollbars, collapse and expand controls, and automatic centering on the current strike after load or expand
-- **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Max Pain, Spot) computed once and drawn on both tabs, plus your own custom levels
+- **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Max Pain, Spot, and Max AG, the strike with the largest absolute gamma, while the AG metric is on) computed once and drawn on both tabs, plus your own custom levels
 - **Theme UX:** compact current-theme icon with an animated dropdown for the other themes
 - **Internationalization:** English and Russian UI with a language switcher in the header and in Settings
 - **Provider setup badges:** No setup, Free key, Needs proxy, plus onboarding when a token is required
@@ -76,19 +76,23 @@ Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only:
 ## Tabs: Desk, GEX, Chart
 
 - **Desk:** the options chain described above
-- **GEX:** gamma exposure by strike with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis
-- **Chart:** daily candles (1 year loaded, 1M / 3M / 6M / 1Y only change the visible part) with the same GEX levels as price lines. From the CACHE provider it reads `api/charts/<SYM>.json`, so it works without a proxy
+- **GEX:** gamma exposure by strike with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis (remembered for each ticker, the last 200 tickers, also after a reload)
+- **Chart:** daily candles (1 year loaded, the 1M / 3M / 6M / 1Y buttons next to the symbol in the top left corner of the chart only change the visible part; above the chart the same Metrics and Levels panels as on the GEX tab, in the same place) with the same GEX levels as price lines. From the CACHE provider it reads `api/charts/<SYM>.json`, so it works without a proxy
 
 ### Custom levels
 
-On the Chart tab you can add your own named levels. They are stored per symbol in `localStorage` and also appear on the GEX tab (Levels and Values tables and a labelled line on the strike chart)
+You can add your own named levels on the **Chart** tab and on the **GEX** tab. They are stored per symbol in `localStorage` and show on both tabs as labelled lines on the charts and as chips of the Levels panel. They are not rows of the Levels and Values tables (on purpose, to keep those tables simple)
 
-- **Add:** right click (Ctrl+click on macOS) in the plot. A field opens at the pointer with the default name `Level 1` (or `Level 2` when `Level 1` exists, and so on, the smallest free number) already selected. Enter or the check button saves. Esc, the crossed-out pencil button or a click away cancels and creates nothing
-- **Edit:** right click on an existing custom line. The same editor opens with its name, with save, cancel and a delete (X) button
-- **Move:** drag a custom line with the left mouse button, the new price is saved on drop
-- **Remove:** the x on its legend chip, or the delete button in the editor
+- **How to click:** a right click with the mouse. On a MacBook trackpad it is a **two-finger click** (or a two-finger tap when tapping is on in System Settings), the browser sends the same event as for a right click. **Ctrl+click** works on macOS too. Not over the plot (on an axis, outside the chart), the browser's own menu opens as usual
+- **Add:** click where you want the level. The level goes on the **nearest strike**, never between two (on the GEX tab it is the strike under the pointer, on the Chart tab the strike nearest to the clicked price). A field opens at the pointer with the default name `Level 1` (or `Level 2` when `Level 1` exists, and so on, the smallest free number) already selected. Enter or the check button saves. Esc, the crossed-out pencil button or a click away cancels and creates nothing
+- **Edit:** click the same strike again (Chart tab: right click on the line). The same editor opens with its name, with save, cancel and a delete (X) button
+- **Move (Chart tab):** drag a custom line with the left mouse button, it follows the strikes and the new price is saved on drop
+- **Colour:** one small square left of the name. A level above the current price starts reddish (premium), one below it greenish (discount), one at it or with no price known a neutral colour, the shade picked at random among those the other levels do not use. Click the square to choose another (ready colours or any colour of your own), the editor stays otherwise minimal. The square on the level's chip in the Levels panel changes it later
+- **Show or hide:** the same **Levels panel** (the row of chips above the chart) is on the GEX tab and on the Chart tab and shares its choices: click a chip to show or hide that level (yours come first, then the built-in levels from the lowest price to the highest), click the square on it to change its colour. The Expirations panel next to the tabs is also on all three tabs
+- **Remove:** the delete button in the editor
 - The editor buttons sit in a row above the field, right-aligned on Windows and Linux, left-aligned on macOS and iOS
-- The price is the clicked price rounded to cents (not snapped to a strike). Custom levels are plain prices, they take no part in the GEX math
+- The "?" buttons of both tabs explain this too (in the corners of the GEX chart, next to the ticker on the Chart tab)
+- Custom levels are plain prices on a strike, they take no part in the GEX math
 
 ## Data providers
 
@@ -215,6 +219,7 @@ bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run log
 
 - **Unit tests:** `bun test` runs every `src/*.test.ts`
 - **Browser (e2e) tests:** `bun run test:e2e` runs `src/*.e2e.ts` in headless Chromium through Playwright (needs `bunx playwright install chromium` once). `src/e2e-site.ts` builds the app into a temp folder and serves it with the SPY data
+- `src/layout.e2e.ts` guards the page layout at three window sizes: no page scroll on any tab (only the Desk table, the GEX sidebar and the Cursor list scroll inside), the footer pressed to the bottom, no empty space above it, one footer design on all tabs. Its error message lists what is wrong, what was expected and measured, and which files to look at
 - Naming: unit tests are `*.test.ts`, e2e are `*.e2e.ts`, never the other way, so `bun test` does not run browsers
 - CI (`.github/workflows/ci.yaml`, pull requests only) runs the unit tests, the e2e tests, `bun build` of the fetcher, `node --check` of the Worker and both builds. `main` is built and deployed by `github-pages.yml`
 

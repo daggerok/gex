@@ -9,9 +9,63 @@ export interface CustomLevel {
     id: string;
     name: string;
     price: number;
+    /** `#rrggbb`, proposed at random when the level is created and changeable like the name; absent in older saves */
+    color?: string;
+    /** true = the level stays in the lists but is not drawn on the charts (its toggle in the Levels panel is off) */
+    hidden?: boolean;
+}
+
+/** Reddish colours: a level ABOVE the current price (premium) starts with one of these. */
+export const PREMIUM_COLORS = ['#fb7185', '#f43f5e', '#fda4af'] as const;
+/** Greenish colours: a level BELOW the current price (discount) starts with one of these. */
+export const DISCOUNT_COLORS = ['#34d399', '#10b981', '#6ee7b7'] as const;
+/** Neutral colours: a level at the current price, or when the price is not known. */
+export const NEUTRAL_COLORS = ['#38bdf8', '#f97316', '#c084fc', '#94a3b8'] as const;
+
+/** Colours offered for a custom level (none of them is a GEX level colour): premium, discount, neutral. */
+export const LEVEL_PALETTE = [...PREMIUM_COLORS, ...DISCOUNT_COLORS, ...NEUTRAL_COLORS] as const;
+
+export const isHexColor = (c: unknown): c is string => typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c);
+
+/** The colour of a custom level: its own, or the first palette colour for a level saved before colours existed. */
+export const levelColorOf = (level: Pick<CustomLevel, 'color'>): string => (isHexColor(level.color) ? level.color : LEVEL_PALETTE[0]);
+
+/**
+ * A colour to propose for a new level, by where it sits against the current price (`spot`): above it reddish (premium),
+ * below it greenish (discount), at it or with no price known a neutral one. It is chosen at random among the colours of that
+ * kind no existing level uses yet; when all are taken, any of that kind. `random` is injectable for tests. The owner can
+ * change the colour like the name.
+ */
+export function proposeLevelColor(
+    existing: ReadonlyArray<Pick<CustomLevel, 'color'>>,
+    price: number,
+    spot: number | null | undefined,
+    random: () => number = Math.random,
+): string {
+    const kind: readonly string[] = spot == null || !Number.isFinite(spot) || price === spot ? NEUTRAL_COLORS : price > spot ? PREMIUM_COLORS : DISCOUNT_COLORS;
+    const used = new Set(existing.map((l) => (isHexColor(l.color) ? l.color.toLowerCase() : '')));
+    const free = kind.filter((c) => !used.has(c));
+    const pool = free.length ? free : kind;
+    return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }
 
 const STORAGE_PREFIX = 'gex.customLevels.v1.';
+
+/**
+ * The strike nearest to a price (the lower one when the price is exactly between two), or null when there are no strikes.
+ * A click on a chart picks a level on a strike, never between two.
+ */
+export function nearestStrike(price: number, strikes: readonly number[]): number | null {
+    let best: number | null = null;
+    for (const k of strikes) {
+        if (!Number.isFinite(k)) continue;
+        if (best === null) { best = k; continue; }
+        const d = Math.abs(k - price);
+        const bd = Math.abs(best - price);
+        if (d < bd || (d === bd && k < best)) best = k;
+    }
+    return best;
+}
 
 /** Prices are stored with cent precision, a chart click gives a float like 512.3478. */
 export function roundPrice(price: number): number {
@@ -39,7 +93,7 @@ export function parseCustomLevels(raw: string | null): CustomLevel[] {
         return data.flatMap((d: unknown) => {
             const o = d as Partial<CustomLevel> | null;
             return o && typeof o.id === 'string' && typeof o.name === 'string' && typeof o.price === 'number' && Number.isFinite(o.price)
-                ? [{ id: o.id, name: o.name, price: o.price }]
+                ? [{ id: o.id, name: o.name, price: o.price, ...(isHexColor(o.color) ? { color: o.color } : {}), ...(o.hidden === true ? { hidden: true } : {}) }]
                 : [];
         });
     } catch {
