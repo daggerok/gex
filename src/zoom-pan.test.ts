@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canPanRange, chartKeyAction, clickStep, ESCAPE_RUN_MS, panRange, panRangeBy, pinchRange, recordEscape, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from './zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, ESCAPE_RUN_MS, panRange, panRangeBy, pinchRange, recordEscape, strikeTicks, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from './zoom-pan';
 
 const base: [number, number] = [0, 100];
 
@@ -219,5 +219,43 @@ describe('pinchRange', () => {
   test('a bad distance leaves the range alone', () => {
     expect(pinchRange([10, 20], base, 0, 50, 0.5, 4)).toEqual([10, 20]);
     expect(pinchRange([10, 20], base, 50, 0, 0.5, 4)).toEqual([10, 20]);
+  });
+});
+
+describe('strikeTicks', () => {
+  const range = (from: number, to: number, step: number) => Array.from({ length: Math.round((to - from) / step) + 1 }, (_, i) => from + i * step);
+
+  test('only real strikes, on a round step (SPX: 5 apart near the money)', () => {
+    const strikes = range(7645, 8015, 5);
+    const ticks = strikeTicks(strikes, [7642.4, 8017.7]);
+    expect(ticks.length).toBeLessThanOrEqual(20);
+    expect(ticks.every((k) => strikes.includes(k))).toBe(true);
+    expect(ticks).toEqual(range(7660, 8000, 20));
+  });
+
+  test('the wider strikes of the wings stay labels too, the domain edges and the spot are never labels', () => {
+    const strikes = [...range(7000, 7600, 25), ...range(7605, 8000, 5), ...range(8025, 8500, 25)];
+    const ticks = strikeTicks(strikes, [6990.3, 8512.7]);
+    expect(ticks.every((k) => strikes.includes(k))).toBe(true);
+    expect(ticks).toEqual(range(7000, 8500, 100));
+  });
+
+  test('few strikes in view: all of them', () => {
+    expect(strikeTicks([100, 105, 110, 115, 120], [102, 118])).toEqual([105, 110, 115]);
+  });
+
+  test('half-dollar strikes keep their decimals', () => {
+    const strikes = range(20, 45, 0.5);
+    const ticks = strikeTicks(strikes, [19.7, 45.3]);
+    expect(ticks.length).toBeLessThanOrEqual(20);
+    expect(ticks.every((k) => strikes.includes(k))).toBe(true);
+    expect(ticks).toEqual(range(20, 44, 2));
+  });
+
+  test('odd strikes with no round step: every n-th strike, still real ones', () => {
+    const strikes = range(0, 60, 1).map((i) => 3.3 + i * 7.7);
+    const ticks = strikeTicks(strikes, [0, 1000], 10);
+    expect(ticks.length).toBeLessThanOrEqual(10);
+    expect(ticks.every((k) => strikes.includes(k))).toBe(true);
   });
 });
