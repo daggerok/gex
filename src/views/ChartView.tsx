@@ -436,7 +436,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 {/* The chart takes the height that is left (no hand-made window height formula: it went stale every time the rows above
                     changed and left a gap above the footer), at least 240 px */}
                 <div className="relative h-[420px] lg:h-auto lg:min-h-[240px] lg:flex-1">
-                    <div ref={containerRef} className="absolute inset-0" />
+                    <div ref={containerRef} className="absolute inset-0" data-last-bar={bars && bars.length ? new Date(bars[bars.length - 1].time * 1000).toISOString().slice(0, 10) : ''} />
                     <div className="absolute left-2 top-2 z-20">
                         <ChartHeader symbol={symbol} range={range} setRange={setRange} colorTheme={settings.colorTheme} />
                     </div>
