@@ -140,7 +140,8 @@ CONCURRENCY=3 TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 
 - Without arguments the run covers only the default set: the main indices and their ETFs (S&P 500, Nasdaq 100, Dow Jones, Russell 2000) and the mega caps, exactly the tickers the empty ticker search field hints (`DEFAULT_SYMBOLS`, a unit test keeps the two lists equal). Pass `all` for the smart auto-universe run: missing symbols first, then the oldest cached files. Any other argument is an error
 - SPY, SPX, QQQ and NDX are always queued first
-- Every cache file carries `date`, the trading day its data belongs to (market time, before 9:30 and on weekends it is still the previous weekday). For the default set, when a run finds that the file on disk is from an earlier day than the new data, it first copies that file unchanged to `api/history/<YYYY-MM>/<YYYY-MM-DD>/<SYM>.json` (never overwriting an existing one) and then replaces it with the fresh one. So the last state of every day is kept, no single run is needed for it, and git stores that content only once. A day with no run at all has no file (the sources only give the current chain, a missed day cannot be fetched later). `HISTORY=0` turns it off. `api/history` is not copied to the site (`ncp --filter` in `package.json`). Holidays are not known, a holiday run keeps the weekday label
+- Every cache file carries `date`, the trading day its data belongs to (market time, before 9:30 and on weekends it is still the previous weekday). At the start of a run the files of the default set that are from an earlier day than today are added, unchanged, to the zip of their own day, `api/history/<YYYY-MM>/<YYYY-MM-DD>.zip` (entries `<day>/<SYM>.json` and `<day>/manifest.json`), and `api/history/index.json` lists the days and tickers. An entry is never overwritten, so no single run is needed for a day and running again changes nothing. A day with no run at all has no zip (the sources only give the current chain, a missed day cannot be fetched later). `HISTORY=0` turns it off. The zips are deployed with the site (about 2 MB a day). Holidays are not known, a holiday run keeps the weekday label
+- **Cleaning up the archive is deleting files.** Drop a month with `rm -r api/history/2026-08`, a single day with `rm api/history/2026-08/2026-08-14.zip`, then commit and push. `index.json` follows the disk: the next run drops the days that are gone (a day still listed whose zip is missing is shown as unavailable in the meantime). Never edit the zips or `index.json` by hand. A ticker whose own file has not been refreshed since that day would be archived into its day again by the next run, which only happens for a ticker that stopped being updated
 - `KEEP_EXPIRATIONS=1` (default off) keeps the later expirations that a ticker's file already holds: the nearest `MAX_EXPIRATIONS` dates are fetched again as usual, the rest stay, and only their Cboe greeks, open interest and volume are refreshed (their bid, ask, last and IV stay as of the last run that covered them). Without it a run keeps only the nearest `MAX_EXPIRATIONS` dates
 - After the options pass every cached ticker gets `api/charts/<SYM>.json` (1 year of daily bars, about 12 KB each, `CHART_MAX_FETCHES` per run), so the Chart tab works from CACHE without a proxy
 - `CONCURRENCY` is an integer >= 1 (default 1), each worker waits `REQUEST_SLEEP` after its own write. Cboe requests share one throttle (`CBOE_MIN_INTERVAL`, default 1 s) and on a 429 every worker pauses (`CBOE_BACKOFF`, `CBOE_RETRIES`), so more workers do not raise the Cboe request rate. A ticker whose Cboe retries run out fails and keeps its old file
@@ -261,14 +262,16 @@ src/
   components/                 # TopBar, TabSwitcher, SettingsPanel, ChainTable, switches, onboarding, icons
   views/                      # DeskView, GexView, ChartView
   *.test.ts                   # unit tests
+  history-zip.ts              # zip format of the daily archives (read in the app, built by the fetcher)
   *.e2e.ts, e2e-site.ts       # browser tests and their site helper
 api/
   options/                    # one option-chain cache file per ticker, plus index.json
   charts/                     # one file of 1 year of daily bars per ticker
-  history/                    # the last state of each earlier day of the default tickers, by month and day, not deployed
+  history/                    # index.json plus one folder per month, in it one zip per earlier day (last state of the default tickers)
   All.txt, Indices.txt        # ticker lists of the update workflow
 scripts/
   options-data.ts             # the fetcher: Yahoo and Cboe -> api/options and api/charts
+  history-archive.ts          # adds earlier days to api/history/<day>.zip
   options-local-proxy.ts      # local Bun proxy: Yahoo, NASDAQ, CBOE, search
   options-cloudflare-proxy.js # Cloudflare Worker proxy: Yahoo, NASDAQ, CBOE, search, raw
 .github/workflows/

@@ -1,16 +1,13 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   DEFAULT_SYMBOLS,
   fileDay,
-  historyPath,
   keepLaterExpirations,
   marketDay,
-  rotateToHistory,
   PyInt,
   YahooTicker,
   classifyPayload,
@@ -875,7 +872,7 @@ describe('marketDay (the trading day a fetch belongs to)', () => {
   });
 });
 
-describe('fileDay and historyPath', () => {
+describe('fileDay', () => {
   test('the date field wins, an older file falls back to the day of its updated moment', () => {
     expect(fileDay(JSON.stringify({ date: '2026-10-08', updated: '2026-10-09T10:00:00-04:00' }))).toBe('2026-10-08');
     expect(fileDay(JSON.stringify({ updated: '2026-10-08T10:00:00-04:00' }))).toBe('2026-10-08');
@@ -886,45 +883,5 @@ describe('fileDay and historyPath', () => {
     expect(fileDay('{oops')).toBeNull();
     expect(fileDay('[]')).toBeNull();
     expect(fileDay(JSON.stringify({ symbol: 'SPY' }))).toBeNull();
-  });
-
-  test('history files are grouped by month and day', () => {
-    expect(historyPath('SPY', '2026-10-09', '/h')).toBe('/h/2026-10/2026-10-09/SPY.json');
-  });
-});
-
-describe('rotateToHistory', () => {
-  const dir = () => mkdtempSync(join(tmpdir(), 'gex-history-'));
-  const file = (date: string) => pyJsonDumps({ symbol: 'SPY', updated: `${date}T15:30:00-04:00`, date, quotes: [] });
-
-  test("an earlier day's file is copied unchanged to its own day", () => {
-    const d = dir();
-    const text = file('2026-10-09');
-    expect(rotateToHistory({ symbol: 'SPY', previousText: text, today: '2026-10-12', dir: d })).toBe('rotated');
-    expect(readFileSync(join(d, '2026-10', '2026-10-09', 'SPY.json'), 'utf8')).toBe(text);
-  });
-
-  test('the day is the file own day, also when several days passed without a run', () => {
-    const d = dir();
-    rotateToHistory({ symbol: 'SPY', previousText: file('2026-10-07'), today: '2026-10-14', dir: d });
-    expect(existsSync(join(d, '2026-10', '2026-10-07', 'SPY.json'))).toBe(true);
-    expect(existsSync(join(d, '2026-10', '2026-10-13'))).toBe(false);
-  });
-
-  test('a history file is never overwritten', () => {
-    const d = dir();
-    rotateToHistory({ symbol: 'SPY', previousText: file('2026-10-09'), today: '2026-10-12', dir: d });
-    const other = pyJsonDumps({ symbol: 'SPY', date: '2026-10-09', quotes: [{ strike: 1 }] });
-    expect(rotateToHistory({ symbol: 'SPY', previousText: other, today: '2026-10-12', dir: d })).toBe('exists');
-    expect(readFileSync(join(d, '2026-10', '2026-10-09', 'SPY.json'), 'utf8')).toBe(file('2026-10-09'));
-  });
-
-  test('the same day, a later day, no file and a damaged file are not archived', () => {
-    const d = dir();
-    expect(rotateToHistory({ symbol: 'SPY', previousText: file('2026-10-12'), today: '2026-10-12', dir: d })).toBe('same-day');
-    expect(rotateToHistory({ symbol: 'SPY', previousText: file('2026-10-13'), today: '2026-10-12', dir: d })).toBe('same-day');
-    expect(rotateToHistory({ symbol: 'SPY', previousText: null, today: '2026-10-12', dir: d })).toBe('none');
-    expect(rotateToHistory({ symbol: 'SPY', previousText: '{oops', today: '2026-10-12', dir: d })).toBe('none');
-    expect(existsSync(join(d, '2026-10'))).toBe(false);
   });
 });

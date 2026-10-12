@@ -15,11 +15,11 @@
  *
  * CHANGELOG (newest first)
  *   t9 - Every cache file now carries `date`, the trading day its data belongs to (market time; before 9:30 and on weekends
- *        the data is still the previous weekday's). For the DEFAULT_SYMBOLS, when a run finds that the file on disk is from
- *        an earlier day than the new data, that file is first copied to api/history/<YYYY-MM>/<YYYY-MM-DD>/<SYM>.json (never
- *        overwritten) and then replaced by the fresh one. Git stores the same content once, so a day's last state is kept for
- *        free and no single run is needed for it. HISTORY=0 turns this off. Holidays are not known, a holiday run keeps the
- *        weekday label.
+ *        the data is still the previous weekday's). At the start of a run the files of the DEFAULT_SYMBOLS that are from an
+ *        earlier day than today are added, unchanged, to the zip of their own day, api/history/<YYYY-MM-DD>.zip (entries
+ *        <day>/<SYM>.json plus <day>/manifest.json), and api/history/index.json lists the days. An entry is never overwritten,
+ *        so no single run is needed for a day and rerunning changes nothing. The zip format is src/history-zip.ts, the logic
+ *        scripts/history-archive.ts. HISTORY=0 turns this off. Holidays are not known, a holiday run keeps the weekday label.
  *   t8 - KEEP_EXPIRATIONS=1 (default off, the hourly default-set workflow sets it): the ticker is refreshed for its nearest
  *        MAX_EXPIRATIONS dates as before, but the later expirations already in its file are kept instead of being cut off.
  *        Kept quotes are not refetched from Yahoo (their bid, ask, last and IV stay as of the last run that covered them), but
@@ -110,6 +110,7 @@
  */
 
 /// <reference types="node" />
+import { archiveEarlierDays } from "./history-archive";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
@@ -577,11 +578,6 @@ export function marketDay(now: Date = new Date(), tz: string = MARKET_TZ): strin
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** `api/history/<YYYY-MM>/<YYYY-MM-DD>/<SYM>.json` */
-export function historyPath(symbol: string, day: string, dir: string = HISTORY_DIR): string {
-    return join(dir, day.slice(0, 7), day, `${symbol}.json`);
-}
-
 /**
  * The trading day a cache file's text is about: its `date`, or for a file from before `date` existed the day of its
  * `updated` moment. Null when the text is not a cache file.
@@ -595,23 +591,6 @@ export function fileDay(text: string): string | null {
     } catch {
         return null;
     }
-}
-
-/**
- * Before a fresh file replaces the old one: when the old file is from an EARLIER trading day than `today`, it is that
- * day's last state, so it is copied unchanged to the history folder. An existing history file is never overwritten, a
- * file of the same day (or a later one) is not archived.
- */
-export function rotateToHistory(opts: { symbol: string; previousText: string | null; today: string; dir?: string }): "rotated" | "exists" | "same-day" | "none" {
-    if (opts.previousText === null) return "none";
-    const day = fileDay(opts.previousText);
-    if (!day) return "none";
-    if (day >= opts.today) return "same-day";
-    const target = historyPath(opts.symbol, day, opts.dir);
-    if (existsSync(target)) return "exists";
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, opts.previousText);
-    return "rotated";
 }
 
 /** strptime("%Y-%m-%d") of the first 10 chars, or null. */
@@ -1912,6 +1891,17 @@ export async function main(): Promise<void> {
     console.log(outputConfigBlock(outputConfigEntries()));
     const { symbols: universe, source: universeSource } = await loadUniverse();
 
+    // The files of the default tickers that are from an earlier trading day go to the zip of their own day BEFORE any
+    // of them is replaced below (see t9). Idempotent, so a run that fails later loses nothing.
+    if (cfg.HISTORY) {
+        const archived = archiveEarlierDays({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: DEFAULT_SYMBOLS, today: marketDay(), dayOf: fileDay });
+        const days = Object.keys(archived.added);
+        if (days.length) {
+            const n = days.reduce((sum, d) => sum + archived.added[d].length, 0);
+            console.log(`${outputLabel("history")} ${n} files archived into ${days.length} day zip(s): ${days.join(", ")}`);
+        }
+    }
+
     const { queue, nPriority, nMissing, nStale, nFresh } = buildWorkQueue(universe);
     const skip = loadSkiplist();
 
@@ -1957,11 +1947,6 @@ export async function main(): Promise<void> {
         // The file is written on every successful fetch even when nothing but `updated` moved: freshness reads it.
         const text = pyJsonDumps(payload);
         const status = classifyPayload(previousText, text);
-        // The previous day's last state of a default ticker goes to the history before it is replaced (see t9).
-        if (cfg.HISTORY && DEFAULT_SYMBOLS.includes(sym)) {
-            const rotated = rotateToHistory({ symbol: sym, previousText, today: payload.date });
-            if (rotated === "rotated") log(`history: ${sym} ${fileDay(previousText ?? "")} archived`);
-        }
         writeFileSync(path, text);
         return { kind: "written", status, payload, elapsed, path };
     };
