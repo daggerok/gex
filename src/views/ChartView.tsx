@@ -412,39 +412,38 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
 
     return (
         <main className="mx-auto w-full px-4 pt-4 lg:px-6">
-            {/* ---- Controls: range selector + symbol ---- */}
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-                <div className={box} role="group" aria-label={tr('chart.range.label')}>
-                    <span className="text-xs text-slate-400">{tr('chart.range.label')}</span>
-                    <div className="flex items-center gap-1">
-                        {CHART_RANGES.map((r) => (
-                            <button
-                                key={r}
-                                type="button"
-                                onClick={() => setRange(r)}
-                                aria-pressed={range === r}
-                                className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (range === r ? ax.chipActive : ax.chipIdle)}
-                            >
-                                {tr('chart.range.' + r)}
-                            </button>
-                        ))}
+            {/* ---- Controls row, laid out like the GEX tab's: the range selector and the symbol on the left, the Levels panel
+                on the right in the same row (`justify-between`, the panel grows leftwards up to its own content width). ---- */}
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className={box} role="group" aria-label={tr('chart.range.label')}>
+                        <span className="text-xs text-slate-400">{tr('chart.range.label')}</span>
+                        <div className="flex items-center gap-1">
+                            {CHART_RANGES.map((r) => (
+                                <button
+                                    key={r}
+                                    type="button"
+                                    onClick={() => setRange(r)}
+                                    aria-pressed={range === r}
+                                    className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + (range === r ? ax.chipActive : ax.chipIdle)}
+                                >
+                                    {tr('chart.range.' + r)}
+                                </button>
+                            ))}
+                        </div>
                     </div>
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
+                        <span className="text-xs text-slate-400">{tr('chart.interval')}</span>
+                        <HelpButton label={tr('chart.help.label')} paragraphs={[tr('chart.help.addLevel'), tr('chart.help.editLevel'), tr('chart.help.moveLevel'), tr('chart.help.removeLevel')]} align="left" />
+                    </div>
+                    {entries.length === 0 && (
+                        <span className="text-xs text-slate-400">
+                            {isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}
+                        </span>
+                    )}
+                    {entries.length > 0 && isFuturesPriced && <span className="text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</span>}
                 </div>
-                <div className="flex items-baseline gap-2">
-                    <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
-                    <span className="text-xs text-slate-400">{tr('chart.interval')}</span>
-                    <HelpButton label={tr('chart.help.label')} paragraphs={[tr('chart.help.addLevel'), tr('chart.help.editLevel'), tr('chart.help.moveLevel'), tr('chart.help.removeLevel')]} align="left" />
-                </div>
-            </div>
-
-            {/* ---- Levels panel: the same one as on the GEX tab, in the same place (right side of the row under the tabs) ---- */}
-            <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
-                {entries.length === 0 && (
-                    <span className="mr-auto text-xs text-slate-400">
-                        {isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}
-                    </span>
-                )}
-                {entries.length > 0 && isFuturesPriced && <span className="mr-auto text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</span>}
                 <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} showMaxAg={agEnabled} />
             </div>
 
