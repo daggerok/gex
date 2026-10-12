@@ -193,6 +193,9 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             grid: { vertLines: { color: 'rgba(148, 163, 184, 0.15)' }, horzLines: { color: 'rgba(148, 163, 184, 0.15)' } },
             rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.4)', scaleMargins: PRICE_SCALE_MARGINS },
             timeScale: { borderColor: 'rgba(148, 163, 184, 0.4)' },
+            // A double click on the TIME axis is ours (see the effect below): the library's own reset puts the last candle against the
+            // right edge, under the level labels. A double click on the price axis keeps the library's autoscale reset.
+            handleScale: { axisDoubleClickReset: { time: false, price: true } },
         });
         const series = chart.addSeries(CandlestickSeries, {
             autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => {
@@ -244,6 +247,11 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     const viewsRef = useRef<ZoomMap | null>(null);
     const lastRangeRef = useRef(range);
     const saveTimer = useRef<number | null>(null);
+    const suppressSaveUntil = useRef(0);
+    const barsRef = useRef(bars);
+    barsRef.current = bars;
+    const rangeRef = useRef(range);
+    rangeRef.current = range;
     const views = () => (viewsRef.current ??= loadChartViews());
     useEffect(() => {
         if (!bars?.length) return;
@@ -272,7 +280,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             const count = bars?.length ?? 0;
             // for the browser checks: the window on screen, offsets from the last bar
             if (r && count) el.dataset.view = toStoredView(r, count).map((n) => n.toFixed(1)).join(',');
-            if (!r || !count || Date.now() - touchedAt > 1500) return;
+            if (!r || !count || Date.now() - touchedAt > 1500 || Date.now() < suppressSaveUntil.current) return;
             if (saveTimer.current) window.clearTimeout(saveTimer.current);
             saveTimer.current = window.setTimeout(() => {
                 viewsRef.current = withZoom(views(), symbol, toStoredView(r, count));
@@ -288,6 +296,26 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             if (saveTimer.current) window.clearTimeout(saveTimer.current);
         };
     }, [bars, symbol, hasSymbol, asOfDate]);
+
+    // A double click on the time axis (the dates under the chart) puts the chart back to the chosen interval WITH empty space
+    // right of the last candle, so the candles end well before the level labels and can be read, and forgets the saved window.
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el || !hasSymbol) return;
+        const onDouble = (e: MouseEvent) => {
+            const chart = chartRef.current;
+            const list = barsRef.current;
+            if (!chart || !list?.length) return;
+            const y = e.clientY - el.getBoundingClientRect().top;
+            if (y <= chart.paneSize().height) return; // the plot or the price axis: not ours
+            suppressSaveUntil.current = Date.now() + 1500;
+            if (!asOfDate) { viewsRef.current = withZoom(views(), symbol, null); saveChartViews(viewsRef.current); }
+            chart.timeScale().setVisibleLogicalRange(visibleRangeFor(list.map((b) => b.time), rangeRef.current));
+            e.preventDefault();
+        };
+        el.addEventListener('dblclick', onDouble);
+        return () => el.removeEventListener('dblclick', onDouble);
+    }, [symbol, hasSymbol, asOfDate]);
 
     // ---- Level price lines: remove the previous set, then draw the new one ----
     useEffect(() => {

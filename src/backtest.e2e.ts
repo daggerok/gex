@@ -199,8 +199,8 @@ try {
     const [presetDownload] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Enter')]);
     const presetNames = zipNames(readFileSync((await presetDownload.path())!));
     assert.ok(presetNames.some((n) => n.endsWith('/SPY.json')) && presetNames.some((n) => n.endsWith('/QQQ.json')), 'the preset backup holds the required tickers that exist');
-    await page.locator('[data-backtest-toast]').waitFor();
-    assert.ok((await page.locator('[data-backtest-toast]').innerText()).includes('Left out'), 'required tickers without data are reported');
+    // wait for THIS toast: an older one can still be on screen when the backup finishes
+    await page.locator('[data-backtest-toast]', { hasText: 'Left out' }).waitFor({ timeout: 15000 });
     await page.getByRole('button', { name: 'Chart' }).first().click();
     await page.waitForTimeout(1500);
     const liveLast = await page.locator('[data-last-bar]').getAttribute('data-last-bar');

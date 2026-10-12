@@ -70,6 +70,22 @@ try {
     await openChart();
     assert.equal(await view(), changed, 'after a refresh the chart is where it was left');
 
+    // ---- a double click on the time axis: back to the interval with empty space right of the last candle ----
+    const after = (await page.locator('[data-last-bar]').boundingBox())!;
+    await page.mouse.move(after.x + after.width / 2, after.y + after.height - 8);
+    await page.mouse.dblclick(after.x + after.width / 2, after.y + after.height - 8);
+    await page.waitForTimeout(1200);
+    assert.equal(await view(), defaultView, 'the double click gives the default window of the interval');
+    assert.ok(Number(defaultView!.split(',')[1]) > 3, `there is empty space right of the last candle (${defaultView})`);
+    assert.equal((await stored())?.SPY, undefined, 'and forgets the saved window');
+    // a double click inside the plot does nothing of the kind
+    await page.mouse.wheel(0, -500);
+    await page.waitForTimeout(500);
+    const zoomed = await view();
+    await page.mouse.dblclick(after.x + after.width / 2, after.y + after.height / 2);
+    await page.waitForTimeout(600);
+    assert.equal(await view(), zoomed, 'a double click in the plot leaves the window alone');
+
     // ---- Interval: the label, no "Daily candles", and All shows every loaded bar ----
     const header = await page.locator('[data-chart-header]').innerText();
     assert.ok(header.includes('Interval') && !header.includes('Range') && !header.includes('Daily candles'), `header text: ${header}`);
