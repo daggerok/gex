@@ -63,14 +63,32 @@ try {
         const p = await gexPoint(page);
         await page.mouse.click(p.x, p.y, { button: 'right' });
         assert.equal(await editor(page).inputValue(), 'Level 1', 'the editor opens on the GEX tab');
+        // a colour is proposed (one circle is selected) and can be changed like the name
+        const radios = page.locator('[role=radiogroup] [role=radio]');
+        assert.equal(await radios.count(), 10, 'ten palette colours');
+        assert.equal(await page.locator('[role=radiogroup] [role=radio][aria-checked=true]').count(), 1, 'one colour is proposed');
+        const second = (await radios.nth(1).getAttribute('aria-label'))!;
+        await radios.nth(1).click();
+        assert.equal(await editor(page).count(), 1, 'picking a colour keeps the editor open');
         await page.keyboard.type('Wall');
         await page.keyboard.press('Enter');
         const [level] = await stored(page);
         assert.equal(level.name, 'Wall');
+        assert.equal((level as { color?: string }).color, second, 'the chosen colour is saved with the level');
         assert.ok(strikes.has(level.price), `the level sits on a strike, not between two: ${level.price}`);
         assert.ok(await page.getByText('Wall').first().isVisible(), 'the level shows in the Levels table');
+        // ... and as the FIRST chip of the Levels panel above the chart (not hidden at the far end of a scrolling row)
+        const panel = page.getByRole('group', { name: 'Levels' }).first();
+        const firstChip = panel.getByRole('button').first();
+        assert.equal((await firstChip.textContent())?.trim(), 'Wall', 'the custom level is the first chip of the Levels panel');
+        assert.equal(await firstChip.getAttribute('aria-pressed'), 'true');
+        await firstChip.click(); // hide it
+        assert.equal((await stored(page))[0] && ((await stored(page))[0] as { hidden?: boolean }).hidden, true, 'the toggle hides the level');
+        await firstChip.click(); // show it again
+        assert.equal(((await stored(page))[0] as { hidden?: boolean }).hidden, undefined, 'and shows it again');
 
-        // the same strike again edits the level, cancel keeps it, delete removes it
+        // the same strike again edits the level, cancel keeps it, delete removes it (the pointer went to the panel, move it back first)
+        await gexPoint(page);
         await page.mouse.click(p.x, p.y, { button: 'right' });
         assert.equal(await editor(page).inputValue(), 'Wall');
         await button(page, 'Cancel').click();
@@ -116,6 +134,12 @@ try {
         await page.keyboard.press('Enter');
         const [chartLevel] = await stored(page);
         assert.ok(strikes.has(chartLevel.price), `a click on the chart picks the nearest strike: ${chartLevel.price}`);
+
+        // the Chart tab has the same Levels panel (with the custom level) and the Expirations panel next to the tabs
+        const chartPanel = page.getByRole('group', { name: 'Levels' }).first();
+        assert.ok(await chartPanel.isVisible(), 'the Levels panel is on the Chart tab');
+        assert.equal(await page.getByText('Expirations').first().isVisible(), true, 'the Expirations panel is on the Chart tab');
+        assert.equal((await chartPanel.getByRole('button').first().textContent())?.trim(), chartLevel.name, 'the custom level is a chip of the panel on the Chart tab');
 
         // the help (?) of the Chart tab explains it
         await page.locator('button[aria-label="Chart help"]').first().hover();

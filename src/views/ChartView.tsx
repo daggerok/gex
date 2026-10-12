@@ -13,8 +13,10 @@ import {
     type UTCTimestamp,
     // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 } from 'lightweight-charts';
-import { CUSTOM_LEVEL_COLOR, GEX_LEVEL_COLORS, type GexLevelKey } from '../gex-colors';
-import { isApplePlatform, nearestStrike, nextLevelName, roundPrice } from '../custom-levels';
+import { type GexLevelKey } from '../gex-colors';
+import { LevelsPanel } from '../components/LevelsPanel';
+import { useLevelPrefs } from '../level-prefs';
+import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor, roundPrice } from '../custom-levels';
 import { useCustomLevels } from '../use-custom-levels';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { HelpButton } from '../components/HelpButton';
@@ -48,7 +50,7 @@ const PRICE_SCALE_MARGINS = { top: 0.04, bottom: 0.04 };
 const APPLE = isApplePlatform();
 
 /** Price-line order and labels match the GEX tab's Key Levels card. */
-const LEVEL_LINES: Array<{ key: Exclude<GexLevelKey, 'spot'>; label: string; secondary?: boolean }> = [
+const LEVEL_LINES: Array<{ key: GexLevelKey; label: string; secondary?: boolean }> = [
     { key: 'maxNetGex', label: 'gex.level.maxNetGex' },
     { key: 'netGexPlus', label: 'gex.level.netGexPlus', secondary: true },
     { key: 'gammaFlip', label: 'gex.level.gammaFlip' },
@@ -57,6 +59,7 @@ const LEVEL_LINES: Array<{ key: Exclude<GexLevelKey, 'spot'>; label: string; sec
     { key: 'sumNetGexPlus', label: 'gex.level.sumNetGexPlus', secondary: true },
     { key: 'sumNetGexMinus', label: 'gex.level.sumNetGexMinus', secondary: true },
     { key: 'maxPain', label: 'gex.level.maxPain' },
+    { key: 'spot', label: 'spot.label', secondary: true },
 ];
 
 export interface ChartViewProps {
@@ -126,6 +129,9 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     const customLinesRef = useRef<IPriceLine[]>([]);
     const customPricesRef = useRef<number[]>([]);
     const dragRef = useRef<string | null>(null);
+
+    // Which levels are on and their colours: the Levels panel above the chart, shared with the GEX tab
+    const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
 
     // ---- Custom levels (right click adds, drag moves, shared with the GEX tab) ----
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
@@ -228,10 +234,10 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         const series = seriesRef.current;
         if (!series) return;
         for (const line of priceLinesRef.current) series.removePriceLine(line);
-        const entries = levelEntries(levels);
+        const entries = levelEntries(levels).filter((l) => selectedLevels.includes(l.key));
         priceLinesRef.current = entries.map((l) => series.createPriceLine({
             price: l.price,
-            color: GEX_LEVEL_COLORS[l.key].hex,
+            color: levelColors[l.key],
             lineWidth: l.secondary ? 1 : 2,
             lineStyle: l.secondary ? LineStyle.Dotted : LineStyle.Dashed,
             axisLabelVisible: true,
@@ -240,22 +246,23 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         levelPricesRef.current = entries.map((l) => l.price);
         // Re-run autoscale so newly in-range levels are pulled into view.
         chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-    }, [levels, tr, hasSymbol]);
+    }, [levels, tr, hasSymbol, selectedLevels, levelColors]);
 
     // ---- Custom level price lines ----
     useEffect(() => {
         const series = seriesRef.current;
         if (!series) return;
         for (const line of customLinesRef.current) series.removePriceLine(line);
-        customLinesRef.current = customLevels.map((c) => series.createPriceLine({
+        const shown = customLevels.filter((c) => !c.hidden);
+        customLinesRef.current = shown.map((c) => series.createPriceLine({
             price: c.price,
-            color: CUSTOM_LEVEL_COLOR.hex,
+            color: levelColorOf(c),
             lineWidth: 2,
             lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
             title: c.name,
         }));
-        customPricesRef.current = customLevels.map((c) => c.price);
+        customPricesRef.current = shown.map((c) => c.price);
         if (!dragRef.current) chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
     }, [customLevels, hasSymbol]);
 
@@ -302,10 +309,10 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             const hitId = levelAt(pt.y);
             const hit = hitId ? customRef.current.find((c) => c.id === hitId) : undefined;
             if (hit) {
-                setDraft({ x: pt.x, y: pt.y, price: hit.price, name: hit.name, editId: hit.id });
+                setDraft({ x: pt.x, y: pt.y, price: hit.price, name: hit.name, color: levelColorOf(hit), editId: hit.id });
                 return true;
             }
-            setDraft({ x: pt.x, y: pt.y, price: snap(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')) });
+            setDraft({ x: pt.x, y: pt.y, price: snap(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')), color: proposeLevelColor(customRef.current) });
             return true;
         };
         const onContextMenu = (e: MouseEvent) => {
@@ -362,15 +369,15 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         };
     }, [hasSymbol, tr]);
 
-    const commitDraft = (name: string) => {
+    const commitDraft = (name: string, color: string) => {
         if (!draft) return;
         if (draft.editId) {
-            setCustomLevels(customLevels.map((c) => (c.id === draft.editId ? { ...c, name } : c)));
+            setCustomLevels(customLevels.map((c) => (c.id === draft.editId ? { ...c, name, color } : c)));
             setDraft(null);
             return;
         }
         const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()) + Math.random();
-        setCustomLevels([...customLevels, { id, name, price: draft.price }]);
+        setCustomLevels([...customLevels, { id, name, price: draft.price, color }]);
         setDraft(null);
     };
 
@@ -425,43 +432,15 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 </div>
             </div>
 
-            {/* ---- Level legend (same labels/colors as the GEX tab's Key Levels) ---- */}
-            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                <span className="text-slate-400">{tr('chart.levels.source', { count: levelExpCount })}</span>
-                <span className="text-slate-400">{tr('chart.custom.hint')}</span>
-                {entries.length === 0 ? (
-                    <span className="text-slate-400">
+            {/* ---- Levels panel: the same one as on the GEX tab, in the same place (right side of the row under the tabs) ---- */}
+            <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+                {entries.length === 0 && (
+                    <span className="mr-auto text-xs text-slate-400">
                         {isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}
                     </span>
-                ) : isFuturesPriced && (
-                    // Real levels for a futures-priced symbol (toggle on,
-                    // pricing succeeded): a brief note that these lines are
-                    // futures-terms-based (section 9), not spot-based.
-                    <span className="text-slate-400">{tr('chart.levels.futuresPricedHint')}</span>
                 )}
-                {customLevels.map((c) => (
-                    <span key={c.id} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${CUSTOM_LEVEL_COLOR.dot}`} aria-hidden="true" />
-                        {c.name}
-                        <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{fmt(c.price)}</span>
-                        <button
-                            type="button"
-                            onClick={() => setCustomLevels(customLevels.filter((x) => x.id !== c.id))}
-                            aria-label={tr('chart.custom.remove', { name: c.name })}
-                            title={tr('chart.custom.remove', { name: c.name })}
-                            className="rounded px-1 leading-none text-slate-400 hover:text-red-500"
-                        >
-                            ×
-                        </button>
-                    </span>
-                ))}
-                {entries.map((l) => (
-                    <span key={l.key} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${GEX_LEVEL_COLORS[l.key].dot}`} aria-hidden="true" />
-                        {tr(l.label)}
-                        <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">{fmt(l.price)}</span>
-                    </span>
-                ))}
+                {entries.length > 0 && isFuturesPriced && <span className="mr-auto text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</span>}
+                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} />
             </div>
 
             {/* ---- Chart (container always mounted so the instance survives refetches) ---- */}

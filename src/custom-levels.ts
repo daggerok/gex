@@ -9,6 +9,29 @@ export interface CustomLevel {
     id: string;
     name: string;
     price: number;
+    /** `#rrggbb`, proposed at random when the level is created and changeable like the name; absent in older saves */
+    color?: string;
+    /** true = the level stays in the lists but is not drawn on the charts (its toggle in the Levels panel is off) */
+    hidden?: boolean;
+}
+
+/** Colours offered for a custom level, none of them is a GEX level colour. */
+export const LEVEL_PALETTE = ['#38bdf8', '#fb7185', '#f97316', '#a3e635', '#2dd4bf', '#c084fc', '#e879f9', '#3b82f6', '#818cf8', '#94a3b8'] as const;
+
+export const isHexColor = (c: unknown): c is string => typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c);
+
+/** The colour of a custom level: its own, or the first palette colour for a level saved before colours existed. */
+export const levelColorOf = (level: Pick<CustomLevel, 'color'>): string => (isHexColor(level.color) ? level.color : LEVEL_PALETTE[0]);
+
+/**
+ * A colour to propose for a new level: chosen at random among the palette colours no existing level uses yet, so a new
+ * level looks different from the others; when all are taken, any of the palette. `random` is injectable for tests.
+ */
+export function proposeLevelColor(existing: ReadonlyArray<Pick<CustomLevel, 'color'>>, random: () => number = Math.random): string {
+    const used = new Set(existing.map((l) => (isHexColor(l.color) ? l.color.toLowerCase() : '')));
+    const free = LEVEL_PALETTE.filter((c) => !used.has(c));
+    const pool = free.length ? free : LEVEL_PALETTE;
+    return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }
 
 const STORAGE_PREFIX = 'gex.customLevels.v1.';
@@ -55,7 +78,7 @@ export function parseCustomLevels(raw: string | null): CustomLevel[] {
         return data.flatMap((d: unknown) => {
             const o = d as Partial<CustomLevel> | null;
             return o && typeof o.id === 'string' && typeof o.name === 'string' && typeof o.price === 'number' && Number.isFinite(o.price)
-                ? [{ id: o.id, name: o.name, price: o.price }]
+                ? [{ id: o.id, name: o.name, price: o.price, ...(isHexColor(o.color) ? { color: o.color } : {}), ...(o.hidden === true ? { hidden: true } : {}) }]
                 : [];
         });
     } catch {

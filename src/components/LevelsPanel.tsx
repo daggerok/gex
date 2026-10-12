@@ -1,0 +1,112 @@
+// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+import React from 'react';
+import { levelColorOf } from '../custom-levels';
+import { useI18n } from '../i18n';
+import { LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs } from '../level-prefs';
+import { accentOf } from '../theme';
+import type { GexLevels, Settings } from '../types';
+import { fmt } from '../utils';
+import { useCustomLevels } from '../use-custom-levels';
+import { ToggleChip } from './ToggleChip';
+
+// ============================================================================
+// LEVELS PANEL - the row of chips that shows, hides and colours the GEX levels and the
+// user's own levels. One component for the GEX tab and the Chart tab, so the two look and
+// behave the same and share the same choices (level-prefs.ts, custom-levels.ts). The chips
+// run from the lowest price to the highest, a level with no price sinks to the right.
+// ============================================================================
+
+/** The same frame as the Metrics panel next to it on the GEX tab. */
+const BOX = 'flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5';
+
+export const LevelsPanel: React.FC<{
+    levels: GexLevels | null;
+    symbol: string;
+    colorTheme: Settings['colorTheme'];
+    /** the spot shown is an estimate (put-call parity), its tooltip says so */
+    spotEstimated?: boolean;
+    className?: string;
+}> = ({ levels, symbol, colorTheme, spotEstimated = false, className = 'grow basis-0 min-w-[300px] max-w-fit' }) => {
+    const { t: tr } = useI18n();
+    const ax = accentOf(colorTheme);
+    const { selected, colors } = useLevelPrefs();
+    const [customLevels, setCustomLevels] = useCustomLevels(symbol);
+    const entries = levelPanelOrder(levels, customLevels);
+
+    const reset = () => {
+        resetLevelPrefs();
+        // a custom level that was switched off comes back, its colour stays
+        if (customLevels.some((c) => c.hidden)) setCustomLevels(customLevels.map(({ hidden, ...rest }) => rest));
+    };
+
+    return (
+        <div className={BOX + ' ' + className} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
+            <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.sidebar.keyLevels')}</span>
+            {/* A spacer as the first child, not `justify-end` on the row: with `justify-end` an overflowing row cannot be
+                scrolled back to its first chips; the spacer pushes the chips to the right when they fit and gives way when not. */}
+            <div className="scrollbar-hidden flex items-center gap-2 overflow-x-auto">
+                <div aria-hidden="true" className="flex-1" />
+                {entries.map((entry) => {
+                    if (entry.builtin) {
+                        const key = entry.builtin;
+                        const on = selected.includes(key);
+                        const label = tr(LEVEL_LABEL_KEY[key]);
+                        const tooltip = key === 'spot' && spotEstimated ? tr('gex.level.tooltip.spotEstimated') : tr(LEVEL_TOOLTIP_KEY[key]);
+                        return (
+                            <ToggleChip
+                                key={entry.key}
+                                on={on}
+                                onToggle={() => toggleLevel(key)}
+                                title={tooltip}
+                                activeClass={ax.chipActive}
+                                idleClass={ax.chipIdle}
+                                swatches={
+                                    <input
+                                        type="color"
+                                        value={colors[key]}
+                                        onChange={(e) => setLevelColor(key, e.target.value)}
+                                        title={tr('gex.level.color', { level: label })}
+                                        aria-label={tr('gex.level.color', { level: label })}
+                                        className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                    />
+                                }
+                            >
+                                {label}
+                            </ToggleChip>
+                        );
+                    }
+                    const c = entry.custom!;
+                    return (
+                        <ToggleChip
+                            key={entry.key}
+                            on={!c.hidden}
+                            onToggle={() => setCustomLevels(customLevels.map((x) => (x.id === c.id ? (x.hidden ? (({ hidden, ...rest }) => rest)(x) : { ...x, hidden: true }) : x)))}
+                            title={tr('chart.custom.chipTitle', { price: fmt(c.price) })}
+                            activeClass={ax.chipActive}
+                            idleClass={ax.chipIdle}
+                            swatches={
+                                <input
+                                    type="color"
+                                    value={levelColorOf(c)}
+                                    onChange={(e) => setCustomLevels(customLevels.map((x) => (x.id === c.id ? { ...x, color: e.target.value } : x)))}
+                                    title={tr('gex.level.color', { level: c.name })}
+                                    aria-label={tr('gex.level.color', { level: c.name })}
+                                    className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
+                                />
+                            }
+                        >
+                            {c.name}
+                        </ToggleChip>
+                    );
+                })}
+            </div>
+            <button
+                type="button"
+                onClick={reset}
+                className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + ax.chipIdle}
+            >
+                {tr('gex.level.reset')}
+            </button>
+        </div>
+    );
+};

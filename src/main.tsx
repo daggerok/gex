@@ -1516,7 +1516,9 @@ const App: React.FC = () => {
                 onChange={changeTab}
                 colorTheme={settings.colorTheme}
                 /* ---- Shared expiration panel (picker + Load) — one copy, used
-                    by Desk AND GEX (not Chart - it doesn't act on expirations),
+                    by Desk, GEX AND Chart (on Chart the selection decides which
+                    expirations the levels are computed from, owner: the panel must be
+                    seen on every tab),
                     rendered in the SAME row as the tab pills, to their right -
                     one horizontal bar: [Desk|GEX|Chart]  [chips... All] [Load].
                     So selecting expirations and fetching them works the same
@@ -1537,7 +1539,7 @@ const App: React.FC = () => {
                     viewport (confirmed live via Playwright before this fix -
                     see ExpirationChips.tsx's doc comment for the measured
                     root cause). ---- */
-                endSlot={meta && activeTab !== 'chart' ? (
+                endSlot={meta ? (
                     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5">
                         <ExpirationChips
                             expirations={meta.expirations}

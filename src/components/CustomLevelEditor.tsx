@@ -1,6 +1,6 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useRef } from 'react';
-import { isApplePlatform } from '../custom-levels';
+import React, { useEffect, useRef, useState } from 'react';
+import { isApplePlatform, LEVEL_PALETTE } from '../custom-levels';
 import { useI18n } from '../i18n';
 import { fmt } from '../utils';
 import { Icon } from './Icon';
@@ -19,6 +19,8 @@ export interface LevelDraft {
     y: number;
     price: number;
     name: string;
+    /** `#rrggbb`: proposed at random for a new level, the level's own colour when editing */
+    color: string;
     /** set when an existing level is being edited */
     editId?: string;
 }
@@ -33,17 +35,18 @@ export const CustomLevelEditor: React.FC<{
     draft: LevelDraft;
     /** width of the chart box, so the editor stays inside it */
     boxWidth: number;
-    onSave: (name: string) => void;
+    onSave: (name: string, color: string) => void;
     onCancel: () => void;
     onDelete?: () => void;
 }> = ({ draft, boxWidth, onSave, onCancel, onDelete }) => {
     const { t: tr } = useI18n();
     const inputRef = useRef<HTMLInputElement | null>(null);
+    const [color, setColor] = useState(draft.color);
     useEffect(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
     }, []);
-    const save = () => onSave((inputRef.current?.value ?? draft.name).trim() || draft.name);
+    const save = () => onSave((inputRef.current?.value ?? draft.name).trim() || draft.name, color);
     return (
         <div
             // focus moving between the input and its buttons keeps the editor open, leaving it closes it
@@ -83,6 +86,36 @@ export const CustomLevelEditor: React.FC<{
                 maxLength={40}
                 className="w-44 rounded px-1.5 py-0.5 text-sm font-medium text-slate-900 focus:outline-none dark:bg-slate-900 dark:text-slate-50"
             />
+            {/* The colour: the proposed one is selected, a click on another circle or the colour field changes it. onMouseDown keeps the
+                focus in the name field so the editor stays open. */}
+            <div role="radiogroup" aria-label={tr('chart.custom.color')} className="flex w-44 flex-wrap items-center gap-1 px-1 pb-0.5">
+                {LEVEL_PALETTE.map((c) => (
+                    <button
+                        key={c}
+                        type="button"
+                        role="radio"
+                        aria-checked={c.toLowerCase() === color.toLowerCase()}
+                        aria-label={c}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setColor(c); inputRef.current?.focus(); }}
+                        style={{ backgroundColor: c }}
+                        className={'h-4 w-4 shrink-0 rounded-full border ' + (c.toLowerCase() === color.toLowerCase() ? 'border-slate-900 ring-2 ring-sky-400 dark:border-white' : 'border-slate-300 dark:border-slate-600')}
+                    />
+                ))}
+                <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    onKeyDown={(e) => {
+                        // Enter and Esc work from the colour field too
+                        if (e.key === 'Enter') { e.preventDefault(); save(); }
+                        else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                    }}
+                    aria-label={tr('chart.custom.colorPick')}
+                    title={tr('chart.custom.colorPick')}
+                    className="h-4 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-600"
+                />
+            </div>
         </div>
     );
 };

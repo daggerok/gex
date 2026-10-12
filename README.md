@@ -87,7 +87,9 @@ You can add your own named levels on the **Chart** tab and on the **GEX** tab. T
 - **Add:** click where you want the level. The level goes on the **nearest strike**, never between two (on the GEX tab it is the strike under the pointer, on the Chart tab the strike nearest to the clicked price). A field opens at the pointer with the default name `Level 1` (or `Level 2` when `Level 1` exists, and so on, the smallest free number) already selected. Enter or the check button saves. Esc, the crossed-out pencil button or a click away cancels and creates nothing
 - **Edit:** click the same strike again (Chart tab: right click on the line). The same editor opens with its name, with save, cancel and a delete (X) button
 - **Move (Chart tab):** drag a custom line with the left mouse button, it follows the strikes and the new price is saved on drop
-- **Remove:** the x on its legend chip on the Chart tab, or the delete button in the editor
+- **Colour:** a colour is proposed at random (one the other levels do not use yet) and is selected in the editor, change it with the circles or the colour field, like the name. The square on the level's chip in the Levels panel changes it later
+- **Show or hide:** the same **Levels panel** (the row of chips above the chart) is on the GEX tab and on the Chart tab and shares its choices: click a chip to show or hide that level (yours come first, then the built-in levels from the lowest price to the highest), click the square on it to change its colour. The Expirations panel next to the tabs is also on all three tabs
+- **Remove:** the delete button in the editor
 - The editor buttons sit in a row above the field, right-aligned on Windows and Linux, left-aligned on macOS and iOS
 - The "?" buttons of both tabs explain this too (in the corners of the GEX chart, next to the ticker on the Chart tab)
 - Custom levels are plain prices on a strike, they take no part in the GEX math

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
-import { isApplePlatform, nearestStrike, nextLevelName, parseCustomLevels, roundPrice } from './custom-levels';
+import { isApplePlatform, isHexColor, LEVEL_PALETTE, levelColorOf, nearestStrike, nextLevelName, parseCustomLevels, proposeLevelColor, roundPrice } from './custom-levels';
 
 const named = (...names: string[]) => names.map((name) => ({ name }));
 
@@ -82,5 +82,40 @@ describe('nearestStrike', () => {
     expect(nearestStrike(7515, [7600, 7500, 7520, 7510])).toBe(7510); // exactly between: the lower one
     expect(nearestStrike(7515, [])).toBeNull();
     expect(nearestStrike(7515, [NaN])).toBeNull();
+  });
+});
+
+describe('custom level colours', () => {
+  test('a level keeps its colour and its hidden flag through save and load, bad values are dropped', () => {
+    const levels = parseCustomLevels(JSON.stringify([
+      { id: 'a', name: 'A', price: 1, color: '#38bdf8', hidden: true },
+      { id: 'b', name: 'B', price: 2, color: 'red', hidden: 'yes' },
+      { id: 'c', name: 'C', price: 3 },
+    ]));
+    expect(levels).toEqual([{ id: 'a', name: 'A', price: 1, color: '#38bdf8', hidden: true }, { id: 'b', name: 'B', price: 2 }, { id: 'c', name: 'C', price: 3 }]);
+  });
+
+  test('a level saved before colours existed gets the first palette colour', () => {
+    expect(levelColorOf({})).toBe(LEVEL_PALETTE[0]);
+    expect(levelColorOf({ color: '#ff0000' })).toBe('#ff0000');
+    expect(levelColorOf({ color: 'nope' })).toBe(LEVEL_PALETTE[0]);
+  });
+
+  test('the proposal is random among the colours not used yet', () => {
+    const used = LEVEL_PALETTE.slice(0, 8).map((color) => ({ color }));
+    expect([0, 0.4, 0.99].map((r) => proposeLevelColor(used, () => r))).toEqual([LEVEL_PALETTE[8], LEVEL_PALETTE[8], LEVEL_PALETTE[9]]);
+    expect(proposeLevelColor([], () => 0)).toBe(LEVEL_PALETTE[0]);
+    expect(proposeLevelColor([], () => 0.999)).toBe(LEVEL_PALETTE[LEVEL_PALETTE.length - 1]);
+  });
+
+  test('when every colour is taken any palette colour may come back, and the proposal is always a palette colour', () => {
+    const all = LEVEL_PALETTE.map((color) => ({ color }));
+    for (const r of [0, 0.3, 0.7, 0.999]) expect(LEVEL_PALETTE).toContain(proposeLevelColor(all, () => r));
+    for (let i = 0; i < 50; i++) expect(isHexColor(proposeLevelColor([]))).toBe(true);
+  });
+
+  test('palette colours are valid and none repeats', () => {
+    expect(LEVEL_PALETTE.every(isHexColor)).toBe(true);
+    expect(new Set(LEVEL_PALETTE).size).toBe(LEVEL_PALETTE.length);
   });
 });

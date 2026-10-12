@@ -7,10 +7,13 @@ import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, R
 import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
+import { LevelsPanel } from '../components/LevelsPanel';
+import { ToggleChip } from '../components/ToggleChip';
+import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
-import { isApplePlatform, nearestStrike, nextLevelName } from '../custom-levels';
+import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor } from '../custom-levels';
 import { useCustomLevels } from '../use-custom-levels';
-import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
+import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
     CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
@@ -49,86 +52,6 @@ export const GEX_METRICS: GexMetric[] = ['netGex', 'absoluteGamma', 'callOi', 'p
  *  anywhere a GexPoint field needs to be read generically by metric name
  *  (trimZeroBoundaries' `keys`, the hover-tooltip's per-row value lookup).  */
 const metricDataKey = (m: GexMetric): keyof GexPoint => (m === 'absoluteGamma' ? 'absGamma' : m === 'pcRatioOi' ? 'putOi' : m === 'pcRatioVolume' ? 'putVolume' : m);
-
-/** GexView.tsx's own toggleable-level key: every GexLevelKey, including the
- *  plain collapsed `gammaFlip` - Gamma Flip is one ordinary toggleable/
- *  colorable Key Level here, same as Max Net GEX/Min Net GEX/Max Pain (an earlier
- *  adaptive gammaFlipPos/gammaFlipNeg dual-display mechanism was removed). */
-type ToggleableLevelKey = GexLevelKey;
-
-/** The 7 toggleable Key Levels (everything in GexLevels - see
- *  ToggleableLevelKey above; also gex-colors.ts's LevelColorSet).
- *  (Resistance 1.5 / Support 1.5 - `maxNetGex1_5`/`minNetGex1_5` - were removed
- *  entirely: the user found them not working out after shipping them.
- *  Removed here alongside the corresponding
- *  `GexLevels.maxNetGex1_5`/`minNetGex1_5` fields/math removal in
- *  src/gex.ts/src/types.ts, done in a separate PR.) `spot` is listed last
- *  here - its actual rendered position (toggle panel AND sidebar card) is
- *  decided by each one's own by-strike sort (see `levelPanelKeys`/
- *  `keyLevels` below), this array is just the base/reset order. */
-const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'spot'];
-
-/** Levels that start OFF: the four outer levels (Net GEX+ / Net GEX- and 75% Sum Net GEX+ /
- *  75% Sum Net GEX-). They stay one click away in the Levels panel like every other level. */
-const DEFAULT_OFF_LEVELS: ToggleableLevelKey[] = ['netGexPlus', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus'];
-
-/** Default ON selection: every level except DEFAULT_OFF_LEVELS (so Max / Min Net GEX, Gamma Flip,
- *  Max Pain and Spot). Reset restores it. */
-const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ALL_LEVEL_KEYS.filter((k) => !DEFAULT_OFF_LEVELS.includes(k));
-
-/** i18n key for each level's sidebar/toggle-panel label. */
-const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
-    maxNetGex: 'gex.level.maxNetGex',
-    netGexPlus: 'gex.level.netGexPlus',
-    gammaFlip: 'gex.level.gammaFlip',
-    minNetGex: 'gex.level.minNetGex',
-    netGexMinus: 'gex.level.netGexMinus',
-    sumNetGexPlus: 'gex.level.sumNetGexPlus',
-    sumNetGexMinus: 'gex.level.sumNetGexMinus',
-    maxPain: 'gex.level.maxPain',
-    // Reuses the plain 'spot.label' key ("Spot"/"Спот") already shown
-    // elsewhere in this file (spot.label/spot.estimated/spot.delayed i18n
-    // group) rather than inventing a parallel 'gex.level.spot' string.
-    spot: 'spot.label',
-};
-
-/** Same as LEVEL_LABEL_KEY but for the <ReferenceLine> label on the chart
- *  (distinct from gex.level.* - the sidebar/toggle-panel text labels - so the
- *  two can read differently: the chart line stays short even when the
- *  sidebar label carries an "(R1)"/"(S1)" suffix). */
-const LEVEL_CHART_LABEL_KEY: Record<ToggleableLevelKey, string> = {
-    maxNetGex: 'gex.chart.maxNetGex',
-    netGexPlus: 'gex.chart.netGexPlus',
-    gammaFlip: 'gex.chart.gammaFlip',
-    minNetGex: 'gex.chart.minNetGex',
-    netGexMinus: 'gex.chart.netGexMinus',
-    sumNetGexPlus: 'gex.chart.sumNetGexPlus',
-    sumNetGexMinus: 'gex.chart.sumNetGexMinus',
-    maxPain: 'gex.chart.maxPain',
-    // 'gex.chart.spot' used to read "Spot {{price}}" for the old always-on,
-    // never-rotated, plain horizontal <ReferenceLine> label (which had room
-    // to spell out the price inline). Now that Spot is just another rotated
-    // diagonal Key Level label like the rest (see the ALL_LEVEL_KEYS render
-    // loop below), it reads plain "Spot" - no value baked into the label
-    // text, same as every other level's chart label.
-    spot: 'gex.chart.spot',
-};
-
-/** i18n tooltip key (Part 4) for every Key Levels panel entry. */
-const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
-    maxNetGex: 'gex.level.tooltip.maxNetGex',
-    netGexPlus: 'gex.level.tooltip.netGexPlus',
-    gammaFlip: 'gex.level.tooltip.gammaFlip',
-    minNetGex: 'gex.level.tooltip.minNetGex',
-    netGexMinus: 'gex.level.tooltip.netGexMinus',
-    sumNetGexPlus: 'gex.level.tooltip.sumNetGexPlus',
-    sumNetGexMinus: 'gex.level.tooltip.sumNetGexMinus',
-    maxPain: 'gex.level.tooltip.maxPain',
-    // Plain (non-estimated) case - see `levelTooltip` below for the
-    // 'gex.level.tooltip.spotEstimated' variant used when the spot shown is
-    // a put-call-parity estimate rather than the provider's own reported price.
-    spot: 'gex.level.tooltip.spot',
-};
 
 export interface GexViewProps {
     settings: Settings;
@@ -435,172 +358,6 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
     </div>
 );
 
-/**
- * One toggleable chip combining a show/hide toggle AND its color swatch(es)
- * into a single visual unit (Metrics panel + Key Levels panel): clicking the
- * chip's body (label) toggles the metric/level on/off, clicking the nested
- * color swatch opens the native color picker instead, without also
- * triggering the toggle.
- *
- * A real `<button>` can't contain an `<input type="color">` - interactive
- * content isn't allowed inside `<button>` per the HTML spec, and support for
- * it is inconsistent across browsers even though some render it anyway - so
- * the toggle itself is a `<div role="button">` with equivalent keyboard
- * semantics (`tabIndex`, `aria-pressed`, Enter/Space via onKeyDown) instead
- * of a literal `<button>`. `swatches` (the actual `<input type="color">`(s) -
- * one for most metrics/levels, two for Net GEX's signed pos/neg halves) is
- * wrapped in its own span that stops click/mousedown propagation, so
- * interacting with the swatch never bubbles up to the outer toggle handler.
- *
- * CUSTOM HOVER/FOCUS TOOLTIP (replaces the native `title` popup as the
- * visible-on-desktop affordance; `title` itself is KEPT on the chip - see
- * below). `title`'s explanatory text is often a full sentence or two (see
- * LEVEL_TOOLTIP_KEY's i18n strings), and the OS-rendered native `title`
- * tooltip can't be animated - there is no CSS hook into it at all - so a
- * small custom tooltip renders the same text with a fade-in/fade-out transition
- * instead.
- *
- * PORTAL, NOT A PLAIN `group-hover` SIBLING: both the Metrics row and the Key
- * Levels row this chip lives in are `overflow-x-auto` (`themed-scroll flex
- * items-center gap-2 overflow-x-auto`). Per the CSS2.1 overflow computation
- * rules, setting `overflow-x: auto` with no explicit `overflow-y` forces
- * `overflow-y` to `auto` too (only one axis staying `visible` while the other
- * is non-visible isn't a legal combination) - so the row clips in BOTH axes,
- * not just the one it scrolls. Verified live (Playwright): a plain
- * `absolute bottom-full ... group-hover:opacity-100` tooltip, as a normal
- * in-DOM child of the chip, was silently cut off at the row's own top edge
- * exactly as that rule predicts - invisible, not just mispositioned. Fixed by
- * rendering the tooltip through `createPortal` to `document.body`, positioned
- * with `position: fixed` + `getBoundingClientRect()` (viewport coordinates,
- * independent of any ancestor's overflow/stacking context) instead of
- * `position: absolute` inside the clipped row. One consequence of the
- * portal: Tailwind's `group-hover`/`group-focus-within` selectors need real
- * DOM ancestry and can't reach across a portal boundary, so visibility here
- * is plain React state (`open`, set on mouse/focus enter+leave) rather than
- * a CSS pseudo-class - the fade is still pure CSS (`transition-*`
- * classes reacting to that state), just driven by a class toggle instead of
- * `:hover`.
- *
- * The tooltip DOM node is always mounted (even while hidden, at `opacity-0
- * pointer-events-none`) rather than conditionally rendered on `open` - an
- * element that's created already AT its final "visible" style never
- * transitions (there's no prior frame to animate from); staying mounted and
- * only toggling the opacity/transform classes is what lets the transition
- * play on every open, including the very first hover.
- *
- * Horizontal placement is clamped to the viewport (`show()` below) so a chip
- * near either edge of the scrollable row doesn't push the tooltip off
- * screen; vertical placement flips from above to below the chip if there
- * isn't enough room above (e.g. a chip very close to the top of the
- * viewport) - checked against the tooltip's own measured height via `tipRef`.
- *
- * `title` is kept on the chip IN ADDITION to the custom tooltip (not
- * replaced) - touch devices with no hover state, and any assistive tech that
- * specifically keys off the native `title` attribute rather than (or
- * alongside) `aria-describedby`, still get it; it's a cheap, harmless safety
- * net under the custom one, not redundant effort. `aria-describedby` links
- * the chip to the custom tooltip node by id (via `useId`) so screen readers
- * announce the same explanatory text the visible tooltip shows.
- */
-const ToggleChip: React.FC<{
-    on: boolean;
-    onToggle: () => void;
-    title: string;
-    activeClass: string;
-    idleClass: string;
-    swatches: React.ReactNode;
-    children: React.ReactNode;
-}> = ({ on, onToggle, title, activeClass, idleClass, swatches, children }) => {
-    const chipRef = useRef<HTMLDivElement>(null);
-    const tipRef = useRef<HTMLDivElement>(null);
-    const tooltipId = useId();
-    const [open, setOpen] = useState(false);
-    const [pos, setPos] = useState({ top: 0, left: 0, placement: 'top' as 'top' | 'bottom' });
-
-    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onToggle();
-        }
-    };
-    const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-
-    const GAP = 8; // px between the chip and the tooltip
-    const EDGE_MARGIN = 8; // px kept clear of either viewport edge
-
-    const show = () => {
-        const chip = chipRef.current;
-        if (chip) {
-            const r = chip.getBoundingClientRect();
-            const tipW = tipRef.current?.offsetWidth ?? 0;
-            const tipH = tipRef.current?.offsetHeight ?? 0;
-            const halfTip = tipW / 2;
-            let left = r.left + r.width / 2;
-            left = Math.min(Math.max(left, halfTip + EDGE_MARGIN), window.innerWidth - halfTip - EDGE_MARGIN);
-            // Default above the chip; flip below it if there isn't room
-            // above (e.g. a chip docked near the top of the viewport).
-            const placement: 'top' | 'bottom' = r.top - tipH - GAP < 0 ? 'bottom' : 'top';
-            const top = placement === 'top' ? r.top - GAP : r.bottom + GAP;
-            setPos({ top, left, placement });
-        }
-        setOpen(true);
-    };
-    const hide = () => setOpen(false);
-
-    return (
-        <div
-            ref={chipRef}
-            role="button"
-            tabIndex={0}
-            aria-pressed={on}
-            aria-describedby={tooltipId}
-            title={title}
-            onClick={onToggle}
-            onKeyDown={onKeyDown}
-            onMouseEnter={show}
-            onMouseLeave={hide}
-            onFocus={show}
-            onBlur={hide}
-            className={
-                'relative flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ' +
-                (on ? activeClass : idleClass)
-            }
-        >
-            {/* Every chip (including Net GEX's two signed +/- swatches) reads
-                "label, then swatch(es)" inline in one row - the user tried
-                stacking Net GEX's two swatches above its label in a separate
-                layout and reverted after seeing it live, wanting every chip
-                to look the same regardless of how many swatches it has. */}
-            <span>{children}</span>
-            <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
-                {swatches}
-            </span>
-            {createPortal(
-                <div
-                    ref={tipRef}
-                    id={tooltipId}
-                    role="tooltip"
-                    style={{
-                        top: pos.top,
-                        left: pos.left,
-                        // Placement only (above vs below the chip). The tooltip no longer
-                        // slides: it just fades in and out (opacity transition below).
-                        transform: `translate(-50%, ${pos.placement === 'top' ? '-100%' : '0%'})`,
-                    }}
-                    className={
-                        'pointer-events-none fixed z-50 w-64 max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] leading-snug text-slate-100 shadow-lg ' +
-                        'transition-opacity duration-200 ease-out dark:border-slate-600 ' +
-                        (open ? 'opacity-100' : 'opacity-0')
-                    }
-                >
-                    {title}
-                </div>,
-                document.body,
-            )}
-        </div>
-    );
-};
-
 // ---------------------------------------------------------------------------
 // Chart zoom persistence (xZoom survives a reload - same spirit as
 // main.tsx's activeTab/selectedExps/gexMetrics persistence, but scoped to
@@ -807,62 +564,9 @@ export const GexView: React.FC<GexViewProps> = ({
     // a valid (if unusual) choice. Reset restores DEFAULT_SELECTED_LEVELS
     // (Part 2 - only Max Net GEX/Min Net GEX start OFF; Net GEX+/Net GEX-/
     // Gamma Flip/Max Pain start ON), not "every level on".
-    const [selectedLevels, setSelectedLevels] = useState<Array<ToggleableLevelKey>>(() => [...DEFAULT_SELECTED_LEVELS]);
-    const [levelColors, setLevelColorsState] = useState<LevelColorSet>(() => loadLevelColors());
-    const setLevelColor = (key: ToggleableLevelKey, value: string) => {
-        setLevelColorsState((prev) => {
-            const next = { ...prev, [key]: value };
-            saveLevelColors(next);
-            return next;
-        });
-    };
-    const resetLevelsPanel = () => {
-        setSelectedLevels([...DEFAULT_SELECTED_LEVELS]);
-        setLevelColorsState(DEFAULT_LEVEL_COLORS);
-        saveLevelColors(DEFAULT_LEVEL_COLORS);
-    };
-
-    /** Base logical order, BEFORE the by-strike sort just below - only used
-     *  as the stable tie-break among levels that sort equal (i.e. every
-     *  null-valued one, see `levelPanelKeys` itself). `spot` sits next to
-     *  `gammaFlip` here since it's the reference point every other level's
-     *  position is read relative to - a reasonable logical "center", though
-     *  it's moot for the actual rendered order once sorted below. */
-    const levelPanelKeysBase: Array<ToggleableLevelKey> = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain'];
-    /** The Key Levels TOGGLE PANEL's actual left-to-right order: ascending by
-     *  each level's live strike (`levels?.[key]`), recomputed every render so
-     *  it tracks real data as it loads/changes - the user wants the chip with
-     *  the LOWEST strike leftmost and the HIGHEST strike rightmost. This is
-     *  the mirror image of the sidebar Card's own sort below (`keyLevels`'
-     *  `.sort()`): same idea, OPPOSITE direction (ascending here for a
-     *  left-to-right row vs. descending there for a top-to-bottom list), and
-     *  over a completely independent array/state - sorting this one must
-     *  never affect `keyLevels`' sidebar order, and vice versa.
-     *
-     *  A level with no value for the current data (an optional wall/gamma-
-     *  flip direction that doesn't qualify, or no data loaded at all) has no
-     *  real strike to sort by, so it sinks to the FAR RIGHT, after every
-     *  level with a real value - mirroring the sidebar's own "nulls sink"
-     *  rule, just at the opposite end since this row reads left-to-right
-     *  instead of top-to-bottom. `Array#sort` is stable, so among themselves
-     *  the null-valued entries keep `levelPanelKeysBase`'s order. */
-    const levelPanelKeysSorted: Array<ToggleableLevelKey> = [...levelPanelKeysBase].sort((a, b) => {
-        const va = levels?.[a] ?? null;
-        const vb = levels?.[b] ?? null;
-        if (va == null) return vb == null ? 0 : 1;
-        if (vb == null) return -1;
-        return va - vb;
-    });
-    // User request: the "Net GEX-" button always sits before "75% Sum Net GEX-"
-    // in this row, even when the 75% level has the lower strike - the two
-    // swap places whenever the by-strike sort would put them the other way.
-    const levelPanelKeys: Array<ToggleableLevelKey> = (() => {
-        const out = [...levelPanelKeysSorted];
-        const i = out.indexOf('netGexMinus');
-        const j = out.indexOf('sumNetGexMinus');
-        if (i > j && j >= 0) { out[j] = 'netGexMinus'; out[i] = 'sumNetGexMinus'; }
-        return out;
-    })();
+    // Which levels are on and their colours are shared with the Chart tab (level-prefs.ts)
+    const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
+    const resetLevelsPanel = () => resetLevelPrefs();
 
     const levelLabel = (key: ToggleableLevelKey): string => tr(LEVEL_LABEL_KEY[key]);
     const levelChartLabel = (key: ToggleableLevelKey): string => tr(LEVEL_CHART_LABEL_KEY[key]);
@@ -1111,16 +815,16 @@ export const GexView: React.FC<GexViewProps> = ({
         const strikes = profile.map((p) => p.strike);
         const existing = customLevels.find((c) => nearestStrike(c.price, strikes) === strike);
         setLevelDraft(existing
-            ? { x, y, price: existing.price, name: existing.name, editId: existing.id }
-            : { x, y, price: strike, name: nextLevelName(customLevels, tr('chart.custom.defaultName')) });
+            ? { x, y, price: existing.price, name: existing.name, color: levelColorOf(existing), editId: existing.id }
+            : { x, y, price: strike, name: nextLevelName(customLevels, tr('chart.custom.defaultName')), color: proposeLevelColor(customLevels) });
         return true;
     };
-    const saveLevel = (name: string) => {
+    const saveLevel = (name: string, color: string) => {
         if (!levelDraft) return;
-        if (levelDraft.editId) setCustomLevels(customLevels.map((c) => (c.id === levelDraft.editId ? { ...c, name } : c)));
+        if (levelDraft.editId) setCustomLevels(customLevels.map((c) => (c.id === levelDraft.editId ? { ...c, name, color } : c)));
         else {
             const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()) + Math.random();
-            setCustomLevels([...customLevels, { id, name, price: levelDraft.price }]);
+            setCustomLevels([...customLevels, { id, name, price: levelDraft.price, color }]);
         }
         setLevelDraft(null);
     };
@@ -1284,6 +988,23 @@ export const GexView: React.FC<GexViewProps> = ({
     // whenever netGex is selected, or any put metric (now also negative) is.
     const yTickFormatter = (v: number) => (yBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
     const xDomain = xZoom ?? chart?.domain ?? ([0, 1] as [number, number]);
+    // Width of the plot in px, measured from the X axis line, to turn "labels this close on screen would overlap" into a price gap
+    const [plotPx, setPlotPx] = useState(0);
+    useLayoutEffect(() => {
+        const measure = () => {
+            const w = chartBoxRef.current?.querySelector('.recharts-xAxis .recharts-cartesian-axis-line')?.getBoundingClientRect().width ?? 0;
+            setPlotPx((prev) => (Math.abs(prev - w) < 1 ? prev : w));
+        };
+        measure();
+        const box = chartBoxRef.current;
+        if (!box || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(() => window.requestAnimationFrame(measure));
+        ro.observe(box);
+        return () => ro.disconnect();
+    });
+    // Two level labels closer than this many px print over each other (rotated 45 degrees, 12 px between text lines)
+    const LABEL_MIN_GAP_PX = 18;
+    const labelGap = plotPx > 0 ? (LABEL_MIN_GAP_PX * (xDomain[1] - xDomain[0])) / plotPx : 0;
 
     // ---- AG's own secondary Y axis (deliberate exception to the "one
     // shared Y axis" rule above) ---------------------------------------------
@@ -1384,10 +1105,11 @@ export const GexView: React.FC<GexViewProps> = ({
     // left out. One list drives both tables so that every Values row is the continuation of the Levels row
     // at the same height.
     // The user's custom levels (named on the Chart tab) join the list with their own name and color.
-    const levelRows: Array<{ key: string; label: string; value: number | null; optional?: boolean; suffix?: string; custom?: boolean }> = [
+    type LevelRow = { key: string; label: string; value: number | null; optional?: boolean; suffix?: string; custom?: boolean; color?: string };
+    const levelRows: LevelRow[] = ([
         ...keyLevels,
-        ...customLevels.map((c) => ({ key: `custom:${c.id}`, label: c.name, value: c.price, custom: true })),
-    ]
+        ...customLevels.map((c) => ({ key: `custom:${c.id}`, label: c.name, value: c.price, custom: true, color: levelColorOf(c) })),
+    ] as LevelRow[])
         .filter((l) => !(l.optional && l.value == null))
         .sort((a, b) => (a.value == null ? 1 : b.value == null ? -1 : b.value - a.value));
     // Each row's data is the profile row of its strike (the nearest strike when the level is not on one -
@@ -1565,94 +1287,7 @@ export const GexView: React.FC<GexViewProps> = ({
                     there is nothing left for `justify-between` to place,
                     and when it is capped by `max-w-fit` the leftover is the
                     gap between the two panels. ---- */}
-                <div className={box + ' grow basis-0 min-w-[300px] max-w-fit'} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
-                    {/* whitespace-nowrap: "Key Levels" is two words and was
-                        wrapping onto "Key"/"Levels" lines in tighter layouts
-                        - force it onto one line regardless of how tight the
-                        row gets (same defensive treatment applied to the
-                        Metrics label above, even though "Metrics" is a single
-                        word that can't actually wrap). */}
-                    <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.sidebar.keyLevels')}</span>
-                    {/* scrollbar-hidden (NOT themed-scroll - see index.css's own doc
-                        comment on that class): the user wants this one row's visible
-                        scrollbar gone while staying scrollable (wheel/trackpad/touch/
-                        drag) - scoped to Key Levels only, the Metrics panel's own
-                        scroll row above keeps its themed scrollbar unchanged.
-
-                        Right-aligns the chips to this row's OWN right edge (matching
-                        "right-aligned like Expirations" at the chip level, not just
-                        the panel's outer box) via a leading, empty, `aria-hidden`
-                        spacer (`flex-1` = `flex: 1 1 0%`) as the FIRST child, NOT
-                        `justify-end` on this row itself - `justify-end` was tried
-                        first and reverted after finding (Playwright, 390px viewport,
-                        all 7 levels toggled on) that it doesn't degrade safely once
-                        the chips genuinely overflow: with `justify-content: flex-end`
-                        on an `overflow-x-auto` row, Chromium does not register the
-                        overflow at all once the chips (non-shrinking, `shrink-0`)
-                        exceed the row's width - `scrollWidth === clientWidth`
-                        measured equal - and renders the EARLIER chips in DOM order
-                        (Max Net GEX, Min Net GEX, Gamma Flip, Max Pain, Net GEX- in that
-                        run) at negative x-coordinates, fully or partly off-screen to
-                        the left, with no way to reach them: wheel/trackpad/drag don't
-                        move it (nothing registers as scrollable), and setting
-                        `scrollLeft` programmatically - to 0, to the negative extreme,
-                        or to the positive extreme - was clamped straight back to 0
-                        every time. So this isn't a "confusing default to maybe
-                        correct with a scroll-position reset on mount" - a JS
-                        scroll-position fix CAN'T work here, because `scrollLeft` is
-                        provably stuck; those chips would be permanently unreachable,
-                        a real bug, not a rough edge. The spacer avoids the whole
-                        failure mode instead of papering over it: `flex-1`'s
-                        `flex-basis: 0%` contributes nothing to this row's own
-                        max-content width, so when the chips fit, the spacer's
-                        `flex-grow: 1` consumes the leftover space and visually
-                        pushes them flush right (identical end result to
-                        `justify-end` in the common case); when the chips don't fit,
-                        the spacer's `flex-shrink: 1` lets it collapse to 0 width
-                        (never negative) and gets out of the way entirely, leaving
-                        plain left-to-right, start-anchored overflow - the same
-                        ordinary, fully-scrollable behavior every other
-                        `overflow-x-auto` row in this file already relies on (e.g.
-                        the Metrics row above), with the first chip (lowest strike,
-                        e.g. Max Net GEX) visible at the start, same as a user
-                        scrolling a list would expect. */}
-                    <div className="scrollbar-hidden flex items-center gap-2 overflow-x-auto">
-                        <div aria-hidden="true" className="flex-1" />
-                        {levelPanelKeys.map((key) => {
-                            const on = selectedLevels.includes(key);
-                            const label = levelLabel(key);
-                            return (
-                                <ToggleChip
-                                    key={key}
-                                    on={on}
-                                    onToggle={() => setSelectedLevels(on ? selectedLevels.filter((x) => x !== key) : [...selectedLevels, key])}
-                                    title={levelTooltip(key)}
-                                    activeClass={ax.chipActive}
-                                    idleClass={ax.chipIdle}
-                                    swatches={
-                                        <input
-                                            type="color"
-                                            value={levelColors[key]}
-                                            onChange={(e) => setLevelColor(key, e.target.value)}
-                                            title={tr('gex.level.color', { level: label })}
-                                            aria-label={tr('gex.level.color', { level: label })}
-                                            className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
-                                        />
-                                    }
-                                >
-                                    {label}
-                                </ToggleChip>
-                            );
-                        })}
-                    </div>
-                    <button
-                        type="button"
-                        onClick={resetLevelsPanel}
-                        className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + ax.chipIdle}
-                    >
-                        {tr('gex.level.reset')}
-                    </button>
-                </div>
+                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} spotEstimated={effSpotIsEstimated} />
             </div>
 
             {provider.mode === 'lazy' && (
@@ -1740,7 +1375,7 @@ export const GexView: React.FC<GexViewProps> = ({
                             {levelRows.map((l) => (
                                 <div key={l.key} className={`flex ${LEVEL_ROW_H} items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/50 px-3 text-sm last:border-0`}>
                                     <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${l.custom ? CUSTOM_LEVEL_COLOR.dot : GEX_LEVEL_COLORS[l.key as ToggleableLevelKey].dot}`} aria-hidden="true" />
+                                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${l.custom ? '' : GEX_LEVEL_COLORS[l.key as ToggleableLevelKey].dot}`} style={l.custom ? { backgroundColor: l.color } : undefined} aria-hidden="true" />
                                         {l.label}
                                     </span>
                                     <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">
@@ -2185,9 +1820,10 @@ export const GexView: React.FC<GexViewProps> = ({
                                             drawn.push({ key, value, text: levelChartLabel(key), color: levelColors[key] });
                                         }
                                         for (const c of customLevels) {
-                                            drawn.push({ key: `custom:${c.id}`, value: c.price, text: c.name, color: CUSTOM_LEVEL_COLOR.hex });
+                                            if (c.hidden) continue;
+                                            drawn.push({ key: `custom:${c.id}`, value: c.price, text: c.name, color: levelColorOf(c) });
                                         }
-                                        const groups = groupLevelLabels(drawn);
+                                        const groups = labelGap > 0 ? groupNearLevelLabels(drawn, labelGap) : groupLevelLabels(drawn);
                                         return drawn.map((item) => {
                                             const group = groups.find((g) => g.items[0].key === item.key);
                                             return (
