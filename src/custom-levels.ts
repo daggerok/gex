@@ -15,8 +15,15 @@ export interface CustomLevel {
     hidden?: boolean;
 }
 
-/** Colours offered for a custom level, none of them is a GEX level colour. */
-export const LEVEL_PALETTE = ['#38bdf8', '#fb7185', '#f97316', '#a3e635', '#2dd4bf', '#c084fc', '#e879f9', '#3b82f6', '#818cf8', '#94a3b8'] as const;
+/** Reddish colours: a level ABOVE the current price (premium) starts with one of these. */
+export const PREMIUM_COLORS = ['#fb7185', '#f43f5e', '#fda4af'] as const;
+/** Greenish colours: a level BELOW the current price (discount) starts with one of these. */
+export const DISCOUNT_COLORS = ['#34d399', '#10b981', '#6ee7b7'] as const;
+/** Neutral colours: a level at the current price, or when the price is not known. */
+export const NEUTRAL_COLORS = ['#38bdf8', '#f97316', '#c084fc', '#94a3b8'] as const;
+
+/** Colours offered for a custom level (none of them is a GEX level colour): premium, discount, neutral. */
+export const LEVEL_PALETTE = [...PREMIUM_COLORS, ...DISCOUNT_COLORS, ...NEUTRAL_COLORS] as const;
 
 export const isHexColor = (c: unknown): c is string => typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c);
 
@@ -24,13 +31,21 @@ export const isHexColor = (c: unknown): c is string => typeof c === 'string' && 
 export const levelColorOf = (level: Pick<CustomLevel, 'color'>): string => (isHexColor(level.color) ? level.color : LEVEL_PALETTE[0]);
 
 /**
- * A colour to propose for a new level: chosen at random among the palette colours no existing level uses yet, so a new
- * level looks different from the others; when all are taken, any of the palette. `random` is injectable for tests.
+ * A colour to propose for a new level, by where it sits against the current price (`spot`): above it reddish (premium),
+ * below it greenish (discount), at it or with no price known a neutral one. It is chosen at random among the colours of that
+ * kind no existing level uses yet; when all are taken, any of that kind. `random` is injectable for tests. The owner can
+ * change the colour like the name.
  */
-export function proposeLevelColor(existing: ReadonlyArray<Pick<CustomLevel, 'color'>>, random: () => number = Math.random): string {
+export function proposeLevelColor(
+    existing: ReadonlyArray<Pick<CustomLevel, 'color'>>,
+    price: number,
+    spot: number | null | undefined,
+    random: () => number = Math.random,
+): string {
+    const kind: readonly string[] = spot == null || !Number.isFinite(spot) || price === spot ? NEUTRAL_COLORS : price > spot ? PREMIUM_COLORS : DISCOUNT_COLORS;
     const used = new Set(existing.map((l) => (isHexColor(l.color) ? l.color.toLowerCase() : '')));
-    const free = LEVEL_PALETTE.filter((c) => !used.has(c));
-    const pool = free.length ? free : LEVEL_PALETTE;
+    const free = kind.filter((c) => !used.has(c));
+    const pool = free.length ? free : kind;
     return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }
 

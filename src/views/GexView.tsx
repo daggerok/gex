@@ -12,6 +12,7 @@ import { ToggleChip } from '../components/ToggleChip';
 import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
 import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor } from '../custom-levels';
+import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
 import { useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
@@ -371,33 +372,6 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
 // ticker, or switching tickers mid-session) behaves exactly like today, a
 // plain reset to the default full-range/unzoomed view.
 // ---------------------------------------------------------------------------
-interface ChartZoomState {
-    symbol: string;
-    xZoom: [number, number] | null;
-}
-
-const CHART_ZOOM_KEY = 'gex.chartZoom.v1';
-
-function loadChartZoom(): ChartZoomState | null {
-    try {
-        const raw = localStorage.getItem(CHART_ZOOM_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed.symbol !== 'string') return null;
-        const xZoom = Array.isArray(parsed.xZoom) && parsed.xZoom.length === 2 && parsed.xZoom.every((v: unknown) => typeof v === 'number')
-            ? (parsed.xZoom as [number, number])
-            : null;
-        return { symbol: parsed.symbol, xZoom };
-    } catch {
-        return null;
-    }
-}
-
-/** Best-effort persist (same convention as gex-colors.ts's saveMetricColors/saveLevelColors). */
-function saveChartZoom(state: ChartZoomState): void {
-    try { localStorage.setItem(CHART_ZOOM_KEY, JSON.stringify(state)); } catch { /* ignore */ }
-}
-
 export const GexView: React.FC<GexViewProps> = ({
     settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced,
     selectedExps, metrics, setMetrics,
@@ -606,12 +580,8 @@ export const GexView: React.FC<GexViewProps> = ({
         // ticker restore) brings the zoom back exactly as it was; a reload
         // or in-session switch to a DIFFERENT ticker falls through to the
         // same plain reset this effect always did.
-        const persisted = loadChartZoom();
-        if (persisted && persisted.symbol === symbol) {
-            setXZoom(persisted.xZoom);
-        } else {
-            setXZoom(null);
-        }
+        // Every ticker has its own remembered zoom (chart-zoom-store.ts), the one of THIS symbol comes back
+        setXZoom(zoomFor(loadChartZooms(), symbol));
         setDragStart(null);
         setDragEnd(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -635,10 +605,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // way the old effect was (skip when no ticker is loaded).
     const persistZoom = (next: { xZoom?: [number, number] | null }) => {
         if (!symbol) return;
-        saveChartZoom({
-            symbol,
-            xZoom: next.xZoom !== undefined ? next.xZoom : xZoom,
-        });
+        saveChartZooms(withZoom(loadChartZooms(), symbol, next.xZoom !== undefined ? next.xZoom : xZoom));
     };
 
     // Arrow buttons move the CHART in the direction of the arrow (click right: the picture moves
@@ -816,7 +783,7 @@ export const GexView: React.FC<GexViewProps> = ({
         const existing = customLevels.find((c) => nearestStrike(c.price, strikes) === strike);
         setLevelDraft(existing
             ? { x, y, price: existing.price, name: existing.name, color: levelColorOf(existing), editId: existing.id }
-            : { x, y, price: strike, name: nextLevelName(customLevels, tr('chart.custom.defaultName')), color: proposeLevelColor(customLevels) });
+            : { x, y, price: strike, name: nextLevelName(customLevels, tr('chart.custom.defaultName')), color: proposeLevelColor(customLevels, strike, levels?.spot ?? effSpot) });
         return true;
     };
     const saveLevel = (name: string, color: string) => {

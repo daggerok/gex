@@ -76,7 +76,7 @@ Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only:
 ## Tabs: Desk, GEX, Chart
 
 - **Desk:** the options chain described above
-- **GEX:** gamma exposure by strike with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis
+- **GEX:** gamma exposure by strike with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis (remembered for each ticker, the last 200 tickers, also after a reload)
 - **Chart:** daily candles (1 year loaded, 1M / 3M / 6M / 1Y only change the visible part) with the same GEX levels as price lines. From the CACHE provider it reads `api/charts/<SYM>.json`, so it works without a proxy
 
 ### Custom levels
@@ -87,7 +87,7 @@ You can add your own named levels on the **Chart** tab and on the **GEX** tab. T
 - **Add:** click where you want the level. The level goes on the **nearest strike**, never between two (on the GEX tab it is the strike under the pointer, on the Chart tab the strike nearest to the clicked price). A field opens at the pointer with the default name `Level 1` (or `Level 2` when `Level 1` exists, and so on, the smallest free number) already selected. Enter or the check button saves. Esc, the crossed-out pencil button or a click away cancels and creates nothing
 - **Edit:** click the same strike again (Chart tab: right click on the line). The same editor opens with its name, with save, cancel and a delete (X) button
 - **Move (Chart tab):** drag a custom line with the left mouse button, it follows the strikes and the new price is saved on drop
-- **Colour:** a colour is proposed at random (one the other levels do not use yet) and is selected in the editor, change it with the circles or the colour field, like the name. The square on the level's chip in the Levels panel changes it later
+- **Colour:** one small square left of the name. A level above the current price starts reddish (premium), one below it greenish (discount), one at it or with no price known a neutral colour, the shade picked at random among those the other levels do not use. Click the square to choose another (ready colours or any colour of your own), the editor stays otherwise minimal. The square on the level's chip in the Levels panel changes it later
 - **Show or hide:** the same **Levels panel** (the row of chips above the chart) is on the GEX tab and on the Chart tab and shares its choices: click a chip to show or hide that level (yours come first, then the built-in levels from the lowest price to the highest), click the square on it to change its colour. The Expirations panel next to the tabs is also on all three tabs
 - **Remove:** the delete button in the editor
 - The editor buttons sit in a row above the field, right-aligned on Windows and Linux, left-aligned on macOS and iOS

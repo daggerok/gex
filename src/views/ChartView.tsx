@@ -142,6 +142,8 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     customRef.current = customLevels;
     const strikesRef = useRef(strikes);
     strikesRef.current = strikes;
+    const levelsRef = useRef(levels);
+    levelsRef.current = levels;
     /** A price from the chart as a level price: the nearest strike, or cents when there are no strikes. */
     const snap = (price: number) => nearestStrike(price, strikesRef.current) ?? roundPrice(price);
     const setCustomRef = useRef(setCustomLevels);
@@ -315,7 +317,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 setDraft({ x: pt.x, y: pt.y, price: hit.price, name: hit.name, color: levelColorOf(hit), editId: hit.id });
                 return true;
             }
-            setDraft({ x: pt.x, y: pt.y, price: snap(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')), color: proposeLevelColor(customRef.current) });
+            setDraft({ x: pt.x, y: pt.y, price: snap(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')), color: proposeLevelColor(customRef.current, snap(price), levelsRef.current?.spot) });
             return true;
         };
         const onContextMenu = (e: MouseEvent) => {

@@ -42,6 +42,8 @@ export const CustomLevelEditor: React.FC<{
     const { t: tr } = useI18n();
     const inputRef = useRef<HTMLInputElement | null>(null);
     const [color, setColor] = useState(draft.color);
+    // The colour choices (ready colours and a free picker) open only when the square next to the name is clicked
+    const [pickerOpen, setPickerOpen] = useState(false);
     useEffect(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
@@ -73,49 +75,62 @@ export const CustomLevelEditor: React.FC<{
                     </button>
                 )}
             </div>
-            <input
-                ref={inputRef}
-                type="text"
-                defaultValue={draft.name}
-                aria-label={tr('chart.custom.nameLabel', { price: fmt(draft.price) })}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); save(); }
-                    else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-                }}
-                spellCheck={false}
-                maxLength={40}
-                className="w-44 rounded px-1.5 py-0.5 text-sm font-medium text-slate-900 focus:outline-none dark:bg-slate-900 dark:text-slate-50"
-            />
-            {/* The colour: the proposed one is selected, a click on another circle or the colour field changes it. onMouseDown keeps the
-                focus in the name field so the editor stays open. */}
-            <div role="radiogroup" aria-label={tr('chart.custom.color')} className="flex w-44 flex-wrap items-center gap-1 px-1 pb-0.5">
-                {LEVEL_PALETTE.map((c) => (
-                    <button
-                        key={c}
-                        type="button"
-                        role="radio"
-                        aria-checked={c.toLowerCase() === color.toLowerCase()}
-                        aria-label={c}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => { setColor(c); inputRef.current?.focus(); }}
-                        style={{ backgroundColor: c }}
-                        className={'h-4 w-4 shrink-0 rounded-full border ' + (c.toLowerCase() === color.toLowerCase() ? 'border-slate-900 ring-2 ring-sky-400 dark:border-white' : 'border-slate-300 dark:border-slate-600')}
-                    />
-                ))}
+            {/* The name with its colour square on the left. The square is the colour: a click opens the choices. */}
+            <div className="flex items-center gap-1.5">
+                <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setPickerOpen((v) => !v)}
+                    aria-label={tr('chart.custom.color')}
+                    title={tr('chart.custom.color')}
+                    aria-expanded={pickerOpen}
+                    style={{ backgroundColor: color }}
+                    className="h-5 w-5 shrink-0 rounded border border-slate-300 dark:border-slate-600"
+                />
                 <input
-                    type="color"
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
+                    ref={inputRef}
+                    type="text"
+                    defaultValue={draft.name}
+                    aria-label={tr('chart.custom.nameLabel', { price: fmt(draft.price) })}
                     onKeyDown={(e) => {
-                        // Enter and Esc work from the colour field too
                         if (e.key === 'Enter') { e.preventDefault(); save(); }
                         else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
                     }}
-                    aria-label={tr('chart.custom.colorPick')}
-                    title={tr('chart.custom.colorPick')}
-                    className="h-4 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-600"
+                    spellCheck={false}
+                    maxLength={40}
+                    className="w-36 rounded px-1.5 py-0.5 text-sm font-medium text-slate-900 focus:outline-none dark:bg-slate-900 dark:text-slate-50"
                 />
             </div>
+            {pickerOpen && (
+                <div role="radiogroup" aria-label={tr('chart.custom.color')} className="flex w-44 flex-wrap items-center gap-1 rounded border border-slate-200 p-1 dark:border-slate-700">
+                    {LEVEL_PALETTE.map((c) => (
+                        <button
+                            key={c}
+                            type="button"
+                            role="radio"
+                            aria-checked={c.toLowerCase() === color.toLowerCase()}
+                            aria-label={c}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { setColor(c); setPickerOpen(false); inputRef.current?.focus(); }}
+                            style={{ backgroundColor: c }}
+                            className={'h-4 w-4 shrink-0 rounded-full border ' + (c.toLowerCase() === color.toLowerCase() ? 'border-slate-900 ring-2 ring-sky-400 dark:border-white' : 'border-slate-300 dark:border-slate-600')}
+                        />
+                    ))}
+                    <input
+                        type="color"
+                        value={color}
+                        onChange={(e) => setColor(e.target.value)}
+                        onKeyDown={(e) => {
+                            // Enter and Esc work from the colour field too
+                            if (e.key === 'Enter') { e.preventDefault(); save(); }
+                            else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                        }}
+                        aria-label={tr('chart.custom.colorPick')}
+                        title={tr('chart.custom.colorPick')}
+                        className="h-4 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-600"
+                    />
+                </div>
+            )}
         </div>
     );
 };

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
-import { isApplePlatform, isHexColor, LEVEL_PALETTE, levelColorOf, nearestStrike, nextLevelName, parseCustomLevels, proposeLevelColor, roundPrice } from './custom-levels';
+import { DISCOUNT_COLORS, isApplePlatform, isHexColor, LEVEL_PALETTE, NEUTRAL_COLORS, PREMIUM_COLORS, levelColorOf, nearestStrike, nextLevelName, parseCustomLevels, proposeLevelColor, roundPrice } from './custom-levels';
 
 const named = (...names: string[]) => names.map((name) => ({ name }));
 
@@ -101,17 +101,38 @@ describe('custom level colours', () => {
     expect(levelColorOf({ color: 'nope' })).toBe(LEVEL_PALETTE[0]);
   });
 
-  test('the proposal is random among the colours not used yet', () => {
-    const used = LEVEL_PALETTE.slice(0, 8).map((color) => ({ color }));
-    expect([0, 0.4, 0.99].map((r) => proposeLevelColor(used, () => r))).toEqual([LEVEL_PALETTE[8], LEVEL_PALETTE[8], LEVEL_PALETTE[9]]);
-    expect(proposeLevelColor([], () => 0)).toBe(LEVEL_PALETTE[0]);
-    expect(proposeLevelColor([], () => 0.999)).toBe(LEVEL_PALETTE[LEVEL_PALETTE.length - 1]);
+  test('a level above the current price starts reddish (premium), below it greenish (discount)', () => {
+    for (const r of [0, 0.4, 0.99]) {
+      expect(PREMIUM_COLORS).toContain(proposeLevelColor([], 790, 778.57, () => r) as never);
+      expect(DISCOUNT_COLORS).toContain(proposeLevelColor([], 770, 778.57, () => r) as never);
+    }
   });
 
-  test('when every colour is taken any palette colour may come back, and the proposal is always a palette colour', () => {
-    const all = LEVEL_PALETTE.map((color) => ({ color }));
-    for (const r of [0, 0.3, 0.7, 0.999]) expect(LEVEL_PALETTE).toContain(proposeLevelColor(all, () => r));
-    for (let i = 0; i < 50; i++) expect(isHexColor(proposeLevelColor([]))).toBe(true);
+  test('at the current price, or with no price known, a neutral colour', () => {
+    expect(NEUTRAL_COLORS).toContain(proposeLevelColor([], 778.57, 778.57, () => 0.5) as never);
+    expect(NEUTRAL_COLORS).toContain(proposeLevelColor([], 790, null, () => 0.5) as never);
+    expect(NEUTRAL_COLORS).toContain(proposeLevelColor([], 790, undefined, () => 0.5) as never);
+    expect(NEUTRAL_COLORS).toContain(proposeLevelColor([], 790, NaN, () => 0.5) as never);
+  });
+
+  test('inside its kind it is random among the colours the other levels do not use yet', () => {
+    const used = PREMIUM_COLORS.slice(0, 2).map((color) => ({ color }));
+    expect([0, 0.5, 0.99].map((r) => proposeLevelColor(used, 790, 778, () => r))).toEqual([PREMIUM_COLORS[2], PREMIUM_COLORS[2], PREMIUM_COLORS[2]]);
+    expect(proposeLevelColor([], 790, 778, () => 0)).toBe(PREMIUM_COLORS[0]);
+    expect(proposeLevelColor([], 790, 778, () => 0.999)).toBe(PREMIUM_COLORS[PREMIUM_COLORS.length - 1]);
+    // a colour of the other kind used by another level does not matter
+    expect(proposeLevelColor(DISCOUNT_COLORS.map((color) => ({ color })), 790, 778, () => 0)).toBe(PREMIUM_COLORS[0]);
+  });
+
+  test('when every colour of the kind is taken, any of that kind may come back', () => {
+    const all = PREMIUM_COLORS.map((color) => ({ color }));
+    for (const r of [0, 0.3, 0.7, 0.999]) expect(PREMIUM_COLORS).toContain(proposeLevelColor(all, 790, 778, () => r) as never);
+  });
+
+  test('the proposal is always a palette colour', () => {
+    for (let i = 0; i < 60; i++) {
+      for (const [price, spot] of [[790, 778], [770, 778], [778, 778], [790, null]] as const) expect(LEVEL_PALETTE).toContain(proposeLevelColor([], price, spot) as never);
+    }
   });
 
   test('palette colours are valid and none repeats', () => {

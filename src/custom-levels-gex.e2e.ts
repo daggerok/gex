@@ -15,6 +15,8 @@ import { startTestSite } from './e2e-site';
 // ============================================================================
 
 const KEY = 'gex.customLevels.v1.SPY';
+const PREMIUM: string[] = ['#fb7185', '#f43f5e', '#fda4af'];
+const DISCOUNT: string[] = ['#34d399', '#10b981', '#6ee7b7'];
 const strikes = new Set<number>((JSON.parse(readFileSync(join(import.meta.dir, '..', 'api', 'options', 'SPY.json'), 'utf8')).quotes as Array<{ strike: number }>).map((q) => q.strike));
 const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
@@ -63,6 +65,27 @@ try {
         const p = await gexPoint(page);
         await page.mouse.click(p.x, p.y, { button: 'right' });
         assert.equal(await editor(page).inputValue(), 'Level 1', 'the editor opens on the GEX tab');
+        // the proposed colour follows the price: a strike above the spot (778.57 for SPY) is reddish, below it greenish
+        const swatchHex = () => page.locator('button[aria-label="Level colour"]').evaluate((e: HTMLElement) => {
+            const m = /(\d+), (\d+), (\d+)/.exec(getComputedStyle(e).backgroundColor)!;
+            return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
+        });
+        assert.ok(PREMIUM.includes(await swatchHex()), 'a level above the price starts reddish');
+        await page.keyboard.press('Escape');
+        const box = (await page.locator('.recharts-wrapper').first().boundingBox())!;
+        const low = { x: box.x + box.width * 0.3, y: p.y };
+        await page.mouse.move(low.x - 20, low.y);
+        await page.mouse.move(low.x, low.y, { steps: 6 });
+        await page.waitForTimeout(250);
+        await page.mouse.click(low.x, low.y, { button: 'right' });
+        assert.ok(DISCOUNT.includes(await swatchHex()), 'a level below the price starts greenish');
+        await page.keyboard.press('Escape');
+        await gexPoint(page);
+        await page.mouse.click(p.x, p.y, { button: 'right' });
+
+        // the editor stays minimal: the colour is one square left of the name, the choices open on a click
+        assert.equal(await page.locator('[role=radiogroup]').count(), 0, 'no colour choices until the square is clicked');
+        await page.locator('button[aria-label="Level colour"]').click();
         // a colour is proposed (one circle is selected) and can be changed like the name
         const radios = page.locator('[role=radiogroup] [role=radio]');
         assert.equal(await radios.count(), 10, 'ten palette colours');
@@ -70,6 +93,8 @@ try {
         const second = (await radios.nth(1).getAttribute('aria-label'))!;
         await radios.nth(1).click();
         assert.equal(await editor(page).count(), 1, 'picking a colour keeps the editor open');
+        assert.equal(await page.locator('[role=radiogroup]').count(), 0, 'the choices close after picking');
+        assert.equal(await page.locator('button[aria-label="Level colour"]').evaluate((e: HTMLElement) => e.style.backgroundColor !== ''), true, 'the square shows the colour');
         await page.keyboard.type('Wall');
         await page.keyboard.press('Enter');
         const [level] = await stored(page);

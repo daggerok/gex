@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 // ============================================================================
 // Helper of the browser (e2e) checks, `*.e2e.ts`: builds the app into a temp
-// folder, copies the one ticker of the CACHE provider it needs (SPY) and serves
+// folder, copies the tickers of the CACHE provider it needs (SPY and QQQ) and serves
 // the result. Not a unit test file, `bun test` does not pick it up. Never
 // imported by src/ code.
 // ============================================================================
@@ -22,7 +22,7 @@ export async function startTestSite(): Promise<TestSite> {
     const dir = mkdtempSync(join(tmpdir(), 'gex-e2e-'));
     const build = Bun.spawn(['bunx', 'parcel', 'build', '--no-cache', '--no-source-maps', '--dist-dir', dir], { cwd: ROOT, stdout: 'ignore', stderr: 'inherit' });
     if ((await build.exited) !== 0) throw new Error('parcel build failed');
-    for (const f of ['options/index.json', 'options/SPY.json', 'charts/SPY.json']) {
+    for (const f of ['options/index.json', 'options/SPY.json', 'charts/SPY.json', 'options/QQQ.json', 'charts/QQQ.json']) {
         mkdirSync(join(dir, 'api', f.split('/')[0]), { recursive: true });
         cpSync(join(ROOT, 'api', f), join(dir, 'api', f));
     }
