@@ -24,7 +24,7 @@
 #   - Ensure Actions has write permission: Settings → Actions → General →
 #     Workflow permissions → "Read and write permissions".
 #
-# CADENCE: once a week (Saturday 10:00 UTC) for every ticker of api/All.txt and api/Indices.txt, or by hand from the
+# CADENCE: once a week (Saturday 10:00 New York time) for every ticker of api/All.txt and api/Indices.txt, or by hand from the
 # Actions tab. The default tickers are refreshed every hour on weekdays by update-partial-data.yml, which keeps their
 # later expirations; this full run is what refreshes everything else (the far expirations' Yahoo prices included).
 # =============================================================================
@@ -32,9 +32,11 @@ name: Update options data
 
 on:
   schedule:
-    # Once a week, Saturday 10:00 UTC (6:00 New York in summer, 5:00 in winter): the market is closed, the hourly
-    # default-set refresh (update-partial-data.yml) does not run, so the two never overlap.
+    # Once a week, Saturday 10:00 New York time (the schedule has its own time zone, the owner's fix 2026-10-12, so summer and
+    # winter time need nothing extra): the market is closed, the hourly partial refresh (update-partial-data.yml) does not
+    # run, so the two never overlap.
     - cron: "0 10 * * 6"
+      timezone: America/New_York
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
 permissions:
