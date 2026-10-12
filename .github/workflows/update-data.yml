@@ -70,7 +70,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.4.x" # pinned minor: a new Bun release must not break the data runs unattended
 
       - name: Fetch option chains
         run: TICKERS=$(cat api/All.txt) bun scripts/options-data.ts

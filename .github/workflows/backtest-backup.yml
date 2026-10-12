@@ -60,7 +60,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.4.x" # pinned minor: a new Bun release must not break the data runs unattended
 
       - name: Fetch fresh data for the chosen tickers (the preset when none)
         if: inputs.refresh
