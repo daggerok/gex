@@ -1,8 +1,19 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 import assert from 'node:assert/strict';
-import { chromium, type Page } from 'playwright';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { chromium, type Locator, type Page } from 'playwright';
+import { defaultLevelName } from './custom-levels';
 import { startTestSite } from './e2e-site';
+
+// The default name of a new level is Buyside above the current price and Sellside below it (then Buyside 2...): the same function
+// the app uses decides what to expect, the price comes from the label of the editor, the spot from the cache file
+const SPOT = JSON.parse(readFileSync(join(import.meta.dir, '..', 'api', 'options', 'SPY.json'), 'utf8')).underlyingPrice as number;
+const NAMES = { above: 'Buyside', below: 'Sellside', plain: 'Level' };
+const priceOfEditor = async (input: Locator) => Number(((await input.getAttribute('aria-label')) ?? '').match(/at ([\d.,]+)/)![1].replace(/,/g, ''));
+const expectedName = async (input: Locator, used: Array<{ name: string }>) => defaultLevelName(used, await priceOfEditor(input), SPOT, NAMES);
+
 
 // ============================================================================
 // Browser check of the Chart tab custom levels (headless Chromium, CACHE
@@ -37,20 +48,24 @@ try {
 
     // add: default name is selected, Enter saves
     await rightClick(at.x, at.y);
-    assert.equal(await name.inputValue(), 'Level 1');
+    const first = await name.inputValue();
+    assert.match(first, /^(Buyside|Sellside)$/, 'a new level is named after its side of the price');
+    assert.equal(first, await expectedName(name, await stored()));
     assert.ok(await name.evaluate((e: HTMLInputElement) => e.selectionStart === 0 && e.selectionEnd === e.value.length), 'default name selected');
     assert.equal(await button('Delete level').count(), 0, 'no delete button while adding');
     await page.keyboard.type('Support');
     await page.keyboard.press('Enter');
     assert.deepEqual((await stored()).map((l) => l.name), ['Support']);
 
-    // a custom name does not use up a number, Level 1 is still free
+    // a custom name does not use up the default name, it is still free
     await rightClick(at.x - 100, at.y - 80);
-    assert.equal(await name.inputValue(), 'Level 1');
+    const second = await name.inputValue();
+    assert.equal(second, await expectedName(name, await stored()));
     await page.keyboard.press('Enter');
-    assert.deepEqual((await stored()).map((l) => l.name), ['Support', 'Level 1']);
+    assert.deepEqual((await stored()).map((l) => l.name), ['Support', second]);
     await rightClick(at.x - 100, at.y - 160);
-    assert.equal(await name.inputValue(), 'Level 2', 'next free number');
+    assert.equal(await name.inputValue(), await expectedName(name, await stored()), 'the next free name');
+    assert.match(await name.inputValue(), /^(Buyside|Sellside)( \d+)?$/);
     await page.keyboard.press('Escape');
 
     // cancelling while adding creates nothing: Esc, the cancel button, a click away
@@ -91,7 +106,7 @@ try {
     assert.equal(await name.inputValue(), 'Support');
     await page.keyboard.type('Renamed');
     await button('Save').click();
-    assert.deepEqual((await stored()).map((l) => l.name), ['Renamed', 'Level 1']);
+    assert.deepEqual((await stored()).map((l) => l.name), ['Renamed', second]);
 
     // edit cancel keeps the level, delete removes it
     await rightClick(at.x + 60, at.y + 60);

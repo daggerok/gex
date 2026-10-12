@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
-import { DISCOUNT_COLORS, isApplePlatform, isHexColor, LEVEL_PALETTE, NEUTRAL_COLORS, PREMIUM_COLORS, levelColorOf, nearestStrike, nextLevelName, parseCustomLevels, proposeLevelColor, roundPrice } from './custom-levels';
+import { DISCOUNT_COLORS, defaultLevelName, isApplePlatform, isHexColor, LEVEL_PALETTE, NEUTRAL_COLORS, PREMIUM_COLORS, levelColorOf, nearestStrike, nextLevelName, parseCustomLevels, proposeLevelColor, roundPrice } from './custom-levels';
 
 const named = (...names: string[]) => names.map((name) => ({ name }));
 
@@ -138,5 +138,35 @@ describe('custom level colours', () => {
   test('palette colours are valid and none repeats', () => {
     expect(LEVEL_PALETTE.every(isHexColor)).toBe(true);
     expect(new Set(LEVEL_PALETTE).size).toBe(LEVEL_PALETTE.length);
+  });
+});
+
+describe('defaultLevelName', () => {
+  const names = { above: 'Buyside', below: 'Sellside', plain: 'Level' };
+  const named = (...n: string[]) => n.map((name) => ({ name }));
+
+  test('above the price Buyside, below it Sellside', () => {
+    expect(defaultLevelName([], 110, 100, names)).toBe('Buyside');
+    expect(defaultLevelName([], 90, 100, names)).toBe('Sellside');
+  });
+
+  test('a taken name gets the smallest free number, the two sides count separately, case does not matter', () => {
+    expect(defaultLevelName(named('Buyside'), 110, 100, names)).toBe('Buyside 2');
+    expect(defaultLevelName(named('Buyside', 'Buyside 2'), 120, 100, names)).toBe('Buyside 3');
+    expect(defaultLevelName(named('buyside', 'Buyside 3'), 120, 100, names)).toBe('Buyside 2');
+    expect(defaultLevelName(named('Buyside'), 90, 100, names)).toBe('Sellside');
+    expect(defaultLevelName(named('Sellside', 'Renamed'), 90, 100, names)).toBe('Sellside 2');
+  });
+
+  test('exactly at the price, or without a price, it is a plain numbered Level', () => {
+    expect(defaultLevelName([], 100, 100, names)).toBe('Level 1');
+    expect(defaultLevelName(named('Level 1'), 100, 100, names)).toBe('Level 2');
+    expect(defaultLevelName([], 110, null, names)).toBe('Level 1');
+    expect(defaultLevelName([], 110, undefined, names)).toBe('Level 1');
+    expect(defaultLevelName([], 110, NaN, names)).toBe('Level 1');
+  });
+
+  test('words of another language are used as given', () => {
+    expect(defaultLevelName([], 110, 100, { above: 'Покупатели', below: 'Продавцы', plain: 'Уровень' })).toBe('Покупатели');
   });
 });

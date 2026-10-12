@@ -15,7 +15,7 @@ import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_L
 import { HelpButton } from '../components/HelpButton';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
-import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor } from '../custom-levels';
+import { isApplePlatform, levelColorOf, nearestStrike, defaultLevelName, proposeLevelColor } from '../custom-levels';
 import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
 import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
@@ -782,7 +782,7 @@ export const GexView: React.FC<GexViewProps> = ({
         const existing = customLevels.find((c) => nearestStrike(c.price, strikes) === strike);
         setLevelDraft(existing
             ? { x, y, price: existing.price, name: existing.name, color: levelColorOf(existing), editId: existing.id }
-            : { x, y, price: strike, name: nextLevelName(customLevels, tr('chart.custom.defaultName')), color: proposeLevelColor(customLevels, strike, levels?.spot ?? effSpot) });
+            : { x, y, price: strike, name: defaultLevelName(customLevels, strike, levels?.spot ?? effSpot, { above: tr('chart.custom.buyside'), below: tr('chart.custom.sellside'), plain: tr('chart.custom.defaultName') }), color: proposeLevelColor(customLevels, strike, levels?.spot ?? effSpot) });
         return true;
     };
     // ---- Touch screen: long press opens the level editor, two fingers pinch to zoom, one finger drags the zoomed chart ----
