@@ -30,7 +30,7 @@ export interface TestSnapshot {
 /** `snapshots` become `api/history/<month>/<id>.zip` plus `api/history/index.json`, and `api/latest.json` gets `latest`. */
 export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?: string } = {}): Promise<TestSite> {
     const dir = mkdtempSync(join(tmpdir(), 'gex-e2e-'));
-    // `bun run test:e2e` (scripts/e2e.ts) builds the app ONCE and hands the folder over, every check copies it (it adds its own
+    // `bun run test:e2e` (src/e2e-run.ts) builds the app ONCE and hands the folder over, every check copies it (it adds its own
     // files to the copy); a check run alone builds for itself
     const shared = process.env.E2E_BUILD;
     if (shared && existsSync(shared)) cpSync(shared, dir, { recursive: true });

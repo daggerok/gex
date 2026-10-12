@@ -5,8 +5,8 @@
  * Runs the browser checks (`src/*.e2e.ts`) of `bun run test:e2e`: the app is built ONCE, then the checks run side by side,
  * each in its own process with its own browser, its own copy of the build and its own port (src/e2e-site.ts), so none depends
  * on another. The output of a check is printed when it ends (not mixed with the others); the exit code is 1 when any failed.
- *   E2E_JOBS=1 bun scripts/e2e.ts      one at a time (to debug)
- *   bun scripts/e2e.ts custom-levels   only the checks whose file name contains that text
+ *   E2E_JOBS=1 bun src/e2e-run.ts      one at a time (to debug)
+ *   bun src/e2e-run.ts custom-levels   only the checks whose file name contains that text
  */
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
