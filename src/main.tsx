@@ -1509,7 +1509,9 @@ const App: React.FC = () => {
                 below on the nav wrapper and each tab-content block is additional,
                 redundant insurance against shrinking - only the Desk wrapper (next)
                 actually wants to be shrinkable. */}
-            <div className={`flex-1 flex flex-col ${activeTab === 'desk' ? 'min-h-0' : ''}`}>
+            {/* GEX and Chart also fit the window from `lg` up (no page scroll, the footer stays in view), so `min-h-0` applies to them too
+                from `lg`; below `lg` they keep their natural height and the page scrolls. */}
+            <div className={`flex-1 flex flex-col ${activeTab === 'desk' ? 'min-h-0' : 'lg:min-h-0'}`}>
             <div className="shrink-0">
             <TabSwitcher
                 value={activeTab}
@@ -1614,7 +1616,7 @@ const App: React.FC = () => {
                 shrink-0, GEX's own content was squeezed by the flex layout and
                 rendered past/behind the footer instead of pushing it down). */}
             {activeTab === 'gex' && (
-                <div className="flex shrink-0 grow flex-col">
+                <div className="flex shrink-0 grow flex-col lg:min-h-0 lg:shrink">
                 <Suspense fallback={null}>
                     <GexView
                         settings={settings}
@@ -1634,7 +1636,7 @@ const App: React.FC = () => {
             )}
             {/* shrink-0: same reasoning as GEX's wrapper just above. */}
             {activeTab === 'chart' && (
-                <div className="shrink-0">
+                <div className="flex shrink-0 grow flex-col lg:min-h-0 lg:shrink">
                 <Suspense fallback={null}>
                     <ChartView
                         settings={settings}

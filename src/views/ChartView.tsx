@@ -415,7 +415,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             : bars && bars.length === 0 ? tr('chart.empty.noBars', { symbol }) : null;
 
     return (
-        <main className="mx-auto w-full px-4 pt-4 lg:px-6">
+        <main className="mx-auto flex w-full flex-1 flex-col px-4 pt-4 lg:min-h-0 lg:px-6">
             {/* ---- The Metrics and Levels panels: the same row as on the GEX tab (the symbol and the range selector are on the
                 chart itself, top left, see ChartHeader) ---- */}
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -428,9 +428,11 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             {entries.length > 0 && isFuturesPriced && <p className="mb-3 text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</p>}
 
             {/* ---- Chart (container always mounted so the instance survives refetches) ---- */}
-            <section className="relative rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-2">
-                <div className="relative">
-                    <div ref={containerRef} className="h-[420px] lg:h-[calc(100dvh-270px)] lg:min-h-[420px]" />
+            <section className="relative flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-2 lg:min-h-0 lg:flex-1">
+                {/* The chart takes the height that is left (no hand-made window height formula: it went stale every time the rows above
+                    changed and left a gap above the footer), at least 240 px */}
+                <div className="relative h-[420px] lg:h-auto lg:min-h-[240px] lg:flex-1">
+                    <div ref={containerRef} className="absolute inset-0" />
                     <div className="absolute left-2 top-2 z-20">
                         <ChartHeader symbol={symbol} range={range} setRange={setRange} colorTheme={settings.colorTheme} />
                     </div>

@@ -1072,12 +1072,9 @@ export const GexView: React.FC<GexViewProps> = ({
     // first, a level without a price (no data) after those with one, optional levels that do not apply are
     // left out. One list drives both tables so that every Values row is the continuation of the Levels row
     // at the same height.
-    // The user's custom levels (named on the Chart tab) join the list with their own name and color.
-    type LevelRow = { key: string; label: string; value: number | null; optional?: boolean; suffix?: string; custom?: boolean; color?: string };
-    const levelRows: LevelRow[] = ([
-        ...keyLevels,
-        ...customLevels.map((c) => ({ key: `custom:${c.id}`, label: c.name, value: c.price, custom: true, color: levelColorOf(c) })),
-    ] as LevelRow[])
+    // The user's custom levels are NOT in these tables (owner's decision, to keep the tables simple): they live on the charts
+    // and in the Levels panel above.
+    const levelRows = keyLevels
         .filter((l) => !(l.optional && l.value == null))
         .sort((a, b) => (a.value == null ? 1 : b.value == null ? -1 : b.value - a.value));
     // Each row's data is the profile row of its strike (the nearest strike when the level is not on one -
@@ -1150,7 +1147,7 @@ export const GexView: React.FC<GexViewProps> = ({
         : !chart ? tr('gex.empty.noGamma') : null;
 
     return (
-        <main className="mx-auto flex w-full flex-1 flex-col px-4 pt-4 lg:px-6">
+        <main className="mx-auto flex w-full flex-1 flex-col px-4 pt-4 lg:min-h-0 lg:px-6">
             {/* ---- Controls: metric toggle + Key Levels toggle (expiration
                 picker + Load live in the shared panel in main.tsx). One
                 flex-wrap row, `justify-between`, `items-center` so each
@@ -1215,9 +1212,11 @@ export const GexView: React.FC<GexViewProps> = ({
                 side in ONE row (a two column grid), Values always open and scrolling sideways inside its
                 column. The sidebar and the right column are `display: contents` there, so their
                 children are the grid items and `order` puts Levels and Values after the chart. */}
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-0 gap-y-4 lg:flex lg:flex-1 lg:flex-row lg:gap-4">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-0 gap-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-row lg:gap-4">
                 {/* ---- Sidebar: Metrics table + Levels ---- */}
-                <aside className="contents lg:flex lg:w-[320px] lg:shrink-0 lg:flex-col lg:gap-4">
+                {/* From `lg` up the sidebar has the height of the window: the Cursor card gives way first (it scrolls), and when even
+                    that is not enough the sidebar itself scrolls, the page never does */}
+                <aside className="themed-scroll contents lg:flex lg:min-h-0 lg:w-[320px] lg:shrink-0 lg:flex-col lg:gap-4 lg:overflow-y-auto">
                     {/* One Metrics table instead of the old OI Volume / GEX Analysis /
                         P/C Ratio cards: every total in one place, each row with the
                         color of the matching chart series (custom colors included). */}
@@ -1284,7 +1283,7 @@ export const GexView: React.FC<GexViewProps> = ({
                             {levelRows.map((l) => (
                                 <div key={l.key} className={`flex ${LEVEL_ROW_H} items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/50 px-3 text-sm last:border-0`}>
                                     <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${l.custom ? '' : GEX_LEVEL_COLORS[l.key as ToggleableLevelKey].dot}`} style={l.custom ? { backgroundColor: l.color } : undefined} aria-hidden="true" />
+                                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${GEX_LEVEL_COLORS[l.key].dot}`} aria-hidden="true" />
                                         {l.label}
                                     </span>
                                     <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">
@@ -1297,8 +1296,8 @@ export const GexView: React.FC<GexViewProps> = ({
                 </aside>
 
                 {/* ---- Main chart ---- */}
-                <div className="contents lg:flex lg:min-w-0 lg:flex-1 lg:flex-col lg:gap-4">
-                <section className="order-2 col-span-2 flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3 lg:order-none lg:col-auto">
+                <div className="contents lg:flex lg:min-h-0 lg:min-w-0 lg:flex-1 lg:flex-col lg:gap-4">
+                <section className="order-2 col-span-2 flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3 lg:order-none lg:col-auto lg:min-h-0">
                     {/* Header: the HORIZONTAL zoom row centered above the chart as `<- - x + ->`, the
                         metrics other than Net GEX and AG at the top right (those two are written above
                         their own axes inside the chart). The strike axis caption is at the bottom. */}
@@ -1361,7 +1360,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         values, etc.) stays normally selectable. */}
                     <div
                         ref={chartBoxRef}
-                        className={'relative h-[360px] lg:h-auto lg:min-h-[420px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
+                        className={'relative h-[360px] lg:h-auto lg:min-h-[240px] lg:flex-1 select-none' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
                         onPointerDownCapture={(e) => { pointerTypeRef.current = e.pointerType; }}
                         onMouseDownCapture={onChartPointerDownCapture}
                         onContextMenu={(e) => { if (openLevelEditor(e)) e.preventDefault(); }}

@@ -81,7 +81,7 @@ Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only:
 
 ### Custom levels
 
-You can add your own named levels on the **Chart** tab and on the **GEX** tab. They are stored per symbol in `localStorage` and show on both tabs (on GEX in the Levels and Values tables and as a labelled line on the strike chart)
+You can add your own named levels on the **Chart** tab and on the **GEX** tab. They are stored per symbol in `localStorage` and show on both tabs as labelled lines on the charts and as chips of the Levels panel. They are not rows of the Levels and Values tables (on purpose, to keep those tables simple)
 
 - **How to click:** a right click with the mouse. On a MacBook trackpad it is a **two-finger click** (or a two-finger tap when tapping is on in System Settings), the browser sends the same event as for a right click. **Ctrl+click** works on macOS too. Not over the plot (on an axis, outside the chart), the browser's own menu opens as usual
 - **Add:** click where you want the level. The level goes on the **nearest strike**, never between two (on the GEX tab it is the strike under the pointer, on the Chart tab the strike nearest to the clicked price). A field opens at the pointer with the default name `Level 1` (or `Level 2` when `Level 1` exists, and so on, the smallest free number) already selected. Enter or the check button saves. Esc, the crossed-out pencil button or a click away cancels and creates nothing
@@ -219,6 +219,7 @@ bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run log
 
 - **Unit tests:** `bun test` runs every `src/*.test.ts`
 - **Browser (e2e) tests:** `bun run test:e2e` runs `src/*.e2e.ts` in headless Chromium through Playwright (needs `bunx playwright install chromium` once). `src/e2e-site.ts` builds the app into a temp folder and serves it with the SPY data
+- `src/layout.e2e.ts` guards the page layout at three window sizes: no page scroll on any tab (only the Desk table, the GEX sidebar and the Cursor list scroll inside), the footer pressed to the bottom, no empty space above it, one footer design on all tabs. Its error message lists what is wrong, what was expected and measured, and which files to look at
 - Naming: unit tests are `*.test.ts`, e2e are `*.e2e.ts`, never the other way, so `bun test` does not run browsers
 - CI (`.github/workflows/ci.yaml`, pull requests only) runs the unit tests, the e2e tests, `bun build` of the fetcher, `node --check` of the Worker and both builds. `main` is built and deployed by `github-pages.yml`
 

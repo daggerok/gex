@@ -132,7 +132,10 @@ try {
         assert.equal(level.name, 'Wall');
         assert.equal((level as { color?: string }).color, second, 'the chosen colour is saved with the level');
         assert.ok(strikes.has(level.price), `the level sits on a strike, not between two: ${level.price}`);
-        assert.ok(await page.getByText('Wall').first().isVisible(), 'the level shows in the Levels table');
+        // the user's levels are on the charts and in the Levels panel, NOT in the Levels and Values tables
+        const sidebarText = await page.evaluate(() => Array.from(document.querySelectorAll('aside section')).map((sec) => sec.textContent ?? '').join(' '));
+        assert.ok(!sidebarText.includes('Wall'), 'a custom level is not a row of the Levels table');
+        assert.ok(await page.locator('.recharts-wrapper svg text', { hasText: 'Wall' }).first().isVisible(), 'the level is labelled on the GEX chart');
         // ... and as the FIRST chip of the Levels panel above the chart (not hidden at the far end of a scrolling row)
         const panel = page.getByRole('group', { name: 'Levels' }).first();
         const firstChip = panel.getByRole('button').first();
