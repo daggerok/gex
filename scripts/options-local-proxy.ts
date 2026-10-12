@@ -31,9 +31,7 @@
  *       GET {base}/api/search?provider=nasdaq&q=tesla
  *       GET {base}/api/search?provider=cboe&q=spx
  *
- * DEPLOY (optional): the same logic works on any Node/Bun host or can be ported
- *   to a Cloudflare Worker (see scripts/options-cloudflare-proxy.js) so it also works
- *   for the public GitHub Pages site.
+ * DEPLOY (optional): the same logic works on any Node/Bun host.
  * =============================================================================
  */
 

@@ -56,12 +56,10 @@ export const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Get a free key',
         'settings.keyHint': 'Stored only in your browser (localStorage).',
         'settings.proxyBase': 'Proxy base URL',
-        'settings.proxyBaseHint': 'Run bun ./scripts/options-local-proxy.ts locally, or deploy scripts/options-cloudflare-proxy.js.',
-        'settings.proxyBasePlaceholder': 'http://localhost:8787 or https://name.you.workers.dev',
+        'settings.proxyBaseHint': 'Run bun ./scripts/options-local-proxy.ts locally.',
+        'settings.proxyBasePlaceholder': 'http://localhost:8787',
         'settings.corsProxy': 'CORS proxy',
         'settings.corsProxyHint': 'Public proxies can be flaky — switch if one fails, or use your own Worker.',
-        'settings.workerUrl': 'Worker URL',
-        'settings.workerUrlPlaceholder': 'https://name.you.workers.dev',
 
         'settings.deskColumns': 'Desk columns',
         'settings.deskColumns.calls': 'Calls',
@@ -132,7 +130,7 @@ export const translations: Record<Language, Record<string, string>> = {
             'Local static cache — same-origin api/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS greeks). ' +
             'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
         'providerDescription.yahoo':
-            'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts or Cloudflare Worker. ' +
+            'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts. ' +
             'Lazy per-expiration. No provider greeks; client Black-Scholes fills them when IV is present.',
         'providerDescription.nasdaq':
             'NASDAQ option chain via proxy (/api/nasdaq) — full chain one call (bid/ask/last/volume/OI). ' +
@@ -197,7 +195,6 @@ export const translations: Record<Language, Record<string, string>> = {
             '2. Install dependencies: bun install -E\n' +
             '3. Run the proxy: bun ./scripts/options-local-proxy.ts\n' +
             '4. Set Proxy base URL in Settings to http://localhost:8787\n\n' +
-            'Or deploy scripts/options-cloudflare-proxy.js and set the Worker URL instead.\n\n' +
             'See README.md for detailed instructions.',
         'error.friendly.networkCors':
             'Network/CORS error reaching the proxy. Try a different CORS proxy in Settings, or use CACHE (static data).',
@@ -458,12 +455,10 @@ export const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Получить бесплатный ключ',
         'settings.keyHint': 'Хранится только в браузере (localStorage).',
         'settings.proxyBase': 'Базовый URL прокси',
-        'settings.proxyBaseHint': 'Запусти bun ./scripts/options-local-proxy.ts локально или задеплой scripts/options-cloudflare-proxy.js.',
-        'settings.proxyBasePlaceholder': 'http://localhost:8787 или https://name.you.workers.dev',
+        'settings.proxyBaseHint': 'Запусти bun ./scripts/options-local-proxy.ts локально.',
+        'settings.proxyBasePlaceholder': 'http://localhost:8787',
         'settings.corsProxy': 'CORS прокси',
         'settings.corsProxyHint': 'Публичные прокси могут быть нестабильны — переключайся при сбоях или используй свой Worker.',
-        'settings.workerUrl': 'URL Worker',
-        'settings.workerUrlPlaceholder': 'https://name.you.workers.dev',
 
         'settings.deskColumns': 'Колонки доски',
         'settings.deskColumns.calls': 'Коллы',
@@ -534,7 +529,7 @@ export const translations: Record<Language, Record<string, string>> = {
             'Локальный статический кэш — same-origin api/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS греки). ' +
             'Без прокси и ключей. Лучший default для GitHub Pages. Показываются только закэшированные тикеры.',
         'providerDescription.yahoo':
-            'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывают scripts/options-local-proxy.ts или Cloudflare Worker. ' +
+            'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывает scripts/options-local-proxy.ts. ' +
             'Lazy по expiration. Нет провайдерских греков; клиентский Black-Scholes считает их при наличии IV.',
         'providerDescription.nasdaq':
             'Цепочка NASDAQ через прокси (/api/nasdaq) — полная цепочка за один запрос (bid/ask/last/volume/OI). ' +
@@ -599,7 +594,6 @@ export const translations: Record<Language, Record<string, string>> = {
             '2. Установи зависимости: bun install -E\n' +
             '3. Запусти прокси: bun ./scripts/options-local-proxy.ts\n' +
             '4. Укажи Proxy base URL в настройках: http://localhost:8787\n\n' +
-            'Или задеплой scripts/options-cloudflare-proxy.js и укажи URL Worker.\n\n' +
             'Подробности — в README.md.',
         'error.friendly.networkCors':
             'Ошибка сети/CORS при обращении к прокси. Попробуй другой CORS-прокси в настройках или используй CACHE (статичные данные).',

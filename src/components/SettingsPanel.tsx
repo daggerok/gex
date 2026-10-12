@@ -153,18 +153,6 @@ export const SettingsPanel: React.FC<{
                                 {t('settings.corsProxyHint')}
                             </span>
                         </label>
-                        {settings.proxyTemplate.includes('{worker}') && (
-                            <label className="mb-1 block">
-                                <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.workerUrl')}</span>
-                                <input
-                                    type="text"
-                                    value={settings.workerUrl}
-                                    placeholder={t('settings.workerUrlPlaceholder')}
-                                    onChange={(e) => onChange({ workerUrl: e.target.value.trim() })}
-                                    className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
-                                />
-                            </label>
-                        )}
                     </>
                 )}
 

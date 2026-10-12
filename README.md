@@ -190,14 +190,10 @@ The proxy starts on `http://localhost:8787` by default.
 2. Set the **Proxy base URL** field to `http://localhost:8787` (or your custom port)
 3. Now the Yahoo, NASDAQ and CBOE providers work
 
-### Alternative: Cloudflare Worker
-
-For a deployable proxy without a local setup: deploy `scripts/options-cloudflare-proxy.js` to Cloudflare Workers and set the **Proxy base URL** to your Worker URL (for example `https://your-worker.your-subdomain.workers.dev`)
-
 ### Proxy troubleshooting
 
 - **"Could not reach the proxy":** make sure the proxy is running (`bun ./scripts/options-local-proxy.ts`)
-- **CORS errors:** the proxy must run on `localhost` or be deployed as a Cloudflare Worker
+- **CORS errors:** the proxy must run on `localhost`
 - **Port conflicts:** change the port in `scripts/options-local-proxy.ts` or use the `PORT` environment variable
 
 ## Companion infrastructure
@@ -212,7 +208,6 @@ Optional files outside the core app source:
   - `/api/nasdaq`: NASDAQ option-chain relay
   - `/api/cboe`: CBOE delayed-options relay
   - `/api/search?provider=yahoo|nasdaq|cboe&q=...`: provider-native suggestions
-- `scripts/options-cloudflare-proxy.js`: deployable Worker with the same provider endpoints plus `/raw?url=...`, a CORS passthrough limited to the provider hosts in `RAW_ALLOWED_HOSTS`
 
 ## Development
 
@@ -230,7 +225,7 @@ bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run log
 - **Browser (e2e) tests:** `bun run test:e2e` runs `src/*.e2e.ts` in headless Chromium through Playwright (needs `bunx playwright install chromium` once). `src/e2e-site.ts` builds the app into a temp folder and serves it with the SPY data
 - `src/layout.e2e.ts` guards the page layout at three window sizes: no page scroll on any tab (only the Desk table, the GEX sidebar and the Cursor list scroll inside), the footer pressed to the bottom, no empty space above it, one footer design on all tabs. Its error message lists what is wrong, what was expected and measured, and which files to look at
 - Naming: unit tests are `*.test.ts`, e2e are `*.e2e.ts`, never the other way, so `bun test` does not run browsers
-- CI (`.github/workflows/ci.yaml`, pull requests only) runs the unit tests, the e2e tests, `bun build` of the fetcher, `node --check` of the Worker and both builds. `main` is built and deployed by `github-pages.yml`
+- CI (`.github/workflows/ci.yaml`, pull requests only) runs the unit tests, the e2e tests, `bun build` of the fetcher and both builds. `main` is built and deployed by `github-pages.yml`
 
 ### Pre-PR checks
 
@@ -238,8 +233,7 @@ bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run log
 2. Browser tests pass: `bun run test:e2e`
 3. The project builds: `bun run build`
 4. The fetcher bundles: `bun build --target=bun scripts/options-data.ts --outfile=/dev/null`
-5. The Cloudflare Worker is valid: `node --check scripts/options-cloudflare-proxy.js`
-6. No secrets, no leftover debug logs, no changed files in `api/` that you did not mean to commit
+5. No secrets, no leftover debug logs, no changed files in `api/` that you did not mean to commit
 
 Every UI string needs an `en` and a `ru` entry in `src/i18n.tsx`. Never commit `dist/`, `node_modules/` or `.parcel-cache/`.
 
@@ -279,7 +273,6 @@ scripts/
   backtest-backup.ts          # makes an on-demand backup zip (all data or chosen tickers)
   # src/backtest/: snapshot format, zip reading and writing in the browser, controller (the logic of the As of feature), store (IndexedDB)
   options-local-proxy.ts      # local Bun proxy: Yahoo, NASDAQ, CBOE, search
-  options-cloudflare-proxy.js # Cloudflare Worker proxy: Yahoo, NASDAQ, CBOE, search, raw
 .github/workflows/
   ci.yaml                     # pull request checks
   update-data.yml             # data refresh of all tickers (weekly, also manual)
@@ -300,7 +293,7 @@ package.json                  # Bun and Parcel scripts
 ## Troubleshooting
 
 - **Nothing loads on open:** expected. Press **Expirations**, then **Load**
-- **Needs proxy or CORS errors:** start `bun ./scripts/options-local-proxy.ts` locally or set a Cloudflare Worker URL in Settings, Proxy base URL
+- **Needs proxy or CORS errors:** start `bun ./scripts/options-local-proxy.ts` locally and set its URL in Settings, Proxy base URL
 - **`Unexpected token '<'`:** a proxy or server returned HTML instead of JSON. Check the proxy URL and the provider
 - **CACHE says not cached:** the ticker is absent from `api/options/*.json`. Use another provider, or run the fetcher for it (`TICKERS=XYZ ./scripts/options-data.ts`)
 - **`(no options)` suggestion:** the ticker is valid in the local manifest, but the latest data scan found no listed options

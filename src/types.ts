@@ -238,8 +238,6 @@ export interface Settings {
     proxyTemplate: string;
     /** Base URL of the request-handling proxy (Yahoo/worker). */
     proxyBase: string;
-    /** Optional Cloudflare Worker origin, substituted into {worker} templates. */
-    workerUrl: string;
     /** Per-provider API keys, so switching providers keeps each key. */
     tokens: Record<string, string>;
     /** Per-provider API secrets (for KEY+SECRET providers like Alpaca). */

@@ -53,9 +53,6 @@ jobs:
       - name: Validate unit tests
         run: bun run test
 
-      - name: Validate data script syntax
-        run: node --check scripts/options-cloudflare-proxy.js
-
       - name: Validate application build
         run: bun run build
 

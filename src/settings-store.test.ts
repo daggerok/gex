@@ -10,6 +10,8 @@ import {
     DEFAULT_SETTINGS,
     fmtBytes,
     hasPersistedSettings,
+    loadSettings,
+    SETTINGS_KEY,
     pickEvictionKeys,
     sanitizeActiveTab,
     sanitizeGexMetrics,
@@ -223,5 +225,24 @@ describe('sanitizeGexMetrics', () => {
 describe('hasPersistedSettings', () => {
     test('resolves safely (false) when localStorage is unavailable, same fail-safe contract as the cache functions above', () => {
         expect(hasPersistedSettings()).toBe(false);
+    });
+});
+
+describe('loadSettings: the removed Cloudflare Worker preset', () => {
+    test('a saved {worker} template falls back to the default and workerUrl is dropped, other templates are kept', () => {
+        const g = globalThis as unknown as { localStorage?: Pick<Storage, 'getItem'> };
+        const saved = g.localStorage;
+        let blob = '';
+        g.localStorage = { getItem: (k) => (k === SETTINGS_KEY ? blob : null) };
+        try {
+            blob = JSON.stringify({ proxyTemplate: '{worker}/raw?url={url}', workerUrl: 'https://x.workers.dev' });
+            const s = loadSettings();
+            expect(s.proxyTemplate).toBe(DEFAULT_SETTINGS.proxyTemplate);
+            expect('workerUrl' in s).toBe(false);
+            blob = JSON.stringify({ proxyTemplate: 'https://corsproxy.io/?url={url}' });
+            expect(loadSettings().proxyTemplate).toBe('https://corsproxy.io/?url={url}');
+        } finally {
+            g.localStorage = saved;
+        }
     });
 });
