@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
-import { visibleRangeFor } from './views/chart-range';
+import { visibleRangeFor } from './chart-range';
 
 const DAY = 86_400;
 /** `n` consecutive daily bars ending at day 1000. */
