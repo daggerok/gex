@@ -39,7 +39,10 @@ export const translations: Record<Language, Record<string, string>> = {
 
         'settings.title': 'Settings',
         'settings.provider': 'Data provider',
-        'settings.providerHint': 'Also available in the heading for quick access.',
+        'settings.providerHint': 'Online data comes from the live proxy of the chosen provider.',
+        'settings.dataSource': 'Data source',
+        'settings.onlineData': 'Online data',
+        'settings.cachedData': 'Cached data',
         'settings.theme': 'Theme',
         'settings.themeHint': 'Also available in the heading for quick access.',
         'settings.colorTheme': 'Color palette',
@@ -430,7 +433,10 @@ export const translations: Record<Language, Record<string, string>> = {
 
         'settings.title': 'Настройки',
         'settings.provider': 'Провайдер данных',
-        'settings.providerHint': 'Также доступен в шапке для быстрого доступа.',
+        'settings.providerHint': 'Онлайн-данные идут через живой прокси выбранного провайдера.',
+        'settings.dataSource': 'Источник данных',
+        'settings.onlineData': 'Онлайн-данные',
+        'settings.cachedData': 'Кэшированные данные',
         'settings.theme': 'Тема',
         'settings.themeHint': 'Также доступна в шапке для быстрого доступа.',
         'settings.colorTheme': 'Цветовая палитра',

@@ -41,9 +41,16 @@ describe('header parity + CACHE-muted proxies (gex)', () => {
     expect(main).toContain("bg-white border-slate-200 text-slate-900 shadow-sm");
   });
 
-  test('provider select keeps fixed width so CACHE/LIVE toggle does not reflow header', () => {
-    expect(main).toContain('w-[7.25rem]');
-    expect(main).toContain('box-border w-full max-w-full');
+  test('the provider select lives in the settings menu (Online data / Cached data buttons), not in the header', () => {
+    const topBar = readFileSync(join(import.meta.dir, 'components/TopBar.tsx'), 'utf8');
+    const header = topBar.slice(0, topBar.indexOf('{openSettings && ('));
+    const menu = topBar.slice(topBar.indexOf('{openSettings && ('));
+    expect(header).not.toContain('<select');
+    expect(menu.match(/<select/g)?.length).toBe(1);
+    expect(menu).toContain('data-data-source={b.k}');
+    expect(menu).toContain('w-[7.25rem]');
+    // at the bottom of the menu: after the nested SettingsPanel
+    expect(menu.indexOf('data-data-source')).toBeGreaterThan(menu.indexOf('<SettingsPanel'));
   });
 
   test('provider select: CACHE locks to CACHE; LIVE lists only 3 proxies', () => {
