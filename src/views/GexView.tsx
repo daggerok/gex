@@ -6,10 +6,11 @@ import { createPortal } from 'react-dom';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
+import { useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
-    DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
+    CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
     type GexLevelKey, type LevelColorSet, type MetricColorSet,
 } from '../gex-colors';
 import { useI18n } from '../i18n';
@@ -701,6 +702,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const { t: tr } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const na = tr('gex.na');
+    const [customLevels] = useCustomLevels(symbol);
 
     // quotes / effSpot / levels come from App's useGexLevels (computed once,
     // shared with the Chart tab). The profile below only feeds the bar chart.
@@ -1390,7 +1392,11 @@ export const GexView: React.FC<GexViewProps> = ({
     // first, a level without a price (no data) after those with one, optional levels that do not apply are
     // left out. One list drives both tables so that every Values row is the continuation of the Levels row
     // at the same height.
-    const levelRows = keyLevels
+    // The user's custom levels (named on the Chart tab) join the list with their own name and color.
+    const levelRows: Array<{ key: string; label: string; value: number | null; optional?: boolean; suffix?: string; custom?: boolean }> = [
+        ...keyLevels,
+        ...customLevels.map((c) => ({ key: `custom:${c.id}`, label: c.name, value: c.price, custom: true })),
+    ]
         .filter((l) => !(l.optional && l.value == null))
         .sort((a, b) => (a.value == null ? 1 : b.value == null ? -1 : b.value - a.value));
     // Each row's data is the profile row of its strike (the nearest strike when the level is not on one -
@@ -1743,7 +1749,7 @@ export const GexView: React.FC<GexViewProps> = ({
                             {levelRows.map((l) => (
                                 <div key={l.key} className={`flex ${LEVEL_ROW_H} items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/50 px-3 text-sm last:border-0`}>
                                     <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${GEX_LEVEL_COLORS[l.key].dot}`} aria-hidden="true" />
+                                        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${l.custom ? CUSTOM_LEVEL_COLOR.dot : GEX_LEVEL_COLORS[l.key as ToggleableLevelKey].dot}`} aria-hidden="true" />
                                         {l.label}
                                     </span>
                                     <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">
@@ -2175,6 +2181,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                             const value = levels?.[key];
                                             if (value == null) continue;
                                             drawn.push({ key, value, text: levelChartLabel(key), color: levelColors[key] });
+                                        }
+                                        for (const c of customLevels) {
+                                            drawn.push({ key: `custom:${c.id}`, value: c.price, text: c.name, color: CUSTOM_LEVEL_COLOR.hex });
                                         }
                                         const groups = groupLevelLabels(drawn);
                                         return drawn.map((item) => {

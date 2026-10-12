@@ -44,6 +44,9 @@ export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
     spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
 };
 
+/** Lines the user adds to the Chart tab with a right click (not a GEX level, so it has no GexLevelKey). */
+export const CUSTOM_LEVEL_COLOR: GexLevelColor = { hex: '#38bdf8', dot: 'bg-sky-400' }; // sky-400
+
 /** Bar fills for the GEX tab: call-side (positive) vs put-side (negative).
  *  Used by the signed netGex pos/neg stacked bars. */
 export const GEX_BAR_COLORS = {
