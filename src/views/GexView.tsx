@@ -7,7 +7,7 @@ import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, R
 import { attachLongPress } from '../long-press';
 import { FullscreenButton } from '../components/FullscreenButton';
 import { useFullscreen, usePortalHost } from '../use-fullscreen';
-import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, pinchRange, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
+import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, pinchRange, recordEscape, RESET_ALL_EVENT, strikeTicks, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { FadePresence } from '../components/FadePresence';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
@@ -1074,6 +1074,14 @@ export const GexView: React.FC<GexViewProps> = ({
     // Two level labels closer than this many px print over each other (rotated 45 degrees, 12 px between text lines)
     const LABEL_MIN_GAP_PX = 18;
     const labelGap = plotPx > 0 ? (LABEL_MIN_GAP_PX * (xDomain[1] - xDomain[0])) / plotPx : 0;
+    // X axis labels: real strikes of the chain only (SPX 7810, 7815, never the 7805.4 of a nice-number axis), as many as fit
+    // at about 70 px each (a "7,645" label is ~40 px wide), at most 20
+    const STRIKE_LABEL_PX = 70;
+    const xTicks = useMemo(() => {
+        if (!chart) return [];
+        const maxTicks = plotPx > 0 ? Math.max(2, Math.min(20, Math.floor(plotPx / STRIKE_LABEL_PX))) : 20;
+        return strikeTicks(chart.rows.map((r) => r.strike), xDomain, maxTicks);
+    }, [chart, xDomain[0], xDomain[1], plotPx]);
 
     // ---- AG's own secondary Y axis (deliberate exception to the "one
     // shared Y axis" rule above) ---------------------------------------------
@@ -1563,34 +1571,21 @@ export const GexView: React.FC<GexViewProps> = ({
                                     onMouseUp={onChartMouseUp}
                                 >
                                     <CartesianGrid stroke="#94a3b8" strokeOpacity={0.15} vertical={false} />
-                                    {/* tickCount raised from recharts' default of 5 to a denser
-                                        20 (X, doubled again from an earlier 10 - the user
-                                        wanted roughly twice as many grid levels on the X axis)
-                                        / 8 (Y) - these are CANDIDATE counts, not a
-                                        guaranteed final count: recharts' default
-                                        `interval="preserveEnd"` already measures each tick
-                                        label's real rendered size against the axis' actual
-                                        pixel width (minTickGap, default 5px) every render and
-                                        drops whichever candidates would collide - so raising
-                                        tickCount alone both (a) reads denser at the default
-                                        full-range view and (b) automatically adapts to the
-                                        current zoom: `domain={xDomain}` already reflects
-                                        `xZoom` when dragging to zoom in, so a narrower zoomed
-                                        domain has more real pixel width per candidate tick and
-                                        more of them survive the collision check, while a wide
-                                        unzoomed domain still only shows as many as fit without
-                                        overlapping. Verified live at full range, a moderate
-                                        zoom, and a very tight zoom - see the PR. */}
+                                    {/* X: explicit `ticks` (xTicks, strikeTicks in zoom-pan.ts), only strikes that exist in
+                                        the chain, on a round step, as many as fit the plot width, recomputed for the zoomed
+                                        domain. A tickCount here made recharts pick nice numbers off the domain edges
+                                        (7,645.4, 7,665.4, ...) that are no strike at all. Y keeps tickCount 8: candidate
+                                        counts that recharts thins out (interval="preserveEnd") when labels would collide */}
                                     <XAxis
                                         dataKey="strike"
                                         height={X_AXIS_HEIGHT}
                                         type="number"
                                         domain={xDomain}
                                         allowDataOverflow
-                                        tickCount={20}
+                                        ticks={xTicks}
                                         tick={{ fill: '#94a3b8', fontSize: 12 }}
                                         stroke="#94a3b8"
-                                        tickFormatter={(v: number) => fmt(v, v % 1 === 0 ? 0 : 1)}
+                                        tickFormatter={(v: number) => fmt(v, v % 1 === 0 ? 0 : Number.isInteger(v * 10) ? 1 : 2)}
                                     />
                                     {/* axisLine/tickLine hidden on both Y axes (left/primary and
                                         right/AG) - visually minimal, floating tick VALUES only,

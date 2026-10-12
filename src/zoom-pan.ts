@@ -141,3 +141,30 @@ export function pinchRange(start: [number, number], base: [number, number], star
     if (b > base[1]) { a -= b - base[1]; b = base[1]; }
     return [Math.max(a, base[0]), Math.min(b, base[1])];
 }
+
+/** "Nice" multipliers of a price step for the strike labels: 1, 2, 2.5, 5 times a power of ten. */
+const NICE_STEPS = [1, 2, 2.5, 5];
+
+/**
+ * The X axis labels of the GEX chart: only strikes that exist (SPX 7810, 7815, never 7805.4), at most `maxTicks` of them.
+ * Picks the smallest round step (1, 2, 2.5, 5 x 10^n, at least the smallest strike gap) whose multiples among the strikes
+ * in `domain` fit in `maxTicks`, so the labels stay evenly spaced where the strikes are dense. `strikes` must be sorted.
+ * When no round step fits (odd strikes, or the wings are denser than the step), every n-th strike in view is used.
+ */
+export function strikeTicks(strikes: readonly number[], domain: [number, number], maxTicks: number = 20): number[] {
+    const inView = strikes.filter((k) => k >= domain[0] && k <= domain[1]);
+    if (inView.length <= maxTicks) return inView;
+    let gap = Infinity;
+    for (let i = 1; i < inView.length; i++) gap = Math.min(gap, inView[i] - inView[i - 1]);
+    const onStep = (k: number, step: number) => Math.abs(k / step - Math.round(k / step)) < 1e-6;
+    for (let p = Math.floor(Math.log10(gap)); p <= Math.ceil(Math.log10(inView[inView.length - 1] || 1)) + 1; p++) {
+        for (const m of NICE_STEPS) {
+            const step = m * 10 ** p;
+            if (step < gap - 1e-9) continue;
+            const ticks = inView.filter((k) => onStep(k, step));
+            if (ticks.length >= 2 && ticks.length <= maxTicks) return ticks;
+        }
+    }
+    const every = Math.ceil(inView.length / maxTicks);
+    return inView.filter((_, i) => i % every === 0);
+}
