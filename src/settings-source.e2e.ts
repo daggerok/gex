@@ -11,7 +11,7 @@ import { startTestSite } from './e2e-site';
 
 const site = await startTestSite();
 const browser = await chromium.launch();
-const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+const page = await (await browser.newContext({ viewport: { width: 1400, height: 700 } })).newPage();
 try {
     await page.goto(site.url);
     await page.getByText('💾').first().click(); // cached data from the header pill
@@ -46,6 +46,10 @@ try {
     assert.equal(await select.inputValue(), 'yahoo');
 
     assert.equal(await page.locator('[data-proxy-indicators]').getAttribute('data-proxy-indicators'), 'live', 'online data: the proxy status is live');
+    // the menu is taller than a small window: it scrolls, so the last block (debug) can always be reached
+    await debug.scrollIntoViewIfNeeded();
+    const inView = await debug.evaluate((e) => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight; });
+    assert.equal(inView, true, 'the debug block is reachable by scrolling the menu');
     const debugBox = (await debug.boundingBox())!;
     assert.ok(debugBox.y > (await online.boundingBox())!.y, 'debug info is below the data source block, the last block of the menu');
     await cached.click();
