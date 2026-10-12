@@ -18,6 +18,17 @@ const ticks = async (page: Page) => (await page.locator('.recharts-wrapper svg t
 const zoomIn = (page: Page, times: number) => (async () => {
     for (let i = 0; i < times; i++) { await page.getByRole('button', { name: 'Horizontal Zoom In' }).click(); await page.waitForTimeout(150); }
 })();
+/** The tick labels settle a moment after a load (longer on a busy machine): retry for a few seconds before judging them. */
+async function ticksBecome(page: Page, expected: unknown, message: string) {
+    let last: unknown;
+    for (let i = 0; i < 40; i++) {
+        last = await ticks(page);
+        if (JSON.stringify(last) === JSON.stringify(expected)) return;
+        await page.waitForTimeout(200);
+    }
+    assert.deepEqual(last, expected, message);
+}
+
 async function load(page: Page, symbol: string) {
     const ticker = page.locator('input[role=combobox]');
     await ticker.fill(symbol);
@@ -51,12 +62,12 @@ try {
     // back to SPY: its zoom is still there (the reported bug: it was reset to the full view)
     await load(page, 'SPY');
     await page.waitForTimeout(1000);
-    assert.deepEqual(await ticks(page), spyZoomed, 'SPY comes back zoomed exactly as it was left');
+    await ticksBecome(page, spyZoomed, 'SPY comes back zoomed exactly as it was left');
 
     // and QQQ too
     await load(page, 'QQQ');
     await page.waitForTimeout(1000);
-    assert.deepEqual(await ticks(page), qqqZoomed, 'QQQ comes back zoomed as it was left');
+    await ticksBecome(page, qqqZoomed, 'QQQ comes back zoomed as it was left');
 
     // both are remembered in the browser, so a reload keeps them
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gex.chartZoom.v2') ?? '{}') as Record<string, number[]>);
@@ -65,10 +76,10 @@ try {
     await page.waitForTimeout(3000);
     await page.getByRole('button', { name: 'GEX' }).first().click();
     await page.waitForTimeout(2000);
-    assert.deepEqual(await ticks(page), qqqZoomed, 'after a reload the last ticker keeps its zoom');
+    await ticksBecome(page, qqqZoomed, 'after a reload the last ticker keeps its zoom');
     await load(page, 'SPY');
     await page.waitForTimeout(1000);
-    assert.deepEqual(await ticks(page), spyZoomed, 'after a reload the other ticker keeps its zoom too');
+    await ticksBecome(page, spyZoomed, 'after a reload the other ticker keeps its zoom too');
 
     assert.deepEqual(errors, [], 'no page errors');
     console.log('chart zoom per ticker e2e: ok');
