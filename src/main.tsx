@@ -1154,7 +1154,8 @@ const App: React.FC = () => {
     }, [provider, settings]);
     const createBackup = useCallback(async (choice: BackupChoice) => {
         // the preset of required tickers is the default; a ticker the provider does not have is reported and left out
-        const tickers: string[] | null = choice.mode === 'all' ? null : choice.mode === 'preset' ? [...DEFAULT_TICKERS] : choice.tickers;
+        const current = (meta?.symbol ?? '').toUpperCase();
+        const tickers: string[] | null = choice.mode === 'all' ? null : choice.mode === 'preset' ? [...DEFAULT_TICKERS] : choice.mode === 'current' ? (current ? [current] : [...DEFAULT_TICKERS]) : choice.tickers;
         const ac = new AbortController();
         backupAbort.current = ac;
         setBackupError('');
@@ -1183,7 +1184,7 @@ const App: React.FC = () => {
             setBackupProgress(null);
             backupAbort.current = null;
         }
-    }, [provider, settings, btc, asOf, tr]);
+    }, [provider, settings, btc, asOf, tr, meta]);
     const cancelBackup = useCallback(() => {
         if (backupAbort.current) backupAbort.current.abort();
         else setShowBackup(false);
@@ -1842,7 +1843,7 @@ const App: React.FC = () => {
                 />
             )}
             {showBackup && (
-                <BackupDialog allCount={backupAll} progress={backupProgress} error={backupError} onCreate={(choice) => { void createBackup(choice); }} onCancel={cancelBackup} />
+                <BackupDialog currentTicker={(meta?.symbol ?? '').toUpperCase()} allCount={backupAll} progress={backupProgress} error={backupError} onCreate={(choice) => { void createBackup(choice); }} onCancel={cancelBackup} />
             )}
             {toast && (
                 <div

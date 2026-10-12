@@ -203,6 +203,20 @@ try {
     assert.ok(presetNames.some((n) => n.endsWith('/SPY.json')) && presetNames.some((n) => n.endsWith('/QQQ.json')), 'the preset backup holds the required tickers that exist');
     // wait for THIS toast: an older one can still be on screen when the backup finishes
     await page.locator('[data-backtest-toast]', { hasText: 'Left out' }).waitFor({ timeout: 15000 });
+
+    // the current ticker as the backup: only the ticker on screen (SPY), remembered for next time
+    await openMenu();
+    await page.getByText('Create backup...').click();
+    assert.ok((await page.locator('[role=dialog]').innerText()).includes('Current ticker: SPY'), 'the dialog names the ticker on screen');
+    await mode('current').check();
+    const [currentDownload] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Enter')]);
+    const currentNames = zipNames(readFileSync((await currentDownload.path())!));
+    assert.deepEqual(currentNames.filter((n) => n.endsWith('.json') && !n.endsWith('manifest.json') && !n.endsWith('custom-levels.json')).map((n) => n.split('/')[1]), ['SPY.json'], 'the backup holds the current ticker only');
+    await page.locator('[data-backtest-toast]', { hasText: 'saved' }).waitFor({ timeout: 15000 });
+    await openMenu();
+    await page.getByText('Create backup...').click();
+    assert.equal(await mode('current').isChecked(), true, 'the choice is remembered');
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Chart' }).first().click();
     await page.waitForTimeout(1500);
     const liveLast = await page.locator('[data-last-bar]').getAttribute('data-last-bar');
