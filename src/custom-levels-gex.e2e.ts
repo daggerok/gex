@@ -82,13 +82,13 @@ try {
         const sidebar = await page.evaluate(() => {
             const rows = Array.from(document.querySelectorAll('aside section')).map((sec) => ({
                 title: sec.querySelector('h3')?.textContent ?? '',
-                heights: [...new Set(Array.from(sec.querySelectorAll('.h-7')).map((r) => Math.round(r.getBoundingClientRect().height)))],
+                heights: [...new Set(Array.from(sec.querySelectorAll('[class*="h-[26px]"]')).map((r) => Math.round(r.getBoundingClientRect().height)))],
             }));
             const list = Array.from(document.querySelectorAll('aside section')).find((sec) => sec.querySelector('h3')?.textContent === 'Cursor')?.querySelector('.themed-scroll');
             return { rows, overflowY: list ? getComputedStyle(list).overflowY : null };
         });
         assert.deepEqual(sidebar.rows.map((r) => r.title), ['Metrics', 'Cursor', 'Levels']);
-        for (const r of sidebar.rows) assert.deepEqual(r.heights, [28], `${r.title} rows are 28 px high`);
+        for (const r of sidebar.rows) assert.deepEqual(r.heights, [26], `${r.title} rows are 26 px high`);
         assert.equal(sidebar.overflowY, 'auto', 'the Cursor list scrolls instead of growing');
 
         // the secondary click must not start the zoom range selection (a blue band that followed the pointer)

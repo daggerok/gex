@@ -343,7 +343,7 @@ const Card: React.FC<{ title: string; className?: string; children: React.ReactN
 
 /** Height of one row of the Levels table and of the Values table next to it. Both use it, so that when
  *  Values is open every Values row sits exactly beside its Levels row (the two are one table). */
-const LEVEL_ROW_H = 'h-7';
+const LEVEL_ROW_H = 'h-[26px]';
 
 /** The sidebar tables (Metrics, Cursor, Levels) all use this one row height, so their rows line up and read as one design. */
 const SIDEBAR_ROW_H = LEVEL_ROW_H;
@@ -1783,7 +1783,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                         </thead>
                                         <tbody>
                                             {valueRows.map((r) => {
-                                                const cell = 'h-7 border-b border-slate-100 dark:border-slate-700/50 px-3 text-right group-last:border-0';
+                                                const cell = 'h-[26px] border-b border-slate-100 dark:border-slate-700/50 px-3 text-right group-last:border-0';
                                                 const pt = r.point;
                                                 return (
                                                     <tr

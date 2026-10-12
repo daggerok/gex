@@ -99,7 +99,7 @@ export function deskMinWidth(callCount: number, putCount: number): string {
 
 /** One data cell in the grid desk. */
 export const Cell: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className }) => (
-    <div className={'px-2 py-1 text-right tabular-nums ' + (className || '')}>{children}</div>
+    <div className={'px-2 py-[3px] text-right tabular-nums ' + (className || '')}>{children}</div>
 );
 export const QuoteCells: React.FC<{ q?: OptionQuote; columns: DeskColumnDef[] }> = ({ q, columns }) => (
     <>
@@ -229,11 +229,11 @@ export const ExpirationSection: React.FC<{
                         }
                     >
                         {callColumns.map((c) => (
-                            <div key={`c${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
+                            <div key={`c${c.key}`} title={c.label} className="px-2 py-[3px] text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
                         <div className="od-strike-cell px-1.5 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
                         {putColumns.map((c) => (
-                            <div key={`p${c.key}`} title={c.label} className="px-2 py-1 text-right font-medium">{c.headerLabel || c.label}</div>
+                            <div key={`p${c.key}`} title={c.label} className="px-2 py-[3px] text-right font-medium">{c.headerLabel || c.label}</div>
                         ))}
                     </div>
                     {/* Strike rows: staggered fade-in on open; uniform fade-out on close. */}
@@ -256,7 +256,7 @@ export const ExpirationSection: React.FC<{
                                 <div
                                     title={fmt(strike)}
                                     className={
-                                        'od-strike-cell px-1.5 py-1 text-center font-semibold tabular-nums ' +
+                                        'od-strike-cell px-1.5 py-[3px] text-center font-semibold tabular-nums ' +
                                         (isAtm ? ax.atm : 'text-slate-900 dark:text-slate-100')
                                     }
                                 >
