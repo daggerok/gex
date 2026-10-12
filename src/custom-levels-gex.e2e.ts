@@ -212,11 +212,11 @@ try {
         assert.deepEqual({ metrics: await panelBox('Metrics'), levels: await panelBox('Levels') }, gexPanels, 'same panels at the same place as on the GEX tab');
         const chartTabs = (await page.getByRole('navigation').first().boundingBox())!;
         assert.deepEqual([chartTabs.x, chartTabs.y, chartTabs.width, chartTabs.height].map(Math.round), [gexTabs.x, gexTabs.y, gexTabs.width, gexTabs.height].map(Math.round), 'the tab row is unchanged');
-        // the symbol, "Daily candles" and the ranges are on the chart itself, top left
-        const header = (await page.getByText('Daily candles').first().boundingBox())!;
+        // the symbol and the intervals are on the chart itself, top left
+        const header = (await page.locator('[data-chart-header]').boundingBox())!;
         const canvasBox = (await page.locator('canvas').first().boundingBox())!;
-        assert.ok(header.x >= canvasBox.x && header.x < canvasBox.x + 300 && header.y >= canvasBox.y && header.y < canvasBox.y + 80, 'Daily candles is in the top left corner of the chart');
-        assert.ok(await page.getByRole('group', { name: 'Range' }).getByRole('button', { name: '6M' }).isVisible(), 'the range selector is on the chart');
+        assert.ok(header.x >= canvasBox.x && header.x < canvasBox.x + 300 && header.y >= canvasBox.y && header.y < canvasBox.y + 80, 'the chart header is in the top left corner of the chart');
+        assert.ok(await page.getByRole('group', { name: 'Interval' }).getByRole('button', { name: '6M' }).isVisible(), 'the interval selector is on the chart');
         // the Metrics panel is shared: turning AG off there turns it off on the GEX tab too
         await page.getByRole('group', { name: 'Metrics' }).first().getByRole('button', { name: /^AG/ }).click();
         await page.getByRole('button', { name: 'GEX' }).first().click();

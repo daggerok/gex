@@ -5,7 +5,7 @@ import { chromium } from 'playwright';
 import { startTestSite } from './e2e-site';
 
 // ============================================================================
-// Browser check of the Chart tab: the panel (symbol, Daily candles, Range) sits flush in the top left corner of the chart,
+// Browser check of the Chart tab: the panel (symbol, Interval) sits flush in the top left corner of the chart,
 // the (?) help shows BELOW its button, and the pan and zoom of the candles and the range button survive a page refresh
 // (and a ticker switch). Run: `bun run test:e2e`.
 // ============================================================================
