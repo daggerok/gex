@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
 import type { Settings } from '../types';
 import { CHART_RANGES, type ChartRange } from '../views/chart-range';
+import { FullscreenButton } from './FullscreenButton';
 import { HelpButton } from './HelpButton';
 
 // ============================================================================
@@ -20,7 +21,8 @@ export const ChartHeader: React.FC<{
     range: ChartRange;
     setRange: (range: ChartRange) => void;
     colorTheme: Settings['colorTheme'];
-}> = ({ symbol, range, setRange, colorTheme }) => {
+    fullscreen?: { full: boolean; toggle: () => void };
+}> = ({ symbol, range, setRange, colorTheme, fullscreen }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(colorTheme);
     return (
@@ -45,6 +47,7 @@ export const ChartHeader: React.FC<{
                     ))}
                 </div>
             </div>
+            {fullscreen && <FullscreenButton full={fullscreen.full} onToggle={fullscreen.toggle} />}
         </div>
     );
 };

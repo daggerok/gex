@@ -21,6 +21,7 @@ import { useLevelPrefs } from '../level-prefs';
 import { defaultLevelName, isApplePlatform, levelColorOf, nearestStrike, proposeLevelColor, roundPrice } from '../custom-levels';
 import { cutBarsAfter } from '../backtest/bars';
 import { attachLongPress } from '../long-press';
+import { useFullscreen } from '../use-fullscreen';
 import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { ChartHeader } from '../components/ChartHeader';
@@ -126,6 +127,7 @@ function levelEntries(levels: GexLevels | null) {
 
 export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [], asOfDate = null }) => {
     const agEnabled = metrics.includes('absoluteGamma');
+    const fs = useFullscreen();
     const { t: tr, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const dark = useDarkClass();
@@ -513,13 +515,13 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             {entries.length > 0 && isFuturesPriced && <p className="mb-3 text-xs text-slate-400">{tr('chart.levels.futuresPricedHint')}</p>}
 
             {/* ---- Chart (container always mounted so the instance survives refetches) ---- */}
-            <section className="relative flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-2 lg:min-h-0 lg:flex-1">
+            <section ref={fs.ref as React.RefObject<HTMLElement>} className={'relative flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-2 lg:min-h-0 lg:flex-1' + (fs.full ? ' !fixed inset-0 z-[60] !rounded-none !bg-white dark:!bg-slate-900' : '')}>
                 {/* The chart takes the height that is left (no hand-made window height formula: it went stale every time the rows above
                     changed and left a gap above the footer), at least 240 px */}
-                <div className="relative h-[420px] lg:h-auto lg:min-h-[240px] lg:flex-1">
+                <div className={'relative h-[420px] lg:h-auto lg:min-h-[240px] lg:flex-1' + (fs.full ? ' !h-auto flex-1' : '')}>
                     <div ref={containerRef} className="absolute inset-0" data-bars={bars?.length ?? 0} data-last-bar={bars && bars.length ? new Date(bars[bars.length - 1].time * 1000).toISOString().slice(0, 10) : ''} />
                     <div className="absolute left-0 top-0 z-20">
-                        <ChartHeader symbol={symbol} range={range} setRange={setRange} colorTheme={settings.colorTheme} />
+                        <ChartHeader symbol={symbol} range={range} setRange={setRange} colorTheme={settings.colorTheme} fullscreen={fs} />
                     </div>
                     <FadePresence value={draft}>
                         {(d) => (

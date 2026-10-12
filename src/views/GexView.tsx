@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { attachLongPress } from '../long-press';
+import { FullscreenButton } from '../components/FullscreenButton';
+import { useFullscreen, usePortalHost } from '../use-fullscreen';
 import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, pinchRange, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { FadePresence } from '../components/FadePresence';
@@ -206,6 +208,7 @@ const coloredTick = (colorOf: (v: number) => string, format: (v: number) => stri
  * purpose, it would pop up a second, duplicate tooltip.
  */
 const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; onlyWhenCut?: boolean; wrapperClassName?: string; children: React.ReactNode }> = ({ text, side = 'below', wrap = false, onlyWhenCut = false, wrapperClassName = 'inline-flex', children }) => {
+    const host = usePortalHost(); // the full screen element while the chart is full screen, else the body
     const wrapRef = useRef<HTMLSpanElement>(null);
     const tipRef = useRef<HTMLDivElement>(null);
     const tooltipId = useId();
@@ -245,7 +248,7 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; onl
                     role="tooltip"
                     style={{ top: pos.top, left: pos.left, transform: pos.placement === 'left' ? 'translate(-100%, -50%)' : `translate(-50%, ${pos.placement === 'top' ? '-100%' : '0%'})` }}
                     className={
-                        'pointer-events-none fixed z-50 max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-100 shadow-lg ' +
+                        'pointer-events-none fixed z-[70] max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-100 shadow-lg ' +
                         (wrap ? 'w-80 whitespace-normal ' : 'w-max whitespace-nowrap ') +
                         'transition-opacity duration-200 ease-out dark:border-slate-600 ' +
                         (open ? 'opacity-100' : 'opacity-0')
@@ -253,7 +256,7 @@ const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; onl
                 >
                     {text}
                 </div>,
-                document.body,
+                host,
             )}
         </span>
     );
@@ -379,6 +382,7 @@ export const GexView: React.FC<GexViewProps> = ({
     selectedExps, metrics, setMetrics,
 }) => {
     const { t: tr } = useI18n();
+    const fs = useFullscreen();
     const ax = accentOf(settings.colorTheme);
     const na = tr('gex.na');
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
@@ -1366,12 +1370,12 @@ export const GexView: React.FC<GexViewProps> = ({
 
                 {/* ---- Main chart ---- */}
                 <div className="contents lg:flex lg:min-h-0 lg:min-w-0 lg:flex-1 lg:flex-col lg:gap-4">
-                <section className="order-2 col-span-2 flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3 lg:order-none lg:col-auto lg:min-h-0">
+                <section ref={fs.ref as React.RefObject<HTMLElement>} className={'order-2 col-span-2 flex min-w-0 flex-1 flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3 lg:order-none lg:col-auto lg:min-h-0' + (fs.full ? ' !fixed inset-0 z-[60] !rounded-none !bg-white dark:!bg-slate-900' : '')}>
                     {/* Header: the HORIZONTAL zoom row centered above the chart as `<- - x + ->`, the
                         metrics other than Net GEX and AG at the top right (those two are written above
                         their own axes inside the chart). The strike axis caption is at the bottom. */}
                     <div className="mb-2 grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-                        <div />
+                        <div><FullscreenButton full={fs.full} onToggle={fs.toggle} /></div>
                         <div className="flex items-center gap-1 text-xs text-slate-400">
                             <Tip text={tr('gex.zoom.panLeft')}>
                                 <button
@@ -1429,7 +1433,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         values, etc.) stays normally selectable. */}
                     <div
                         ref={chartBoxRef}
-                        className={'relative h-[360px] lg:h-auto lg:min-h-[240px] lg:flex-1 select-none touch-pan-y' + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
+                        className={'relative h-[360px] lg:h-auto lg:min-h-[240px] lg:flex-1 select-none touch-pan-y' + (fs.full ? ' !h-auto flex-1' : '') + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
                         onPointerDownCapture={(e) => { pointerTypeRef.current = e.pointerType; }}
                         onMouseDownCapture={onChartPointerDownCapture}
                         onContextMenu={(e) => { if (openLevelEditor(e)) e.preventDefault(); }}
