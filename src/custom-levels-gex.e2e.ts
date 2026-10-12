@@ -65,6 +65,32 @@ try {
         const p = await gexPoint(page);
         await page.mouse.click(p.x, p.y, { button: 'right' });
         assert.equal(await editor(page).inputValue(), 'Level 1', 'the editor opens on the GEX tab');
+        // the sidebar keeps its size whether or not the pointer is over the plot: the Cursor card is always there
+        const cardBox = async () => { const r = (await page.getByRole('heading', { name: 'Levels' }).first().boundingBox())!; return [r.x, r.y, r.width, r.height].map(Math.round); };
+        const cursorCard = page.getByRole('heading', { name: 'Cursor' });
+        assert.equal(await cursorCard.count(), 1, 'the Cursor card is shown while the pointer is over the plot');
+        const withCursor = await cardBox();
+        const axis = (await page.locator('.recharts-wrapper').first().boundingBox())!;
+        await page.mouse.move(axis.x + axis.width * 0.5, axis.y + axis.height + 30); // below the chart, outside the plot
+        await page.waitForTimeout(300);
+        assert.equal(await cursorCard.count(), 1, 'the Cursor card stays when the pointer leaves the plot');
+        assert.deepEqual(await cardBox(), withCursor, 'the Levels card does not move when the pointer leaves the plot');
+        await page.mouse.move(p.x, p.y);
+        await page.waitForTimeout(200);
+
+        // the three sidebar tables share one row height, and the Cursor list scrolls when the space is smaller than its rows
+        const sidebar = await page.evaluate(() => {
+            const rows = Array.from(document.querySelectorAll('aside section')).map((sec) => ({
+                title: sec.querySelector('h3')?.textContent ?? '',
+                heights: [...new Set(Array.from(sec.querySelectorAll('.h-7')).map((r) => Math.round(r.getBoundingClientRect().height)))],
+            }));
+            const list = Array.from(document.querySelectorAll('aside section')).find((sec) => sec.querySelector('h3')?.textContent === 'Cursor')?.querySelector('.themed-scroll');
+            return { rows, overflowY: list ? getComputedStyle(list).overflowY : null };
+        });
+        assert.deepEqual(sidebar.rows.map((r) => r.title), ['Metrics', 'Cursor', 'Levels']);
+        for (const r of sidebar.rows) assert.deepEqual(r.heights, [28], `${r.title} rows are 28 px high`);
+        assert.equal(sidebar.overflowY, 'auto', 'the Cursor list scrolls instead of growing');
+
         // the secondary click must not start the zoom range selection (a blue band that followed the pointer)
         await page.mouse.move(p.x + 150, p.y);
         await page.mouse.move(p.x + 260, p.y + 10, { steps: 6 });

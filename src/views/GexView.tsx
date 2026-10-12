@@ -335,7 +335,7 @@ const ZOOM_BTN = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium lead
 const Card: React.FC<{ title: string; className?: string; children: React.ReactNode }> = ({ title, className = '', children }) => (
     <section className={'rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 ' + className}>
         <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{title}</h3>
-        <div className="space-y-1.5 border-t border-slate-200 dark:border-slate-700 px-3 py-2.5">
+        <div className="border-t border-slate-200 dark:border-slate-700 px-3 py-1">
             {children}
         </div>
     </section>
@@ -345,8 +345,11 @@ const Card: React.FC<{ title: string; className?: string; children: React.ReactN
  *  Values is open every Values row sits exactly beside its Levels row (the two are one table). */
 const LEVEL_ROW_H = 'h-7';
 
+/** The sidebar tables (Metrics, Cursor, Levels) all use this one row height, so their rows line up and read as one design. */
+const SIDEBAR_ROW_H = LEVEL_ROW_H;
+
 const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: string; dotColor?: string }> = ({ label, value, valueClass, dot, dotColor }) => (
-    <div className="flex items-center justify-between gap-3 text-sm">
+    <div className={`flex ${SIDEBAR_ROW_H} items-center justify-between gap-3 text-sm`}>
         <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
             {dot && <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" />}
             {dotColor && <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: dotColor }} aria-hidden="true" />}
@@ -1248,13 +1251,17 @@ export const GexView: React.FC<GexViewProps> = ({
                         <Row label={tr('gex.sidebar.pcRatioVolume')} value={pcr.byVolume != null ? fmt(pcr.byVolume) : na} dotColor={metricColors.pcRatioVolume} />
                     </Card>
                     {/* Cursor: the data of the strike under the mouse, live while the cursor moves over the chart.
-                        It takes all the space between Metrics and Levels (flex-1), its rows share that height. */}
-                    {cursorPoint && (
-                        <section className="order-3 col-span-2 flex min-h-0 flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 lg:order-none lg:col-auto lg:flex-1">
+                        It takes all the space between Metrics and Levels (flex-1), its rows share that height. The card is
+                        ALWAYS there (empty values while the pointer is not over the plot): when it was only rendered with a
+                        cursor, the sidebar changed size every time the pointer crossed the strike axis and Levels jumped. */}
+                    {(
+                        <section className="order-3 col-span-2 flex min-h-[9.5rem] flex-col overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 lg:order-none lg:col-auto lg:flex-1">
                             <h3 className={'px-3 py-1.5 text-center ' + HEADING_CLASS}>{tr('gex.sidebar.cursor')}</h3>
-                            <div className="flex flex-1 flex-col border-t border-slate-200 dark:border-slate-700 px-3 py-1">
+                            {/* The rows keep the common height and start at the top, the card takes the space between Metrics and
+                                Levels, and when that space is smaller than the rows the list scrolls instead of growing the page */}
+                            <div className="themed-scroll flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-slate-200 dark:border-slate-700 px-3 py-1">
                                 {cursorRows.map((r) => (
-                                    <div key={r.label} className={`flex min-h-7 flex-1 items-center justify-between gap-3 text-sm`}>
+                                    <div key={r.label} className={`flex ${SIDEBAR_ROW_H} shrink-0 items-center justify-between gap-3 text-sm`}>
                                         <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
                                             <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: r.color }} aria-hidden="true" />
                                             {r.label}
