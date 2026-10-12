@@ -86,3 +86,44 @@ export function saveChartZooms(map: ZoomMap, storage: Storage | null = defaultSt
         // storage blocked or full: the zoom is just not remembered
     }
 }
+
+// ---- The Chart tab (candles): the visible time window per ticker and the chosen range button ----
+// A window is stored as offsets from the LAST bar (`[left, right]` in bars, `left` negative), not as bar numbers, so it
+// stays in place when a new day's bar arrives. Same per-ticker map and the same helpers as the GEX zoom above.
+
+export const CHART_VIEW_KEY = 'gex.chartView.v1';
+export const CHART_RANGE_KEY = 'gex.chartRange.v1';
+
+export function loadChartViews(storage: Storage | null = defaultStorage()): ZoomMap {
+    try {
+        return parseZoomMap(storage?.getItem(CHART_VIEW_KEY) ?? null);
+    } catch {
+        return {};
+    }
+}
+
+export function saveChartViews(map: ZoomMap, storage: Storage | null = defaultStorage()): void {
+    try {
+        storage?.setItem(CHART_VIEW_KEY, JSON.stringify(map));
+    } catch {
+        // storage blocked or full: the view is just not remembered
+    }
+}
+
+/** The range button chosen last (`1mo`, `3mo`, `6mo`, `1y`), or the fallback when nothing valid was saved. */
+export function loadChartRange<T extends string>(allowed: readonly T[], fallback: T, storage: Storage | null = defaultStorage()): T {
+    try {
+        const v = storage?.getItem(CHART_RANGE_KEY);
+        return allowed.find((a) => a === v) ?? fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+export function saveChartRange(range: string, storage: Storage | null = defaultStorage()): void {
+    try {
+        storage?.setItem(CHART_RANGE_KEY, range);
+    } catch {
+        // not remembered
+    }
+}

@@ -830,7 +830,8 @@ import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types
 import { useGexLevels } from './use-gex-levels';
 import { dbg, estimateSpot, friendlyError, isAbortError } from './utils';
 import { DeskView } from './views/DeskView';
-import { type ChartRange, DEFAULT_RANGE } from './views/chart-range';
+import { CHART_RANGES, type ChartRange, DEFAULT_RANGE } from './views/chart-range';
+import { loadChartRange, saveChartRange } from './chart-zoom-store';
 import type { GexMetric } from './views/GexView';
 
 // GEX tab is code-split: recharts (~500 KB minified) loads only when the tab
@@ -1513,7 +1514,9 @@ const App: React.FC = () => {
     // Strikes of the chain the levels come from, for the Chart tab: a custom level is put on the nearest strike
     const chartStrikes = useMemo(() => [...new Set(gex.quotes.map((q) => q.strike))].sort((a, b) => a - b), [gex.quotes]);
     // Chart tab range (plan 8.2), held here so it survives tab switches.
-    const [chartRange, setChartRange] = useState<ChartRange>(DEFAULT_RANGE);
+    // the range button chosen last stays after a refresh
+    const [chartRange, setChartRangeState] = useState<ChartRange>(() => loadChartRange(CHART_RANGES, DEFAULT_RANGE));
+    const setChartRange = useCallback((r: ChartRange) => { setChartRangeState(r); saveChartRange(r); }, []);
 
     // Onboarding preview: provider demo ticker, else jump to CACHE + AAPL.
     const onboardingPreview = useCallback(() => {

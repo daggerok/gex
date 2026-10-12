@@ -7,8 +7,8 @@ import { CHART_RANGES, type ChartRange } from '../views/chart-range';
 import { HelpButton } from './HelpButton';
 
 // ============================================================================
-// CHART HEADER - the symbol, "Daily candles", the help (?) button and the range selector (1M, 3M,
-// 6M, 1Y) of the Chart tab, laid over the top left corner of the chart (owner's layout: the tab row
+// CHART HEADER - the symbol, the help (?) button and the interval selector (1M, 3M,
+// 6M, 1Y, All) of the Chart tab, laid in the very top left corner of the chart (flush, no margin, only its bottom right corner is rounded, so no candle or line shows around it) (owner's layout: the tab row
 // and the Expirations panel stay exactly as on the other tabs, the Metrics and Levels panels are the
 // same as on the GEX tab). Rendered by ChartView inside the chart box.
 // ============================================================================
@@ -24,10 +24,9 @@ export const ChartHeader: React.FC<{
     const { t: tr } = useI18n();
     const ax = accentOf(colorTheme);
     return (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white/85 px-2 py-1 backdrop-blur-sm dark:bg-slate-900/75">
+        <div data-chart-header className="flex flex-wrap items-center gap-2 rounded-br-lg border-b border-r border-slate-300 bg-white/90 px-2 py-1 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/85">
             <div className="flex items-baseline gap-2">
                 <span className="text-lg font-bold text-slate-900 dark:text-slate-50">{symbol}</span>
-                <span className="text-xs text-slate-400">{tr('chart.interval')}</span>
                 <HelpButton label={tr('chart.help.label')} paragraphs={[tr('chart.help.addLevel'), tr('chart.help.editLevel'), tr('chart.help.moveLevel'), tr('chart.help.removeLevel')]} align="left" />
             </div>
             <div className={BOX} role="group" aria-label={tr('chart.range.label')}>

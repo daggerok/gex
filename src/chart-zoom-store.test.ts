@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { CHART_ZOOM_KEY, CHART_ZOOM_KEY_V1, loadChartZooms, MAX_ZOOMED_TICKERS, parseLegacyZoom, parseZoomMap, saveChartZooms, withZoom, zoomFor } from './chart-zoom-store';
+import { CHART_RANGE_KEY, CHART_VIEW_KEY, CHART_ZOOM_KEY, CHART_ZOOM_KEY_V1, loadChartRange, loadChartViews, loadChartZooms, saveChartRange, saveChartViews, MAX_ZOOMED_TICKERS, parseLegacyZoom, parseZoomMap, saveChartZooms, withZoom, zoomFor } from './chart-zoom-store';
 
 const memory = (init: Record<string, string> = {}) => {
   const m = new Map<string, string>(Object.entries(init));
@@ -82,5 +82,31 @@ describe('saved text', () => {
     expect(loadChartZooms(s)).toEqual({ SPX: [7400, 7900] }); // the new key wins
     expect(parseLegacyZoom(JSON.stringify({ symbol: 'SPY', xZoom: null }))).toEqual({});
     expect(parseLegacyZoom('{oops')).toEqual({});
+  });
+});
+
+describe('chart view and range of the Chart tab', () => {
+  const memory = () => {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v); } };
+  };
+
+  test('views are saved per ticker, another ticker keeps its own, damaged storage gives none', () => {
+    const s = memory();
+    saveChartViews(withZoom(withZoom({}, 'SPY', [-48.5, -9]), 'QQQ', [-20, -2]), s);
+    expect(loadChartViews(s)).toEqual({ SPY: [-48.5, -9], QQQ: [-20, -2] });
+    s.setItem(CHART_VIEW_KEY, '{oops');
+    expect(loadChartViews(s)).toEqual({});
+    expect(loadChartViews({ getItem: () => { throw new Error('blocked'); }, setItem: () => {} })).toEqual({});
+  });
+
+  test('the chosen range comes back, an unknown or missing value gives the fallback', () => {
+    const s = memory();
+    const allowed = ['1mo', '3mo', '6mo', '1y'] as const;
+    expect(loadChartRange(allowed, '6mo', s)).toBe('6mo');
+    saveChartRange('1mo', s);
+    expect(loadChartRange(allowed, '6mo', s)).toBe('1mo');
+    s.setItem(CHART_RANGE_KEY, 'forever');
+    expect(loadChartRange(allowed, '6mo', s)).toBe('6mo');
   });
 });

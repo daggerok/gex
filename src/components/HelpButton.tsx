@@ -6,6 +6,9 @@ import { createPortal } from 'react-dom';
 /** The look of the button when the caller does not give its own (the same as the zoom buttons of the GEX tab). */
 const DEFAULT_BUTTON = 'shrink-0 select-none rounded-md px-1.5 py-0.5 font-medium leading-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 disabled:cursor-default';
 
+/** Room the panel needs, px: below the button when there is that much space, otherwise above it. */
+const PANEL_HEIGHT = 300;
+
 /** "?" button in the chart card corners: hover or keyboard focus shows the chart controls guide, a click pins it open
  *  (a click outside closes it). One paragraph per instruction, in a fixed portal panel next to the button so no
  *  `overflow` ancestor clips it. `align` says which side of the button the panel lines up with. */
@@ -14,12 +17,19 @@ export const HelpButton: React.FC<{ label: string; paragraphs: string[]; align: 
     const panelId = useId();
     const [hover, setHover] = useState(false);
     const [pinned, setPinned] = useState(false);
-    const [pos, setPos] = useState({ bottom: 0, left: 0, right: 0 });
+    const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; right: number }>({ bottom: 0, left: 0, right: 0 });
     const open = hover || pinned;
     const place = () => {
         const r = wrapRef.current?.getBoundingClientRect();
         if (!r) return;
-        setPos({ bottom: window.innerHeight - r.top + 8, left: Math.max(8, r.left), right: Math.max(8, window.innerWidth - r.right) });
+        // BELOW the button (the owner's choice: above it the text ran off the top of the window); above only when there is
+        // not enough room under it for the panel
+        const below = window.innerHeight - r.bottom >= PANEL_HEIGHT || r.top < PANEL_HEIGHT;
+        setPos({
+            ...(below ? { top: r.bottom + 8 } : { bottom: window.innerHeight - r.top + 8 }),
+            left: Math.max(8, r.left),
+            right: Math.max(8, window.innerWidth - r.right),
+        });
     };
     useEffect(() => {
         if (!pinned) return;
@@ -49,7 +59,7 @@ export const HelpButton: React.FC<{ label: string; paragraphs: string[]; align: 
                 <div
                     id={panelId}
                     role="tooltip"
-                    style={{ bottom: pos.bottom, ...(align === 'left' ? { left: pos.left, maxWidth: `calc(100vw - ${pos.left + 8}px)` } : { right: pos.right, maxWidth: `calc(100vw - ${pos.right + 8}px)` }) }}
+                    style={{ top: pos.top, bottom: pos.bottom, ...(align === 'left' ? { left: pos.left, maxWidth: `calc(100vw - ${pos.left + 8}px)` } : { right: pos.right, maxWidth: `calc(100vw - ${pos.right + 8}px)` }) }}
                     className={
                         'pointer-events-none fixed z-50 w-96 space-y-1.5 whitespace-normal rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs leading-snug text-slate-100 shadow-lg transition-opacity duration-200 ease-out dark:border-slate-600 ' +
                         (open ? 'opacity-100' : 'opacity-0')
