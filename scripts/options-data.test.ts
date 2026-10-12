@@ -4,6 +4,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  DEFAULT_SYMBOLS,
+  keepLaterExpirations,
   PyInt,
   YahooTicker,
   classifyPayload,
@@ -790,5 +792,58 @@ describe('chart cache', () => {
       cached: ['AAPL', 'QQQ', 'OTHER'], explicit: true, hasChart: () => false, isFresh: () => false, updatedOf: () => '',
     });
     expect(q).toEqual(['QQQ', 'AAPL']);
+  });
+});
+
+describe('DEFAULT_SYMBOLS', () => {
+  test('is exactly the list of tickers the empty ticker search field hints, in both languages', () => {
+    const i18n = readFileSync(join(root, 'src/i18n.tsx'), 'utf8');
+    const hints = [...i18n.matchAll(/'controls\.tickerPlaceholder': '([^']+)'/g)].map((m) => m[1].split(',').map((t) => t.trim()));
+    expect(hints.length).toBe(2);
+    for (const hint of hints) expect(hint).toEqual(DEFAULT_SYMBOLS);
+  });
+
+  test('has no duplicates and the priority symbols are inside it', () => {
+    expect(new Set(DEFAULT_SYMBOLS).size).toBe(DEFAULT_SYMBOLS.length);
+    for (const s of PRIORITY_SYMBOLS) expect(DEFAULT_SYMBOLS).toContain(s);
+  });
+});
+
+describe('keepLaterExpirations (KEEP_EXPIRATIONS)', () => {
+  const quote = (expiration: string, strike: number, extra: Record<string, unknown> = {}) => ({
+    symbol: `AAPL${expiration.replace(/-/g, '')}C${strike}`, expiration, side: 'call', strike, bid: 1.5, ask: 1.6, mid: 1.55, last: 1.5,
+    volume: 12, openInterest: 340, iv: 0.25, delta: 0.5, gamma: 0.01, theta: -0.1, vega: 0.2, rho: 0.05,
+    greeksSource: 'cboe', greeksMissingReason: null, ...extra,
+  });
+  const previous = {
+    symbol: 'AAPL',
+    expirations: ['2026-10-12', '2026-10-16', '2026-11-20', '2027-01-15'],
+    quotes: [quote('2026-10-12', 250), quote('2026-10-16', 250), quote('2026-11-20', 250), quote('2026-11-20', 255), quote('2027-01-15', 260)],
+  };
+
+  test('keeps only the expirations after the last fresh one, with all their quotes', () => {
+    const kept = keepLaterExpirations(['2026-10-12', '2026-10-16'], previous);
+    expect(kept.expirations).toEqual(['2026-11-20', '2027-01-15']);
+    expect(kept.quotes.map((q) => `${q.expiration}:${q.strike}`)).toEqual(['2026-11-20:250', '2026-11-20:255', '2027-01-15:260']);
+  });
+
+  test('nothing is kept when the fresh part already reaches the end, or there is nothing to compare', () => {
+    expect(keepLaterExpirations(['2027-01-15'], previous).quotes).toEqual([]);
+    expect(keepLaterExpirations([], previous).quotes).toEqual([]);
+    expect(keepLaterExpirations(['2026-10-12'], null).quotes).toEqual([]);
+    expect(keepLaterExpirations(['2026-10-12'], 'junk').quotes).toEqual([]);
+    expect(keepLaterExpirations(['2026-10-12'], { quotes: 'x' }).quotes).toEqual([]);
+  });
+
+  test('damaged entries are skipped, the rest is kept', () => {
+    const kept = keepLaterExpirations(['2026-10-12'], { quotes: [null, 5, { expiration: 20261120 }, { symbol: 'x' }, quote('2026-11-20', 250)] });
+    expect(kept.expirations).toEqual(['2026-11-20']);
+    expect(kept.quotes).toHaveLength(1);
+  });
+
+  test('a kept quote is written back byte for byte, a zero strike stays an int', () => {
+    const text = pyJsonDumps({ quotes: [quote('2026-11-20', 250.5), quote('2026-11-20', 0)] });
+    const kept = keepLaterExpirations(['2026-10-12'], JSON.parse(text));
+    expect(pyJsonDumps({ quotes: kept.quotes })).toBe(text.replace('"strike":0.0', '"strike":0'));
   });
 });

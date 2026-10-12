@@ -1,0 +1,100 @@
+# =============================================================================
+# GEX - hourly refresh of the DEFAULT tickers during US market hours
+# -----------------------------------------------------------------------------
+# Runs `bun scripts/options-data.ts` with no arguments, which covers only
+# DEFAULT_SYMBOLS (the indices, ETFs and mega caps the ticker search field hints),
+# not the whole universe. The full refresh stays in update-data.yml.
+#
+# WHEN: Mon-Fri at 9:30, 10:30, ..., 15:30 and 16:15 New York time.
+# GitHub cron is UTC only and has no time zone, and New York switches between
+# UTC-4 (EDT) and UTC-5 (EST), so both UTC hours are scheduled and the
+# "Market window" step skips the one that does not match New York time. Scheduled
+# runs can start a few minutes late, the window allows for that. Market holidays
+# are not skipped (the data is simply refreshed with the last prices).
+# =============================================================================
+name: Update default options data
+
+on:
+  schedule:
+    - cron: "30 13-21 * * 1-5" # :30 slots, 9:30-15:30 New York in summer (13:30-19:30 UTC) and in winter (14:30-20:30 UTC)
+    - cron: "15 20,21 * * 1-5" # the 16:15 slot, 20:15 UTC in summer and 21:15 UTC in winter
+  workflow_dispatch: {} # manual run, always refreshes
+
+permissions:
+  contents: write # needed to commit the refreshed JSON
+
+# One refresh at a time (a slow run does not overlap the next one, none is cancelled)
+concurrency:
+  group: update-default-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # The nearest 15 expirations of every ticker are fetched again each hour (15 is the cap the index chains use in
+      # update-data.yml). The later expirations already in the files are kept, not cut off: only their Cboe greeks, open
+      # interest and volume are refreshed, a full run (update-data.yml) refreshes everything else.
+      MAX_EXPIRATIONS: "15"
+      KEEP_EXPIRATIONS: "1"
+    steps:
+      - name: Market window
+        id: window
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          # Minutes since midnight in New York
+          now=$(TZ=America/New_York date +%H:%M)
+          mins=$((10#${now%:*} * 60 + 10#${now#*:}))
+          run=true
+          if [ -n "$SCHEDULE" ]; then
+            if [ "$SCHEDULE" = "15 20,21 * * 1-5" ]; then
+              # 16:15 slot: accept 16:10 - 16:25 (late start allowed)
+              if [ "$mins" -lt 970 ] || [ "$mins" -gt 985 ]; then run=false; fi
+            else
+              # :30 slots: accept 9:25 - 15:55 (the 16:30 and 17:30 ones, and the early winter one, are skipped)
+              if [ "$mins" -lt 565 ] || [ "$mins" -gt 955 ]; then run=false; fi
+            fi
+          fi
+          echo "New York time $now, schedule '${SCHEDULE:-manual}' -> run=$run"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.window.outputs.run == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.window.outputs.run == 'true'
+        with:
+          bun-version: latest
+
+      - name: Fetch default option chains
+        if: steps.window.outputs.run == 'true'
+        run: bun scripts/options-data.ts
+
+      - name: Commit updated data
+        if: steps.window.outputs.run == 'true'
+        run: |
+          git config user.name  "Maksim Kostromin"
+          git config user.email "daggerok@gmail.com"
+          git add api/ || true
+          if git diff --staged --quiet; then
+            echo "No data changes - nothing to commit."
+          else
+            git commit -m "chore(data): refresh default option chains [skip ci]"
+            # A full refresh (update-data.yml) may have pushed meanwhile: rebase onto it, our fresh files win a conflict (in a rebase `theirs` is the commit being replayed, ours)
+            git push && exit 0
+            # The clone is shallow: deepen it so the rebase finds the common ancestor
+            for attempt in 1 2 3; do
+              git fetch --deepen=100 origin "${GITHUB_REF_NAME}" \
+                && git rebase -X theirs "origin/${GITHUB_REF_NAME}" \
+                && git push && exit 0
+              echo "Push attempt $attempt failed, retrying"
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
+            echo "Push failed after 3 attempts" && exit 1
+          fi

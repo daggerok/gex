@@ -131,15 +131,16 @@ Removed from the live registry: marketdata.app, DoltHub, Tradier, Alpaca, Polygo
 Scripts are executable and run directly (bun shebang): `./scripts/options-data.ts` and `./scripts/options-local-proxy.ts`. The fetcher has no dependencies, Bun is enough.
 
 ```bash
-./scripts/options-data.ts                      # default: only SPY, SPX, QQQ, NDX, DIA, DJX, IWM, RUT
+./scripts/options-data.ts                      # default: only SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA
 ./scripts/options-data.ts all                  # full auto-universe run (everything)
 TICKERS="AAPL MSFT" ./scripts/options-data.ts  # only these tickers, wins over the default set and over all
 TICKERS=AAPL,MSFT MAX_FETCHES=2 ./scripts/options-data.ts
 CONCURRENCY=3 TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 ```
 
-- Without arguments the run covers only the main indices and their ETFs (S&P 500, Nasdaq 100, Dow Jones, Russell 2000). Pass `all` for the smart auto-universe run: missing symbols first, then the oldest cached files. Any other argument is an error
+- Without arguments the run covers only the default set: the main indices and their ETFs (S&P 500, Nasdaq 100, Dow Jones, Russell 2000) and the mega caps, exactly the tickers the empty ticker search field hints (`DEFAULT_SYMBOLS`, a unit test keeps the two lists equal). Pass `all` for the smart auto-universe run: missing symbols first, then the oldest cached files. Any other argument is an error
 - SPY, SPX, QQQ and NDX are always queued first
+- `KEEP_EXPIRATIONS=1` (default off) keeps the later expirations that a ticker's file already holds: the nearest `MAX_EXPIRATIONS` dates are fetched again as usual, the rest stay, and only their Cboe greeks, open interest and volume are refreshed (their bid, ask, last and IV stay as of the last run that covered them). Without it a run keeps only the nearest `MAX_EXPIRATIONS` dates
 - After the options pass every cached ticker gets `api/charts/<SYM>.json` (1 year of daily bars, about 12 KB each, `CHART_MAX_FETCHES` per run), so the Chart tab works from CACHE without a proxy
 - `CONCURRENCY` is an integer >= 1 (default 1), each worker waits `REQUEST_SLEEP` after its own write. Cboe requests share one throttle (`CBOE_MIN_INTERVAL`, default 1 s) and on a 429 every worker pauses (`CBOE_BACKOFF`, `CBOE_RETRIES`), so more workers do not raise the Cboe request rate. A ticker whose Cboe retries run out fails and keeps its old file
 - `SOFT_DEADLINE_SECONDS` (default 0, off) stops starting new tickers after that many seconds. `VERBOSE=1` also prints the old timestamped progress lines
@@ -152,7 +153,8 @@ CONCURRENCY=3 TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 1. Enable Pages in repo **Settings, Pages**
 2. Allow Actions to commit: **Settings, Actions, General, Workflow permissions, Read and write permissions**
 3. The **Update options data** workflow (manual run from the Actions tab, the schedule is commented out) runs `scripts/options-data.ts` for the tickers listed in `api/All.txt`, then for the index options in `api/Indices.txt` as a separate step with a smaller budget, and commits the refreshed `api/options/*.json` back to `main`
-4. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`
+4. The **Update default options data** workflow runs `scripts/options-data.ts` with no arguments (only the default set, with `KEEP_EXPIRATIONS=1` and `MAX_EXPIRATIONS=15`) every hour on weekdays at 9:30, 10:30, ..., 15:30 and 16:15 New York time and commits `api/`. GitHub cron is UTC only, so both the summer and the winter UTC hours are scheduled and a step skips the one that does not match New York time. Scheduled runs can start a few minutes late. Market holidays are not skipped. It can also be started by hand from the Actions tab
+5. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`
 
 ## Proxy setup for GitHub Pages
 
@@ -197,7 +199,8 @@ For a deployable proxy without a local setup: deploy `scripts/options-cloudflare
 Optional files outside the core app source:
 
 - `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options }` and writes `api/charts/<SYM>.json`
-- `.github/workflows/update-data.yml`: manual data refresh workflow
+- `.github/workflows/update-data.yml`: manual refresh of all tickers (the cron is commented out)
+- `.github/workflows/update-default-data.yml`: hourly refresh of the default set on weekdays during market hours
 - `scripts/options-local-proxy.ts`: local **Bun** proxy serving:
   - `/api/options`: Yahoo optionChain with crumb and cookie handling
   - `/api/nasdaq`: NASDAQ option-chain relay
@@ -268,7 +271,8 @@ scripts/
   options-cloudflare-proxy.js # Cloudflare Worker proxy: Yahoo, NASDAQ, CBOE, search, raw
 .github/workflows/
   ci.yaml                     # pull request checks
-  update-data.yml             # data refresh
+  update-data.yml             # data refresh of all tickers (manual)
+  update-default-data.yml     # hourly refresh of the default set
   github-pages.yml            # Pages deployment
   dependency-updates.yml, npm-check-updates.yml
 package.json                  # Bun and Parcel scripts

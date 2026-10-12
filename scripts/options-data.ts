@@ -14,8 +14,15 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
- *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (SPY, SPX, QQQ, NDX,
- *        DIA, DJX, IWM, RUT). `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins.
+ *   t8 - KEEP_EXPIRATIONS=1 (default off, the hourly default-set workflow sets it): the ticker is refreshed for its nearest
+ *        MAX_EXPIRATIONS dates as before, but the later expirations already in its file are kept instead of being cut off.
+ *        Kept quotes are not refetched from Yahoo (their bid, ask, last and IV stay as of the last run that covered them), but
+ *        they get the Cboe overlay of the same request (greeks, open interest, volume). A full run still refreshes everything.
+ *   t7 - DEFAULT_SYMBOLS grows to the 18 tickers the ticker search field hints (SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT,
+ *        AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA). A unit test keeps it equal to `controls.tickerPlaceholder`.
+ *        The hourly workflow `update-default-data.yml` runs this default set on weekdays during market hours.
+ *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (see t7 above).
+ *        `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins.
  *   t5 - Chart cache: after the options pass every cached ticker (SPY, SPX, QQQ, NDX first) gets
  *        api/charts/<SYM>.json with 1Y of daily bars from Yahoo v8 chart, so the Chart tab works
  *        without a proxy. Missing files first, then oldest, at most CHART_MAX_FETCHES per run.
@@ -63,7 +70,7 @@
  *   bar, that is Yahoo's adjclose). This port does the same on purpose.
  *
  * USAGE
- *   ./scripts/options-data.ts                       # only the default index/ETF set (DEFAULT_SYMBOLS)
+ *   ./scripts/options-data.ts                       # only the default set (DEFAULT_SYMBOLS: indices, ETFs, mega caps)
  *   ./scripts/options-data.ts all                   # smart auto-universe run (everything)
  *   TICKERS="AAPL MSFT" ./scripts/options-data.ts   # only these
  *   MAX_FETCHES=50 MAX_EXPIRATIONS=8 ./scripts/options-data.ts
@@ -73,7 +80,8 @@
  *   UNIVERSE_SIZE      default 6000      symbols considered
  *   MIN_MARKET_CAP     default 9000000   USD floor for NASDAQ rows
  *   NASDAQ_TIMEOUT     default 20        seconds before falling back to Cboe
- *   MAX_EXPIRATIONS    default 12        expirations stored per ticker
+ *   MAX_EXPIRATIONS    default 12        expirations stored per ticker (the nearest ones are fetched)
+ *   KEEP_EXPIRATIONS   default 0         1 = keep the later expirations already cached for the ticker (see t8)
  *   RATE_LIMIT_HITS    default 3         consecutive errors that mean "blocked"
  *   REQUEST_SLEEP      default 0.6       seconds after each successful write
  *   SKIP_RECHECK_DAYS  default 30        days before a no-options ticker is retried
@@ -354,6 +362,7 @@ const cfg = {
     UNIVERSE_SIZE: envInt("UNIVERSE_SIZE", "6000"),
     MIN_MARKET_CAP: envFloat("MIN_MARKET_CAP", "9000000"),
     MAX_EXPIRATIONS: envInt("MAX_EXPIRATIONS", "12"),
+    KEEP_EXPIRATIONS: ["1", "true", "yes", "on"].includes((process.env.KEEP_EXPIRATIONS ?? "0").toLowerCase()),
     RATE_LIMIT_HITS: envInt("RATE_LIMIT_HITS", "3"),
     REQUEST_SLEEP: envFloat("REQUEST_SLEEP", "0.6"),
     NASDAQ_TIMEOUT: envFloat("NASDAQ_TIMEOUT", "20"),
@@ -1142,8 +1151,8 @@ export function mergeUniverse(nasdaq: string[], cboe: string[], size: number): s
     return dedupe(FALLBACK_UNIVERSE.map((s) => canonical(s))).slice(0, size);
 }
 
-/** Run without args: only SP500, Nasdaq 100, Dow Jones and Russell 2000, each as index and ETF. */
-export const DEFAULT_SYMBOLS = ["SPY", "SPX", "QQQ", "NDX", "DIA", "DJX", "IWM", "RUT"];
+/** Run without args: the main indices and their ETFs plus the mega caps, exactly the tickers hinted in the ticker search field (`controls.tickerPlaceholder`). */
+export const DEFAULT_SYMBOLS = ["SPX", "NDX", "DJX", "RUT", "IWM", "NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "TSM", "META", "AVGO", "MU", "GOOG", "SPY", "QQQ", "DIA"];
 
 /** True when the CLI asks for the full auto-universe (`all`, any case). Anything else is rejected. */
 export function wantsAll(argv: string[] = process.argv.slice(2)): boolean {
@@ -1207,6 +1216,36 @@ export interface Payload {
     quotes: Quote[];
 }
 
+/**
+ * KEEP_EXPIRATIONS: the expirations after the last freshly fetched one that the previous cache file already holds,
+ * with their quotes, ready to be appended to the fresh ones. Expirations at or before the last fresh date are
+ * never kept (they were refetched, or are gone). Anything that does not look like a cache file gives nothing.
+ */
+export function keepLaterExpirations(freshExps: readonly string[], previous: unknown): { expirations: string[]; quotes: Quote[] } {
+    const none = { expirations: [] as string[], quotes: [] as Quote[] };
+    if (!freshExps.length || !previous || typeof previous !== "object") return none;
+    const quotesIn = (previous as { quotes?: unknown }).quotes;
+    if (!Array.isArray(quotesIn)) return none;
+    const last = freshExps[freshExps.length - 1];
+    const quotes: Quote[] = [];
+    for (const raw of quotesIn) {
+        const q = raw as Partial<Quote> | null;
+        if (!q || typeof q !== "object" || typeof q.expiration !== "string" || typeof q.symbol !== "string" || q.expiration <= last) continue;
+        // A strike of exactly 0 is the one value written as a Python int, restore it so the bytes stay the same.
+        quotes.push({ ...(q as Quote), strike: q.strike === 0 ? new PyInt(0) : (q.strike as number) });
+    }
+    const expirations = [...new Set(quotes.map((q) => q.expiration))].sort();
+    return { expirations, quotes };
+}
+
+function readPreviousChain(symbol: string): unknown {
+    try {
+        return JSON.parse(readFileSync(join(DATA_DIR, `${symbol}.json`), "utf8"));
+    } catch {
+        return null;
+    }
+}
+
 /** Full (capped) normalized chain for one ticker, or null when it has no options. Throws on source errors. */
 export async function fetchTicker(symbolIn: string): Promise<Payload | null> {
     const symbol = symbolIn.toUpperCase().trim();
@@ -1232,9 +1271,13 @@ export async function fetchTicker(symbolIn: string): Promise<Payload | null> {
 
     const spot = await t.lastClose();
     const cboeRows = await fetchCboeGreeks(symbol, matched);
-    const greeks = applyCboeRows(quotes, cboeRows, cfg.CBOE_GREEKS);
+    // Later expirations of the previous file are kept as they were, except that the Cboe overlay of this request also
+    // reaches them (it covers the whole chain). Without Cboe rows they are left exactly as stored.
+    const kept = cfg.KEEP_EXPIRATIONS ? keepLaterExpirations(exps, readPreviousChain(symbol)) : { expirations: [], quotes: [] };
+    const all = [...quotes, ...kept.quotes];
+    const greeks = applyCboeRows(cboeRows.size ? all : quotes, cboeRows, cfg.CBOE_GREEKS);
 
-    return { symbol, updated: nowIso(), underlyingPrice: spot, greeks, expirations: exps, quotes };
+    return { symbol, updated: nowIso(), underlyingPrice: spot, greeks, expirations: [...exps, ...kept.expirations], quotes: all };
 }
 
 // ---- Cache files, freshness and skiplist ------------------------------------------
