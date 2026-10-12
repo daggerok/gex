@@ -10,6 +10,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  # Two jobs that run side by side: the checks and builds, and the browser checks (the slowest part). The job ids stay `build`
+  # and `e2e`; each one shows as its own check on the pull request.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -31,11 +33,30 @@ jobs:
       - run: bun install -E
       - name: Unit tests (blocks pipeline on failure)
         run: bun run test
-      - name: Install Chromium for e2e
-        run: bunx playwright install --with-deps chromium
-      - name: E2E tests (blocks pipeline on failure)
-        run: bun run test:e2e
       - run: bun build --target=bun scripts/options-data.ts --outfile=/dev/null
       - run: node --check scripts/options-cloudflare-proxy.js
       - run: bun run build
       - run: bun run build-github-pages
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bun install -E
+      - name: Install Chromium for e2e
+        run: bunx playwright install --with-deps chromium
+      # the app is built once, the checks inside run side by side (scripts/e2e.ts)
+      - name: E2E tests (blocks pipeline on failure)
+        run: bun run test:e2e

@@ -800,17 +800,28 @@
  */
 
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain (see ENVIRONMENT above)
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import { createRoot } from 'react-dom/client';
 import { pickExpirations } from './expiration-select';
 import { recordEscape, RESET_ALL_EVENT } from './zoom-pan';
 import { AttributionFooter, RepoFooter } from './components/AttributionFooter';
 import type { ChainSection } from './components/ChainTable';
+import { AsOfMenuSection, AsOfSelect } from './components/AsOfSelect';
+import { BackupDialog } from './components/BackupDialog';
+import { BacktestManager } from './components/BacktestManager';
 import { ExpirationChips } from './components/ExpirationChips';
 import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
+import { liveLabel, pickTickerForSnapshot } from './backtest/entries';
+import { makeBackup, type BackupProgress } from './backtest/maker';
+import { saveBackupChoice, type BackupChoice } from './backtest/prefs';
+import { DEFAULT_TICKERS } from './default-tickers';
+import { downloadBytes, useBacktest } from './backtest/use-backtest';
+import { setValuationDay } from './greeks';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
+import { makeAsOfProvider, valuationDayOf } from './providers/asof';
+import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
 import { getBulk, loadExpiration, loadMeta } from './providers/loader';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
@@ -819,7 +830,8 @@ import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types
 import { useGexLevels } from './use-gex-levels';
 import { dbg, estimateSpot, friendlyError, isAbortError } from './utils';
 import { DeskView } from './views/DeskView';
-import { type ChartRange, DEFAULT_RANGE } from './views/chart-range';
+import { CHART_RANGES, type ChartRange, DEFAULT_RANGE } from './views/chart-range';
+import { loadChartRange, saveChartRange } from './chart-zoom-store';
 import type { GexMetric } from './views/GexView';
 
 // GEX tab is code-split: recharts (~500 KB minified) loads only when the tab
@@ -920,10 +932,32 @@ const App: React.FC = () => {
     const { setLang } = useI18n();
     useEffect(() => { setLang(settings.language); }, [settings.language, setLang]);
 
+    // ---- Backtest ("As of" an archived snapshot) -----------------------------
+    const [bt, btc] = useBacktest();
+    const asOf = bt.active;
+    // In backtest mode the provider is the CACHE provider reading the chosen snapshot, live providers are off
     const provider = useMemo(
-        () => PROVIDERS.find((p) => p.id === settings.providerId) ?? PROVIDERS[0],
-        [settings.providerId],
+        () => (asOf ? makeAsOfProvider(asOf.snapshot) : PROVIDERS.find((p) => p.id === settings.providerId) ?? PROVIDERS[0]),
+        [asOf, settings.providerId],
     );
+    // The model greeks are valued on the snapshot's day, and its custom levels replace the user's own (read-only). A LAYOUT
+    // effect: it runs before the effects below that load the chain, so the first load already sees the right day.
+    useLayoutEffect(() => {
+        setValuationDay(asOf ? valuationDayOf(asOf.id) : null);
+        setCustomLevelsOverride(asOf ? asOf.customLevels : null);
+    }, [asOf]);
+    const [toast, setToast] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+    useEffect(() => {
+        if (!toast) return;
+        const timer = window.setTimeout(() => setToast(null), 9000);
+        return () => window.clearTimeout(timer);
+    }, [toast]);
+    const [showManager, setShowManager] = useState(false);
+    const [showBackup, setShowBackup] = useState(false);
+    const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null);
+    const [backupError, setBackupError] = useState('');
+    const [backupAll, setBackupAll] = useState<number | null>(null);
+    const backupAbort = useRef<AbortController | null>(null);
 
     // ---- Chain data state (DEFERRED loading; nothing fetches on mount) ------
     const [tickerInput, setTickerInput] = useState<string>(settings.lastTicker);
@@ -1062,6 +1096,100 @@ const App: React.FC = () => {
             if (metaAbort.current === ac) { setMetaLoading(false); metaAbort.current = null; }
         }
     }, [provider, settings, patchSettings]);
+
+    // Entering, changing or leaving a backtest reloads a ticker from the new source. Opening a snapshot picks the ticker: the
+    // only one of a single-ticker backup; with two or more, the stored last ticker when the snapshot has it, else the first one
+    // of its list (pickTickerForSnapshot). Leaving puts back the ticker that was open before the backtest. A ticker that is
+    // not in the archive shows the error of the as-of provider. Not on the first render: the boot restore does that.
+    const asOfId = asOf?.id ?? null;
+    const asOfFirst = useRef(true);
+    const beforeBacktestTicker = useRef<string | null>(null);
+    useEffect(() => {
+        if (asOfFirst.current) { asOfFirst.current = false; return; }
+        let sym: string;
+        if (asOf) {
+            if (beforeBacktestTicker.current === null) beforeBacktestTicker.current = settings.lastTicker;
+            sym = pickTickerForSnapshot(asOf.snapshot.tickers, beforeBacktestTicker.current) ?? settings.lastTicker;
+        } else {
+            sym = beforeBacktestTicker.current ?? settings.lastTicker;
+            beforeBacktestTicker.current = null;
+        }
+        sym = sym.trim();
+        if (!sym) return;
+        setTickerInput(sym);
+        void getDates(sym);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [asOfId]);
+
+    // ---- Backtest handlers -----------------------------------------------------
+    useEffect(() => {
+        if (!bt.error) return;
+        setToast({ kind: 'error', text: bt.error });
+        btc.clearError();
+    }, [bt.error, btc]);
+    const onImportFiles = useCallback(async (files: File[]) => {
+        const report = await btc.importFiles(files.map((f) => ({ name: f.name, bytes: async () => new Uint8Array(await f.arrayBuffer()) })));
+        if (report.errors.length) setToast({ kind: 'error', text: tr('bt.import.failed', { list: report.errors.join('; ') }) });
+        else if (report.added.length) setToast({ kind: 'ok', text: tr('bt.import.done', { list: report.added.join(', ') }) });
+    }, [btc, tr]);
+    const onDownloadDays = useCallback(async (ids: string[]) => {
+        try {
+            const { filename, bytes } = await btc.download(ids);
+            downloadBytes(filename, bytes);
+        } catch (e) {
+            setToast({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+        }
+    }, [btc]);
+    const onRemoveOlderThan = useCallback(async (date: string) => {
+        const removed = await btc.removeOlderThan(date);
+        setToast({ kind: 'ok', text: removed.length ? tr('bt.manager.removedOlder', { n: removed.length, date }) : tr('bt.manager.noneOlder', { date }) });
+    }, [btc, tr]);
+    const openBackupDialog = useCallback(() => {
+        setBackupError('');
+        setBackupProgress(null);
+        setBackupAll(null);
+        setShowBackup(true);
+        void Promise.resolve(provider.listTickers?.(ctxFor(settings, provider)) ?? null).then((list) => setBackupAll(list ? list.length : null)).catch(() => setBackupAll(null));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [provider, settings]);
+    const createBackup = useCallback(async (choice: BackupChoice) => {
+        // the preset of required tickers is the default; a ticker the provider does not have is reported and left out
+        const tickers: string[] | null = choice.mode === 'all' ? null : choice.mode === 'preset' ? [...DEFAULT_TICKERS] : choice.tickers;
+        const ac = new AbortController();
+        backupAbort.current = ac;
+        setBackupError('');
+        setBackupProgress({ done: 0, total: tickers?.length ?? 0, symbol: '' });
+        try {
+            const out = await makeBackup({
+                provider,
+                ctx: ctxFor(settings, provider, ac.signal),
+                symbols: tickers,
+                taken: btc.takenIds(),
+                vixFuturesPricing: settings.vixFuturesPricing,
+                signal: ac.signal,
+                onProgress: setBackupProgress,
+                // the levels the user sees: the snapshot's own while one is open, otherwise their own
+                customLevels: (ts) => (asOf ? asOf.customLevels : ownCustomLevels(ts)),
+            });
+            downloadBytes(`${out.id}.zip`, out.bytes);
+            await btc.saveBackup(out.id, out.bytes, out.tickers);
+            saveBackupChoice(choice);
+            setShowBackup(false);
+            const left = out.failed.length ? ` ${tr('bt.backup.failed', { list: out.failed.map((f) => f.symbol).join(', ') })}` : '';
+            setToast({ kind: out.failed.length ? 'error' : 'ok', text: tr('bt.backup.done', { id: out.id, n: out.tickers.length }) + left });
+        } catch (e) {
+            if (!isAbortError(e)) setBackupError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setBackupProgress(null);
+            backupAbort.current = null;
+        }
+    }, [provider, settings, btc, asOf, tr]);
+    const cancelBackup = useCallback(() => {
+        if (backupAbort.current) backupAbort.current.abort();
+        else setShowBackup(false);
+    }, []);
+    const live = liveLabel({ liveReachable: settings.providerId !== 'static' && proxyOk === true, latestDate: bt.latestDate });
+    const liveText = live.kind === 'today' ? tr('bt.asOfToday') : live.date ? tr('bt.asOfLatest', { date: live.date }) : tr('bt.asOfUnknown');
 
     /**
      * BOOT-TIME RESTORE (UI-state persistence, user request: "if I refreshed
@@ -1386,7 +1514,9 @@ const App: React.FC = () => {
     // Strikes of the chain the levels come from, for the Chart tab: a custom level is put on the nearest strike
     const chartStrikes = useMemo(() => [...new Set(gex.quotes.map((q) => q.strike))].sort((a, b) => a - b), [gex.quotes]);
     // Chart tab range (plan 8.2), held here so it survives tab switches.
-    const [chartRange, setChartRange] = useState<ChartRange>(DEFAULT_RANGE);
+    // the range button chosen last stays after a refresh
+    const [chartRange, setChartRangeState] = useState<ChartRange>(() => loadChartRange(CHART_RANGES, DEFAULT_RANGE));
+    const setChartRange = useCallback((r: ChartRange) => { setChartRangeState(r); saveChartRange(r); }, []);
 
     // Onboarding preview: provider demo ticker, else jump to CACHE + AAPL.
     const onboardingPreview = useCallback(() => {
@@ -1424,7 +1554,32 @@ const App: React.FC = () => {
             <TopBar
                 settings={settings}
                 provider={provider}
-                onChange={patchSettings}
+                asOfSlot={(
+                    <AsOfSelect
+                        entries={bt.entries}
+                        activeId={asOf?.id ?? null}
+                        activeLabel={asOf?.label ?? null}
+                        liveText={liveText}
+                        loading={bt.loading}
+                        onSelect={(id) => { void btc.select(id); }}
+                        onImport={(files) => { void onImportFiles(files); }}
+                        onCreateBackup={openBackupDialog}
+                        onManage={() => setShowManager(true)}
+                    />
+                )}
+                asOfMenuSlot={(
+                    <AsOfMenuSection
+                        entries={bt.entries}
+                        activeId={asOf?.id ?? null}
+                        liveText={liveText}
+                        onSelect={(id) => { void btc.select(id); }}
+                        onImport={(files) => { void onImportFiles(files); }}
+                        onCreateBackup={openBackupDialog}
+                        onManage={() => setShowManager(true)}
+                    />
+                )}
+                // switching between CACHE and LIVE leaves the backtest, a live provider cannot show an archived day
+                onChange={(patch) => { if (asOf && 'providerId' in patch) void btc.select(null); patchSettings(patch); }}
                 onSetToken={setToken}
                 onSetSecret={setSecret}
                 onClearData={async () => { await clearCacheData(); resetView(); }}
@@ -1464,6 +1619,18 @@ const App: React.FC = () => {
                 proxyOk={proxyOk}
                 proxyChecking={proxyChecking}
             />
+
+            {asOf && (
+                <div role="status" data-backtest-banner className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-amber-300 bg-amber-100 px-4 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200 xl:px-8">
+                    <span>
+                        {tr('bt.banner', { label: asOf.label })}
+                        {Object.keys(asOf.customLevels).length > 0 ? ` ${tr('bt.bannerCustom')}` : ''}
+                    </span>
+                    <button type="button" onClick={() => { void btc.select(null); }} className="rounded-md border border-amber-400 px-2 py-0.5 font-bold hover:bg-amber-200 dark:border-amber-500/60 dark:hover:bg-amber-500/25">
+                        {tr('bt.backToLive')}
+                    </button>
+                </div>
+            )}
 
             {/* flex-1: grows to fill whatever height TopBar (fixed) doesn't use, so the
                 footer below is pushed to the bottom of the viewport on a short/empty
@@ -1650,6 +1817,7 @@ const App: React.FC = () => {
                         setMetrics={changeGexMetrics}
                         strikes={chartStrikes}
                         agEnabled={gexMetrics.includes('absoluteGamma')}
+                        asOfDate={asOf ? valuationDayOf(asOf.id) : null}
                     />
                 </Suspense>
                 </div>
@@ -1661,6 +1829,35 @@ const App: React.FC = () => {
                 AttributionFooter.tsx's own doc comment); every other tab shows a plain
                 link back to this project's own GitHub repo instead. */}
             {activeTab === 'chart' ? <AttributionFooter /> : <RepoFooter />}
+
+            {showManager && (
+                <BacktestManager
+                    entries={bt.entries}
+                    onClose={() => setShowManager(false)}
+                    onDownload={(ids) => { void onDownloadDays(ids); }}
+                    onRemove={(ids) => { void btc.remove(ids); }}
+                    onRemoveOlderThan={(date) => { void onRemoveOlderThan(date); }}
+                    onClearAll={() => { void btc.clearAll(); }}
+                    onImport={(files) => { void onImportFiles(files); }}
+                />
+            )}
+            {showBackup && (
+                <BackupDialog allCount={backupAll} progress={backupProgress} error={backupError} onCreate={(choice) => { void createBackup(choice); }} onCancel={cancelBackup} />
+            )}
+            {toast && (
+                <div
+                    role={toast.kind === 'error' ? 'alert' : 'status'}
+                    data-backtest-toast={toast.kind}
+                    onClick={() => setToast(null)}
+                    className={`fixed bottom-4 left-1/2 z-[80] max-w-[min(92vw,40rem)] -translate-x-1/2 cursor-pointer rounded-lg border px-4 py-2 text-xs font-medium shadow-lg ${
+                        toast.kind === 'error'
+                            ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-500/50 dark:bg-red-950 dark:text-red-200'
+                            : 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/50 dark:bg-emerald-950 dark:text-emerald-200'
+                    }`}
+                >
+                    {toast.text}
+                </div>
+            )}
         </div>
     );
 };

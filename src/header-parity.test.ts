@@ -34,16 +34,33 @@ describe('header parity + CACHE-muted proxies (gex)', () => {
     expect(main).toContain('rounded-lg p-0.5 border');
   });
 
-  test('debug + settings popovers use fundamentals card shell', () => {
+  test('the settings popover uses the fundamentals card shell', () => {
     expect(main).toContain('w-[min(92vw,22rem)] z-[60]');
     expect(main).toContain('rounded-xl shadow-xl p-3 space-y-3');
     expect(main).toContain("bg-slate-800 border-slate-600 text-slate-100");
     expect(main).toContain("bg-white border-slate-200 text-slate-900 shadow-sm");
   });
 
-  test('provider select keeps fixed width so CACHE/LIVE toggle does not reflow header', () => {
-    expect(main).toContain('w-[7.25rem]');
-    expect(main).toContain('box-border w-full max-w-full');
+  test('debug info and the proxy status are the last block of the settings menu, the header has no debug button and no dots', () => {
+    const topBar = readFileSync(join(import.meta.dir, 'components/TopBar.tsx'), 'utf8');
+    const header = topBar.slice(0, topBar.indexOf('{openSettings && ('));
+    const menu = topBar.slice(topBar.indexOf('{openSettings && ('));
+    expect(header).not.toContain('data-proxy-indicators');
+    expect(header).not.toContain("t('topBar.debug')");
+    expect(menu).toContain('data-debug-info');
+    expect(menu.indexOf('data-debug-info')).toBeGreaterThan(menu.indexOf('data-data-source'));
+  });
+
+  test('the provider select lives in the settings menu (Online data / Cached data buttons), not in the header', () => {
+    const topBar = readFileSync(join(import.meta.dir, 'components/TopBar.tsx'), 'utf8');
+    const header = topBar.slice(0, topBar.indexOf('{openSettings && ('));
+    const menu = topBar.slice(topBar.indexOf('{openSettings && ('));
+    expect(header).not.toContain('<select');
+    expect(menu.match(/<select/g)?.length).toBe(1);
+    expect(menu).toContain('data-data-source={b.k}');
+    expect(menu).toContain('w-[7.25rem]');
+    // at the bottom of the menu: after the nested SettingsPanel
+    expect(menu.indexOf('data-data-source')).toBeGreaterThan(menu.indexOf('<SettingsPanel'));
   });
 
   test('provider select: CACHE locks to CACHE; LIVE lists only 3 proxies', () => {

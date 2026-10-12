@@ -17,8 +17,37 @@ function subscribe(listener: () => void): () => void {
     return () => { listeners.delete(listener); };
 }
 
+// Backtest ("As of" an archived snapshot): the levels saved in that snapshot are shown instead of the user's own, read-only.
+// null = the user's own levels, editable.
+let override: Record<string, CustomLevel[]> | null = null;
+
+/** Shows these levels (by ticker) instead of the user's own and locks editing, or null to go back to the user's own. */
+export function setCustomLevelsOverride(levels: Record<string, CustomLevel[]> | null): void {
+    override = levels;
+    listeners.forEach((l) => l());
+}
+
+/** True while a snapshot's levels are shown: the Chart and GEX tabs must not open the editor. */
+export const customLevelsLocked = (): boolean => override !== null;
+
+/** The levels shown for a symbol right now (the snapshot's while one is open). */
+export function readCustomLevels(symbol: string): CustomLevel[] {
+    return read(symbol);
+}
+
+/** The user's OWN levels of these symbols, whatever is shown now: what a backup made in the app saves. */
+export function ownCustomLevels(symbols: readonly string[]): Record<string, CustomLevel[]> {
+    const out: Record<string, CustomLevel[]> = {};
+    for (const s of symbols) {
+        const levels = cache.get(s) ?? loadCustomLevels(s);
+        if (levels.length) out[s] = levels;
+    }
+    return out;
+}
+
 function read(symbol: string): CustomLevel[] {
     if (!symbol) return EMPTY;
+    if (override) return override[symbol] ?? EMPTY;
     let levels = cache.get(symbol);
     if (!levels) {
         levels = loadCustomLevels(symbol);
@@ -29,10 +58,15 @@ function read(symbol: string): CustomLevel[] {
 
 /** Replaces the levels of a symbol. `persist: false` is for a drag in progress, the final value is saved on drop. */
 export function setCustomLevels(symbol: string, levels: CustomLevel[], persist = true): void {
-    if (!symbol) return;
+    if (!symbol || override) return;
     cache.set(symbol, levels);
     if (persist) saveCustomLevels(symbol, levels);
     listeners.forEach((l) => l());
+}
+
+/** Whether editing is locked (a snapshot's levels are shown). */
+export function useCustomLevelsLocked(): boolean {
+    return useSyncExternalStore(subscribe, customLevelsLocked, () => false);
 }
 
 export function useCustomLevels(symbol: string): [CustomLevel[], (levels: CustomLevel[], persist?: boolean) => void] {

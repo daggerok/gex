@@ -1,0 +1,179 @@
+# =============================================================================
+# GEX - PARTIAL data update: the most important (default) tickers, every hour during US market hours
+# -----------------------------------------------------------------------------
+# Runs `bun scripts/options-data.ts` with no arguments, which covers only
+# DEFAULT_SYMBOLS (the indices, ETFs and mega caps the ticker search field hints,
+# src/default-tickers.ts), not the whole universe. The full refresh stays in update-data.yml.
+#
+# WHEN: Mon-Fri at 9:45, 10:45, ..., 16:45 New York time (8 runs a day).
+# GitHub cron is UTC only and has no time zone, and New York switches between
+# UTC-4 (EDT) and UTC-5 (EST), so the UTC hours of both are scheduled (13:45-21:45)
+# and the "Market window" step skips the one that does not match New York time
+# (13:45 UTC in winter, 21:45 UTC in summer). Scheduled runs can start many minutes late,
+# the window allows for that. Market holidays are not skipped (the data is simply
+# refreshed with the last prices).
+#
+# WHAT IS COMMITTED (owner's decision, keeps the repository small): the hourly data is NOT committed. Each run fetches
+# the fresh files into its own checkout, builds the site from them and deploys it to GitHub Pages straight from this
+# workflow (the `deploy` job), so the site is fresh every hour and git history does not grow by about 2 MB per run.
+# Only the LAST run of the day (New York time 16:30 or later) commits: the day's archive zip api/history/<YYYY-MM>/<day>.zip
+# (the last state of the day, kept for 14 days) and api/latest.json. A backtest backup made here (repository variable
+# BACKTEST_TICKERS) is committed by the run that made it. Any other deploy (a code push) refreshes the default tickers
+# before it builds, see github-pages.yml, so it never shows the older committed files.
+#
+# SPEED: the job is kept as short as possible, it is billed per started minute. The default 18 tickers take about
+# 20 s with CONCURRENCY=4 (55 s one by one), build and deploy are two more short jobs, about 2 billed minutes a run.
+# =============================================================================
+name: Update partial options data
+
+on:
+  schedule:
+    - cron: "45 13-21 * * 1-5" # :45 slots, 9:45-16:45 New York in summer (13:45-20:45 UTC) and in winter (14:45-21:45 UTC)
+  workflow_dispatch: {} # manual run, always refreshes
+
+permissions:
+  contents: write # the end-of-day archive and a backtest backup are committed
+  pages: write # the deploy job
+  id-token: write # the deploy job
+
+# One data refresh at a time, shared with update-data.yml (a run waits, none is cancelled)
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      run: ${{ steps.window.outputs.run }}
+    env:
+      # The nearest 15 expirations of every ticker are fetched again each hour (15 is the cap the index chains use in
+      # update-data.yml). The later expirations already in the files are kept, not cut off: only their Cboe greeks, open
+      # interest and volume are refreshed, a full run (update-data.yml) refreshes everything else.
+      MAX_EXPIRATIONS: "15"
+      KEEP_EXPIRATIONS: "1"
+      # 4 tickers at a time and a short pause: 20 s instead of 55 s for the 18 tickers, no failures (measured, 6 workers
+      # were not faster, the slowest ticker sets the time)
+      CONCURRENCY: "4"
+      REQUEST_SLEEP: "0.1"
+    steps:
+      - name: Market window
+        id: window
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          # Minutes since midnight in New York
+          now=$(TZ=America/New_York date +%H:%M)
+          mins=$((10#${now%:*} * 60 + 10#${now#*:}))
+          run=true
+          if [ -n "$SCHEDULE" ]; then
+            # accept 9:40 - 17:15 (a start up to 30 minutes late is still the 16:45 slot, the 8:45 and 17:45 ones are skipped)
+            if [ "$mins" -lt 580 ] || [ "$mins" -gt 1035 ]; then run=false; fi
+          fi
+          # the last run of the day: 16:30 New York time or later, it writes and commits the day's archive
+          final=false
+          if [ "$mins" -ge 990 ]; then final=true; fi
+          echo "New York time $now, schedule '${SCHEDULE:-manual}' -> run=$run final=$final"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "final=$final" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.window.outputs.run == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.window.outputs.run == 'true'
+        with:
+          bun-version: latest
+
+      # HISTORY=1 only for the last run of the day: it writes the day's archive zip (api/history) and deletes the zips
+      # older than 14 days. The runs before it leave api/history alone, nothing of them is committed.
+      - name: Fetch default option chains
+        if: steps.window.outputs.run == 'true'
+        env:
+          HISTORY: ${{ steps.window.outputs.final == 'true' && '1' || '0' }}
+          # rotation of the archive: daily zips and backups made on demand, days kept (repository variables override the 14)
+          HISTORY_KEEP_DAYS: ${{ vars.HISTORY_KEEP_DAYS || '14' }}
+          HISTORY_KEEP_BACKUP_DAYS: ${{ vars.HISTORY_KEEP_BACKUP_DAYS || '14' }}
+        run: bun scripts/options-data.ts
+
+      # Backtest backup of the data just fetched, only when the repository variable BACKTEST_TICKERS is set
+      # (Settings, Secrets and variables, Actions, Variables): `all` for every available ticker or a list such as
+      # `SPY NDX`. It is off by default, a backup of everything every hour adds tens of MB per hour. This one IS committed.
+      - name: Backtest backup
+        if: steps.window.outputs.run == 'true' && vars.BACKTEST_TICKERS != ''
+        env:
+          BACKUP_TICKERS: ${{ vars.BACKTEST_TICKERS }}
+        run: |
+          # the default shell has no pipefail, without it a failing script would be hidden by tee
+          set -o pipefail
+          # unquoted on purpose: the script splits the list and refuses anything that is not a ticker name
+          bun scripts/backtest-backup.ts $BACKUP_TICKERS | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The site is built from the fresh files of this checkout (not committed) and handed to the deploy job
+      - name: Build the site
+        if: steps.window.outputs.run == 'true'
+        run: |
+          bun install -E
+          bun run build-github-pages
+
+      - name: Setup Pages
+        if: steps.window.outputs.run == 'true'
+        uses: actions/configure-pages@v6
+
+      - name: Upload the site
+        if: steps.window.outputs.run == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./dist
+
+      # Commits only what must stay in git: the day's archive and api/latest.json (last run of the day), a backtest backup
+      # (the run that made it). The refreshed api/options and api/charts files are NOT staged. The site is already built, so
+      # the working tree may be thrown away when a push has to be replayed.
+      - name: Commit the archive
+        if: steps.window.outputs.run == 'true'
+        env:
+          FINAL: ${{ steps.window.outputs.final }}
+        run: |
+          git config user.name  "Maksim Kostromin"
+          git config user.email "daggerok@gmail.com"
+          git add api/history || true
+          if [ "$FINAL" = "true" ]; then git add api/latest.json || true; fi
+          if git diff --staged --quiet; then
+            echo "Nothing to archive - nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(data): archive the trading day [skip ci]"
+          git push && exit 0
+          # main moved meanwhile (a code merge or the full refresh): replay this one commit on the new tip. The unstaged data
+          # files are dropped by the reset, the deploy job already has the built site.
+          sha=$(git rev-parse HEAD)
+          for attempt in 1 2 3; do
+            git fetch --depth=2 origin "${GITHUB_REF_NAME}" \
+              && git reset -q --hard "origin/${GITHUB_REF_NAME}" \
+              && git cherry-pick -X theirs "$sha" \
+              && git push && exit 0
+            echo "Push attempt $attempt failed, retrying"
+            git cherry-pick --abort 2>/dev/null || true
+            sleep 5
+          done
+          echo "Push failed after 3 attempts" && exit 1
+
+  # Deploys the site the update job built. Shares the `pages` group with github-pages.yml, so a code deploy and this one never overlap.
+  deploy:
+    needs: update
+    if: ${{ !cancelled() && needs.update.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,9 +1,15 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DEFAULT_SYMBOLS,
+  fileDay,
+  writeLatest,
+  keepLaterExpirations,
+  marketDay,
   PyInt,
   YahooTicker,
   classifyPayload,
@@ -790,5 +796,106 @@ describe('chart cache', () => {
       cached: ['AAPL', 'QQQ', 'OTHER'], explicit: true, hasChart: () => false, isFresh: () => false, updatedOf: () => '',
     });
     expect(q).toEqual(['QQQ', 'AAPL']);
+  });
+});
+
+describe('DEFAULT_SYMBOLS', () => {
+  test('is exactly the list of tickers the empty ticker search field hints, in both languages', () => {
+    const i18n = readFileSync(join(root, 'src/i18n.tsx'), 'utf8');
+    const hints = [...i18n.matchAll(/'controls\.tickerPlaceholder': '([^']+)'/g)].map((m) => m[1].split(',').map((t) => t.trim()));
+    expect(hints.length).toBe(2);
+    for (const hint of hints) expect(hint).toEqual(DEFAULT_SYMBOLS);
+  });
+
+  test('has no duplicates and the priority symbols are inside it', () => {
+    expect(new Set(DEFAULT_SYMBOLS).size).toBe(DEFAULT_SYMBOLS.length);
+    for (const s of PRIORITY_SYMBOLS) expect(DEFAULT_SYMBOLS).toContain(s);
+  });
+});
+
+describe('keepLaterExpirations (KEEP_EXPIRATIONS)', () => {
+  const quote = (expiration: string, strike: number, extra: Record<string, unknown> = {}) => ({
+    symbol: `AAPL${expiration.replace(/-/g, '')}C${strike}`, expiration, side: 'call', strike, bid: 1.5, ask: 1.6, mid: 1.55, last: 1.5,
+    volume: 12, openInterest: 340, iv: 0.25, delta: 0.5, gamma: 0.01, theta: -0.1, vega: 0.2, rho: 0.05,
+    greeksSource: 'cboe', greeksMissingReason: null, ...extra,
+  });
+  const previous = {
+    symbol: 'AAPL',
+    expirations: ['2026-10-12', '2026-10-16', '2026-11-20', '2027-01-15'],
+    quotes: [quote('2026-10-12', 250), quote('2026-10-16', 250), quote('2026-11-20', 250), quote('2026-11-20', 255), quote('2027-01-15', 260)],
+  };
+
+  test('keeps only the expirations after the last fresh one, with all their quotes', () => {
+    const kept = keepLaterExpirations(['2026-10-12', '2026-10-16'], previous);
+    expect(kept.expirations).toEqual(['2026-11-20', '2027-01-15']);
+    expect(kept.quotes.map((q) => `${q.expiration}:${q.strike}`)).toEqual(['2026-11-20:250', '2026-11-20:255', '2027-01-15:260']);
+  });
+
+  test('nothing is kept when the fresh part already reaches the end, or there is nothing to compare', () => {
+    expect(keepLaterExpirations(['2027-01-15'], previous).quotes).toEqual([]);
+    expect(keepLaterExpirations([], previous).quotes).toEqual([]);
+    expect(keepLaterExpirations(['2026-10-12'], null).quotes).toEqual([]);
+    expect(keepLaterExpirations(['2026-10-12'], 'junk').quotes).toEqual([]);
+    expect(keepLaterExpirations(['2026-10-12'], { quotes: 'x' }).quotes).toEqual([]);
+  });
+
+  test('damaged entries are skipped, the rest is kept', () => {
+    const kept = keepLaterExpirations(['2026-10-12'], { quotes: [null, 5, { expiration: 20261120 }, { symbol: 'x' }, quote('2026-11-20', 250)] });
+    expect(kept.expirations).toEqual(['2026-11-20']);
+    expect(kept.quotes).toHaveLength(1);
+  });
+
+  test('a kept quote is written back byte for byte, a zero strike stays an int', () => {
+    const text = pyJsonDumps({ quotes: [quote('2026-11-20', 250.5), quote('2026-11-20', 0)] });
+    const kept = keepLaterExpirations(['2026-10-12'], JSON.parse(text));
+    expect(pyJsonDumps({ quotes: kept.quotes })).toBe(text.replace('"strike":0.0', '"strike":0'));
+  });
+});
+
+describe('marketDay (the trading day a fetch belongs to)', () => {
+  const at = (iso: string) => marketDay(new Date(iso));
+  test('a weekday from 9:30 market time on is that day, also after the close and late at night', () => {
+    expect(at('2026-10-12T13:30:00Z')).toBe('2026-10-12'); // Mon 09:30 EDT
+    expect(at('2026-10-12T14:00:00Z')).toBe('2026-10-12');
+    expect(at('2026-10-09T20:15:00Z')).toBe('2026-10-09'); // Fri 16:15 EDT
+    expect(at('2026-10-10T02:00:00Z')).toBe('2026-10-09'); // Fri 22:00 EDT is already Saturday UTC
+    expect(at('2026-12-01T15:00:00Z')).toBe('2026-12-01'); // Tue 10:00 EST
+  });
+
+  test('before 9:30 the data is still the previous trading day, Monday morning gives Friday', () => {
+    expect(at('2026-10-13T12:00:00Z')).toBe('2026-10-12'); // Tue 08:00 EDT
+    expect(at('2026-10-12T13:29:00Z')).toBe('2026-10-09'); // Mon 09:29 EDT
+    expect(at('2026-10-12T04:00:00Z')).toBe('2026-10-09'); // Mon 00:00 EDT
+  });
+
+  test('a weekend is the Friday before', () => {
+    expect(at('2026-10-10T16:00:00Z')).toBe('2026-10-09'); // Sat
+    expect(at('2026-10-11T16:00:00Z')).toBe('2026-10-09'); // Sun
+  });
+});
+
+describe('fileDay', () => {
+  test('the date field wins, an older file falls back to the day of its updated moment', () => {
+    expect(fileDay(JSON.stringify({ date: '2026-10-08', updated: '2026-10-09T10:00:00-04:00' }))).toBe('2026-10-08');
+    expect(fileDay(JSON.stringify({ updated: '2026-10-08T10:00:00-04:00' }))).toBe('2026-10-08');
+    expect(fileDay(JSON.stringify({ date: 'junk', updated: '2026-10-08T10:00:00-04:00' }))).toBe('2026-10-08');
+  });
+
+  test('anything that is not a cache file has no day', () => {
+    expect(fileDay('{oops')).toBeNull();
+    expect(fileDay('[]')).toBeNull();
+    expect(fileDay(JSON.stringify({ symbol: 'SPY' }))).toBeNull();
+  });
+});
+
+describe('writeLatest', () => {
+  test('writes api/latest.json with the date only, again with the same date changes nothing, a bad date writes nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'latest-'));
+    expect(writeLatest(dir, '2026-10-09')).toBe(true);
+    expect(JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8'))).toEqual({ version: 1, date: '2026-10-09' });
+    expect(writeLatest(dir, '2026-10-09')).toBe(false);
+    expect(writeLatest(dir, '2026-10-10')).toBe(true);
+    expect(writeLatest(dir, 'yesterday')).toBe(false);
+    expect(JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8')).date).toBe('2026-10-10');
   });
 });

@@ -119,15 +119,18 @@ export const TopBar: React.FC<{
     setTickerSuggestionsOpen: (v: boolean) => void;
     proxyOk: boolean | null;
     proxyChecking: boolean;
+    /** The "As of" selector (backtest), rendered next to the provider. */
+    asOfSlot?: React.ReactNode;
+    /** The same controls as a block of the settings menu, for a narrow screen where the selector is hidden. */
+    asOfMenuSlot?: React.ReactNode;
 }> = ({
     settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll,
     tickerInput, onTickerInput, onSearch, searching,
     tickerSuggestions, tickerSuggestionsOpen, tickerSuggestionsLoading, activeTickerSuggestion,
     onTickerFocus, onTickerBlur, onTickerKeyDown, onChooseSuggestion, setActiveTickerSuggestion, setTickerSuggestionsOpen,
-    proxyOk, proxyChecking,
+    proxyOk, proxyChecking, asOfSlot, asOfMenuSlot,
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
-    const [showDebug, setShowDebug] = useState(false);
     const { t, lang, setLang } = useI18n();
     const hasKey = !!(settings.tokens[provider.id]) &&
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
@@ -149,14 +152,12 @@ export const TopBar: React.FC<{
         return () => obs.disconnect();
     }, [settings.theme]);
 
-    const debugRef = useRef<HTMLDivElement | null>(null);
     const settingsRef = useRef<HTMLDivElement | null>(null);
     const showTickerSuggestions = tickerSuggestionsOpen && (tickerSuggestionsLoading || tickerSuggestions.length > 0);
 
     useEffect(() => {
         const h = (e: MouseEvent) => {
             const n = e.target as Node;
-            if (debugRef.current && !debugRef.current.contains(n)) setShowDebug(false);
             if (settingsRef.current && !settingsRef.current.contains(n)) setOpenSettings(false);
         };
         document.addEventListener('mousedown', h);
@@ -216,71 +217,6 @@ export const TopBar: React.FC<{
         <div className={`sticky top-0 z-50 ${bg} backdrop-blur-md border-b ${bdr}`}>
             <div className="px-4 xl:px-8">
                 <div className="flex items-center gap-2 sm:gap-3 py-3">
-                    {/* 1. Debug — same as fundamentals ⌘ */}
-                    <div className="relative flex-shrink-0" ref={debugRef}>
-                        <button
-                            type="button"
-                            onClick={() => setShowDebug((v) => !v)}
-                            title={t('topBar.debug')}
-                            aria-label={t('topBar.debug')}
-                            aria-expanded={showDebug}
-                            className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${
-                                showDebug
-                                    ? dark ? chipActiveDark : chipActiveLight
-                                    : dark
-                                        ? 'text-slate-600 hover:text-slate-400 hover:bg-slate-800'
-                                        : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
-                            }`}
-                        >
-                            ⌘
-                        </button>
-                        {showDebug && (
-                            <div
-                                role="dialog"
-                                aria-label={t('topBar.debug')}
-                                className={`absolute left-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3`}
-                            >
-                                <div className={`font-bold text-sm ${t1}`}>⌘ {t('topBar.debug')}</div>
-                                <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>Overview</div>
-                                <div className={`rounded-lg border ${bdr} divide-y ${bdr}`}>
-                                    <div className="flex items-start justify-between gap-3 px-3 py-2">
-                                        <span className={`text-xs ${mt}`}>Provider</span>
-                                        <span className={`text-xs font-mono text-right ${t1}`}>{provider.label}</span>
-                                    </div>
-                                    <div className="grid grid-cols-2 divide-x divide-inherit">
-                                        <div className="px-3 py-2">
-                                            <div className={`text-[10px] ${mt}`}>Mode</div>
-                                            <div className={`text-xs font-mono font-semibold ${t1}`}>{isCache ? 'CACHE' : 'LIVE'}</div>
-                                        </div>
-                                        <div className="px-3 py-2">
-                                            <div className={`text-[10px] ${mt}`}>Proxy</div>
-                                            <div className={`text-xs font-mono font-semibold ${proxyStatusCls}`}>{proxyStatusLabel}</div>
-                                        </div>
-                                    </div>
-                                    <div className="px-3 py-2">
-                                        <div className={`text-[10px] ${mt}`}>proxyBase</div>
-                                        <div className={`mt-1 text-[10px] font-mono break-all ${t2}`}>{settings.proxyBase || '—'}</div>
-                                    </div>
-                                    <div className="px-3 py-2">
-                                        <div className={`text-[10px] ${mt}`}>Ticker</div>
-                                        <div className={`text-xs font-mono font-semibold ${t1}`}>{tickerInput || '—'}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* 2. Proxy dots — fundamentals size/spacing */}
-                    <div
-                        className="flex gap-1.5 flex-shrink-0"
-                        data-proxy-indicators={isCache ? 'disabled' : 'live'}
-                        title={isCache ? `${t('topBar.proxy')} (${t('topBar.cache')} — ${t('topBar.proxyDisabled')})` : t('topBar.proxy')}
-                        aria-label={t('topBar.proxy')}
-                    >
-                        <div className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
-                        <div className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
-                    </div>
-
                     {/* 3. Ticker — fundamentals mono input */}
                     <div className="flex-1 min-w-0 relative" title={t('topBar.ticker')}>
                         <input
@@ -347,29 +283,8 @@ export const TopBar: React.FC<{
                         )}
                     </button>
 
-                    {/* 5. Provider — greys out when CACHE (same pill shell feel via native select styled) */}
-                    <div className="hidden sm:block flex-shrink-0 w-[7.25rem]">
-                        <select
-                            value={settings.providerId}
-                            onChange={(e) => onChange({ providerId: e.target.value })}
-                            disabled={isCache}
-                            data-provider-select={isCache ? 'disabled' : 'live'}
-                            title={isCache ? `${t('settings.provider')} (${t('topBar.proxyDisabled')})` : t('settings.provider')}
-                            className={`box-border w-full max-w-full rounded-lg border px-2 py-1.5 text-sm font-bold outline-none transition-colors ${
-                                isCache
-                                    ? dark
-                                        ? 'border-slate-700 bg-slate-800/50 text-slate-500 cursor-not-allowed'
-                                        : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    : dark
-                                        ? 'border-slate-700 bg-slate-800 text-slate-100'
-                                        : 'border-slate-200 bg-slate-100 text-slate-800'
-                            }`}
-                        >
-                            {(isCache ? PROVIDERS.filter((p) => p.id === 'static') : LIVE_PROVIDERS).map((p) => (
-                                <option key={p.id} value={p.id}>{p.label}</option>
-                            ))}
-                        </select>
-                    </div>
+                    {/* 5b. "As of" selector (backtest), same for all tabs */}
+                    {asOfSlot}
 
                     {/* 6. CACHE / LIVE — fundamentals Pill */}
                     <div title={isCache ? t('topBar.cache') : t('topBar.live')} className="flex-shrink-0">
@@ -442,7 +357,7 @@ export const TopBar: React.FC<{
                         </button>
                         {openSettings && (
                             <div
-                                className={`absolute right-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3`}
+                                className={`absolute right-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3 max-h-[calc(100dvh-5rem)] overflow-y-auto`}
                             >
                                 <div className={`font-bold text-sm ${t1}`}>⚙️ {t('settings.title')}</div>
 
@@ -490,33 +405,6 @@ export const TopBar: React.FC<{
                                     />
                                 </div>
 
-                                <div className={`text-[10px] font-bold uppercase tracking-wide pt-1 ${mt}`}>{t('settings.provider')}</div>
-                                <div className="flex items-center justify-between gap-2">
-                                    <span className={`text-xs ${t2}`}>{t('settings.provider')}</span>
-                                    <select
-                                        value={settings.providerId}
-                                        onChange={(e) => onChange({ providerId: e.target.value })}
-                                        disabled={isCache}
-                                        data-provider-select={isCache ? 'disabled' : 'live'}
-                                        className={`box-border w-[7.25rem] max-w-full rounded-lg border px-2 py-1 text-xs font-bold outline-none ${
-                                            isCache
-                                                ? dark
-                                                    ? 'border-slate-700 bg-slate-900/50 text-slate-500 cursor-not-allowed'
-                                                    : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                                                : dark
-                                                    ? 'border-slate-600 bg-slate-900 text-slate-100'
-                                                    : 'border-slate-200 bg-white text-slate-800'
-                                        }`}
-                                    >
-                                        {(isCache ? PROVIDERS.filter((p) => p.id === 'static') : LIVE_PROVIDERS).map((p) => (
-                                            <option key={p.id} value={p.id}>{p.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className={`text-[10px] ${mt}`}>
-                                    {isCache ? t('topBar.proxyDisabled') : t('settings.providerHint')}
-                                </div>
-
                                 {/* Nested full SettingsPanel for desk columns / cache / proxy fields */}
                                 <div className={`border-t ${bdr} pt-2`}>
                                     <SettingsPanel
@@ -531,6 +419,96 @@ export const TopBar: React.FC<{
                                         onClose={() => setOpenSettings(false)}
                                         embedded
                                     />
+                                </div>
+
+                                {/* Data source, at the bottom of the menu: online (live proxies) or cached data, and the provider inside it.
+                                    This replaced the provider dropdown of the header. */}
+                                <div className={`border-t ${bdr} pt-2 space-y-2`}>
+                                    <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>{t('settings.dataSource')}</div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {([
+                                            { k: 'live', l: `🌐 ${t('settings.onlineData')}`, on: !isCache },
+                                            { k: 'cache', l: `💾 ${t('settings.cachedData')}`, on: isCache },
+                                        ] as const).map((b) => (
+                                            <button
+                                                key={b.k}
+                                                type="button"
+                                                data-data-source={b.k}
+                                                aria-pressed={b.on}
+                                                onClick={() => {
+                                                    if (b.k === 'cache') onChange({ providerId: 'static' });
+                                                    else if (isCache) onChange({ providerId: 'cboe' });
+                                                }}
+                                                className={`rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
+                                                    b.on ? pillActive : dark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                }`}
+                                            >
+                                                {b.l}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className={`text-xs ${t2}`}>{t('settings.provider')}</span>
+                                        <select
+                                            value={settings.providerId}
+                                            onChange={(e) => onChange({ providerId: e.target.value })}
+                                            disabled={isCache}
+                                            data-provider-select={isCache ? 'disabled' : 'live'}
+                                            className={`box-border w-[7.25rem] max-w-full rounded-lg border px-2 py-1 text-xs font-bold outline-none ${
+                                                isCache
+                                                    ? dark
+                                                        ? 'border-slate-700 bg-slate-900/50 text-slate-500 cursor-not-allowed'
+                                                        : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                                    : dark
+                                                        ? 'border-slate-600 bg-slate-900 text-slate-100'
+                                                        : 'border-slate-200 bg-white text-slate-800'
+                                            }`}
+                                        >
+                                            {(isCache ? PROVIDERS.filter((p) => p.id === 'static') : LIVE_PROVIDERS).map((p) => (
+                                                <option key={p.id} value={p.id}>{p.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className={`text-[10px] ${mt}`}>
+                                        {isCache ? t('topBar.proxyDisabled') : t('settings.providerHint')}
+                                    </div>
+                                </div>
+
+                                {asOfMenuSlot}
+
+                                {/* Status and debug, the last block of the menu: they used to be a button and two dots in the header.
+                                    One dot is enough, both dots always showed the same /health probe. */}
+                                <div className={`border-t ${bdr} pt-2 space-y-2`} data-debug-info>
+                                    <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>⌘ {t('topBar.debug')}</div>
+                                    <div className={`rounded-lg border ${bdr} divide-y ${bdr}`}>
+                                        <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                            <span className={`text-xs ${mt}`}>{t('topBar.proxy')}</span>
+                                            <span
+                                                className={`flex items-center gap-2 text-xs font-mono font-semibold ${proxyStatusCls}`}
+                                                data-proxy-indicators={isCache ? 'disabled' : 'live'}
+                                                title={isCache ? `${t('topBar.proxy')} (${t('topBar.cache')} — ${t('topBar.proxyDisabled')})` : t('topBar.proxy')}
+                                            >
+                                                <span className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
+                                                {proxyStatusLabel.replace('● ', '')}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                            <span className={`text-xs ${mt}`}>Provider</span>
+                                            <span className={`text-xs font-mono text-right ${t1}`}>{provider.label}</span>
+                                        </div>
+                                        <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                            <span className={`text-xs ${mt}`}>Mode</span>
+                                            <span className={`text-xs font-mono font-semibold ${t1}`}>{isCache ? 'CACHE' : 'LIVE'}</span>
+                                        </div>
+                                        <div className="px-3 py-2">
+                                            <div className={`text-[10px] ${mt}`}>proxyBase</div>
+                                            <div className={`mt-1 text-[10px] font-mono break-all ${t2}`}>{settings.proxyBase || '—'}</div>
+                                        </div>
+                                        <div className="flex items-start justify-between gap-3 px-3 py-2">
+                                            <span className={`text-xs ${mt}`}>{t('topBar.ticker')}</span>
+                                            <span className={`text-xs font-mono font-semibold ${t1}`}>{tickerInput || '—'}</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}

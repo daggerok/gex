@@ -19,15 +19,18 @@ import { MetricsPanel } from '../components/MetricsPanel';
 import type { GexMetric } from '../metric-prefs';
 import { useLevelPrefs } from '../level-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor, roundPrice } from '../custom-levels';
-import { useCustomLevels } from '../use-custom-levels';
+import { cutBarsAfter } from '../backtest/bars';
+import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { ChartHeader } from '../components/ChartHeader';
+import { FadePresence } from '../components/FadePresence';
 import { useI18n } from '../i18n';
 import { DEFAULT_CHART_INTERVAL, loadOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
 import type { GexLevels, OhlcBar, Settings } from '../types';
 import { fmt } from '../utils';
-import { LOAD_RANGE, visibleRangeFor, type ChartRange } from './chart-range';
+import { loadChartViews, saveChartViews, withZoom, zoomFor, type ZoomMap } from '../chart-zoom-store';
+import { fromStoredView, loadRangeFor, toStoredView, visibleRangeFor, type ChartRange } from './chart-range';
 
 // ============================================================================
 // CHART VIEW (Tab 3) - plan section 8.2 (`agentic-workspace docs/repos/gex/spec-gex-app.md`). Daily candles of the loaded symbol (OHLC from the companion
@@ -88,6 +91,8 @@ export interface ChartViewProps {
     setMetrics: (metrics: GexMetric[]) => void;
     /** Strikes of the loaded chain: a click or a drag puts a custom level on the nearest one, never between two. */
     strikes?: readonly number[];
+    /** Backtest: the archived day (`YYYY-MM-DD`). The candles stop at it and come from the cache files, the live proxy is off. null = live. */
+    asOfDate?: string | null;
 }
 
 type FetchState =
@@ -118,7 +123,7 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [] }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [], asOfDate = null }) => {
     const agEnabled = metrics.includes('absoluteGamma');
     const { t: tr, lang } = useI18n();
     const ax = accentOf(settings.colorTheme);
@@ -155,14 +160,15 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     const [draft, setDraft] = useState<LevelDraft | null>(null);
 
     // ---- OHLC fetch (symbol; always LOAD_RANGE of daily bars, the range buttons only change the visible part) ----
-    const fetchKey = `${symbol}|${LOAD_RANGE}|${settings.proxyBase}|${settings.providerId}`;
+    const loadRange = loadRangeFor(range);
+    const fetchKey = `${symbol}|${loadRange}|${settings.proxyBase}|${settings.providerId}|${asOfDate ?? ''}`;
     const [state, setState] = useState<FetchState>({ key: '', status: 'loading' });
     useEffect(() => {
         if (!symbol) return;
         const ac = new AbortController();
         setState({ key: fetchKey, status: 'loading' });
-        loadOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range: LOAD_RANGE, interval: DEFAULT_CHART_INTERVAL }, settings.providerId === 'static')
-            .then((bars) => { if (!ac.signal.aborted) setState({ key: fetchKey, status: 'ok', bars }); })
+        loadOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range: loadRange, interval: DEFAULT_CHART_INTERVAL }, settings.providerId === 'static' || asOfDate !== null)
+            .then((bars) => { if (!ac.signal.aborted) setState({ key: fetchKey, status: 'ok', bars: asOfDate ? cutBarsAfter(bars, asOfDate) : bars }); })
             .catch((e: unknown) => {
                 if (ac.signal.aborted) return;
                 setState({ key: fetchKey, status: 'error', error: e instanceof Error ? e.message : String(e) });
@@ -188,6 +194,9 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             grid: { vertLines: { color: 'rgba(148, 163, 184, 0.15)' }, horzLines: { color: 'rgba(148, 163, 184, 0.15)' } },
             rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.4)', scaleMargins: PRICE_SCALE_MARGINS },
             timeScale: { borderColor: 'rgba(148, 163, 184, 0.4)' },
+            // A double click on the TIME axis is ours (see the effect below): the library's own reset puts the last candle against the
+            // right edge, under the level labels. A double click on the price axis keeps the library's autoscale reset.
+            handleScale: { axisDoubleClickReset: { time: false, price: true } },
         });
         const series = chart.addSeries(CandlestickSeries, {
             autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => {
@@ -232,11 +241,82 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         series.setData(data);
     }, [bars, hasSymbol]);
 
-    // ---- Visible part: the chosen range of the loaded history (new data or a range click resets pan and zoom) ----
+    // ---- Visible part ----
+    // The window a ticker was left at (pan and zoom, remembered per ticker, offsets from the last bar) comes back after a
+    // refresh and when the ticker is opened again. A click on a range button, or no saved window, gives the chosen range
+    // of the loaded history. A backtest never reads or writes the saved window (it shows another stretch of the history).
+    const viewsRef = useRef<ZoomMap | null>(null);
+    const lastRangeRef = useRef(range);
+    const saveTimer = useRef<number | null>(null);
+    const suppressSaveUntil = useRef(0);
+    const barsRef = useRef(bars);
+    barsRef.current = bars;
+    const rangeRef = useRef(range);
+    rangeRef.current = range;
+    const views = () => (viewsRef.current ??= loadChartViews());
     useEffect(() => {
         if (!bars?.length) return;
-        chartRef.current?.timeScale().setVisibleLogicalRange(visibleRangeFor(bars.map((b) => b.time), range));
+        const times = bars.map((b) => b.time);
+        const rangeClicked = lastRangeRef.current !== range;
+        lastRangeRef.current = range;
+        if (rangeClicked && !asOfDate) { viewsRef.current = withZoom(views(), symbol, null); saveChartViews(viewsRef.current); }
+        const stored = asOfDate ? null : zoomFor(views(), symbol);
+        const target = stored ? fromStoredView(stored, times.length) : visibleRangeFor(times, range);
+        chartRef.current?.timeScale().setVisibleLogicalRange(target);
     }, [bars, range, hasSymbol]);
+    // The user's own pan and zoom are saved (a little after they stop). The chart reports EVERY change of the window, also the
+    // ones the code makes (a new range, new data, a resize), so a change counts only while the user is touching the chart:
+    // a wheel turn, a press or a drag on it, or a finger on it.
+    useEffect(() => {
+        const scale = chartRef.current?.timeScale();
+        const el = containerRef.current;
+        if (!scale || !el || !hasSymbol || asOfDate) return;
+        let touchedAt = 0;
+        const touch = () => { touchedAt = Date.now(); };
+        const drag = (e: PointerEvent) => { if (e.buttons) touchedAt = Date.now(); };
+        el.addEventListener('wheel', touch, { passive: true });
+        el.addEventListener('pointerdown', touch);
+        el.addEventListener('pointermove', drag);
+        const onChange = (r: { from: number; to: number } | null) => {
+            const count = bars?.length ?? 0;
+            // for the browser checks: the window on screen, offsets from the last bar
+            if (r && count) el.dataset.view = toStoredView(r, count).map((n) => n.toFixed(1)).join(',');
+            if (!r || !count || Date.now() - touchedAt > 1500 || Date.now() < suppressSaveUntil.current) return;
+            if (saveTimer.current) window.clearTimeout(saveTimer.current);
+            saveTimer.current = window.setTimeout(() => {
+                viewsRef.current = withZoom(views(), symbol, toStoredView(r, count));
+                saveChartViews(viewsRef.current);
+            }, 300);
+        };
+        scale.subscribeVisibleLogicalRangeChange(onChange);
+        return () => {
+            scale.unsubscribeVisibleLogicalRangeChange(onChange);
+            el.removeEventListener('wheel', touch);
+            el.removeEventListener('pointerdown', touch);
+            el.removeEventListener('pointermove', drag);
+            if (saveTimer.current) window.clearTimeout(saveTimer.current);
+        };
+    }, [bars, symbol, hasSymbol, asOfDate]);
+
+    // A double click on the time axis (the dates under the chart) puts the chart back to the chosen interval WITH empty space
+    // right of the last candle, so the candles end well before the level labels and can be read, and forgets the saved window.
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el || !hasSymbol) return;
+        const onDouble = (e: MouseEvent) => {
+            const chart = chartRef.current;
+            const list = barsRef.current;
+            if (!chart || !list?.length) return;
+            const y = e.clientY - el.getBoundingClientRect().top;
+            if (y <= chart.paneSize().height) return; // the plot or the price axis: not ours
+            suppressSaveUntil.current = Date.now() + 1500;
+            if (!asOfDate) { viewsRef.current = withZoom(views(), symbol, null); saveChartViews(viewsRef.current); }
+            chart.timeScale().setVisibleLogicalRange(visibleRangeFor(list.map((b) => b.time), rangeRef.current));
+            e.preventDefault();
+        };
+        el.addEventListener('dblclick', onDouble);
+        return () => el.removeEventListener('dblclick', onDouble);
+    }, [symbol, hasSymbol, asOfDate]);
 
     // ---- Level price lines: remove the previous set, then draw the new one ----
     useEffect(() => {
@@ -311,6 +391,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
          * onDown, see there). Returns true when it did, so the caller can stop the browser's own menu.
          */
         const openEditorAt = (e: MouseEvent): boolean => {
+            if (customLevelsLocked()) return false; // a backtest shows the snapshot's levels, read-only
             const pt = plotPoint(e);
             const price = pt && seriesRef.current ? seriesRef.current.coordinateToPrice(pt.y) : null;
             if (!pt || price == null || !Number.isFinite(price)) return false;
@@ -334,7 +415,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 if (openEditorAt(e)) { e.preventDefault(); e.stopPropagation(); }
                 return;
             }
-            if (e.button !== 0) return;
+            if (e.button !== 0 || customLevelsLocked()) return;
             const pt = plotPoint(e);
             const id = pt ? levelAt(pt.y) : null;
             if (!id) return;
@@ -432,20 +513,22 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 {/* The chart takes the height that is left (no hand-made window height formula: it went stale every time the rows above
                     changed and left a gap above the footer), at least 240 px */}
                 <div className="relative h-[420px] lg:h-auto lg:min-h-[240px] lg:flex-1">
-                    <div ref={containerRef} className="absolute inset-0" />
-                    <div className="absolute left-2 top-2 z-20">
+                    <div ref={containerRef} className="absolute inset-0" data-bars={bars?.length ?? 0} data-last-bar={bars && bars.length ? new Date(bars[bars.length - 1].time * 1000).toISOString().slice(0, 10) : ''} />
+                    <div className="absolute left-0 top-0 z-20">
                         <ChartHeader symbol={symbol} range={range} setRange={setRange} colorTheme={settings.colorTheme} />
                     </div>
-                    {draft && (
-                        <CustomLevelEditor
-                            key={`${draft.x}:${draft.y}`}
-                            draft={draft}
-                            boxWidth={containerRef.current?.clientWidth ?? 0}
-                            onSave={commitDraft}
-                            onCancel={() => setDraft(null)}
-                            onDelete={removeDraftLevel}
-                        />
-                    )}
+                    <FadePresence value={draft}>
+                        {(d) => (
+                            <CustomLevelEditor
+                                key={`${d.x}:${d.y}`}
+                                draft={d}
+                                boxWidth={containerRef.current?.clientWidth ?? 0}
+                                onSave={commitDraft}
+                                onCancel={() => setDraft(null)}
+                                onDelete={removeDraftLevel}
+                            />
+                        )}
+                    </FadePresence>
                 </div>
                 {overlay && (
                     <div className="absolute inset-2 grid place-items-center whitespace-pre-line rounded-lg bg-white/80 dark:bg-slate-900/80 px-4 text-center text-sm text-slate-500 dark:text-slate-400">

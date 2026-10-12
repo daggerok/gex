@@ -27,3 +27,10 @@ describe('api/options path layout', () => {
     expect(main).not.toContain("fetchStaticJson('data/");
   });
 });
+
+describe('the daily archive is part of the site', () => {
+  test('the build copies all of api to dist, so api/history/*.zip and index.json are deployed', () => {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    expect(pkg.scripts.ncp).toBe('ncp api dist/api');
+  });
+});

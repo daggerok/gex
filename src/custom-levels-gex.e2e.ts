@@ -152,6 +152,7 @@ try {
         assert.equal(await editor(page).inputValue(), 'Wall');
         await button(page, 'Cancel').click();
         assert.equal((await stored(page)).length, 1, 'cancel keeps the level');
+        await gexPoint(page); // the pointer is on the Cancel button: move it back and let the chart see it before the click
         await page.mouse.click(p.x, p.y, { button: 'right' });
         await button(page, 'Delete level').click();
         assert.equal((await stored(page)).length, 0, 'delete removes it');
@@ -160,6 +161,7 @@ try {
         const wrapper = (await page.locator('.recharts-wrapper').first().boundingBox())!;
         await page.mouse.move(wrapper.x + 2, wrapper.y + 2);
         await page.mouse.click(wrapper.x + 2, wrapper.y + 2, { button: 'right' });
+        await editor(page).waitFor({ state: 'detached', timeout: 2000 }).catch(() => undefined); // a closing one fades out first
         assert.equal(await editor(page).count(), 0, 'no editor outside the plot');
 
         // Max AG: a chip of the Levels panel and a row of the Levels table while the AG metric is on, gone when it is off
@@ -212,11 +214,11 @@ try {
         assert.deepEqual({ metrics: await panelBox('Metrics'), levels: await panelBox('Levels') }, gexPanels, 'same panels at the same place as on the GEX tab');
         const chartTabs = (await page.getByRole('navigation').first().boundingBox())!;
         assert.deepEqual([chartTabs.x, chartTabs.y, chartTabs.width, chartTabs.height].map(Math.round), [gexTabs.x, gexTabs.y, gexTabs.width, gexTabs.height].map(Math.round), 'the tab row is unchanged');
-        // the symbol, "Daily candles" and the ranges are on the chart itself, top left
-        const header = (await page.getByText('Daily candles').first().boundingBox())!;
+        // the symbol and the intervals are on the chart itself, top left
+        const header = (await page.locator('[data-chart-header]').boundingBox())!;
         const canvasBox = (await page.locator('canvas').first().boundingBox())!;
-        assert.ok(header.x >= canvasBox.x && header.x < canvasBox.x + 300 && header.y >= canvasBox.y && header.y < canvasBox.y + 80, 'Daily candles is in the top left corner of the chart');
-        assert.ok(await page.getByRole('group', { name: 'Range' }).getByRole('button', { name: '6M' }).isVisible(), 'the range selector is on the chart');
+        assert.ok(header.x >= canvasBox.x && header.x < canvasBox.x + 300 && header.y >= canvasBox.y && header.y < canvasBox.y + 80, 'the chart header is in the top left corner of the chart');
+        assert.ok(await page.getByRole('group', { name: 'Interval' }).getByRole('button', { name: '6M' }).isVisible(), 'the interval selector is on the chart');
         // the Metrics panel is shared: turning AG off there turns it off on the GEX tab too
         await page.getByRole('group', { name: 'Metrics' }).first().getByRole('button', { name: /^AG/ }).click();
         await page.getByRole('button', { name: 'GEX' }).first().click();

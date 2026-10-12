@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, recordEscape, RESET_ALL_EVENT, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
+import { FadePresence } from '../components/FadePresence';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { LevelsPanel } from '../components/LevelsPanel';
 import { ToggleChip } from '../components/ToggleChip';
@@ -15,7 +16,7 @@ import { MetricsPanel } from '../components/MetricsPanel';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor } from '../custom-levels';
 import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
-import { useCustomLevels } from '../use-custom-levels';
+import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
@@ -766,6 +767,7 @@ export const GexView: React.FC<GexViewProps> = ({
      * so the browser's own menu is left alone there.
      */
     const openLevelEditor = (e: { clientX: number; clientY: number }): boolean => {
+        if (customLevelsLocked()) return false; // a backtest shows the snapshot's levels, read-only
         const strike = cursorStrikeRef.current;
         const box = chartBoxRef.current;
         if (strike == null || !box) return false;
@@ -1368,16 +1370,18 @@ export const GexView: React.FC<GexViewProps> = ({
                         onContextMenu={(e) => { if (openLevelEditor(e)) e.preventDefault(); }}
                         onDoubleClick={() => { if (xZoom) setXZoomAndPersist(null); }}
                     >
-                        {levelDraft && (
-                            <CustomLevelEditor
-                                key={`${levelDraft.x}:${levelDraft.y}`}
-                                draft={levelDraft}
-                                boxWidth={chartBoxRef.current?.clientWidth ?? 0}
-                                onSave={saveLevel}
-                                onCancel={() => setLevelDraft(null)}
-                                onDelete={deleteLevel}
-                            />
-                        )}
+                        <FadePresence value={levelDraft}>
+                            {(d) => (
+                                <CustomLevelEditor
+                                    key={`${d.x}:${d.y}`}
+                                    draft={d}
+                                    boxWidth={chartBoxRef.current?.clientWidth ?? 0}
+                                    onSave={saveLevel}
+                                    onCancel={() => setLevelDraft(null)}
+                                    onDelete={deleteLevel}
+                                />
+                            )}
+                        </FadePresence>
                         {/* Chart controls guide: a "?" button in each bottom corner, over the empty strip under the plot
                             (only the level labels use that space), one paragraph per instruction */}
                         <div className="absolute bottom-0 left-0 z-20"><HelpButton label={tr('gex.help.label')} paragraphs={chartGuides} align="left" buttonClass={ZOOM_BTN} /></div>

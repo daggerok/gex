@@ -61,8 +61,20 @@ try {
     await button('Cancel').click();
     await rightClick(at.x + 300, at.y);
     await page.mouse.click(at.x + 200, at.y + 150);
+    await name.waitFor({ state: 'detached', timeout: 2000 }); // it fades out first
     assert.equal(await name.count(), 0, 'editor closed');
     assert.equal((await stored()).length, count, 'nothing created');
+
+    // fade: the editor fades in when it opens, fades out (still on screen for a moment, ignoring the pointer) when it closes
+    await rightClick(at.x + 300, at.y);
+    const fade = page.locator('[data-fade]');
+    await page.waitForFunction(() => document.querySelector('[data-fade]')?.getAttribute('data-fade') === 'in');
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-fade]')!).opacity === '1'); // the fade takes a moment
+    assert.equal(await fade.evaluate((e) => getComputedStyle(e).opacity), '1', 'faded in');
+    await page.keyboard.press('Escape');
+    assert.equal(await fade.getAttribute('data-fade'), 'out', 'starts fading out right after Esc');
+    assert.equal(await fade.evaluate((e) => getComputedStyle(e).pointerEvents), 'none', 'a closing editor ignores the pointer');
+    await fade.waitFor({ state: 'detached', timeout: 2000 });
 
     // drag Support down, the price changes and is saved on drop
     const before = (await stored())[0].price;

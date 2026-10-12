@@ -14,8 +14,26 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
- *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (SPY, SPX, QQQ, NDX,
- *        DIA, DJX, IWM, RUT). `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins.
+ *   t10 - The daily archive is written by the LAST run of the trading day, not by the first run of the next day: with HISTORY=1 the
+ *        files of the DEFAULT_SYMBOLS just written replace their entries in api/history/<YYYY-MM>/<day>.zip (the last state of
+ *        the day) and zips older than HISTORY_KEEP_DAYS are deleted. The hourly workflow stopped committing api/options, so the
+ *        next day's run no longer finds yesterday's file on disk. HISTORY is off by default (it was on, with the old rule).
+ *   t9 - Every cache file now carries `date`, the trading day its data belongs to (market time; before 9:30 and on weekends
+ *        the data is still the previous weekday's). At the start of a run the files of the DEFAULT_SYMBOLS that are from an
+ *        earlier day than today are added, unchanged, to the zip of their own day, api/history/<YYYY-MM-DD>.zip (entries (the
+ *        WHEN of this was replaced by t10: the zip is now written by the last run of the day)
+ *        <day>/<SYM>.json plus <day>/manifest.json), and api/history/index.json lists the days. An entry is never overwritten,
+ *        so no single run is needed for a day and rerunning changes nothing. The zip format is src/history-zip.ts, the logic
+ *        scripts/history-archive.ts. HISTORY=0 turns this off. Holidays are not known, a holiday run keeps the weekday label.
+ *   t8 - KEEP_EXPIRATIONS=1 (default off, the hourly default-set workflow sets it): the ticker is refreshed for its nearest
+ *        MAX_EXPIRATIONS dates as before, but the later expirations already in its file are kept instead of being cut off.
+ *        Kept quotes are not refetched from Yahoo (their bid, ask, last and IV stay as of the last run that covered them), but
+ *        they get the Cboe overlay of the same request (greeks, open interest, volume). A full run still refreshes everything.
+ *   t7 - DEFAULT_SYMBOLS grows to the 18 tickers the ticker search field hints (SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT,
+ *        AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA). A unit test keeps it equal to `controls.tickerPlaceholder`.
+ *        The hourly workflow `update-partial-data.yml` runs this default set on weekdays during market hours.
+ *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (see t7 above).
+ *        `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins.
  *   t5 - Chart cache: after the options pass every cached ticker (SPY, SPX, QQQ, NDX first) gets
  *        api/charts/<SYM>.json with 1Y of daily bars from Yahoo v8 chart, so the Chart tab works
  *        without a proxy. Missing files first, then oldest, at most CHART_MAX_FETCHES per run.
@@ -63,7 +81,7 @@
  *   bar, that is Yahoo's adjclose). This port does the same on purpose.
  *
  * USAGE
- *   ./scripts/options-data.ts                       # only the default index/ETF set (DEFAULT_SYMBOLS)
+ *   ./scripts/options-data.ts                       # only the default set (DEFAULT_SYMBOLS: indices, ETFs, mega caps)
  *   ./scripts/options-data.ts all                   # smart auto-universe run (everything)
  *   TICKERS="AAPL MSFT" ./scripts/options-data.ts   # only these
  *   MAX_FETCHES=50 MAX_EXPIRATIONS=8 ./scripts/options-data.ts
@@ -73,7 +91,11 @@
  *   UNIVERSE_SIZE      default 6000      symbols considered
  *   MIN_MARKET_CAP     default 9000000   USD floor for NASDAQ rows
  *   NASDAQ_TIMEOUT     default 20        seconds before falling back to Cboe
- *   MAX_EXPIRATIONS    default 12        expirations stored per ticker
+ *   MAX_EXPIRATIONS    default 12        expirations stored per ticker (the nearest ones are fetched)
+ *   KEEP_EXPIRATIONS   default 0         1 = keep the later expirations already cached for the ticker (see t8)
+ *   HISTORY            default 0         1 = after the run write the files of the DEFAULT_SYMBOLS into the zip of the day (see t10)
+ *   HISTORY_KEEP_DAYS  default 14        daily archives older than this many days are deleted (0 = keep all)
+ *   HISTORY_KEEP_BACKUP_DAYS default 14  the same for backups made on demand (YYYY-MM-DD-HH-mm.zip, by the date in the id; 0 = keep all)
  *   RATE_LIMIT_HITS    default 3         consecutive errors that mean "blocked"
  *   REQUEST_SLEEP      default 0.6       seconds after each successful write
  *   SKIP_RECHECK_DAYS  default 30        days before a no-options ticker is retried
@@ -95,6 +117,9 @@
  */
 
 /// <reference types="node" />
+import { DEFAULT_TICKERS } from "../src/default-tickers";
+import { archiveDay, pruneArchives } from "./history-archive";
+import { marketDay as sharedMarketDay } from "../src/backtest/snapshot";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
@@ -347,6 +372,7 @@ function logErr(message: string): void {
 const REPO_ROOT = dirname(import.meta.dirname);
 export const DATA_DIR = join(REPO_ROOT, "api", "options");
 export const INDEX_PATH = join(DATA_DIR, "index.json");
+export const HISTORY_DIR = join(REPO_ROOT, "api", "history");
 const LEGACY_SKIP_PATH = join(import.meta.dirname, "no_options.json");
 
 const cfg = {
@@ -354,6 +380,10 @@ const cfg = {
     UNIVERSE_SIZE: envInt("UNIVERSE_SIZE", "6000"),
     MIN_MARKET_CAP: envFloat("MIN_MARKET_CAP", "9000000"),
     MAX_EXPIRATIONS: envInt("MAX_EXPIRATIONS", "12"),
+    KEEP_EXPIRATIONS: ["1", "true", "yes", "on"].includes((process.env.KEEP_EXPIRATIONS ?? "0").toLowerCase()),
+    HISTORY: ["1", "true", "yes", "on"].includes((process.env.HISTORY ?? "0").toLowerCase()),
+    HISTORY_KEEP_DAYS: envNonNegativeFloat("HISTORY_KEEP_DAYS", "14"),
+    HISTORY_KEEP_BACKUP_DAYS: envNonNegativeFloat("HISTORY_KEEP_BACKUP_DAYS", "14"),
     RATE_LIMIT_HITS: envInt("RATE_LIMIT_HITS", "3"),
     REQUEST_SLEEP: envFloat("REQUEST_SLEEP", "0.6"),
     NASDAQ_TIMEOUT: envFloat("NASDAQ_TIMEOUT", "20"),
@@ -541,6 +571,51 @@ export function isFreshAt(updatedStr: string, now: Date = new Date(), tz: string
         if (updatedWall >= dzStart) return true;
     }
     return false;
+}
+
+/**
+ * The trading day (ISO date, market time) a quote fetched at `now` belongs to: a weekday from 9:30 on is that day, before
+ * 9:30 and on a weekend the data is still the previous weekday's close. Holidays are not known, a holiday keeps the
+ * weekday label.
+ */
+export function marketDay(now: Date = new Date(), tz: string = MARKET_TZ): string {
+    return sharedMarketDay(now, tz);
+}
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * api/latest.json, `{ "version": 1, "date": "YYYY-MM-DD" }`: the trading day of the newest data in the cache. The app shows it as
+ * "As of <date>" in the selector when no live provider is reachable. Only the date, so it changes at most once a day. Returns
+ * true when the file was written.
+ */
+export function writeLatest(apiDir: string, date: string): boolean {
+    if (!DAY_RE.test(date)) return false;
+    const path = join(apiDir, "latest.json");
+    const text = JSON.stringify({ version: 1, date }) + "\n";
+    try {
+        if (readFileSync(path, "utf8") === text) return false;
+    } catch {
+        // none yet
+    }
+    mkdirSync(apiDir, { recursive: true });
+    writeFileSync(path, text);
+    return true;
+}
+
+/**
+ * The trading day a cache file's text is about: its `date`, or for a file from before `date` existed the day of its
+ * `updated` moment. Null when the text is not a cache file.
+ */
+export function fileDay(text: string): string | null {
+    try {
+        const j = JSON.parse(text) as { date?: unknown; updated?: unknown };
+        if (typeof j.date === "string" && DAY_RE.test(j.date)) return j.date;
+        const at = typeof j.updated === "string" ? parseIsoInstant(j.updated) : null;
+        return at ? marketDay(at) : null;
+    } catch {
+        return null;
+    }
 }
 
 /** strptime("%Y-%m-%d") of the first 10 chars, or null. */
@@ -1142,8 +1217,8 @@ export function mergeUniverse(nasdaq: string[], cboe: string[], size: number): s
     return dedupe(FALLBACK_UNIVERSE.map((s) => canonical(s))).slice(0, size);
 }
 
-/** Run without args: only SP500, Nasdaq 100, Dow Jones and Russell 2000, each as index and ETF. */
-export const DEFAULT_SYMBOLS = ["SPY", "SPX", "QQQ", "NDX", "DIA", "DJX", "IWM", "RUT"];
+/** Run without args: the main indices and their ETFs plus the mega caps, exactly the tickers hinted in the ticker search field (`controls.tickerPlaceholder`). */
+export const DEFAULT_SYMBOLS: string[] = [...DEFAULT_TICKERS];
 
 /** True when the CLI asks for the full auto-universe (`all`, any case). Anything else is rejected. */
 export function wantsAll(argv: string[] = process.argv.slice(2)): boolean {
@@ -1201,10 +1276,42 @@ async function resolveOptions(symbol: string): Promise<{ t: YahooTicker; exps: s
 export interface Payload {
     symbol: string;
     updated: string;
+    /** Trading day (market time) the data belongs to, see marketDay(). */
+    date: string;
     underlyingPrice: number | null;
     greeks: GreeksStats;
     expirations: string[];
     quotes: Quote[];
+}
+
+/**
+ * KEEP_EXPIRATIONS: the expirations after the last freshly fetched one that the previous cache file already holds,
+ * with their quotes, ready to be appended to the fresh ones. Expirations at or before the last fresh date are
+ * never kept (they were refetched, or are gone). Anything that does not look like a cache file gives nothing.
+ */
+export function keepLaterExpirations(freshExps: readonly string[], previous: unknown): { expirations: string[]; quotes: Quote[] } {
+    const none = { expirations: [] as string[], quotes: [] as Quote[] };
+    if (!freshExps.length || !previous || typeof previous !== "object") return none;
+    const quotesIn = (previous as { quotes?: unknown }).quotes;
+    if (!Array.isArray(quotesIn)) return none;
+    const last = freshExps[freshExps.length - 1];
+    const quotes: Quote[] = [];
+    for (const raw of quotesIn) {
+        const q = raw as Partial<Quote> | null;
+        if (!q || typeof q !== "object" || typeof q.expiration !== "string" || typeof q.symbol !== "string" || q.expiration <= last) continue;
+        // A strike of exactly 0 is the one value written as a Python int, restore it so the bytes stay the same.
+        quotes.push({ ...(q as Quote), strike: q.strike === 0 ? new PyInt(0) : (q.strike as number) });
+    }
+    const expirations = [...new Set(quotes.map((q) => q.expiration))].sort();
+    return { expirations, quotes };
+}
+
+function readPreviousChain(symbol: string): unknown {
+    try {
+        return JSON.parse(readFileSync(join(DATA_DIR, `${symbol}.json`), "utf8"));
+    } catch {
+        return null;
+    }
 }
 
 /** Full (capped) normalized chain for one ticker, or null when it has no options. Throws on source errors. */
@@ -1232,9 +1339,13 @@ export async function fetchTicker(symbolIn: string): Promise<Payload | null> {
 
     const spot = await t.lastClose();
     const cboeRows = await fetchCboeGreeks(symbol, matched);
-    const greeks = applyCboeRows(quotes, cboeRows, cfg.CBOE_GREEKS);
+    // Later expirations of the previous file are kept as they were, except that the Cboe overlay of this request also
+    // reaches them (it covers the whole chain). Without Cboe rows they are left exactly as stored.
+    const kept = cfg.KEEP_EXPIRATIONS ? keepLaterExpirations(exps, readPreviousChain(symbol)) : { expirations: [], quotes: [] };
+    const all = [...quotes, ...kept.quotes];
+    const greeks = applyCboeRows(cboeRows.size ? all : quotes, cboeRows, cfg.CBOE_GREEKS);
 
-    return { symbol, updated: nowIso(), underlyingPrice: spot, greeks, expirations: exps, quotes };
+    return { symbol, updated: nowIso(), date: marketDay(), underlyingPrice: spot, greeks, expirations: [...exps, ...kept.expirations], quotes: all };
 }
 
 // ---- Cache files, freshness and skiplist ------------------------------------------
@@ -1891,6 +2002,18 @@ export async function main(): Promise<void> {
     const fetched = pool.fetched;
     // Queue order whatever the finish order was.
     const updatedFiles: string[] = pool.results.flatMap((r) => (r?.kind === "written" && r.path ? [rel(r.path)] : []));
+    if (updatedFiles.length) writeLatest(dirname(DATA_DIR), marketDay());
+    // HISTORY=1 (the last run of the trading day in CI): the files of the default tickers just written go into the zip of the
+    // day, api/history/<YYYY-MM>/<day>.zip, the last state of that day, and zips older than HISTORY_KEEP_DAYS are deleted.
+    // The hourly runs before it do not touch api/history (nothing is committed for them, see update-partial-data.yml).
+    if (cfg.HISTORY) {
+        const day = marketDay();
+        const archived = archiveDay({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: DEFAULT_SYMBOLS, day, dayOf: fileDay });
+        const n = archived.added[day]?.length ?? 0;
+        console.log(`${outputLabel("history")} ${day}: ${n} file(s) written to the day zip, ${archived.already} already in it`);
+        const dropped = pruneArchives(HISTORY_DIR, day, cfg.HISTORY_KEEP_DAYS, cfg.HISTORY_KEEP_BACKUP_DAYS);
+        if (dropped.length) console.log(`${outputLabel("history")} ${dropped.length} zip(s) rotated out (daily older than ${cfg.HISTORY_KEEP_DAYS} days, backups older than ${cfg.HISTORY_KEEP_BACKUP_DAYS}): ${dropped.join(", ")}`);
+    }
 
     log(`skiplist: saving ${Object.keys(skip).length} entries to api/options/index.json (no_options)`);
     log("index: rebuilding api/options/index.json manifest if files/names/skiplist changed");

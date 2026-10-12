@@ -91,8 +91,26 @@ export function normCdf(x: number): number {
     return 0.5 * (1 + erf(x / Math.SQRT2));
 }
 
+let valuationDay: string | null = null;
+
+/**
+ * Backtest ("As of" a past day): the day the model greeks are valued on instead of today, as `YYYY-MM-DD`, or null for
+ * the real current time. This is the only place the app reads the clock for pricing, so a past snapshot shows the greeks
+ * it showed on that day. Set when the mode is entered and cleared when it is left.
+ */
+export function setValuationDay(day: string | null): void {
+    valuationDay = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
+/** "Now" for pricing: noon of the valuation day (local time, so the calendar day cannot slip), else the real clock. */
+function valuationNow(): Date {
+    if (!valuationDay) return new Date();
+    const [y, m, d] = valuationDay.split('-').map(Number);
+    return new Date(y, m - 1, d, 12);
+}
+
 /** Years to expiration (calendar), +1 day floor — same rule as the old Python fetcher. */
-export function yearsToExpiration(expiration: string, now: Date = new Date()): number | null {
+export function yearsToExpiration(expiration: string, now: Date = valuationNow()): number | null {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(expiration || ''));
     if (!m) return null;
     const expUtc = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));

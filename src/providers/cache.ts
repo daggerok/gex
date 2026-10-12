@@ -1,4 +1,4 @@
-import type { DataProvider, GreeksSummary, OptionQuote, ProviderContext, TickerSuggestion } from '../types';
+import type { ChainResult, DataProvider, GreeksSummary, OptionQuote, ProviderContext, TickerSuggestion } from '../types';
 import { asArray, computeMid, num } from '../utils';
 
 // ============================================================================
@@ -164,6 +164,53 @@ export function dedupeTickerSuggestions(items: TickerSuggestion[], limit = 24): 
 }
 
 /**
+ * A cache file (api/options/<SYM>.json, or the same file inside a daily archive) as a ChainResult. Throws when the
+ * parsed JSON has no `quotes` array; `where` names the file in that message.
+ */
+export function chainFromCacheFile(raw: string, j: any, where: string): ChainResult {
+    if (!j || !Array.isArray(j.quotes)) {
+        throw new Error(
+            `Static file ${where} loaded but has no "quotes" array. ` +
+            `The file may be truncated or in an old format — re-run scripts/options-data.ts to rebuild it.`,
+        );
+    }
+    const quotes: OptionQuote[] = j.quotes.map((q: any) => ({
+        symbol: String(q.symbol ?? ''),
+        expiration: String(q.expiration ?? ''),
+        side: q.side === 'put' ? 'put' : 'call',
+        strike: num(q.strike) ?? 0,
+        bid: num(q.bid),
+        ask: num(q.ask),
+        mid: num(q.mid) ?? computeMid(num(q.bid), num(q.ask)),
+        last: num(q.last),
+        volume: num(q.volume),
+        openInterest: num(q.openInterest),
+        iv: num(q.iv),
+        delta: num(q.delta),
+        gamma: num(q.gamma),
+        theta: num(q.theta),
+        vega: num(q.vega),
+        rho: num(q.rho),
+        lambda: num(q.lambda),
+        vanna: num(q.vanna),
+        vomma: num(q.vomma),
+        charm: num(q.charm),
+        speed: num(q.speed),
+        zomma: num(q.zomma),
+        color: num(q.color),
+        greeksSource: q.greeksSource === 'cboe' || q.greeksSource === 'black-scholes' || q.greeksSource === 'marketdata' || q.greeksSource === 'dolthub'
+            ? q.greeksSource
+            : null,
+        greeksMissingReason: q.greeksMissingReason == null ? null : String(q.greeksMissingReason),
+    }));
+    const expirations = asArray<string>(j.expirations).length
+        ? asArray<string>(j.expirations).map(String)
+        : Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
+    const greeks = j.greeks && typeof j.greeks === 'object' ? j.greeks as GreeksSummary : undefined;
+    return { symbol: raw, underlyingPrice: num(j.underlyingPrice), expirations, quotes, greeks };
+}
+
+/**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
  *   ./api/options/index.json     -> { files: ["<TICKER>", ...],
@@ -213,45 +260,6 @@ export const staticProvider: DataProvider = {
         // real failure modes (404, HTML SPA fallback, malformed JSON) and report
         // an ACTIONABLE message instead of a vague "Bad static data".
         const j: any = await fetchStaticJson(`api/options/${encodeURIComponent(raw)}.json`, ctx.signal, raw);
-        if (!j || !Array.isArray(j.quotes)) {
-            throw new Error(
-                `Static file api/options/${raw}.json loaded but has no "quotes" array. ` +
-                `The file may be truncated or in an old format — re-run scripts/options-data.ts to rebuild it.`,
-            );
-        }
-        const quotes: OptionQuote[] = j.quotes.map((q: any) => ({
-            symbol: String(q.symbol ?? ''),
-            expiration: String(q.expiration ?? ''),
-            side: q.side === 'put' ? 'put' : 'call',
-            strike: num(q.strike) ?? 0,
-            bid: num(q.bid),
-            ask: num(q.ask),
-            mid: num(q.mid) ?? computeMid(num(q.bid), num(q.ask)),
-            last: num(q.last),
-            volume: num(q.volume),
-            openInterest: num(q.openInterest),
-            iv: num(q.iv),
-            delta: num(q.delta),
-            gamma: num(q.gamma),
-            theta: num(q.theta),
-            vega: num(q.vega),
-            rho: num(q.rho),
-            lambda: num(q.lambda),
-            vanna: num(q.vanna),
-            vomma: num(q.vomma),
-            charm: num(q.charm),
-            speed: num(q.speed),
-            zomma: num(q.zomma),
-            color: num(q.color),
-            greeksSource: q.greeksSource === 'cboe' || q.greeksSource === 'black-scholes' || q.greeksSource === 'marketdata' || q.greeksSource === 'dolthub'
-                ? q.greeksSource
-                : null,
-            greeksMissingReason: q.greeksMissingReason == null ? null : String(q.greeksMissingReason),
-        }));
-        const expirations = asArray<string>(j.expirations).length
-            ? asArray<string>(j.expirations).map(String)
-            : Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
-        const greeks = j.greeks && typeof j.greeks === 'object' ? j.greeks as GreeksSummary : undefined;
-        return { symbol: raw, underlyingPrice: num(j.underlyingPrice), expirations, quotes, greeks };
+        return chainFromCacheFile(raw, j, `api/options/${raw}.json`);
     },
 };

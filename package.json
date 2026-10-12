@@ -20,7 +20,8 @@
     "logs": "pm2 logs",
     "stop": "pm2 kill",
     "test": "bun test",
-    "test:e2e": "bun src/custom-levels.e2e.ts && bun src/custom-levels-gex.e2e.ts && bun src/chart-zoom.e2e.ts && bun src/layout.e2e.ts && bun src/ticker-hint.e2e.ts"
+    "backtest:backup": "bun scripts/backtest-backup.ts",
+    "test:e2e": "bun src/e2e-run.ts"
   },
   "keywords": [
     "npm-run-all",
