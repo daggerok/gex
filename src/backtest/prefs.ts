@@ -9,10 +9,10 @@ const KEY = 'gex.backup.choice.v2';
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 /**
- * What the backup dialog backs up: the preset of required tickers (DEFAULT_TICKERS, the default), all available data, or a
- * list of tickers typed by the user.
+ * What the backup dialog backs up: the preset of required tickers (DEFAULT_TICKERS, the default), the ticker on screen, all
+ * available data, or a list of tickers typed by the user.
  */
-export type BackupChoice = { mode: 'preset' } | { mode: 'all' } | { mode: 'custom'; tickers: string[] };
+export type BackupChoice = { mode: 'preset' } | { mode: 'current' } | { mode: 'all' } | { mode: 'custom'; tickers: string[] };
 
 export const PRESET_CHOICE: BackupChoice = { mode: 'preset' };
 
@@ -33,6 +33,7 @@ export function loadBackupChoice(storage: Storage | null = defaultStorage()): Ba
         if (!raw) return PRESET_CHOICE;
         const j = JSON.parse(raw) as { mode?: unknown; tickers?: unknown };
         if (j.mode === 'all') return { mode: 'all' };
+        if (j.mode === 'current') return { mode: 'current' };
         if (j.mode === 'custom' && Array.isArray(j.tickers)) {
             const tickers = [...new Set(j.tickers.filter((t): t is string => typeof t === 'string' && TICKER.test(t)))];
             if (tickers.length) return { mode: 'custom', tickers };
@@ -47,7 +48,7 @@ export function loadBackupChoice(storage: Storage | null = defaultStorage()): Ba
 export function saveBackupChoice(choice: BackupChoice, storage: Storage | null = defaultStorage()): void {
     try {
         if (choice.mode === 'preset') storage?.removeItem(KEY);
-        else storage?.setItem(KEY, JSON.stringify(choice.mode === 'all' ? { mode: 'all' } : { mode: 'custom', tickers: [...new Set(choice.tickers)] }));
+        else storage?.setItem(KEY, JSON.stringify(choice.mode === 'all' || choice.mode === 'current' ? { mode: choice.mode } : { mode: 'custom', tickers: [...new Set(choice.tickers)] }));
     } catch {
         // storage blocked or full: the choice is just not remembered
     }

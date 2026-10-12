@@ -101,6 +101,8 @@ describe('remembered tickers', () => {
     expect(loadBackupChoice(s)).toEqual({ mode: 'custom', tickers: ['SPY', 'NDX'] });
     saveBackupChoice({ mode: 'all' }, s);
     expect(loadBackupChoice(s)).toEqual({ mode: 'all' });
+    saveBackupChoice({ mode: 'current' }, s);
+    expect(loadBackupChoice(s)).toEqual({ mode: 'current' });
     saveBackupChoice({ mode: 'preset' }, s);
     expect(loadBackupChoice(s)).toEqual({ mode: 'preset' });
   });

@@ -13,16 +13,19 @@ import { Modal } from './Modal';
 
 export const BackupDialog: React.FC<{
     /** how many tickers "all data" means for the provider in use, null while unknown */
+    /** the ticker on screen, '' when none is loaded */
+    currentTicker: string;
     allCount: number | null;
     progress: { done: number; total: number; symbol: string } | null;
     error: string;
     onCreate: (choice: BackupChoice) => void;
     /** cancels a run in progress, or closes the dialog when idle */
     onCancel: () => void;
-}> = ({ allCount, progress, error, onCreate, onCancel }) => {
+}> = ({ currentTicker, allCount, progress, error, onCreate, onCancel }) => {
     const { t } = useI18n();
     const [initial] = useState(() => loadBackupChoice());
-    const [mode, setMode] = useState<BackupChoice['mode']>(initial.mode);
+    // the last choice was the current ticker but none is loaded now: fall back to the preset
+    const [mode, setMode] = useState<BackupChoice['mode']>(initial.mode === 'current' && !currentTicker ? 'preset' : initial.mode);
     const [text, setText] = useState(() => (initial.mode === 'custom' ? initial.tickers.join(' ') : ''));
     const inputRef = useRef<HTMLInputElement>(null);
     useEffect(() => { if (mode === 'custom') { inputRef.current?.focus(); inputRef.current?.select(); } }, [mode]);
@@ -46,6 +49,13 @@ export const BackupDialog: React.FC<{
                     <span>
                         <span className="font-semibold">{t('bt.backup.preset')}</span>
                         <span className="block font-mono text-[11px] text-slate-500 dark:text-slate-400">{DEFAULT_TICKERS.join(', ')}</span>
+                    </span>
+                </label>
+                <label className={row + (currentTicker ? '' : ' opacity-50')}>
+                    <input type="radio" name="backup-mode" checked={mode === 'current'} disabled={busy || !currentTicker} onChange={() => setMode('current')} className="mt-0.5" data-backup-mode="current" />
+                    <span>
+                        <span className="font-semibold">{t('bt.backup.current')}{currentTicker ? `: ${currentTicker}` : ''}</span>
+                        {!currentTicker && <span className="block text-[11px] text-slate-500 dark:text-slate-400">{t('bt.backup.currentNone')}</span>}
                     </span>
                 </label>
                 <label className={row}>
