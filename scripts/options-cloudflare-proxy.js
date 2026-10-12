@@ -29,12 +29,23 @@
  *   GET /api/search?provider=yahoo&q=apple    -> provider-native ticker suggestions
  *   GET /api/search?provider=nasdaq&q=tesla   -> provider-native ticker suggestions
  *   GET /api/search?provider=cboe&q=spx       -> provider-native ticker suggestions
- *   GET /raw?url=<encoded-target>             -> generic CORS passthrough
+ *   GET /raw?url=<encoded-target>             -> CORS passthrough, allow-listed hosts only (RAW_ALLOWED_HOSTS)
  * =============================================================================
  */
 
 // Lock this to your site in production, e.g. "https://daggerok.github.io".
 const ALLOW_ORIGIN = "*";
+// Hosts /raw?url= may fetch: the providers the app actually uses. Anything else is refused (open-proxy / SSRF guard).
+const RAW_ALLOWED_HOSTS = new Set([
+  "cdn.cboe.com",
+  "www.cboe.com",
+  "query1.finance.yahoo.com",
+  "query2.finance.yahoo.com",
+  "api.nasdaq.com",
+  "www.dolthub.com",
+]);
+const RAW_MAX_BYTES = 8 * 1024 * 1024; // 8 MB: the largest chain (SPX) is ~1.2 MB
+const RAW_TIMEOUT_MS = 25000;
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -307,11 +318,22 @@ async function handleSearch(url) {
 async function handleRaw(url) {
   const target = url.searchParams.get("url");
   if (!target) return json({ error: "missing url" }, 400);
-  logProxy("RAW", `${url.pathname}`, decodeURIComponent(target));
-  const res = await fetch(decodeURIComponent(target), {
+  let parsed;
+  try { parsed = new URL(decodeURIComponent(target)); } catch { return json({ error: "bad url" }, 400); }
+  if (parsed.protocol !== "https:") return json({ error: "https only" }, 400);
+  if (!RAW_ALLOWED_HOSTS.has(parsed.hostname)) return json({ error: "host not allowed" }, 403);
+  logProxy("RAW", `${url.pathname}`, parsed.toString());
+  const res = await fetch(parsed.toString(), {
     headers: { "User-Agent": UA, Accept: "application/json" },
+    redirect: "manual", // a redirect off the allow-list must not be followed
+    signal: AbortSignal.timeout(RAW_TIMEOUT_MS),
   });
-  return new Response(await res.text(), {
+  if (res.status >= 300 && res.status < 400) return json({ error: "upstream redirect refused" }, 502);
+  const length = Number(res.headers.get("content-length") || 0);
+  if (length > RAW_MAX_BYTES) return json({ error: "upstream body too large" }, 502);
+  const body = await res.text();
+  if (body.length > RAW_MAX_BYTES) return json({ error: "upstream body too large" }, 502);
+  return new Response(body, {
     status: res.status,
     headers: { "Content-Type": res.headers.get("content-type") || "application/json", ...cors() },
   });
