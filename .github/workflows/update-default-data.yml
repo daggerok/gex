@@ -75,6 +75,19 @@ jobs:
         if: steps.window.outputs.run == 'true'
         run: bun scripts/options-data.ts
 
+      # Backtest backup of the data just fetched, only when the repository variable BACKTEST_TICKERS is set
+      # (Settings, Secrets and variables, Actions, Variables): `all` for every available ticker or a list such as
+      # `SPY NDX`. It is off by default, a backup of everything every hour adds tens of MB per hour.
+      - name: Backtest backup
+        if: steps.window.outputs.run == 'true' && vars.BACKTEST_TICKERS != ''
+        env:
+          BACKUP_TICKERS: ${{ vars.BACKTEST_TICKERS }}
+        run: |
+          # the default shell has no pipefail, without it a failing script would be hidden by tee
+          set -o pipefail
+          # unquoted on purpose: the script splits the list and refuses anything that is not a ticker name
+          bun scripts/backtest-backup.ts $BACKUP_TICKERS | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Commit updated data
         if: steps.window.outputs.run == 'true'
         run: |

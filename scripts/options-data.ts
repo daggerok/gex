@@ -111,6 +111,7 @@
 
 /// <reference types="node" />
 import { archiveEarlierDays } from "./history-archive";
+import { marketDay as sharedMarketDay } from "../src/backtest/snapshot";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
@@ -568,12 +569,7 @@ export function isFreshAt(updatedStr: string, now: Date = new Date(), tz: string
  * weekday label.
  */
 export function marketDay(now: Date = new Date(), tz: string = MARKET_TZ): string {
-    const w = wallClock(now, tz);
-    let d: CalDate = { year: w.year, month: w.month, day: w.day };
-    // weekday(): Monday = 0 ... Friday = 4, Saturday = 5, Sunday = 6
-    if (weekday(d) <= 4 && w.hour * 60 + w.minute < 9 * 60 + 30) d = addDays(d, -1);
-    while (weekday(d) > 4 || weekday(d) < 0) d = addDays(d, -1);
-    return dateIso(d);
+    return sharedMarketDay(now, tz);
 }
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;

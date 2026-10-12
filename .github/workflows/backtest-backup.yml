@@ -1,0 +1,99 @@
+# =============================================================================
+# GEX - backtest backup (run by hand)
+# -----------------------------------------------------------------------------
+# Copies the cache files of api/options into ONE zip, api/history/<YYYY-MM>/<YYYY-MM-DD-HH-mm>.zip
+# (New York time, to the minute), and commits it. A backup is never overwritten: run it as
+# many times as you like, also for the same date, and every one stays. The app lists them in
+# the "As of" selector. Clean up by deleting the zip (or a month folder) and committing.
+#
+#   tickers  space or comma separated, empty = ALL available data (every ticker file of api/options)
+#   refresh  fetch fresh data for the given tickers first (needs tickers; with none it would
+#            mean the whole universe, run update-data.yml for that)
+#
+# The same backup is made every hour automatically by update-default-data.yml when the
+# repository variable BACKTEST_TICKERS is set.
+# =============================================================================
+name: Backtest backup
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Tickers to back up, space or comma separated. Empty = all available data"
+        required: false
+        default: ""
+        type: string
+      refresh:
+        description: "Fetch fresh data for these tickers before the backup (needs tickers)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write # needed to commit the backup
+
+# One data job at a time, shared with the refresh workflows (a run waits, none is cancelled)
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check the inputs
+        env:
+          TICKERS: ${{ inputs.tickers }}
+          REFRESH: ${{ inputs.refresh }}
+        run: |
+          if [ "$REFRESH" = "true" ] && [ -z "$(echo "$TICKERS" | tr -d ' ,')" ]; then
+            echo "refresh needs tickers (without them it would fetch the whole universe, run update-data.yml for that)"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Fetch fresh data for the chosen tickers
+        if: inputs.refresh
+        env:
+          TICKERS: ${{ inputs.tickers }}
+        run: bun scripts/options-data.ts
+
+      - name: Create the backup
+        env:
+          BACKUP_TICKERS: ${{ inputs.tickers }}
+        run: |
+          # the default shell has no pipefail, without it a failing script would be hidden by tee
+          set -o pipefail
+          # unquoted on purpose: the script splits the list and refuses anything that is not a ticker name
+          bun scripts/backtest-backup.ts $BACKUP_TICKERS | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit the backup
+        run: |
+          git config user.name  "Maksim Kostromin"
+          git config user.email "daggerok@gmail.com"
+          git add api/ || true
+          if git diff --staged --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "chore(data): backtest backup [skip ci]"
+            git push && exit 0
+            # The clone is shallow: deepen it so the rebase finds the common ancestor
+            for attempt in 1 2 3; do
+              git fetch --deepen=100 origin "${GITHUB_REF_NAME}" \
+                && git rebase -X theirs "origin/${GITHUB_REF_NAME}" \
+                && git push && exit 0
+              echo "Push attempt $attempt failed, retrying"
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
+            echo "Push failed after 3 attempts" && exit 1
+          fi

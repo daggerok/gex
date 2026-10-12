@@ -129,9 +129,9 @@ export function extractEntry(bytes: Uint8Array, entry: ZipEntry, inflateRaw: (da
     return verifyEntry(entry, entry.method === 0 ? raw : inflateRaw(raw));
 }
 
-/** MS-DOS date of a `YYYY-MM-DD` day (the zips use a fixed time stamp so the same content always gives the same bytes). */
-function dosDate(day: string): number {
-    const [y, m, d] = day.split('-').map(Number);
+/** MS-DOS date of a snapshot id (`YYYY-MM-DD` or `YYYY-MM-DD-HH-mm`, its date part; the zips use a fixed time stamp so the same content always gives the same bytes). */
+function dosDate(id: string): number {
+    const [y, m, d] = id.slice(0, 10).split('-').map(Number);
     return (((y - 1980) & 0x7f) << 9) | ((m & 0xf) << 5) | (d & 0x1f);
 }
 
@@ -154,9 +154,9 @@ export function rawEntries(bytes: Uint8Array, limits: ZipLimits = ZIP_LIMITS): R
  * Writes already compressed entries into a new zip (kept in the given order), nothing is compressed or unpacked. Used
  * to bundle several day zips into one and to cut a multi-day archive into day zips. Deterministic like buildZip.
  */
-export function buildZipFromRaw(entries: ReadonlyArray<RawZipEntry>, day: string): Uint8Array {
+export function buildZipFromRaw(entries: ReadonlyArray<RawZipEntry>, id: string): Uint8Array {
     const encoder = new TextEncoder();
-    const date = dosDate(day);
+    const date = dosDate(id);
     const chunks: Uint8Array[] = [];
     const central: Uint8Array[] = [];
     let offset = 0;
@@ -215,7 +215,7 @@ export function buildZipFromRaw(entries: ReadonlyArray<RawZipEntry>, day: string
  */
 export function buildZip(
     entries: ReadonlyArray<{ name: string; data: Uint8Array }>,
-    day: string,
+    id: string,
     deflateRaw: (data: Uint8Array) => Uint8Array,
 ): Uint8Array {
     return buildZipFromRaw(
@@ -223,39 +223,42 @@ export function buildZip(
             const packed = e.data.length ? deflateRaw(e.data) : e.data;
             return { name: e.name, method: e.data.length ? 8 : 0, crc32: crc32(e.data), size: e.data.length, compressedSize: packed.length, raw: packed };
         }),
-        day,
+        id,
     );
 }
 
-const DAY_FOLDER = /^(\d{4}-\d{2}-\d{2})\//;
+const SNAPSHOT_FOLDER = /^(\d{4}-\d{2}-\d{2}(?:-\d{2}-\d{2})?)\//;
 
-/** The trading day an entry belongs to (its first folder, `YYYY-MM-DD/...`), or null for anything else. */
-export function entryDay(name: string): string | null {
-    const m = DAY_FOLDER.exec(name);
+/**
+ * The snapshot an entry belongs to: its first folder, `YYYY-MM-DD/...` (the automatic end-of-day archive) or
+ * `YYYY-MM-DD-HH-mm/...` (a backup made on demand), or null for anything else.
+ */
+export function entrySnapshotId(name: string): string | null {
+    const m = SNAPSHOT_FOLDER.exec(name);
     return m ? m[1] : null;
 }
 
-/** Cuts the entries of a (possibly multi-day) archive by day. Entries outside a `YYYY-MM-DD/` folder are ignored. */
-export function splitByDay(entries: ReadonlyArray<RawZipEntry>): Map<string, RawZipEntry[]> {
+/** Cuts the entries of a (possibly multi-snapshot) archive by snapshot. Entries outside such a folder are ignored. */
+export function splitBySnapshot(entries: ReadonlyArray<RawZipEntry>): Map<string, RawZipEntry[]> {
     const out = new Map<string, RawZipEntry[]>();
     for (const e of entries) {
-        const day = entryDay(e.name);
-        if (day) out.set(day, [...(out.get(day) ?? []), e]);
+        const id = entrySnapshotId(e.name);
+        if (id) out.set(id, [...(out.get(id) ?? []), e]);
     }
     return out;
 }
 
 /**
- * Bundles day zips (or any archives with `YYYY-MM-DD/` entries) into ONE zip, copying the entries as they are. The first
- * entry with a name wins, so a day given twice is not doubled. Entries are ordered by name. Importing the result again
- * gives the same days back.
+ * Bundles snapshot zips (or any archives with `<snapshot id>/` entries) into ONE zip, copying the entries as they are. The
+ * first entry with a name wins, so a snapshot given twice is not doubled. Entries are ordered by name. Importing the
+ * result again gives the same snapshots back.
  */
 export function mergeZips(zips: ReadonlyArray<Uint8Array>, limits: ZipLimits = ZIP_LIMITS): Uint8Array {
     const byName = new Map<string, RawZipEntry>();
     for (const bytes of zips) {
-        for (const e of rawEntries(bytes, limits)) if (!byName.has(e.name) && entryDay(e.name)) byName.set(e.name, e);
+        for (const e of rawEntries(bytes, limits)) if (!byName.has(e.name) && entrySnapshotId(e.name)) byName.set(e.name, e);
     }
     const ordered = [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
-    const first = ordered.length ? entryDay(ordered[0].name)! : '1980-01-01';
+    const first = ordered.length ? entrySnapshotId(ordered[0].name)! : '1980-01-01';
     return buildZipFromRaw(ordered, first);
 }

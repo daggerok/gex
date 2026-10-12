@@ -1,5 +1,6 @@
 import { enrichChainResult, enrichQuotesWithModelGreeks, hasFirstOrderGreeks, hasHigherOrderGreeks } from '../greeks';
 import { bulkCache, bulkKey, cacheGet, cacheSet } from '../settings-store';
+import { isAsOfProviderId } from './asof';
 import type { ChainMeta, ChainResult, DataProvider, OptionQuote, ProviderContext } from '../types';
 import { dbg, num } from '../utils';
 
@@ -33,15 +34,17 @@ export function chainLooksEnriched(result: ChainResult): boolean {
  */
 export async function getBulk(providerId: string, symbol: string, vixFuturesPricing: boolean = false): Promise<ChainResult | null> {
     const k = bulkKey(providerId, symbol);
+    // An archived snapshot ("As of") lives in memory only: it must never fill or evict the shared query cache
+    const persist = !isAsOfProviderId(providerId);
     const mem = bulkCache.get(k);
     if (mem) {
         if (chainLooksEnriched(mem)) return mem;
         const fixed = enrichChainResult(mem, vixFuturesPricing);
         bulkCache.set(k, fixed);
-        await cacheSet(k, fixed);
+        if (persist) await cacheSet(k, fixed);
         return fixed;
     }
-    const disk = await cacheGet<ChainResult>(k);
+    const disk = persist ? await cacheGet<ChainResult>(k) : null;
     if (disk) {
         const fixed = chainLooksEnriched(disk) ? disk : enrichChainResult(disk, vixFuturesPricing);
         bulkCache.set(k, fixed);
@@ -55,7 +58,7 @@ export async function putBulk(providerId: string, result: ChainResult, vixFuture
     const enriched = enrichChainResult(result, vixFuturesPricing);
     const k = bulkKey(providerId, enriched.symbol);
     bulkCache.set(k, enriched);
-    await cacheSet(k, enriched);
+    if (!isAsOfProviderId(providerId)) await cacheSet(k, enriched);
 }
 /** Cache key for a single lazy expiration. */
 export const lazyKey = (providerId: string, symbol: string, exp: string) =>

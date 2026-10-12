@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { extractEntry, parseZipDirectory } from '../src/history-zip';
-import { archiveEarlierDays, daysOnDisk, readArchived, readHistoryIndex, syncHistoryIndex, zipPathFor } from './history-archive';
+import { archiveEarlierDays, snapshotsOnDisk, readArchived, readHistoryIndex, syncHistoryIndex, zipPathFor } from './history-archive';
 import { fileDay } from './options-data';
 
 const setup = () => {
@@ -37,8 +37,8 @@ describe('archiveEarlierDays', () => {
     expect(readArchived(d.historyDir, '2026-10-09', 'SPY')).toBe(spy);
     const bytes = new Uint8Array(readFileSync(zip));
     const manifest = parseZipDirectory(bytes).find((e) => e.name.endsWith('manifest.json'))!;
-    expect(JSON.parse(new TextDecoder().decode(extractEntry(bytes, manifest, (x) => new Uint8Array(inflateRawSync(x)))))).toEqual({ version: 1, date: '2026-10-09', tickers: ['QQQ', 'SPY'] });
-    expect(readHistoryIndex(d.historyDir)).toEqual({ version: 1, dates: { '2026-10-09': ['QQQ', 'SPY'] } });
+    expect(JSON.parse(new TextDecoder().decode(extractEntry(bytes, manifest, (x) => new Uint8Array(inflateRawSync(x)))))).toEqual({ version: 1, id: '2026-10-09', date: '2026-10-09', tickers: ['QQQ', 'SPY'] });
+    expect(readHistoryIndex(d.historyDir)).toEqual({ version: 1, snapshots: { '2026-10-09': ['QQQ', 'SPY'] } });
   });
 
   test("today's files, a later day and symbols without a file are not archived", () => {
@@ -69,7 +69,7 @@ describe('archiveEarlierDays', () => {
     put(d.optionsDir, 'QQQ', '2026-10-09');
     expect(run(d, ['SPY', 'QQQ'], '2026-10-12').added).toEqual({ '2026-10-09': ['QQQ'] });
     expect(names(zipPathFor('2026-10-09', d.historyDir))).toEqual(['2026-10-09/QQQ.json', '2026-10-09/SPY.json', '2026-10-09/manifest.json']);
-    expect(readHistoryIndex(d.historyDir).dates['2026-10-09']).toEqual(['QQQ', 'SPY']);
+    expect(readHistoryIndex(d.historyDir).snapshots['2026-10-09']).toEqual(['QQQ', 'SPY']);
   });
 
   test('files of different days go to their own zips, also when days passed without a run', () => {
@@ -80,7 +80,7 @@ describe('archiveEarlierDays', () => {
     expect(existsSync(zipPathFor('2026-10-07', d.historyDir))).toBe(true);
     expect(existsSync(zipPathFor('2026-10-09', d.historyDir))).toBe(true);
     expect(existsSync(zipPathFor('2026-10-13', d.historyDir))).toBe(false);
-    expect(Object.keys(readHistoryIndex(d.historyDir).dates)).toEqual(['2026-10-07', '2026-10-09']);
+    expect(Object.keys(readHistoryIndex(d.historyDir).snapshots)).toEqual(['2026-10-07', '2026-10-09']);
   });
 
   test('a file that is not a cache file is skipped, the same input gives the same zip bytes', () => {
@@ -118,7 +118,7 @@ describe('the layout is a plain folder tree that can be cleaned up by deleting f
     const d = setup();
     expect(zipPathFor('2026-10-09', '/h')).toBe('/h/2026-10/2026-10-09.zip');
     fill(d);
-    expect(daysOnDisk(d.historyDir)).toEqual(['2026-09-30', '2026-10-07', '2026-10-09']);
+    expect(snapshotsOnDisk(d.historyDir)).toEqual(['2026-09-30', '2026-10-07', '2026-10-09']);
     expect(existsSync(join(d.historyDir, '2026-09', '2026-09-30.zip'))).toBe(true);
     expect(existsSync(join(d.historyDir, '2026-10', '2026-10-07.zip'))).toBe(true);
   });
@@ -128,9 +128,9 @@ describe('the layout is a plain folder tree that can be cleaned up by deleting f
     fill(d);
     for (const symbol of ['SPY', 'QQQ', 'AAPL']) put(d.optionsDir, symbol, '2026-10-12'); // the files are replaced by today's
     rmSync(join(d.historyDir, '2026-09'), { recursive: true });
-    expect(Object.keys(readHistoryIndex(d.historyDir).dates)).toContain('2026-09-30'); // stale until a run
+    expect(Object.keys(readHistoryIndex(d.historyDir).snapshots)).toContain('2026-09-30'); // stale until a run
     run(d, ['SPY'], '2026-10-12');
-    expect(Object.keys(readHistoryIndex(d.historyDir).dates)).toEqual(['2026-10-07', '2026-10-09']);
+    expect(Object.keys(readHistoryIndex(d.historyDir).snapshots)).toEqual(['2026-10-07', '2026-10-09']);
   });
 
   test('deleting one day zip drops only that day, deleting everything leaves an empty index', () => {
@@ -138,11 +138,11 @@ describe('the layout is a plain folder tree that can be cleaned up by deleting f
     fill(d);
     rmSync(zipPathFor('2026-10-07', d.historyDir));
     syncHistoryIndex(d.historyDir);
-    expect(Object.keys(readHistoryIndex(d.historyDir).dates)).toEqual(['2026-09-30', '2026-10-09']);
+    expect(Object.keys(readHistoryIndex(d.historyDir).snapshots)).toEqual(['2026-09-30', '2026-10-09']);
     rmSync(join(d.historyDir, '2026-09'), { recursive: true });
     rmSync(join(d.historyDir, '2026-10'), { recursive: true });
     syncHistoryIndex(d.historyDir);
-    expect(readHistoryIndex(d.historyDir).dates).toEqual({});
+    expect(readHistoryIndex(d.historyDir).snapshots).toEqual({});
   });
 
   test('a zip copied back by hand is listed again with its tickers', () => {
@@ -152,10 +152,10 @@ describe('the layout is a plain folder tree that can be cleaned up by deleting f
     cpSync(zipPathFor('2026-10-07', d.historyDir), saved);
     rmSync(zipPathFor('2026-10-07', d.historyDir));
     syncHistoryIndex(d.historyDir);
-    expect(readHistoryIndex(d.historyDir).dates['2026-10-07']).toBeUndefined();
+    expect(readHistoryIndex(d.historyDir).snapshots['2026-10-07']).toBeUndefined();
     cpSync(saved, zipPathFor('2026-10-07', d.historyDir));
     syncHistoryIndex(d.historyDir);
-    expect(readHistoryIndex(d.historyDir).dates['2026-10-07']).toEqual(['QQQ']);
+    expect(readHistoryIndex(d.historyDir).snapshots['2026-10-07']).toEqual(['QQQ']);
   });
 
   test('nothing changes when nothing happened: index.json is not rewritten, no folder is created', () => {

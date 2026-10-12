@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join } from "node:path";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { buildZip, extractEntry, parseZipDirectory } from "../src/history-zip";
+import { manifestEntryName, manifestText, sortEntries, tickerEntryName } from "../src/backtest/snapshot";
 
 // ============================================================================
 // Daily archive of the cache files, see agentic-workspace docs/repos/gex/spec-backtest.md.
@@ -12,11 +13,12 @@ import { buildZip, extractEntry, parseZipDirectory } from "../src/history-zip";
 //   api/history/
 //     index.json              the days that exist, rebuilt from the zips on disk
 //     2026-10/                one folder per month: delete it to drop the whole month
-//       2026-10-09.zip        one zip per trading day: delete it to drop the day
+//       2026-10-09.zip        the automatic end-of-day archive of a trading day (id = the day)
+//       2026-10-09-15-42.zip  a backup made on demand with scripts/backtest-backup.ts (id = date and minute)
 //
 // Cleaning up is just deleting those files and committing: index.json follows the
-// disk on the next run (a day whose zip is gone is dropped from it), and the app
-// treats a listed day whose zip is missing as unavailable.
+// disk on the next run (a snapshot whose zip is gone is dropped from it), and the app
+// treats a listed snapshot whose zip is missing as unavailable.
 // ============================================================================
 
 const enc = new TextEncoder();
@@ -26,8 +28,8 @@ const deflate = (d: Uint8Array) => new Uint8Array(deflateRawSync(d, { level: 9 }
 
 export interface HistoryIndex {
     version: 1;
-    /** day -> tickers archived for it */
-    dates: Record<string, string[]>;
+    /** snapshot id (`YYYY-MM-DD` or `YYYY-MM-DD-HH-mm`) -> tickers in it */
+    snapshots: Record<string, string[]>;
 }
 
 export interface ArchiveReport {
@@ -37,39 +39,34 @@ export interface ArchiveReport {
     already: number;
 }
 
-/** `api/history/<YYYY-MM>/<YYYY-MM-DD>.zip` */
-export function zipPathFor(day: string, historyDir: string): string {
-    return join(historyDir, day.slice(0, 7), `${day}.zip`);
+/** `api/history/<YYYY-MM>/<snapshot id>.zip` */
+export function zipPathFor(id: string, historyDir: string): string {
+    return join(historyDir, id.slice(0, 7), `${id}.zip`);
 }
 
 const MONTH_DIR = /^\d{4}-\d{2}$/;
-const DAY_ZIP = /^(\d{4}-\d{2}-\d{2})\.zip$/;
+const SNAPSHOT_ZIP = /^(\d{4}-\d{2}-\d{2}(?:-\d{2}-\d{2})?)\.zip$/;
 
-/** The days that have a zip on disk, found by looking at the month folders (the disk is the truth, not index.json). */
-export function daysOnDisk(historyDir: string): string[] {
-    const days: string[] = [];
+/** The snapshots that have a zip on disk, found by looking at the month folders (the disk is the truth, not index.json). */
+export function snapshotsOnDisk(historyDir: string): string[] {
+    const ids: string[] = [];
     let months: string[] = [];
     try {
         months = readdirSync(historyDir).filter((m) => MONTH_DIR.test(m));
     } catch {
-        return days;
+        return ids;
     }
     for (const m of months) {
         try {
             for (const f of readdirSync(join(historyDir, m))) {
-                const hit = DAY_ZIP.exec(f);
-                if (hit && hit[1].startsWith(m)) days.push(hit[1]);
+                const hit = SNAPSHOT_ZIP.exec(f);
+                if (hit && hit[1].startsWith(m)) ids.push(hit[1]);
             }
         } catch {
             // not a folder
         }
     }
-    return days.sort();
-}
-
-/** `<day>/manifest.json` of a day zip */
-function manifestFor(day: string, tickers: string[]): Uint8Array {
-    return enc.encode(JSON.stringify({ version: 1, date: day, tickers }) + "\n");
+    return ids.sort();
 }
 
 /** Entries of a day zip as name -> bytes, or an empty map when there is none yet. */
@@ -92,11 +89,11 @@ function tickersOf(day: string, entries: Map<string, Uint8Array>): string[] {
 export function readHistoryIndex(historyDir: string): HistoryIndex {
     try {
         const j = JSON.parse(readFileSync(join(historyDir, "index.json"), "utf8")) as Partial<HistoryIndex>;
-        if (j && j.version === 1 && j.dates && typeof j.dates === "object") return { version: 1, dates: j.dates };
+        if (j && j.version === 1 && j.snapshots && typeof j.snapshots === "object") return { version: 1, snapshots: j.snapshots };
     } catch {
         // none yet, or damaged: it is rebuilt from the zips below
     }
-    return { version: 1, dates: {} };
+    return { version: 1, snapshots: {} };
 }
 
 /**
@@ -131,14 +128,14 @@ export function archiveEarlierDays(opts: {
         const entries = readDayZip(path);
         const added: string[] = [];
         for (const { symbol, text } of files) {
-            const name = `${day}/${symbol}.json`;
+            const name = tickerEntryName(day, symbol);
             if (entries.has(name)) { report.already++; continue; }
             entries.set(name, enc.encode(text));
             added.push(symbol);
         }
         if (added.length) {
-            entries.set(`${day}/manifest.json`, manifestFor(day, tickersOf(day, entries)));
-            const ordered = [...entries].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, data]) => ({ name, data }));
+            entries.set(manifestEntryName(day), enc.encode(manifestText(day, tickersOf(day, entries))));
+            const ordered = sortEntries([...entries].map(([name, data]) => ({ name, data })));
             mkdirSync(dirname(path), { recursive: true });
             writeFileSync(path, buildZip(ordered, day, deflate));
             report.added[day] = added.sort();
@@ -163,23 +160,23 @@ function tickersFromZipFile(day: string, historyDir: string): string[] | null {
 }
 
 /**
- * Makes index.json say exactly what is on disk: a day whose zip was deleted is dropped, a zip that is not listed (copied
- * back by hand) is added, a day already listed keeps its entry unless it is in `touched` (it was just written). Only the
+ * Makes index.json say exactly what is on disk: a snapshot whose zip was deleted is dropped, a zip that is not listed (copied
+ * back by hand) is added, a snapshot already listed keeps its entry unless it is in `touched` (it was just written). Only the
  * directory of those zips is read, so a run stays cheap with months of history. Written only when it changes. Without a
  * history folder nothing is created.
  */
 export function syncHistoryIndex(historyDir: string, touched: readonly string[] = []): boolean {
-    const onDisk = daysOnDisk(historyDir);
+    const onDisk = snapshotsOnDisk(historyDir);
     if (!onDisk.length && !existsSync(join(historyDir, "index.json"))) return false;
     const index = readHistoryIndex(historyDir);
-    const dates: Record<string, string[]> = {};
-    for (const day of onDisk) {
-        const known = index.dates[day];
-        if (known && !touched.includes(day)) { dates[day] = known; continue; }
-        const tickers = tickersFromZipFile(day, historyDir);
-        if (tickers) dates[day] = tickers; // an unreadable zip is not listed
+    const snapshots: Record<string, string[]> = {};
+    for (const id of onDisk) {
+        const known = index.snapshots[id];
+        if (known && !touched.includes(id)) { snapshots[id] = known; continue; }
+        const tickers = tickersFromZipFile(id, historyDir);
+        if (tickers) snapshots[id] = tickers; // an unreadable zip is not listed
     }
-    const next = JSON.stringify({ version: 1, dates } satisfies HistoryIndex, null, 2) + "\n";
+    const next = JSON.stringify({ version: 1, snapshots } satisfies HistoryIndex, null, 2) + "\n";
     let current = "";
     try {
         current = readFileSync(join(historyDir, "index.json"), "utf8");
