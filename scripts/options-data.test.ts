@@ -49,7 +49,7 @@ import {
   sortedNoOptions,
   symbolVariants,
   tickersOverride,
-} from '../scripts/options-data';
+} from './options-data';
 
 const NY = 'America/New_York';
 const root = join(import.meta.dir, '..');
