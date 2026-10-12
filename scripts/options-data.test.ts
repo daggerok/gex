@@ -1,11 +1,16 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   DEFAULT_SYMBOLS,
+  fileDay,
+  historyPath,
   keepLaterExpirations,
+  marketDay,
+  rotateToHistory,
   PyInt,
   YahooTicker,
   classifyPayload,
@@ -845,5 +850,81 @@ describe('keepLaterExpirations (KEEP_EXPIRATIONS)', () => {
     const text = pyJsonDumps({ quotes: [quote('2026-11-20', 250.5), quote('2026-11-20', 0)] });
     const kept = keepLaterExpirations(['2026-10-12'], JSON.parse(text));
     expect(pyJsonDumps({ quotes: kept.quotes })).toBe(text.replace('"strike":0.0', '"strike":0'));
+  });
+});
+
+describe('marketDay (the trading day a fetch belongs to)', () => {
+  const at = (iso: string) => marketDay(new Date(iso));
+  test('a weekday from 9:30 market time on is that day, also after the close and late at night', () => {
+    expect(at('2026-10-12T13:30:00Z')).toBe('2026-10-12'); // Mon 09:30 EDT
+    expect(at('2026-10-12T14:00:00Z')).toBe('2026-10-12');
+    expect(at('2026-10-09T20:15:00Z')).toBe('2026-10-09'); // Fri 16:15 EDT
+    expect(at('2026-10-10T02:00:00Z')).toBe('2026-10-09'); // Fri 22:00 EDT is already Saturday UTC
+    expect(at('2026-12-01T15:00:00Z')).toBe('2026-12-01'); // Tue 10:00 EST
+  });
+
+  test('before 9:30 the data is still the previous trading day, Monday morning gives Friday', () => {
+    expect(at('2026-10-13T12:00:00Z')).toBe('2026-10-12'); // Tue 08:00 EDT
+    expect(at('2026-10-12T13:29:00Z')).toBe('2026-10-09'); // Mon 09:29 EDT
+    expect(at('2026-10-12T04:00:00Z')).toBe('2026-10-09'); // Mon 00:00 EDT
+  });
+
+  test('a weekend is the Friday before', () => {
+    expect(at('2026-10-10T16:00:00Z')).toBe('2026-10-09'); // Sat
+    expect(at('2026-10-11T16:00:00Z')).toBe('2026-10-09'); // Sun
+  });
+});
+
+describe('fileDay and historyPath', () => {
+  test('the date field wins, an older file falls back to the day of its updated moment', () => {
+    expect(fileDay(JSON.stringify({ date: '2026-10-08', updated: '2026-10-09T10:00:00-04:00' }))).toBe('2026-10-08');
+    expect(fileDay(JSON.stringify({ updated: '2026-10-08T10:00:00-04:00' }))).toBe('2026-10-08');
+    expect(fileDay(JSON.stringify({ date: 'junk', updated: '2026-10-08T10:00:00-04:00' }))).toBe('2026-10-08');
+  });
+
+  test('anything that is not a cache file has no day', () => {
+    expect(fileDay('{oops')).toBeNull();
+    expect(fileDay('[]')).toBeNull();
+    expect(fileDay(JSON.stringify({ symbol: 'SPY' }))).toBeNull();
+  });
+
+  test('history files are grouped by month and day', () => {
+    expect(historyPath('SPY', '2026-10-09', '/h')).toBe('/h/2026-10/2026-10-09/SPY.json');
+  });
+});
+
+describe('rotateToHistory', () => {
+  const dir = () => mkdtempSync(join(tmpdir(), 'gex-history-'));
+  const file = (date: string) => pyJsonDumps({ symbol: 'SPY', updated: `${date}T15:30:00-04:00`, date, quotes: [] });
+
+  test("an earlier day's file is copied unchanged to its own day", () => {
+    const d = dir();
+    const text = file('2026-10-09');
+    expect(rotateToHistory({ symbol: 'SPY', previousText: text, today: '2026-10-12', dir: d })).toBe('rotated');
+    expect(readFileSync(join(d, '2026-10', '2026-10-09', 'SPY.json'), 'utf8')).toBe(text);
+  });
+
+  test('the day is the file own day, also when several days passed without a run', () => {
+    const d = dir();
+    rotateToHistory({ symbol: 'SPY', previousText: file('2026-10-07'), today: '2026-10-14', dir: d });
+    expect(existsSync(join(d, '2026-10', '2026-10-07', 'SPY.json'))).toBe(true);
+    expect(existsSync(join(d, '2026-10', '2026-10-13'))).toBe(false);
+  });
+
+  test('a history file is never overwritten', () => {
+    const d = dir();
+    rotateToHistory({ symbol: 'SPY', previousText: file('2026-10-09'), today: '2026-10-12', dir: d });
+    const other = pyJsonDumps({ symbol: 'SPY', date: '2026-10-09', quotes: [{ strike: 1 }] });
+    expect(rotateToHistory({ symbol: 'SPY', previousText: other, today: '2026-10-12', dir: d })).toBe('exists');
+    expect(readFileSync(join(d, '2026-10', '2026-10-09', 'SPY.json'), 'utf8')).toBe(file('2026-10-09'));
+  });
+
+  test('the same day, a later day, no file and a damaged file are not archived', () => {
+    const d = dir();
+    expect(rotateToHistory({ symbol: 'SPY', previousText: file('2026-10-12'), today: '2026-10-12', dir: d })).toBe('same-day');
+    expect(rotateToHistory({ symbol: 'SPY', previousText: file('2026-10-13'), today: '2026-10-12', dir: d })).toBe('same-day');
+    expect(rotateToHistory({ symbol: 'SPY', previousText: null, today: '2026-10-12', dir: d })).toBe('none');
+    expect(rotateToHistory({ symbol: 'SPY', previousText: '{oops', today: '2026-10-12', dir: d })).toBe('none');
+    expect(existsSync(join(d, '2026-10'))).toBe(false);
   });
 });

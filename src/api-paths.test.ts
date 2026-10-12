@@ -27,3 +27,11 @@ describe('api/options path layout', () => {
     expect(main).not.toContain("fetchStaticJson('data/");
   });
 });
+
+describe('api/history stays out of the site', () => {
+  test('the build copy of api to dist excludes api/history (Pages has a size limit)', () => {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    expect(pkg.scripts.ncp).toContain('api/history');
+    expect(pkg.scripts.ncp).toContain('--filter');
+  });
+});

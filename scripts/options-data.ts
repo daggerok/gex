@@ -14,6 +14,12 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t9 - Every cache file now carries `date`, the trading day its data belongs to (market time; before 9:30 and on weekends
+ *        the data is still the previous weekday's). For the DEFAULT_SYMBOLS, when a run finds that the file on disk is from
+ *        an earlier day than the new data, that file is first copied to api/history/<YYYY-MM>/<YYYY-MM-DD>/<SYM>.json (never
+ *        overwritten) and then replaced by the fresh one. Git stores the same content once, so a day's last state is kept for
+ *        free and no single run is needed for it. HISTORY=0 turns this off. Holidays are not known, a holiday run keeps the
+ *        weekday label.
  *   t8 - KEEP_EXPIRATIONS=1 (default off, the hourly default-set workflow sets it): the ticker is refreshed for its nearest
  *        MAX_EXPIRATIONS dates as before, but the later expirations already in its file are kept instead of being cut off.
  *        Kept quotes are not refetched from Yahoo (their bid, ask, last and IV stay as of the last run that covered them), but
@@ -82,6 +88,7 @@
  *   NASDAQ_TIMEOUT     default 20        seconds before falling back to Cboe
  *   MAX_EXPIRATIONS    default 12        expirations stored per ticker (the nearest ones are fetched)
  *   KEEP_EXPIRATIONS   default 0         1 = keep the later expirations already cached for the ticker (see t8)
+ *   HISTORY            default 1         0 = do not archive the previous day's file of the DEFAULT_SYMBOLS (see t9)
  *   RATE_LIMIT_HITS    default 3         consecutive errors that mean "blocked"
  *   REQUEST_SLEEP      default 0.6       seconds after each successful write
  *   SKIP_RECHECK_DAYS  default 30        days before a no-options ticker is retried
@@ -355,6 +362,7 @@ function logErr(message: string): void {
 const REPO_ROOT = dirname(import.meta.dirname);
 export const DATA_DIR = join(REPO_ROOT, "api", "options");
 export const INDEX_PATH = join(DATA_DIR, "index.json");
+export const HISTORY_DIR = join(REPO_ROOT, "api", "history");
 const LEGACY_SKIP_PATH = join(import.meta.dirname, "no_options.json");
 
 const cfg = {
@@ -363,6 +371,7 @@ const cfg = {
     MIN_MARKET_CAP: envFloat("MIN_MARKET_CAP", "9000000"),
     MAX_EXPIRATIONS: envInt("MAX_EXPIRATIONS", "12"),
     KEEP_EXPIRATIONS: ["1", "true", "yes", "on"].includes((process.env.KEEP_EXPIRATIONS ?? "0").toLowerCase()),
+    HISTORY: !["0", "false", "no", "off"].includes((process.env.HISTORY ?? "1").toLowerCase()),
     RATE_LIMIT_HITS: envInt("RATE_LIMIT_HITS", "3"),
     REQUEST_SLEEP: envFloat("REQUEST_SLEEP", "0.6"),
     NASDAQ_TIMEOUT: envFloat("NASDAQ_TIMEOUT", "20"),
@@ -550,6 +559,59 @@ export function isFreshAt(updatedStr: string, now: Date = new Date(), tz: string
         if (updatedWall >= dzStart) return true;
     }
     return false;
+}
+
+/**
+ * The trading day (ISO date, market time) a quote fetched at `now` belongs to: a weekday from 9:30 on is that day, before
+ * 9:30 and on a weekend the data is still the previous weekday's close. Holidays are not known, a holiday keeps the
+ * weekday label.
+ */
+export function marketDay(now: Date = new Date(), tz: string = MARKET_TZ): string {
+    const w = wallClock(now, tz);
+    let d: CalDate = { year: w.year, month: w.month, day: w.day };
+    // weekday(): Monday = 0 ... Friday = 4, Saturday = 5, Sunday = 6
+    if (weekday(d) <= 4 && w.hour * 60 + w.minute < 9 * 60 + 30) d = addDays(d, -1);
+    while (weekday(d) > 4 || weekday(d) < 0) d = addDays(d, -1);
+    return dateIso(d);
+}
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** `api/history/<YYYY-MM>/<YYYY-MM-DD>/<SYM>.json` */
+export function historyPath(symbol: string, day: string, dir: string = HISTORY_DIR): string {
+    return join(dir, day.slice(0, 7), day, `${symbol}.json`);
+}
+
+/**
+ * The trading day a cache file's text is about: its `date`, or for a file from before `date` existed the day of its
+ * `updated` moment. Null when the text is not a cache file.
+ */
+export function fileDay(text: string): string | null {
+    try {
+        const j = JSON.parse(text) as { date?: unknown; updated?: unknown };
+        if (typeof j.date === "string" && DAY_RE.test(j.date)) return j.date;
+        const at = typeof j.updated === "string" ? parseIsoInstant(j.updated) : null;
+        return at ? marketDay(at) : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Before a fresh file replaces the old one: when the old file is from an EARLIER trading day than `today`, it is that
+ * day's last state, so it is copied unchanged to the history folder. An existing history file is never overwritten, a
+ * file of the same day (or a later one) is not archived.
+ */
+export function rotateToHistory(opts: { symbol: string; previousText: string | null; today: string; dir?: string }): "rotated" | "exists" | "same-day" | "none" {
+    if (opts.previousText === null) return "none";
+    const day = fileDay(opts.previousText);
+    if (!day) return "none";
+    if (day >= opts.today) return "same-day";
+    const target = historyPath(opts.symbol, day, opts.dir);
+    if (existsSync(target)) return "exists";
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, opts.previousText);
+    return "rotated";
 }
 
 /** strptime("%Y-%m-%d") of the first 10 chars, or null. */
@@ -1210,6 +1272,8 @@ async function resolveOptions(symbol: string): Promise<{ t: YahooTicker; exps: s
 export interface Payload {
     symbol: string;
     updated: string;
+    /** Trading day (market time) the data belongs to, see marketDay(). */
+    date: string;
     underlyingPrice: number | null;
     greeks: GreeksStats;
     expirations: string[];
@@ -1277,7 +1341,7 @@ export async function fetchTicker(symbolIn: string): Promise<Payload | null> {
     const all = [...quotes, ...kept.quotes];
     const greeks = applyCboeRows(cboeRows.size ? all : quotes, cboeRows, cfg.CBOE_GREEKS);
 
-    return { symbol, updated: nowIso(), underlyingPrice: spot, greeks, expirations: [...exps, ...kept.expirations], quotes: all };
+    return { symbol, updated: nowIso(), date: marketDay(), underlyingPrice: spot, greeks, expirations: [...exps, ...kept.expirations], quotes: all };
 }
 
 // ---- Cache files, freshness and skiplist ------------------------------------------
@@ -1893,6 +1957,11 @@ export async function main(): Promise<void> {
         // The file is written on every successful fetch even when nothing but `updated` moved: freshness reads it.
         const text = pyJsonDumps(payload);
         const status = classifyPayload(previousText, text);
+        // The previous day's last state of a default ticker goes to the history before it is replaced (see t9).
+        if (cfg.HISTORY && DEFAULT_SYMBOLS.includes(sym)) {
+            const rotated = rotateToHistory({ symbol: sym, previousText, today: payload.date });
+            if (rotated === "rotated") log(`history: ${sym} ${fileDay(previousText ?? "")} archived`);
+        }
         writeFileSync(path, text);
         return { kind: "written", status, payload, elapsed, path };
     };

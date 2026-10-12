@@ -140,6 +140,7 @@ CONCURRENCY=3 TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 
 - Without arguments the run covers only the default set: the main indices and their ETFs (S&P 500, Nasdaq 100, Dow Jones, Russell 2000) and the mega caps, exactly the tickers the empty ticker search field hints (`DEFAULT_SYMBOLS`, a unit test keeps the two lists equal). Pass `all` for the smart auto-universe run: missing symbols first, then the oldest cached files. Any other argument is an error
 - SPY, SPX, QQQ and NDX are always queued first
+- Every cache file carries `date`, the trading day its data belongs to (market time, before 9:30 and on weekends it is still the previous weekday). For the default set, when a run finds that the file on disk is from an earlier day than the new data, it first copies that file unchanged to `api/history/<YYYY-MM>/<YYYY-MM-DD>/<SYM>.json` (never overwriting an existing one) and then replaces it with the fresh one. So the last state of every day is kept, no single run is needed for it, and git stores that content only once. A day with no run at all has no file (the sources only give the current chain, a missed day cannot be fetched later). `HISTORY=0` turns it off. `api/history` is not copied to the site (`ncp --filter` in `package.json`). Holidays are not known, a holiday run keeps the weekday label
 - `KEEP_EXPIRATIONS=1` (default off) keeps the later expirations that a ticker's file already holds: the nearest `MAX_EXPIRATIONS` dates are fetched again as usual, the rest stay, and only their Cboe greeks, open interest and volume are refreshed (their bid, ask, last and IV stay as of the last run that covered them). Without it a run keeps only the nearest `MAX_EXPIRATIONS` dates
 - After the options pass every cached ticker gets `api/charts/<SYM>.json` (1 year of daily bars, about 12 KB each, `CHART_MAX_FETCHES` per run), so the Chart tab works from CACHE without a proxy
 - `CONCURRENCY` is an integer >= 1 (default 1), each worker waits `REQUEST_SLEEP` after its own write. Cboe requests share one throttle (`CBOE_MIN_INTERVAL`, default 1 s) and on a 429 every worker pauses (`CBOE_BACKOFF`, `CBOE_RETRIES`), so more workers do not raise the Cboe request rate. A ticker whose Cboe retries run out fails and keeps its old file
@@ -264,6 +265,7 @@ src/
 api/
   options/                    # one option-chain cache file per ticker, plus index.json
   charts/                     # one file of 1 year of daily bars per ticker
+  history/                    # the last state of each earlier day of the default tickers, by month and day, not deployed
   All.txt, Indices.txt        # ticker lists of the update workflow
 scripts/
   options-data.ts             # the fetcher: Yahoo and Cboe -> api/options and api/charts
