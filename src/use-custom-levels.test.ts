@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { CustomLevel } from './custom-levels';
-import { customLevelsLocked, ownCustomLevels, readCustomLevels, setCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
+import { customLevelsLocked, customLevelsStorageChanged, ownCustomLevels, readCustomLevels, setCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
 
 const mem = new Map<string, string>();
 const level = (id: string, price: number): CustomLevel => ({ id, name: id, price });
@@ -46,5 +46,26 @@ describe('custom levels override (backtest)', () => {
     setCustomLevels('USER4', [level('own', 1)]);
     setCustomLevelsOverride({ USER4: [level('snap', 2)] });
     expect(ownCustomLevels(['USER4', 'NONE'])).toEqual({ USER4: [level('own', 1)] });
+  });
+});
+
+describe('custom levels saved in another tab', () => {
+  test('the changed symbol is read again, other symbols and other keys keep the cache', () => {
+    setCustomLevels('TAB1', [level('a', 1)]);
+    setCustomLevels('TAB2', [level('b', 2)]);
+    mem.set('gex.customLevels.v1.TAB1', JSON.stringify([level('other', 5)]));
+    mem.set('gex.customLevels.v1.TAB2', JSON.stringify([level('other', 6)]));
+    customLevelsStorageChanged('gex.levelColors.v1');
+    expect(readCustomLevels('TAB1')).toEqual([level('a', 1)]);
+    customLevelsStorageChanged('gex.customLevels.v1.TAB1');
+    expect(readCustomLevels('TAB1')).toEqual([level('other', 5)]);
+    expect(readCustomLevels('TAB2')).toEqual([level('b', 2)]);
+  });
+
+  test('a cleared storage drops every cached list', () => {
+    setCustomLevels('TAB3', [level('c', 3)]);
+    mem.clear();
+    customLevelsStorageChanged(null);
+    expect(readCustomLevels('TAB3')).toEqual([]);
   });
 });
