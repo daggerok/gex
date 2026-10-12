@@ -779,6 +779,9 @@ export const GexView: React.FC<GexViewProps> = ({
         const rect = box.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+        // the editor is not a zoom: drop any selection that was started
+        setDragStart(null);
+        setDragEnd(null);
         const strikes = profile.map((p) => p.strike);
         const existing = customLevels.find((c) => nearestStrike(c.price, strikes) === strike);
         setLevelDraft(existing
@@ -807,7 +810,10 @@ export const GexView: React.FC<GexViewProps> = ({
             if (openLevelEditor(e)) { e.preventDefault(); e.stopPropagation(); }
             return;
         }
-        if (e.button !== 0 || e.metaKey || e.shiftKey) return; // Cmd / Shift: let recharts select a range
+        // A press with the right (or middle) button never starts the range selection either: the secondary click opens the
+        // level editor, and a selection started by it would be left hanging (its mouse up goes to the context menu event)
+        if (e.button !== 0) { e.stopPropagation(); return; }
+        if (e.metaKey || e.shiftKey) return; // Cmd / Shift: let recharts select a range
         // a plain press never starts the selection, whether or not there is anything to move
         e.stopPropagation();
         if (!xZoom || !chart) return;

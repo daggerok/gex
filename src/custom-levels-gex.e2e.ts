@@ -65,6 +65,11 @@ try {
         const p = await gexPoint(page);
         await page.mouse.click(p.x, p.y, { button: 'right' });
         assert.equal(await editor(page).inputValue(), 'Level 1', 'the editor opens on the GEX tab');
+        // the secondary click must not start the zoom range selection (a blue band that followed the pointer)
+        await page.mouse.move(p.x + 150, p.y);
+        await page.mouse.move(p.x + 260, p.y + 10, { steps: 6 });
+        assert.equal(await page.locator('.recharts-reference-area').count(), 0, 'no range selection after a right click');
+        await page.mouse.move(p.x, p.y);
         // the proposed colour follows the price: a strike above the spot (778.57 for SPY) is reddish, below it greenish
         const swatchHex = () => page.locator('button[aria-label="Level colour"]').evaluate((e: HTMLElement) => {
             const m = /(\d+), (\d+), (\d+)/.exec(getComputedStyle(e).backgroundColor)!;
