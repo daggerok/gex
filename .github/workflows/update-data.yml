@@ -39,6 +39,7 @@ on:
 
 permissions:
   contents: write # needed to commit the refreshed JSON
+  actions: write # needed to start the Pages deploy after a commit
 
 # One data refresh at a time, shared with update-partial-data.yml (a run waits, none is cancelled)
 concurrency:
@@ -88,6 +89,7 @@ jobs:
         run: TICKERS=$(cat api/Indices.txt) bun scripts/options-data.ts
 
       - name: Commit updated data
+        id: commit
         run: |
           git config user.name  "Maksim Kostromin"
           git config user.email "daggerok@gmail.com"
@@ -99,5 +101,13 @@ jobs:
             echo "No data changes — nothing to commit."
           else
             git commit -m "chore(data): refresh option chains [skip ci]"
-            git push || echo "Push failed (may be up-to-date or race condition)"
+            if git push; then echo "pushed=true" >> "$GITHUB_OUTPUT"; else echo "Push failed (may be up-to-date or race condition)"; fi
           fi
+
+      # Deploy the site only when this run pushed new data: no commit, no Pages run (saves the minute a deploy costs).
+      # GITHUB_TOKEN pushes do not start other workflows, so the deploy is requested explicitly.
+      - name: Deploy the site
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run github-pages.yml --ref "${GITHUB_REF_NAME}"

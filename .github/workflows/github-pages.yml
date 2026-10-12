@@ -4,10 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Update options data", "Update partial options data", "Backtest backup"]
-    types: [completed]
-    branches: [main]
 
 permissions:
   contents: read
@@ -20,9 +16,6 @@ concurrency:
 
 jobs:
   deploy:
-    # A push/manual run should deploy normally. A workflow_run deployment should
-    # happen only when the data workflow succeeded, not after a failed refresh.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -31,7 +24,7 @@ jobs:
       - name: Checkout latest default branch
         uses: actions/checkout@v7
         with:
-          # Important for workflow_run: the upstream workflow starts on an older
+          # Important for a deploy requested by a data workflow: it may start on an older
           # SHA, then commits refreshed data during the run. Checking out the
           # branch ensures Pages builds the newly pushed data commit, not the
           # upstream run's original SHA.

@@ -31,6 +31,7 @@ on:
 
 permissions:
   contents: write # needed to commit the backup
+  actions: write # needed to start the Pages deploy after a commit
 
 # One data job at a time, shared with the refresh workflows (a run waits, none is cancelled)
 concurrency:
@@ -77,6 +78,7 @@ jobs:
           bun scripts/backtest-backup.ts $BACKUP_TICKERS | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Commit the backup
+        id: commit
         run: |
           git config user.name  "Maksim Kostromin"
           git config user.email "daggerok@gmail.com"
@@ -85,15 +87,23 @@ jobs:
             echo "Nothing to commit."
           else
             git commit -m "chore(data): backtest backup [skip ci]"
-            git push && exit 0
+            if git push; then echo "pushed=true" >> "$GITHUB_OUTPUT"; exit 0; fi
             # The clone is shallow: deepen it so the rebase finds the common ancestor
             for attempt in 1 2 3; do
               git fetch --deepen=100 origin "${GITHUB_REF_NAME}" \
                 && git rebase -X theirs "origin/${GITHUB_REF_NAME}" \
-                && git push && exit 0
+                && git push && { echo "pushed=true" >> "$GITHUB_OUTPUT"; exit 0; }
               echo "Push attempt $attempt failed, retrying"
               git rebase --abort 2>/dev/null || true
               sleep 5
             done
             echo "Push failed after 3 attempts" && exit 1
           fi
+
+      # Deploy the site only when this run pushed new data: no commit, no Pages run (saves the minute a deploy costs).
+      # GITHUB_TOKEN pushes do not start other workflows, so the deploy is requested explicitly.
+      - name: Deploy the site
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run github-pages.yml --ref "${GITHUB_REF_NAME}"
