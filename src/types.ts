@@ -72,7 +72,7 @@ export interface OptionQuote {
      * Per-expiration futures/forward price used to price this quote under
      * Black-76 (VIX/VXN only, when settings.vixFuturesPricing is on). Client
      * computed, never written by scripts/options-data.ts or persisted to
-     * data/options/*.json. Null/absent for every non-futures-priced quote.
+     * api/options/*.json. Null/absent for every non-futures-priced quote.
      */
     forward?: number | null;
 }
@@ -171,7 +171,7 @@ export interface DataProvider {
      * Optional provider-native ticker suggestions / symbol search.
      * Providers that expose their own search endpoint (Yahoo/NASDAQ/CBOE proxy,
      * DoltHub SQL) implement this. Providers without one fall back to the local
-     * data/options/index.json manifest, including tickers known to have no options.
+     * api/options/index.json manifest, including tickers known to have no options.
      */
     suggestTickers?: (query: string, ctx: ProviderContext) => Promise<TickerSuggestion[]>;
 }
@@ -186,7 +186,7 @@ export interface TickerSuggestion {
     exchange?: string;
     /** Human label for the source of this suggestion (Provider / Local index). */
     source: string;
-    /** False only when data/options/index.json explicitly says the ticker exists but has no listed options. */
+    /** False only when api/options/index.json explicitly says the ticker exists but has no listed options. */
     hasOptions: boolean;
 }
 

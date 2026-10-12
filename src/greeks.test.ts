@@ -42,8 +42,8 @@ describe('index symbols', () => {
     expect(INDEX_SYMBOLS.has('OEX')).toBe(false);
   });
 
-  test('data/Indices.txt matches INDEX_SYMBOLS', () => {
-    const lines = read('data/Indices.txt').split('\n').map((l) => l.trim()).filter(Boolean).sort();
+  test('api/Indices.txt matches INDEX_SYMBOLS', () => {
+    const lines = read('api/Indices.txt').split('\n').map((l) => l.trim()).filter(Boolean).sort();
     expect(lines).toEqual([...INDEX_SYMBOLS].sort());
   });
 

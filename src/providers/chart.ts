@@ -111,13 +111,13 @@ export async function fetchOhlc(
 }
 
 /**
- * Chart file written by scripts/options-data.ts: data/charts/<SYM>.json with 1Y of daily bars, compact column arrays
+ * Chart file written by scripts/options-data.ts: api/charts/<SYM>.json with 1Y of daily bars, compact column arrays
  * (`timestamp`, `open`, `high`, `low`, `close`, `volume`, `gmtoffset`). Rebuilt into the Yahoo body shape so
  * parseYahooChart stays the only place that turns candles into OhlcBar.
  */
 export async function fetchCachedOhlc(symbol: string, ctx: Pick<ProviderContext, 'signal'> = {}): Promise<OhlcBar[]> {
     const raw = symbol.toUpperCase().trim().replace(/^[.^]/, '');
-    const file = await fetchStaticJson(`data/charts/${encodeURIComponent(raw)}.json`, ctx.signal, `charts/${raw}`);
+    const file = await fetchStaticJson(`api/charts/${encodeURIComponent(raw)}.json`, ctx.signal, `charts/${raw}`);
     const body = {
         chart: {
             result: [{
