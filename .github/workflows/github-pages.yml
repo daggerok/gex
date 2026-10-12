@@ -37,6 +37,8 @@ jobs:
           # Keep only the latest two default-branch commits; the build needs no deeper history.
           fetch-depth: 2
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.x" # pinned minor: a new Bun release must not break the data runs unattended
       # The hourly refresh does not commit the default tickers (update-partial-data.yml), so the committed files are older
       # than the site: refresh them before building, so a code deploy never publishes older data. A failure (a rate limit)
       # keeps the committed files and the deploy goes on.
