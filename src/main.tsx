@@ -807,7 +807,7 @@ import { pickExpirations } from './expiration-select';
 import { recordEscape, RESET_ALL_EVENT } from './zoom-pan';
 import { AttributionFooter, RepoFooter } from './components/AttributionFooter';
 import type { ChainSection } from './components/ChainTable';
-import { AsOfSelect } from './components/AsOfSelect';
+import { AsOfMenuSection, AsOfSelect } from './components/AsOfSelect';
 import { BackupDialog } from './components/BackupDialog';
 import { BacktestManager } from './components/BacktestManager';
 import { ExpirationChips } from './components/ExpirationChips';
@@ -1561,6 +1561,17 @@ const App: React.FC = () => {
                         activeLabel={asOf?.label ?? null}
                         liveText={liveText}
                         loading={bt.loading}
+                        onSelect={(id) => { void btc.select(id); }}
+                        onImport={(files) => { void onImportFiles(files); }}
+                        onCreateBackup={openBackupDialog}
+                        onManage={() => setShowManager(true)}
+                    />
+                )}
+                asOfMenuSlot={(
+                    <AsOfMenuSection
+                        entries={bt.entries}
+                        activeId={asOf?.id ?? null}
+                        liveText={liveText}
                         onSelect={(id) => { void btc.select(id); }}
                         onImport={(files) => { void onImportFiles(files); }}
                         onCreateBackup={openBackupDialog}

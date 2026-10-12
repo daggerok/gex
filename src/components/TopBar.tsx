@@ -121,12 +121,14 @@ export const TopBar: React.FC<{
     proxyChecking: boolean;
     /** The "As of" selector (backtest), rendered next to the provider. */
     asOfSlot?: React.ReactNode;
+    /** The same controls as a block of the settings menu, for a narrow screen where the selector is hidden. */
+    asOfMenuSlot?: React.ReactNode;
 }> = ({
     settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll,
     tickerInput, onTickerInput, onSearch, searching,
     tickerSuggestions, tickerSuggestionsOpen, tickerSuggestionsLoading, activeTickerSuggestion,
     onTickerFocus, onTickerBlur, onTickerKeyDown, onChooseSuggestion, setActiveTickerSuggestion, setTickerSuggestionsOpen,
-    proxyOk, proxyChecking, asOfSlot,
+    proxyOk, proxyChecking, asOfSlot, asOfMenuSlot,
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
     const { t, lang, setLang } = useI18n();
@@ -471,6 +473,8 @@ export const TopBar: React.FC<{
                                         {isCache ? t('topBar.proxyDisabled') : t('settings.providerHint')}
                                     </div>
                                 </div>
+
+                                {asOfMenuSlot}
 
                                 {/* Status and debug, the last block of the menu: they used to be a button and two dots in the header.
                                     One dot is enough, both dots always showed the same /health probe. */}

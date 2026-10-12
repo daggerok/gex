@@ -94,3 +94,41 @@ export const AsOfSelect: React.FC<{
         </div>
     );
 };
+
+/**
+ * The same controls for a narrow screen, as a block of the settings menu (the selector in the top bar is hidden below `sm`):
+ * a native list of the snapshots and the three actions. Shown only below `sm`.
+ */
+export const AsOfMenuSection: React.FC<{
+    entries: HistoryEntry[];
+    activeId: string | null;
+    liveText: string;
+    onSelect: (id: string | null) => void;
+    onImport: (files: File[]) => void;
+    onCreateBackup: () => void;
+    onManage: () => void;
+}> = ({ entries, activeId, liveText, onSelect, onImport, onCreateBackup, onManage }) => {
+    const { t } = useI18n();
+    const fileRef = useRef<HTMLInputElement>(null);
+    const btn = 'rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800';
+    return (
+        <div className="space-y-2 border-t border-slate-200 pt-2 dark:border-slate-700 sm:hidden" data-asof-mobile>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('bt.mobileTitle')}</div>
+            <select
+                value={activeId ?? ''}
+                onChange={(e) => onSelect(e.target.value || null)}
+                aria-label={t('bt.asOfTitle')}
+                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+            >
+                <option value="">{t('bt.live')} ({liveText})</option>
+                {entries.map((e) => <option key={e.id} value={e.id}>{t('bt.asOfLatest', { date: e.label })}</option>)}
+            </select>
+            <div className="grid grid-cols-3 gap-2">
+                <button type="button" className={btn} onClick={() => fileRef.current?.click()}>{t('bt.import')}</button>
+                <button type="button" className={btn} onClick={onCreateBackup}>{t('bt.createBackup')}</button>
+                <button type="button" className={btn} onClick={onManage}>{t('bt.manage')}</button>
+            </div>
+            <input ref={fileRef} type="file" accept=".zip,application/zip" multiple hidden onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; if (files.length) onImport(files); }} />
+        </div>
+    );
+};

@@ -142,6 +142,8 @@ try {
     assert.ok(bundleNames.includes('2026-09-29/SPY.json') && bundleNames.includes('2026-09-30/QQQ.json'), 'the bundle holds both days');
     // remove everything older than a date: the day before it goes, that day stays
     await page.locator('[data-backtest-older]').fill('2026-09-30');
+    // asks first: imported days cannot be fetched again
+    page.once('dialog', (d) => { assert.ok(d.message().includes('2026-09-30'), `the question names the date: ${d.message()}`); void d.accept(); });
     await page.getByRole('button', { name: 'Remove', exact: true }).click();
     await page.waitForTimeout(500);
     assert.equal(await held('2026-09-29'), false, 'the older day is no longer held in the browser (it is still on the site)');
@@ -205,6 +207,20 @@ try {
     await page.waitForTimeout(1500);
     const liveLast = await page.locator('[data-last-bar]').getAttribute('data-last-bar');
     assert.ok(liveLast && liveLast > '2026-09-29', `live Chart candles go past the archived day (${liveLast})`);
+
+    // ---- a phone: the selector is hidden in the top bar, the same controls are in the settings menu ----
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator('[data-asof-select] > button').isVisible(), false, 'the top bar selector is hidden on a phone');
+    await page.locator('button[aria-label="Settings"]').click();
+    const mobile = page.locator('[data-asof-mobile]');
+    assert.equal(await mobile.isVisible(), true, 'the settings menu has the backtest block on a phone');
+    await mobile.locator('select').selectOption('2026-09-30');
+    await page.waitForTimeout(1500);
+    assert.equal(await banner.count(), 1, 'a snapshot chosen on a phone opens the backtest');
+    await mobile.locator('select').selectOption('');
+    await page.waitForTimeout(1200);
+    assert.equal(await banner.count(), 0, 'and Latest goes back');
 
     assert.deepEqual(errors, [], 'no page errors');
     console.log('backtest e2e: ok');

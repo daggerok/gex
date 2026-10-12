@@ -79,7 +79,13 @@ export const BacktestManager: React.FC<{
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                 <span className="text-slate-500 dark:text-slate-400">{t('bt.manager.olderThan')}</span>
                 <input type="date" value={olderThan} onChange={(e) => setOlderThan(e.target.value)} className="rounded-md border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-600" data-backtest-older />
-                <button type="button" className={danger} disabled={!olderThan || held.length === 0} onClick={() => { onRemoveOlderThan(olderThan); setOlderThan(''); }}>{t('bt.manager.removeOlder')}</button>
+                <button type="button" className={danger} disabled={!olderThan || held.length === 0} onClick={() => {
+                    // the held days older than the date: imported ones cannot be fetched again, so ask first
+                    const n = held.filter((h) => h.id.slice(0, 10) < olderThan).length;
+                    if (n > 0 && !window.confirm(t('bt.manager.confirmOlder', { n, date: olderThan }))) return;
+                    onRemoveOlderThan(olderThan);
+                    setOlderThan('');
+                }}>{t('bt.manager.removeOlder')}</button>
             </div>
             <input ref={fileRef} type="file" accept=".zip,application/zip" multiple hidden onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; if (files.length) onImport(files); }} />
         </Modal>
