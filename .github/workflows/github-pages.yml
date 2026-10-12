@@ -3,6 +3,10 @@ name: GitHub Pages
 on:
   push:
     branches: [main]
+    # A push that only adds or removes archive zips (backtest backups, daily archives) is not deployed: they reach the
+    # site with the next deploy of a data run or a code change
+    paths-ignore:
+      - "api/history/**"
   workflow_dispatch:
 
 permissions:
