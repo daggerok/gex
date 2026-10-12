@@ -156,7 +156,7 @@ CONCURRENCY=3 TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 1. Enable Pages in repo **Settings, Pages**
 2. Allow Actions to commit: **Settings, Actions, General, Workflow permissions, Read and write permissions**
 3. The **Update options data** workflow (every Saturday at 10:00 UTC, or by hand from the Actions tab) runs `scripts/options-data.ts` for the tickers listed in `api/All.txt`, then for the index options in `api/Indices.txt` as a separate step with a smaller budget, and commits the refreshed `api/options/*.json` back to `main`
-4. The **Update default options data** workflow runs `scripts/options-data.ts` with no arguments (only the default set, with `KEEP_EXPIRATIONS=1` and `MAX_EXPIRATIONS=15`) every hour on weekdays at 9:45, 10:45, ..., 16:45 New York time (8 runs a day, 4 tickers at a time, about 20 s of fetching) and commits `api/`. GitHub cron is UTC only, so both the summer and the winter UTC hours are scheduled and a step skips the one that does not match New York time. Scheduled runs can start a few minutes late. Market holidays are not skipped. It can also be started by hand from the Actions tab
+4. The **Update partial options data** workflow runs `scripts/options-data.ts` with no arguments (only the default set, with `KEEP_EXPIRATIONS=1` and `MAX_EXPIRATIONS=15`) every hour on weekdays at 9:45, 10:45, ..., 16:45 New York time (8 runs a day, 4 tickers at a time, about 20 s of fetching) and commits `api/`. GitHub cron is UTC only, so both the summer and the winter UTC hours are scheduled and a step skips the one that does not match New York time. Scheduled runs can start a few minutes late. Market holidays are not skipped. It can also be started by hand from the Actions tab
 5. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`
 
 ## Proxy setup for GitHub Pages
@@ -203,7 +203,7 @@ Optional files outside the core app source:
 
 - `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options }` and writes `api/charts/<SYM>.json`
 - `.github/workflows/update-data.yml`: weekly refresh (Saturday 10:00 UTC) of all tickers of `api/All.txt` and `api/Indices.txt`, also manual
-- `.github/workflows/update-default-data.yml`: hourly refresh of the default set on weekdays during market hours
+- `.github/workflows/update-partial-data.yml`: hourly refresh of the default set on weekdays during market hours
 - `scripts/options-local-proxy.ts`: local **Bun** proxy serving:
   - `/api/options`: Yahoo optionChain with crumb and cookie handling
   - `/api/nasdaq`: NASDAQ option-chain relay
@@ -279,7 +279,7 @@ scripts/
 .github/workflows/
   ci.yaml                     # pull request checks
   update-data.yml             # data refresh of all tickers (weekly, also manual)
-  update-default-data.yml     # hourly refresh of the default set (+ optional backtest backup)
+  update-partial-data.yml     # hourly refresh of the default set (+ optional backtest backup)
   backtest-backup.yml         # backtest backup by hand
   github-pages.yml            # Pages deployment
   dependency-updates.yml, npm-check-updates.yml

@@ -5,7 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
   workflow_run:
-    workflows: ["Update options data", "Update default options data", "Backtest backup"]
+    workflows: ["Update options data", "Update partial options data", "Backtest backup"]
     types: [completed]
     branches: [main]
 

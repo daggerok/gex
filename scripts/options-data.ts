@@ -26,7 +26,7 @@
  *        they get the Cboe overlay of the same request (greeks, open interest, volume). A full run still refreshes everything.
  *   t7 - DEFAULT_SYMBOLS grows to the 18 tickers the ticker search field hints (SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT,
  *        AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA). A unit test keeps it equal to `controls.tickerPlaceholder`.
- *        The hourly workflow `update-default-data.yml` runs this default set on weekdays during market hours.
+ *        The hourly workflow `update-partial-data.yml` runs this default set on weekdays during market hours.
  *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (see t7 above).
  *        `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins.
  *   t5 - Chart cache: after the options pass every cached ticker (SPY, SPX, QQQ, NDX first) gets

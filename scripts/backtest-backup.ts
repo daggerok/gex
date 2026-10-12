@@ -20,7 +20,7 @@
  *   bun run backtest:backup SPY NDX                # the same through package.json
  *
  * In CI (agentic-workspace docs/repos/gex/spec-backtest.md): .github/workflows/backtest-backup.yml runs it by hand with
- * the tickers you type (empty = all), and update-default-data.yml runs it every hour when the repository variable
+ * the tickers you type (empty = all), and update-partial-data.yml runs it every hour when the repository variable
  * BACKTEST_TICKERS is set (`all` or a ticker list). A ticker that has no file in api/options is an error and nothing is written. Each file is copied byte for byte, so
  * the backup holds exactly what the cache held at that moment. Run it after a data refresh (or after fetching the
  * tickers you care about with ./scripts/options-data.ts SPY NDX... via TICKERS=) as often as needed, for example every hour

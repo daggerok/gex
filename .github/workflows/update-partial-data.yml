@@ -1,5 +1,5 @@
 # =============================================================================
-# GEX - hourly refresh of the DEFAULT tickers during US market hours
+# GEX - PARTIAL data update: the most important (default) tickers, every hour during US market hours
 # -----------------------------------------------------------------------------
 # Runs `bun scripts/options-data.ts` with no arguments, which covers only
 # DEFAULT_SYMBOLS (the indices, ETFs and mega caps the ticker search field hints),
@@ -16,7 +16,7 @@
 # SPEED: the job is kept as short as possible, it is billed per started minute. The default 18 tickers take about
 # 20 s with CONCURRENCY=4 (55 s one by one), plus a few seconds of checkout and setup, so a run is billed 1 minute.
 # =============================================================================
-name: Update default options data
+name: Update partial options data
 
 on:
   schedule:

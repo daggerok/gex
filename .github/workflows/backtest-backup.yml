@@ -10,7 +10,7 @@
 #   refresh  fetch fresh data for the given tickers first (needs tickers; with none it would
 #            mean the whole universe, run update-data.yml for that)
 #
-# The same backup is made every hour automatically by update-default-data.yml when the
+# The same backup is made every hour automatically by update-partial-data.yml when the
 # repository variable BACKTEST_TICKERS is set.
 # =============================================================================
 name: Backtest backup
