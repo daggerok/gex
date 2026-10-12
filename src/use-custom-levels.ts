@@ -1,6 +1,6 @@
 // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { useCallback, useSyncExternalStore } from 'react';
-import { loadCustomLevels, saveCustomLevels, type CustomLevel } from './custom-levels';
+import { STORAGE_PREFIX, loadCustomLevels, saveCustomLevels, type CustomLevel } from './custom-levels';
 
 // ============================================================================
 // Shared store of the user's custom levels. The Chart tab edits them (right
@@ -74,3 +74,16 @@ export function useCustomLevels(symbol: string): [CustomLevel[], (levels: Custom
     const set = useCallback((next: CustomLevel[], persist = true) => setCustomLevels(symbol, next, persist), [symbol]);
     return [levels, set];
 }
+
+/**
+ * Another tab changed localStorage (`key` of a storage event, null when it was cleared): forgets the cached list of that
+ * symbol, so the next read loads the other tab's levels and the next save here does not write the stale list over them.
+ */
+export function customLevelsStorageChanged(key: string | null): void {
+    if (key === null) cache.clear();
+    else if (key.startsWith(STORAGE_PREFIX)) cache.delete(key.slice(STORAGE_PREFIX.length));
+    else return;
+    listeners.forEach((l) => l());
+}
+
+if (typeof window !== 'undefined') window.addEventListener('storage', (e) => customLevelsStorageChanged(e.key));

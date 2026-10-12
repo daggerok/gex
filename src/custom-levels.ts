@@ -49,7 +49,7 @@ export function proposeLevelColor(
     return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }
 
-const STORAGE_PREFIX = 'gex.customLevels.v1.';
+export const STORAGE_PREFIX = 'gex.customLevels.v1.';
 
 /**
  * The strike nearest to a price (the lower one when the price is exactly between two), or null when there are no strikes.
