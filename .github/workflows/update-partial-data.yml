@@ -86,7 +86,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         if: steps.window.outputs.run == 'true'
         with:
-          bun-version: latest
+          bun-version: "1.4.x" # pinned minor: a new Bun release must not break the data runs unattended
 
       # HISTORY=1 only for the last run of the day: it writes the day's archive zip (api/history) and deletes the zips
       # older than 14 days. The runs before it leave api/history alone, nothing of them is committed.
