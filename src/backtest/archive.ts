@@ -28,15 +28,31 @@ import {
 export { isSnapshotId, snapshotDate, snapshotLabel };
 
 /** Raw-deflate unpack with the browser's DecompressionStream. */
-export async function inflateRawAsync(data: Uint8Array): Promise<Uint8Array> {
-    const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+/** Raw-deflate unpack that stops as soon as the output passes `maxBytes` (a zip whose entry inflates past its declared size). */
+export async function inflateRawAsync(data: Uint8Array, maxBytes: number = Number.MAX_SAFE_INTEGER): Promise<Uint8Array> {
+    const reader = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > maxBytes) {
+            void reader.cancel().catch(() => undefined);
+            throw new ZipError('damaged zip (an entry unpacks past its declared size)');
+        }
+        chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const c of chunks) { out.set(c, at); at += c.length; }
+    return out;
 }
 
 /** Unpacks one entry and checks it against the size and CRC the zip declares. */
 export async function readEntry(bytes: Uint8Array, entry: ZipEntry): Promise<Uint8Array> {
     const raw = rawEntryData(bytes, entry);
-    return verifyEntry(entry, entry.method === 0 ? raw : await inflateRawAsync(raw));
+    return verifyEntry(entry, entry.method === 0 ? raw : await inflateRawAsync(raw, entry.size));
 }
 
 /** One snapshot: its zip bytes and the tickers inside, entries are unpacked only when asked for. */
