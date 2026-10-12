@@ -212,7 +212,7 @@ Optional files outside the core app source:
   - `/api/nasdaq`: NASDAQ option-chain relay
   - `/api/cboe`: CBOE delayed-options relay
   - `/api/search?provider=yahoo|nasdaq|cboe&q=...`: provider-native suggestions
-- `scripts/options-cloudflare-proxy.js`: deployable Worker with the same provider endpoints plus `/raw?url=...` generic CORS passthrough
+- `scripts/options-cloudflare-proxy.js`: deployable Worker with the same provider endpoints plus `/raw?url=...`, a CORS passthrough limited to the provider hosts in `RAW_ALLOWED_HOSTS`
 
 ## Development
 
