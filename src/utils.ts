@@ -79,15 +79,29 @@ export function num(v: unknown): number | null {
 }
 
 /** Format a number for display; missing data renders as an empty cell. */
+// `Number#toLocaleString(undefined, options)` builds a new Intl.NumberFormat on EVERY call, which is slow: the Cursor card, the
+// tables and the axis labels call these dozens of times for every mouse move over the GEX chart, and it was the single biggest
+// cost of a move (measured with a CPU profile). One formatter per digit count, created once, gives exactly the same text.
+const numberFormats = new Map<number, Intl.NumberFormat>();
+function numberFormat(digits: number): Intl.NumberFormat {
+    let f = numberFormats.get(digits);
+    if (!f) {
+        f = new Intl.NumberFormat(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+        numberFormats.set(digits, f);
+    }
+    return f;
+}
+let integerFormat: Intl.NumberFormat | null = null;
+
 export function fmt(v: number | null | undefined, digits = 2): string {
     if (v == null || !Number.isFinite(v)) return '';
-    return v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return numberFormat(digits).format(v);
 }
 
 /** Format an integer-ish value (volume / OI) with thousands separators. */
 export function fmtInt(v: number | null | undefined): string {
     if (v == null || !Number.isFinite(v)) return '';
-    return Math.round(v).toLocaleString();
+    return (integerFormat ??= new Intl.NumberFormat()).format(Math.round(v));
 }
 
 /** Format implied volatility (decimal) as a percentage string. */

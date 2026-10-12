@@ -967,7 +967,9 @@ export const GexView: React.FC<GexViewProps> = ({
         const ro = new ResizeObserver(() => window.requestAnimationFrame(measure));
         ro.observe(box);
         return () => ro.disconnect();
-    });
+        // Not after every render: reading getBoundingClientRect forces a layout, and a render happens on every mouse move.
+        // The plot only changes width with the box (observer above) or when the Y axis labels change (domain, ticks)
+    }, [chart, yBase[0], yBase[1], chartBoxH]);
     // Two level labels closer than this many px print over each other (rotated 45 degrees, 12 px between text lines)
     const LABEL_MIN_GAP_PX = 18;
     const labelGap = plotPx > 0 ? (LABEL_MIN_GAP_PX * (xDomain[1] - xDomain[0])) / plotPx : 0;
