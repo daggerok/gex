@@ -24,30 +24,26 @@
 #   - Ensure Actions has write permission: Settings → Actions → General →
 #     Workflow permissions → "Read and write permissions".
 #
-# CADENCE: runs several times on weekdays so the cache keeps growing (the
-# resumable design means each run only does NEW work). Adjust the cron as needed.
+# CADENCE: once a week (Saturday 10:00 UTC) for every ticker of api/All.txt and api/Indices.txt, or by hand from the
+# Actions tab. The default tickers are refreshed every hour on weekdays by update-default-data.yml, which keeps their
+# later expirations; this full run is what refreshes everything else (the far expirations' Yahoo prices included).
 # =============================================================================
 name: Update options data
 
 on:
-  # schedule:
-  #   # # The script is resumable, so more runs simply grow the cache faster.
-  #   # - cron: "0 0-3 * * 0-6"
-  #   # - cron: "1 4-7 * * 0-6"
-  #   # - cron: "2 8-11 * * 0-6"
-  #   # - cron: "3 12-15 * * 0-6"
-  #   # - cron: "5 16-19 * * 0-6"
-  #   # - cron: "8 20-23 * * 0-6"
-  #   # - cron: "13 * * * 0-6"
-  #   # - cron: "21 * * * 0-6"
-  #   # - cron: "34 * * * 0-6"
-  #   # - cron: "45 * * * 0-6"
-  #   # - cron: "55 * * * 0-6"
-  #   - cron: "30 13 * * 0-6"
+  schedule:
+    # Once a week, Saturday 10:00 UTC (6:00 New York in summer, 5:00 in winter): the market is closed, the hourly
+    # default-set refresh (update-default-data.yml) does not run, so the two never overlap.
+    - cron: "0 10 * * 6"
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
 permissions:
   contents: write # needed to commit the refreshed JSON
+
+# One data refresh at a time, shared with update-default-data.yml (a run waits, none is cancelled)
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
 
 jobs:
   update:

@@ -23,9 +23,9 @@ on:
 permissions:
   contents: write # needed to commit the refreshed JSON
 
-# One refresh at a time (a slow run does not overlap the next one, none is cancelled)
+# One data refresh at a time, shared with update-data.yml (a run waits, none is cancelled)
 concurrency:
-  group: update-default-data
+  group: data-refresh
   cancel-in-progress: false
 
 jobs:
