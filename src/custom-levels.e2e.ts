@@ -1,0 +1,101 @@
+/// <reference types="node" />
+/// <reference types="bun" />
+import assert from 'node:assert/strict';
+import { chromium, type Page } from 'playwright';
+import { startTestSite } from './e2e-site';
+
+// ============================================================================
+// Browser check of the Chart tab custom levels (headless Chromium, CACHE
+// provider, SPY): add, default names, cancel, drag, edit, delete, GEX tab.
+// Run: `bun run test:e2e` (needs `bunx playwright install chromium` once).
+// Exits non-zero on the first failed assertion.
+// ============================================================================
+
+const KEY = 'gex.customLevels.v1.SPY';
+const site = await startTestSite();
+const browser = await chromium.launch();
+try {
+    const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(site.url);
+    await page.getByText('💾').first().click(); // CACHE provider
+    const ticker = page.locator('input[role=combobox]');
+    await ticker.fill('SPY');
+    await ticker.press('Enter');
+    await page.waitForTimeout(2500);
+    await page.getByRole('button', { name: 'Chart' }).first().click();
+    await page.waitForTimeout(1500);
+
+    const box = (await page.locator('canvas').first().boundingBox())!;
+    const at = { x: box.x + box.width * 0.4, y: box.y + box.height * 0.5 };
+    const name = page.locator('input[aria-label^="Level name"]');
+    const stored = async (): Promise<Array<{ name: string; price: number }>> =>
+        JSON.parse((await page.evaluate((k) => localStorage.getItem(k), KEY)) ?? '[]');
+    const rightClick = (x: number, y: number) => page.mouse.click(x, y, { button: 'right' });
+    const button = (label: string) => page.locator(`button[aria-label^="${label}"]`);
+
+    // add: default name is selected, Enter saves
+    await rightClick(at.x, at.y);
+    assert.equal(await name.inputValue(), 'Level 1');
+    assert.ok(await name.evaluate((e: HTMLInputElement) => e.selectionStart === 0 && e.selectionEnd === e.value.length), 'default name selected');
+    assert.equal(await button('Delete level').count(), 0, 'no delete button while adding');
+    await page.keyboard.type('Support');
+    await page.keyboard.press('Enter');
+    assert.deepEqual((await stored()).map((l) => l.name), ['Support']);
+
+    // a custom name does not use up a number, Level 1 is still free
+    await rightClick(at.x - 100, at.y - 80);
+    assert.equal(await name.inputValue(), 'Level 1');
+    await page.keyboard.press('Enter');
+    assert.deepEqual((await stored()).map((l) => l.name), ['Support', 'Level 1']);
+    await rightClick(at.x - 100, at.y - 160);
+    assert.equal(await name.inputValue(), 'Level 2', 'next free number');
+    await page.keyboard.press('Escape');
+
+    // cancelling while adding creates nothing: Esc, the cancel button, a click away
+    const count = (await stored()).length;
+    await rightClick(at.x + 300, at.y);
+    await page.keyboard.press('Escape');
+    await rightClick(at.x + 300, at.y);
+    await button('Cancel').click();
+    await rightClick(at.x + 300, at.y);
+    await page.mouse.click(at.x + 200, at.y + 150);
+    assert.equal(await name.count(), 0, 'editor closed');
+    assert.equal((await stored()).length, count, 'nothing created');
+
+    // drag Support down, the price changes and is saved on drop
+    const before = (await stored())[0].price;
+    await page.mouse.move(at.x + 60, at.y);
+    await page.mouse.down();
+    await page.mouse.move(at.x + 60, at.y + 30, { steps: 5 });
+    await page.mouse.move(at.x + 60, at.y + 60, { steps: 5 });
+    await page.mouse.up();
+    const moved = (await stored())[0].price;
+    assert.ok(moved < before, `dragged down: ${before} -> ${moved}`);
+
+    // edit: right click on the line, rename with the check button
+    await rightClick(at.x + 60, at.y + 60);
+    assert.equal(await name.inputValue(), 'Support');
+    await page.keyboard.type('Renamed');
+    await button('Save').click();
+    assert.deepEqual((await stored()).map((l) => l.name), ['Renamed', 'Level 1']);
+
+    // edit cancel keeps the level, delete removes it
+    await rightClick(at.x + 60, at.y + 60);
+    await button('Cancel').click();
+    assert.equal((await stored()).length, 2);
+    await rightClick(at.x - 100, at.y - 80);
+    await button('Delete level').click();
+    assert.deepEqual((await stored()).map((l) => l.name), ['Renamed']);
+
+    // the GEX tab shows the level
+    await page.getByRole('button', { name: 'GEX' }).first().click();
+    await page.waitForTimeout(1500);
+    assert.ok(await page.getByText('Renamed').first().isVisible(), 'custom level on the GEX tab');
+    assert.deepEqual(errors, [], 'no page errors');
+    console.log('custom levels e2e: ok');
+} finally {
+    await browser.close();
+    site.close();
+}
