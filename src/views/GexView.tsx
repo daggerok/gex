@@ -622,6 +622,20 @@ export const GexView: React.FC<GexViewProps> = ({
     // current range by the same 0.7 step as the vertical ones. Zooming out past
     // the full data range returns to the default view (xZoom = null).
     const setXZoomAndPersist = (next: [number, number] | null) => { setXZoom(next); persistZoom({ xZoom: next }); };
+    // A drag or a pinch fires touchmove / mousemove far more often than the screen redraws: one zoom update per frame.
+    // Only refs and the state setter are used, so the stale closures of the native listeners stay correct.
+    const zoomFrameRef = useRef<number | null>(null);
+    const pendingZoomRef = useRef<[number, number] | null>(null);
+    const setXZoomFrame = (next: [number, number] | null) => {
+        pendingZoomRef.current = next;
+        if (zoomFrameRef.current !== null) return;
+        zoomFrameRef.current = requestAnimationFrame(() => { zoomFrameRef.current = null; setXZoom(pendingZoomRef.current); });
+    };
+    /** Drops a frame not drawn yet: the gesture ended (its final value is set directly) or was cancelled. */
+    const cancelZoomFrame = () => {
+        if (zoomFrameRef.current !== null) { cancelAnimationFrame(zoomFrameRef.current); zoomFrameRef.current = null; }
+    };
+    useEffect(() => () => cancelZoomFrame(), []);
     const zoomX = (dir: 'in' | 'out') => {
         const base = chart?.domain;
         if (!base) return;
@@ -793,7 +807,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // (the mouse has right click, the wheel and the drag above). The handlers are native so they can stop the page from scrolling
     // or zooming while the fingers are on the plot; a vertical drag is left to the browser (touch-action: pan-y on the box).
     const touchRef = useRef<{ chart: typeof chart; xZoom: typeof xZoom; open: (p: { clientX: number; clientY: number }) => boolean; finish: (next: [number, number] | null) => void }>(null as never);
-    touchRef.current = { chart, xZoom, open: openLevelEditor, finish: (next) => { setXZoom(next); persistZoom({ xZoom: next }); } };
+    touchRef.current = { chart, xZoom, open: openLevelEditor, finish: (next) => { cancelZoomFrame(); setXZoom(next); persistZoom({ xZoom: next }); } };
     useEffect(() => {
         const el = chartBoxRef.current;
         if (!el) return;
@@ -823,7 +837,7 @@ export const GexView: React.FC<GexViewProps> = ({
             if (g.kind === 'pinch' && e.touches.length === 2) {
                 const next = pinchRange(g.start, c.domain, g.dist, dist(e), g.frac, 4 * (c.strikeStep ?? 1));
                 g.last = next;
-                setXZoom(next);
+                setXZoomFrame(next);
                 if (e.cancelable) e.preventDefault();
             } else if (g.kind === 'pan' && e.touches.length === 1) {
                 const dx = e.touches[0].clientX - g.x;
@@ -831,7 +845,7 @@ export const GexView: React.FC<GexViewProps> = ({
                 g.moved = true;
                 const perPx = (g.range[1] - g.range[0]) / r.width;
                 g.last = panRangeBy(g.range, c.domain, -dx * perPx);
-                setXZoom(g.last);
+                setXZoomFrame(g.last);
                 if (e.cancelable) e.preventDefault();
             }
         };
@@ -894,7 +908,7 @@ export const GexView: React.FC<GexViewProps> = ({
         const onMove = (m: MouseEvent) => {
             // the chart follows the cursor: dragging right shows lower strikes
             last = panRangeBy(startRange, base, -(m.clientX - startX) * perPx);
-            setXZoom(last);
+            setXZoomFrame(last);
         };
         const end = () => {
             window.removeEventListener('mousemove', onMove);
@@ -904,11 +918,14 @@ export const GexView: React.FC<GexViewProps> = ({
         };
         const onUp = () => {
             end();
+            cancelZoomFrame();
+            setXZoom(last);
             persistZoom({ xZoom: last });
         };
         // Escape: back to where the drag started, nothing is saved
         cancelPanRef.current = () => {
             end();
+            cancelZoomFrame(); // a frame still queued would move the chart off the restored range
             setXZoom(startRange);
         };
         window.addEventListener('mousemove', onMove);
@@ -1025,6 +1042,19 @@ export const GexView: React.FC<GexViewProps> = ({
     // whenever netGex is selected, or any put metric (now also negative) is.
     const yTickFormatter = (v: number) => (yBase[0] < 0 ? fmtSignedCompact(v) : fmtCompact(v));
     const xDomain = xZoom ?? chart?.domain ?? ([0, 1] as [number, number]);
+    // Zoomed: recharts gets only the strikes in view plus two neighbours on each side (by index, so the lines and areas
+    // still run to the edge where strikes are far apart) instead of every strike clipped by allowDataOverflow. The Y domains
+    // (yBase, agBase, ...) still come from all of chart.rows, so the scale does not jump while panning.
+    const plotRows = useMemo(() => {
+        if (!chart) return [];
+        if (!xZoom) return chart.rows;
+        const rows = chart.rows;
+        let lo = 0;
+        while (lo < rows.length && rows[lo].strike < xZoom[0]) lo++;
+        let hi = rows.length;
+        while (hi > 0 && rows[hi - 1].strike > xZoom[1]) hi--;
+        return rows.slice(Math.max(0, lo - 2), Math.min(rows.length, hi + 2));
+    }, [chart, xZoom]);
     // Width of the plot in px, measured from the X axis line, to turn "labels this close on screen would overlap" into a price gap
     const [plotPx, setPlotPx] = useState(0);
     useLayoutEffect(() => {
@@ -1507,7 +1537,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     (it silently mounted zero DOM output under <BarChart>,
                                     despite registering a Legend entry). */}
                                 <ComposedChart
-                                    data={chart.rows}
+                                    data={plotRows}
                                     // bottom: 110 (widened from 8) makes room for the Key Level
                                     // diagonal labels now hanging BELOW the X axis (see
                                     // renderRotatedLevelLabel's doc comment) - the longest chart
