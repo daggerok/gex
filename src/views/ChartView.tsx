@@ -18,7 +18,7 @@ import { LevelsPanel } from '../components/LevelsPanel';
 import { MetricsPanel } from '../components/MetricsPanel';
 import type { GexMetric } from '../metric-prefs';
 import { useLevelPrefs } from '../level-prefs';
-import { isApplePlatform, levelColorOf, nearestStrike, nextLevelName, proposeLevelColor, roundPrice } from '../custom-levels';
+import { defaultLevelName, isApplePlatform, levelColorOf, nearestStrike, proposeLevelColor, roundPrice } from '../custom-levels';
 import { cutBarsAfter } from '../backtest/bars';
 import { attachLongPress } from '../long-press';
 import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
@@ -403,7 +403,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 setDraft({ x: pt.x, y: pt.y, price: hit.price, name: hit.name, color: levelColorOf(hit), editId: hit.id });
                 return true;
             }
-            setDraft({ x: pt.x, y: pt.y, price: snap(price), name: nextLevelName(customRef.current, tr('chart.custom.defaultName')), color: proposeLevelColor(customRef.current, snap(price), levelsRef.current?.spot) });
+            setDraft({ x: pt.x, y: pt.y, price: snap(price), name: defaultLevelName(customRef.current, snap(price), levelsRef.current?.spot, { above: tr('chart.custom.buyside'), below: tr('chart.custom.sellside'), plain: tr('chart.custom.defaultName') }), color: proposeLevelColor(customRef.current, snap(price), levelsRef.current?.spot) });
             return true;
         };
         const onContextMenu = (e: MouseEvent) => {

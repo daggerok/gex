@@ -84,6 +84,26 @@ export function nextLevelName(levels: ReadonlyArray<Pick<CustomLevel, 'name'>>, 
     return `${prefix} ${n}`;
 }
 
+/**
+ * Default name of a NEW level by where it sits against the current price: above it `Buyside`, below it `Sellside` (the
+ * liquidity resting there), then `Buyside 2`, `Buyside 3`... when the plain name is taken (smallest free, case-insensitive). At
+ * the price, or without a usable price, it falls back to `nextLevelName` (`Level 1`...). `names` are the words for the UI language.
+ */
+export function defaultLevelName(
+    levels: ReadonlyArray<Pick<CustomLevel, 'name'>>,
+    price: number,
+    spot: number | null | undefined,
+    names: { above: string; below: string; plain: string },
+): string {
+    if (typeof spot !== 'number' || !Number.isFinite(spot) || !Number.isFinite(price) || price === spot) return nextLevelName(levels, names.plain);
+    const base = price > spot ? names.above : names.below;
+    const used = new Set(levels.map((l) => l.name.trim().toLowerCase()));
+    if (!used.has(base.toLowerCase())) return base;
+    let n = 2;
+    while (used.has(`${base} ${n}`.toLowerCase())) n++;
+    return `${base} ${n}`;
+}
+
 /** Keeps only well-formed entries of whatever was stored, so a damaged value never breaks the tab. */
 export function parseCustomLevels(raw: string | null): CustomLevel[] {
     if (!raw) return [];

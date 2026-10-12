@@ -3,8 +3,17 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type Locator, type Page } from 'playwright';
+import { defaultLevelName } from './custom-levels';
 import { startTestSite } from './e2e-site';
+
+// The default name of a new level is Buyside above the current price and Sellside below it (then Buyside 2...): the same function
+// the app uses decides what to expect, the price comes from the label of the editor, the spot from the cache file
+const SPOT = JSON.parse(readFileSync(join(import.meta.dir, '..', 'api', 'options', 'SPY.json'), 'utf8')).underlyingPrice as number;
+const NAMES = { above: 'Buyside', below: 'Sellside', plain: 'Level' };
+const priceOfEditor = async (input: Locator) => Number(((await input.getAttribute('aria-label')) ?? '').match(/at ([\d.,]+)/)![1].replace(/,/g, ''));
+const expectedName = async (input: Locator, used: Array<{ name: string }>) => defaultLevelName(used, await priceOfEditor(input), SPOT, NAMES);
+
 
 // ============================================================================
 // Browser check of custom levels on the GEX tab and the strike snapping: a right click
@@ -64,7 +73,8 @@ try {
         await page.waitForTimeout(2000);
         const p = await gexPoint(page);
         await page.mouse.click(p.x, p.y, { button: 'right' });
-        assert.equal(await editor(page).inputValue(), 'Level 1', 'the editor opens on the GEX tab');
+        assert.equal(await editor(page).inputValue(), await expectedName(editor(page), await stored(page)), 'the editor opens on the GEX tab, the new level named after its side of the price');
+        assert.match(await editor(page).inputValue(), /^(Buyside|Sellside)$/);
         // the sidebar keeps its size whether or not the pointer is over the plot: the Cursor card is always there
         const cardBox = async () => { const r = (await page.getByRole('heading', { name: 'Levels' }).first().boundingBox())!; return [r.x, r.y, r.width, r.height].map(Math.round); };
         const cursorCard = page.getByRole('heading', { name: 'Cursor' });
@@ -193,7 +203,7 @@ try {
         await page.keyboard.down('Control');
         await page.mouse.click(p.x, p.y);
         await page.keyboard.up('Control');
-        assert.equal(await editor(page).inputValue(), 'Level 1', 'Ctrl+click opens the editor on macOS (GEX tab)');
+        assert.equal(await editor(page).inputValue(), await expectedName(editor(page), await stored(page)), 'Ctrl+click opens the editor on macOS (GEX tab)');
         await page.keyboard.press('Escape');
         assert.equal((await stored(page)).length, 0, 'Esc creates nothing');
 
@@ -205,7 +215,7 @@ try {
         await page.keyboard.down('Control');
         await page.mouse.click(at.x, at.y);
         await page.keyboard.up('Control');
-        assert.equal(await editor(page).inputValue(), 'Level 1', 'Ctrl+click opens the editor on macOS (Chart tab)');
+        assert.equal(await editor(page).inputValue(), await expectedName(editor(page), await stored(page)), 'Ctrl+click opens the editor on macOS (Chart tab)');
         await page.keyboard.press('Enter');
         const [chartLevel] = await stored(page);
         assert.ok(strikes.has(chartLevel.price), `a click on the chart picks the nearest strike: ${chartLevel.price}`);
