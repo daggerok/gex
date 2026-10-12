@@ -14,9 +14,14 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t10 - The daily archive is written by the LAST run of the trading day, not by the first run of the next day: with HISTORY=1 the
+ *        files of the DEFAULT_SYMBOLS just written replace their entries in api/history/<YYYY-MM>/<day>.zip (the last state of
+ *        the day) and zips older than HISTORY_KEEP_DAYS are deleted. The hourly workflow stopped committing api/options, so the
+ *        next day's run no longer finds yesterday's file on disk. HISTORY is off by default (it was on, with the old rule).
  *   t9 - Every cache file now carries `date`, the trading day its data belongs to (market time; before 9:30 and on weekends
  *        the data is still the previous weekday's). At the start of a run the files of the DEFAULT_SYMBOLS that are from an
- *        earlier day than today are added, unchanged, to the zip of their own day, api/history/<YYYY-MM-DD>.zip (entries
+ *        earlier day than today are added, unchanged, to the zip of their own day, api/history/<YYYY-MM-DD>.zip (entries (the
+ *        WHEN of this was replaced by t10: the zip is now written by the last run of the day)
  *        <day>/<SYM>.json plus <day>/manifest.json), and api/history/index.json lists the days. An entry is never overwritten,
  *        so no single run is needed for a day and rerunning changes nothing. The zip format is src/history-zip.ts, the logic
  *        scripts/history-archive.ts. HISTORY=0 turns this off. Holidays are not known, a holiday run keeps the weekday label.
@@ -88,7 +93,7 @@
  *   NASDAQ_TIMEOUT     default 20        seconds before falling back to Cboe
  *   MAX_EXPIRATIONS    default 12        expirations stored per ticker (the nearest ones are fetched)
  *   KEEP_EXPIRATIONS   default 0         1 = keep the later expirations already cached for the ticker (see t8)
- *   HISTORY            default 1         0 = do not archive the previous day's file of the DEFAULT_SYMBOLS (see t9)
+ *   HISTORY            default 0         1 = after the run write the files of the DEFAULT_SYMBOLS into the zip of the day (see t10)
  *   HISTORY_KEEP_DAYS  default 14        daily archives older than this many days are deleted (0 = keep all); backups made by hand stay
  *   RATE_LIMIT_HITS    default 3         consecutive errors that mean "blocked"
  *   REQUEST_SLEEP      default 0.6       seconds after each successful write
@@ -112,7 +117,7 @@
 
 /// <reference types="node" />
 import { DEFAULT_TICKERS } from "../src/default-tickers";
-import { archiveEarlierDays, pruneDailyArchives } from "./history-archive";
+import { archiveDay, pruneDailyArchives } from "./history-archive";
 import { marketDay as sharedMarketDay } from "../src/backtest/snapshot";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -375,7 +380,7 @@ const cfg = {
     MIN_MARKET_CAP: envFloat("MIN_MARKET_CAP", "9000000"),
     MAX_EXPIRATIONS: envInt("MAX_EXPIRATIONS", "12"),
     KEEP_EXPIRATIONS: ["1", "true", "yes", "on"].includes((process.env.KEEP_EXPIRATIONS ?? "0").toLowerCase()),
-    HISTORY: !["0", "false", "no", "off"].includes((process.env.HISTORY ?? "1").toLowerCase()),
+    HISTORY: ["1", "true", "yes", "on"].includes((process.env.HISTORY ?? "0").toLowerCase()),
     HISTORY_KEEP_DAYS: envNonNegativeFloat("HISTORY_KEEP_DAYS", "14"),
     RATE_LIMIT_HITS: envInt("RATE_LIMIT_HITS", "3"),
     REQUEST_SLEEP: envFloat("REQUEST_SLEEP", "0.6"),
@@ -1909,19 +1914,6 @@ export async function main(): Promise<void> {
     console.log(outputConfigBlock(outputConfigEntries()));
     const { symbols: universe, source: universeSource } = await loadUniverse();
 
-    // The files of the default tickers that are from an earlier trading day go to the zip of their own day BEFORE any
-    // of them is replaced below (see t9). Idempotent, so a run that fails later loses nothing.
-    if (cfg.HISTORY) {
-        const archived = archiveEarlierDays({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: DEFAULT_SYMBOLS, today: marketDay(), dayOf: fileDay });
-        const days = Object.keys(archived.added);
-        if (days.length) {
-            const n = days.reduce((sum, d) => sum + archived.added[d].length, 0);
-            console.log(`${outputLabel("history")} ${n} files archived into ${days.length} day zip(s): ${days.join(", ")}`);
-        }
-        const dropped = pruneDailyArchives(HISTORY_DIR, marketDay(), cfg.HISTORY_KEEP_DAYS);
-        if (dropped.length) console.log(`${outputLabel("history")} ${dropped.length} day zip(s) older than ${cfg.HISTORY_KEEP_DAYS} days deleted: ${dropped.join(", ")}`);
-    }
-
     const { queue, nPriority, nMissing, nStale, nFresh } = buildWorkQueue(universe);
     const skip = loadSkiplist();
 
@@ -2009,6 +2001,17 @@ export async function main(): Promise<void> {
     // Queue order whatever the finish order was.
     const updatedFiles: string[] = pool.results.flatMap((r) => (r?.kind === "written" && r.path ? [rel(r.path)] : []));
     if (updatedFiles.length) writeLatest(dirname(DATA_DIR), marketDay());
+    // HISTORY=1 (the last run of the trading day in CI): the files of the default tickers just written go into the zip of the
+    // day, api/history/<YYYY-MM>/<day>.zip, the last state of that day, and zips older than HISTORY_KEEP_DAYS are deleted.
+    // The hourly runs before it do not touch api/history (nothing is committed for them, see update-partial-data.yml).
+    if (cfg.HISTORY) {
+        const day = marketDay();
+        const archived = archiveDay({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: DEFAULT_SYMBOLS, day, dayOf: fileDay });
+        const n = archived.added[day]?.length ?? 0;
+        console.log(`${outputLabel("history")} ${day}: ${n} file(s) written to the day zip, ${archived.already} already in it`);
+        const dropped = pruneDailyArchives(HISTORY_DIR, day, cfg.HISTORY_KEEP_DAYS);
+        if (dropped.length) console.log(`${outputLabel("history")} ${dropped.length} day zip(s) older than ${cfg.HISTORY_KEEP_DAYS} days deleted: ${dropped.join(", ")}`);
+    }
 
     log(`skiplist: saving ${Object.keys(skip).length} entries to api/options/index.json (no_options)`);
     log("index: rebuilding api/options/index.json manifest if files/names/skiplist changed");

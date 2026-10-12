@@ -7,6 +7,7 @@ on:
     # site with the next deploy of a data run or a code change
     paths-ignore:
       - "api/history/**"
+      - "api/latest.json"
   workflow_dispatch:
 
 permissions:
@@ -36,6 +37,17 @@ jobs:
           # Keep only the latest two default-branch commits; the build needs no deeper history.
           fetch-depth: 2
       - uses: oven-sh/setup-bun@v2
+      # The hourly refresh does not commit the default tickers (update-partial-data.yml), so the committed files are older
+      # than the site: refresh them before building, so a code deploy never publishes older data. A failure (a rate limit)
+      # keeps the committed files and the deploy goes on.
+      - name: Refresh the default tickers
+        continue-on-error: true
+        env:
+          MAX_EXPIRATIONS: "15"
+          KEEP_EXPIRATIONS: "1"
+          CONCURRENCY: "4"
+          REQUEST_SLEEP: "0.1"
+        run: bun scripts/options-data.ts
       - run: bun install -E
       # Используем скрипт из вашего package.json
       - run: time bun run build-github-pages

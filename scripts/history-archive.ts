@@ -13,7 +13,7 @@ import { manifestEntryName, manifestText, sortEntries, tickerEntryName } from ".
 //   api/history/
 //     index.json              the days that exist, rebuilt from the zips on disk
 //     2026-10/                one folder per month: delete it to drop the whole month
-//       2026-10-09.zip        the automatic end-of-day archive of a trading day (id = the day)
+//       2026-10-09.zip        the automatic end-of-day archive of a trading day (id = the day), written by the last run of the day
 //       2026-10-09-15-42.zip  a backup made on demand with scripts/backtest-backup.ts (id = date and minute)
 //
 // Cleaning up is just deleting those files and committing: index.json follows the
@@ -33,9 +33,9 @@ export interface HistoryIndex {
 }
 
 export interface ArchiveReport {
-    /** days whose zip was created or extended, with the tickers added to it */
+    /** days whose zip was created or changed, with the tickers written to it */
     added: Record<string, string[]>;
-    /** files that were already in their zip (nothing to do) */
+    /** files that were already in the zip with the same content (nothing to do) */
     already: number;
 }
 
@@ -97,18 +97,23 @@ export function readHistoryIndex(historyDir: string): HistoryIndex {
 }
 
 /**
- * Adds the cache files that are from an EARLIER trading day than `today` to the zip of their own day. An entry that is
- * already in a zip is never overwritten, so running it again (or after a failed fetch) changes nothing. A zip is only
- * rewritten when something was added. `dayOf` gives the trading day a file's text belongs to (null = not a cache file).
+ * Writes the zip of ONE trading day from the cache files just fetched: the files whose trading day is `day` go in
+ * byte for byte (`dayOf` gives the day a file's text belongs to, null = not a cache file), an entry of the same ticker that
+ * is already in that day's zip is replaced, tickers already in it that are not given stay. Run at the end of each trading
+ * day, the zip is the last state of the day. The zip is only rewritten when its content changes, so running it again with
+ * the same files changes nothing.
  */
-export function archiveEarlierDays(opts: {
+export function archiveDay(opts: {
     optionsDir: string;
     historyDir: string;
     symbols: readonly string[];
-    today: string;
+    day: string;
     dayOf: (text: string) => string | null;
 }): ArchiveReport {
-    const byDay = new Map<string, Array<{ symbol: string; text: string }>>();
+    const path = zipPathFor(opts.day, opts.historyDir);
+    const entries = readDayZip(path);
+    const written: string[] = [];
+    let already = 0;
     for (const symbol of opts.symbols) {
         let text: string;
         try {
@@ -116,32 +121,24 @@ export function archiveEarlierDays(opts: {
         } catch {
             continue;
         }
-        const day = opts.dayOf(text);
-        if (!day || day >= opts.today) continue;
-        byDay.set(day, [...(byDay.get(day) ?? []), { symbol, text }]);
+        if (opts.dayOf(text) !== opts.day) continue;
+        const name = tickerEntryName(opts.day, symbol);
+        const data = enc.encode(text);
+        const old = entries.get(name);
+        if (old && old.length === data.length && old.every((v, i) => v === data[i])) { already++; continue; }
+        entries.set(name, data);
+        written.push(symbol);
     }
-
-    const report: ArchiveReport = { added: {}, already: 0 };
-
-    for (const [day, files] of [...byDay].sort(([a], [b]) => (a < b ? -1 : 1))) {
-        const path = zipPathFor(day, opts.historyDir);
-        const entries = readDayZip(path);
-        const added: string[] = [];
-        for (const { symbol, text } of files) {
-            const name = tickerEntryName(day, symbol);
-            if (entries.has(name)) { report.already++; continue; }
-            entries.set(name, enc.encode(text));
-            added.push(symbol);
-        }
-        if (added.length) {
-            entries.set(manifestEntryName(day), enc.encode(manifestText(day, tickersOf(day, entries))));
-            const ordered = sortEntries([...entries].map(([name, data]) => ({ name, data })));
-            mkdirSync(dirname(path), { recursive: true });
-            writeFileSync(path, buildZip(ordered, day, deflate));
-            report.added[day] = added.sort();
-        }
+    const report: ArchiveReport = { added: {}, already };
+    if (written.length) {
+        entries.set(manifestEntryName(opts.day), enc.encode(manifestText(opts.day, tickersOf(opts.day, entries))));
+        const ordered = sortEntries([...entries].map(([name, data]) => ({ name, data })));
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, buildZip(ordered, opts.day, deflate));
+        report.added[opts.day] = written.sort();
     }
-    syncHistoryIndex(opts.historyDir, Object.keys(report.added));
+    // the index follows the disk on every run, also when nothing was written (a deleted zip is dropped from it)
+    syncHistoryIndex(opts.historyDir, written.length ? [opts.day] : []);
     return report;
 }
 
