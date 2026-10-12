@@ -111,6 +111,7 @@
  */
 
 /// <reference types="node" />
+import { DEFAULT_TICKERS } from "../src/default-tickers";
 import { archiveEarlierDays, pruneDailyArchives } from "./history-archive";
 import { marketDay as sharedMarketDay } from "../src/backtest/snapshot";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -1210,7 +1211,7 @@ export function mergeUniverse(nasdaq: string[], cboe: string[], size: number): s
 }
 
 /** Run without args: the main indices and their ETFs plus the mega caps, exactly the tickers hinted in the ticker search field (`controls.tickerPlaceholder`). */
-export const DEFAULT_SYMBOLS = ["SPX", "NDX", "DJX", "RUT", "IWM", "NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "TSM", "META", "AVGO", "MU", "GOOG", "SPY", "QQQ", "DIA"];
+export const DEFAULT_SYMBOLS: string[] = [...DEFAULT_TICKERS];
 
 /** True when the CLI asks for the full auto-universe (`all`, any case). Anything else is rejected. */
 export function wantsAll(argv: string[] = process.argv.slice(2)): boolean {

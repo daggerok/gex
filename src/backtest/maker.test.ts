@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ChainResult, DataProvider, ProviderContext } from '../types';
 import { importArchive, openSnapshot } from './archive';
 import { loadFullChain, makeBackup } from './maker';
-import { loadBackupTickers, parseTickerInput, saveBackupTickers } from './prefs';
+import { loadBackupChoice, parseTickerInput, saveBackupChoice } from './prefs';
 
 const ctx = {} as ProviderContext;
 const NOW = new Date('2026-10-09T19:42:30Z');
@@ -91,23 +91,26 @@ describe('remembered tickers', () => {
     return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
   };
 
-  test('nothing remembered means all data (an empty list)', () => {
-    expect(loadBackupTickers(memory())).toEqual([]);
+  test('nothing remembered means the preset of required tickers', () => {
+    expect(loadBackupChoice(memory())).toEqual({ mode: 'preset' });
   });
 
-  test('the last choice comes back, choosing all data forgets it', () => {
+  test('the last choice comes back: chosen tickers, all data; choosing the preset forgets it', () => {
     const s = memory();
-    saveBackupTickers(['SPY', 'NDX', 'SPY'], s);
-    expect(loadBackupTickers(s)).toEqual(['SPY', 'NDX']);
-    saveBackupTickers([], s);
-    expect(loadBackupTickers(s)).toEqual([]);
+    saveBackupChoice({ mode: 'custom', tickers: ['SPY', 'NDX', 'SPY'] }, s);
+    expect(loadBackupChoice(s)).toEqual({ mode: 'custom', tickers: ['SPY', 'NDX'] });
+    saveBackupChoice({ mode: 'all' }, s);
+    expect(loadBackupChoice(s)).toEqual({ mode: 'all' });
+    saveBackupChoice({ mode: 'preset' }, s);
+    expect(loadBackupChoice(s)).toEqual({ mode: 'preset' });
   });
 
-  test('damaged or blocked storage gives all data, never an error', () => {
-    expect(loadBackupTickers({ getItem: () => '{oops', setItem: () => {}, removeItem: () => {} })).toEqual([]);
-    expect(loadBackupTickers({ getItem: () => { throw new Error('blocked'); }, setItem: () => {}, removeItem: () => {} })).toEqual([]);
-    expect(() => saveBackupTickers(['SPY'], { getItem: () => null, setItem: () => { throw new Error('full'); }, removeItem: () => {} })).not.toThrow();
-    expect(loadBackupTickers(null)).toEqual([]);
+  test('damaged, empty or blocked storage gives the preset, never an error', () => {
+    const get = (v: string | null) => ({ getItem: () => v, setItem: () => {}, removeItem: () => {} });
+    for (const raw of ['{oops', '{"mode":"custom","tickers":[]}', '{"mode":"custom","tickers":["../x"]}', '{"mode":"weird"}', '"x"']) expect(loadBackupChoice(get(raw))).toEqual({ mode: 'preset' });
+    expect(loadBackupChoice({ getItem: () => { throw new Error('blocked'); }, setItem: () => {}, removeItem: () => {} })).toEqual({ mode: 'preset' });
+    expect(() => saveBackupChoice({ mode: 'all' }, { getItem: () => null, setItem: () => { throw new Error('full'); }, removeItem: () => {} })).not.toThrow();
+    expect(loadBackupChoice(null)).toEqual({ mode: 'preset' });
   });
 
   test('typed tickers: any separator, any case, no duplicates, bad names are reported', () => {

@@ -6,9 +6,10 @@
 # many times as you like, also for the same date, and every one stays. The app lists them in
 # the "As of" selector. Clean up by deleting the zip (or a month folder) and committing.
 #
-#   tickers  space or comma separated, empty = ALL available data (every ticker file of api/options)
-#   refresh  fetch fresh data for the given tickers first (needs tickers; with none it would
-#            mean the whole universe, run update-data.yml for that)
+#   tickers  space or comma separated. Empty = the PRESET of required tickers (the default, the same
+#            18 the partial refresh keeps fresh), `all` = ALL available data (every ticker file of api/options)
+#   refresh  fetch fresh data first: for the given tickers, or for the preset when tickers is empty
+#            (not with `all`, that would mean the whole universe, run update-data.yml for it)
 #
 # The same backup is made every hour automatically by update-partial-data.yml when the
 # repository variable BACKTEST_TICKERS is set.
@@ -19,12 +20,12 @@ on:
   workflow_dispatch:
     inputs:
       tickers:
-        description: "Tickers to back up, space or comma separated. Empty = all available data"
+        description: "Tickers to back up, space or comma separated. Empty = the preset of required tickers, all = all available data"
         required: false
         default: ""
         type: string
       refresh:
-        description: "Fetch fresh data for these tickers before the backup (needs tickers)"
+        description: "Fetch fresh data before the backup (for these tickers, or for the preset when empty; not with all)"
         required: false
         default: false
         type: boolean
@@ -47,8 +48,8 @@ jobs:
           TICKERS: ${{ inputs.tickers }}
           REFRESH: ${{ inputs.refresh }}
         run: |
-          if [ "$REFRESH" = "true" ] && [ -z "$(echo "$TICKERS" | tr -d ' ,')" ]; then
-            echo "refresh needs tickers (without them it would fetch the whole universe, run update-data.yml for that)"
+          if [ "$REFRESH" = "true" ] && echo "$TICKERS" | tr 'a-z' 'A-Z' | grep -qw ALL; then
+            echo "refresh does not work with all (it would fetch the whole universe, run update-data.yml for that)"
             exit 1
           fi
 
@@ -61,11 +62,14 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Fetch fresh data for the chosen tickers
+      - name: Fetch fresh data for the chosen tickers (the preset when none)
         if: inputs.refresh
         env:
           TICKERS: ${{ inputs.tickers }}
-        run: bun scripts/options-data.ts
+        run: |
+          # no TICKERS = options-data.ts refreshes the preset of required tickers
+          if [ -z "$(echo "$TICKERS" | tr -d ' ,')" ]; then unset TICKERS; fi
+          bun scripts/options-data.ts
 
       - name: Create the backup
         env:

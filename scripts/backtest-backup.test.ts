@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { extractEntry, parseZipDirectory } from '../src/history-zip';
+import { DEFAULT_TICKERS } from '../src/default-tickers';
 import { availableTickers, backupStamp, createBackup, nextBackupId, parseArgs } from './backtest-backup';
 import { readHistoryIndex } from './history-archive';
 
@@ -31,14 +32,14 @@ const unpack = (path: string, name: string) => {
 };
 
 describe('parseArgs', () => {
-  test('no tickers means everything', () => {
-    expect(parseArgs([])).toEqual({ tickers: null, help: false });
+  test('no tickers means the preset of required tickers', () => {
+    expect(parseArgs([])).toEqual({ tickers: [...DEFAULT_TICKERS], preset: true, help: false });
   });
   test('tickers: space or comma separated, any case, no duplicates', () => {
     expect(parseArgs(['spy', 'NDX,qqq', 'SPY']).tickers).toEqual(['SPY', 'NDX', 'QQQ']);
   });
   test('the word all means everything, also next to tickers', () => {
-    expect(parseArgs(['all']).tickers).toBeNull();
+    expect(parseArgs(['all'])).toEqual({ tickers: null, preset: false, help: false });
     expect(parseArgs(['ALL', 'SPY']).tickers).toBeNull();
   });
   test('anything that is not a ticker name is refused (the CI passes input here)', () => {

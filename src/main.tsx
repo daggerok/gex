@@ -815,7 +815,8 @@ import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
 import { liveLabel } from './backtest/entries';
 import { makeBackup, type BackupProgress } from './backtest/maker';
-import { saveBackupTickers } from './backtest/prefs';
+import { saveBackupChoice, type BackupChoice } from './backtest/prefs';
+import { DEFAULT_TICKERS } from './default-tickers';
 import { downloadBytes, useBacktest } from './backtest/use-backtest';
 import { setValuationDay } from './greeks';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
@@ -1137,7 +1138,9 @@ const App: React.FC = () => {
         void Promise.resolve(provider.listTickers?.(ctxFor(settings, provider)) ?? null).then((list) => setBackupAll(list ? list.length : null)).catch(() => setBackupAll(null));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [provider, settings]);
-    const createBackup = useCallback(async (tickers: string[] | null) => {
+    const createBackup = useCallback(async (choice: BackupChoice) => {
+        // the preset of required tickers is the default; a ticker the provider does not have is reported and left out
+        const tickers: string[] | null = choice.mode === 'all' ? null : choice.mode === 'preset' ? [...DEFAULT_TICKERS] : choice.tickers;
         const ac = new AbortController();
         backupAbort.current = ac;
         setBackupError('');
@@ -1156,7 +1159,7 @@ const App: React.FC = () => {
             });
             downloadBytes(`${out.id}.zip`, out.bytes);
             await btc.saveBackup(out.id, out.bytes, out.tickers);
-            saveBackupTickers(tickers ?? []);
+            saveBackupChoice(choice);
             setShowBackup(false);
             const left = out.failed.length ? ` ${tr('bt.backup.failed', { list: out.failed.map((f) => f.symbol).join(', ') })}` : '';
             setToast({ kind: out.failed.length ? 'error' : 'ok', text: tr('bt.backup.done', { id: out.id, n: out.tickers.length }) + left });
@@ -1812,7 +1815,7 @@ const App: React.FC = () => {
                 />
             )}
             {showBackup && (
-                <BackupDialog allCount={backupAll} progress={backupProgress} error={backupError} onCreate={(t) => { void createBackup(t); }} onCancel={cancelBackup} />
+                <BackupDialog allCount={backupAll} progress={backupProgress} error={backupError} onCreate={(choice) => { void createBackup(choice); }} onCancel={cancelBackup} />
             )}
             {toast && (
                 <div

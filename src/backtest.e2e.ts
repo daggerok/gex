@@ -60,8 +60,12 @@ try {
     // ---- a backup made in the app: tickers remembered, custom levels inside, the same zip layout as the CI backup ----
     await openMenu();
     await page.getByText('Create backup...').click();
+    const mode = (m: string) => page.locator(`[data-backup-mode="${m}"]`);
+    assert.equal(await mode('preset').isChecked(), true, 'the preset of required tickers is the default');
+    assert.ok((await page.locator('[role=dialog]').innerText()).includes('SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA'), 'the preset lists its tickers');
     const tickers = page.locator('[data-backup-tickers]');
     await tickers.fill('SPY');
+    assert.equal(await mode('custom').isChecked(), true, 'typing tickers selects the chosen-tickers option');
     const [download] = await Promise.all([page.waitForEvent('download'), tickers.press('Enter')]);
     const backupName = download.suggestedFilename();
     assert.match(backupName, /^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}\.zip$/, 'backup is named after its id');
@@ -78,6 +82,7 @@ try {
     await openMenu();
     await page.getByText('Create backup...').click();
     assert.equal(await page.locator('[data-backup-tickers]').inputValue(), 'SPY', 'the tickers of the last backup are preselected');
+    assert.equal(await page.locator('[data-backup-mode="custom"]').isChecked(), true, 'and so is the choice');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('[data-backup-tickers]').count(), 0, 'Esc cancels');
 
@@ -175,6 +180,15 @@ try {
     assert.equal(await banner.count(), 0);
     assert.equal(await page.locator('[data-asof-select]').getAttribute('data-asof-select'), 'live');
     assert.ok((await page.locator('body').innerText()).includes('Changed later'), 'own custom levels are back');
+    // the preset of required tickers as the backup: every ticker this test site has, the others are reported as left out
+    await openMenu();
+    await page.getByText('Create backup...').click();
+    await mode('preset').check();
+    const [presetDownload] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Enter')]);
+    const presetNames = zipNames(readFileSync((await presetDownload.path())!));
+    assert.ok(presetNames.some((n) => n.endsWith('/SPY.json')) && presetNames.some((n) => n.endsWith('/QQQ.json')), 'the preset backup holds the required tickers that exist');
+    await page.locator('[data-backtest-toast]').waitFor();
+    assert.ok((await page.locator('[data-backtest-toast]').innerText()).includes('Left out'), 'required tickers without data are reported');
     await page.getByRole('button', { name: 'Chart' }).first().click();
     await page.waitForTimeout(1500);
     const liveLast = await page.locator('[data-last-bar]').getAttribute('data-last-bar');

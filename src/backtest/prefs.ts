@@ -1,12 +1,22 @@
 // ============================================================================
-// BACKUP PREFERENCES - the tickers chosen for the last backup, remembered in the
-// browser so the next "Create backup" dialog opens with them selected. An empty
-// list means "all data" (the default when nothing was ever chosen).
+// BACKUP PREFERENCES - what the last backup was made of, remembered in the browser so
+// the next "Create backup" dialog opens with it selected. Nothing remembered = the
+// preset of required tickers (DEFAULT_TICKERS).
 // ============================================================================
 
-const KEY = 'gex.backup.tickers.v1';
+const KEY = 'gex.backup.choice.v2';
 
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+/**
+ * What the backup dialog backs up: the preset of required tickers (DEFAULT_TICKERS, the default), all available data, or a
+ * list of tickers typed by the user.
+ */
+export type BackupChoice = { mode: 'preset' } | { mode: 'all' } | { mode: 'custom'; tickers: string[] };
+
+export const PRESET_CHOICE: BackupChoice = { mode: 'preset' };
+
+const TICKER = /^[A-Z0-9][A-Z0-9._-]{0,15}$/;
 
 const defaultStorage = (): Storage | null => {
     try {
@@ -16,22 +26,28 @@ const defaultStorage = (): Storage | null => {
     }
 };
 
-export function loadBackupTickers(storage: Storage | null = defaultStorage()): string[] {
+/** The choice of the last backup; nothing remembered, damaged or blocked storage gives the preset of required tickers. */
+export function loadBackupChoice(storage: Storage | null = defaultStorage()): BackupChoice {
     try {
         const raw = storage?.getItem(KEY);
-        if (!raw) return [];
-        const list: unknown = JSON.parse(raw);
-        return Array.isArray(list) ? list.filter((t): t is string => typeof t === 'string' && /^[A-Z0-9][A-Z0-9._-]{0,15}$/.test(t)) : [];
+        if (!raw) return PRESET_CHOICE;
+        const j = JSON.parse(raw) as { mode?: unknown; tickers?: unknown };
+        if (j.mode === 'all') return { mode: 'all' };
+        if (j.mode === 'custom' && Array.isArray(j.tickers)) {
+            const tickers = [...new Set(j.tickers.filter((t): t is string => typeof t === 'string' && TICKER.test(t)))];
+            if (tickers.length) return { mode: 'custom', tickers };
+        }
+        return PRESET_CHOICE;
     } catch {
-        return [];
+        return PRESET_CHOICE;
     }
 }
 
-/** Remembers the chosen tickers; an empty list (all data) forgets them. */
-export function saveBackupTickers(tickers: readonly string[], storage: Storage | null = defaultStorage()): void {
+/** Remembers the choice; the preset (the default) is not stored. */
+export function saveBackupChoice(choice: BackupChoice, storage: Storage | null = defaultStorage()): void {
     try {
-        if (tickers.length) storage?.setItem(KEY, JSON.stringify([...new Set(tickers)]));
-        else storage?.removeItem(KEY);
+        if (choice.mode === 'preset') storage?.removeItem(KEY);
+        else storage?.setItem(KEY, JSON.stringify(choice.mode === 'all' ? { mode: 'all' } : { mode: 'custom', tickers: [...new Set(choice.tickers)] }));
     } catch {
         // storage blocked or full: the choice is just not remembered
     }

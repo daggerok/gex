@@ -13,14 +13,14 @@
  * docs/repos/gex/spec-backtest.md).
  *
  * USAGE
- *   bun scripts/backtest-backup.ts                 # ALL available data: every ticker file of api/options
- *   bun scripts/backtest-backup.ts all             # the same, written out
+ *   bun scripts/backtest-backup.ts                 # the PRESET of required tickers (DEFAULT_TICKERS, src/default-tickers.ts)
+ *   bun scripts/backtest-backup.ts all             # ALL available data: every ticker file of api/options
  *   bun scripts/backtest-backup.ts SPY NDX         # only these tickers (space or comma separated)
  *   bun scripts/backtest-backup.ts SPY,QQQ
  *   bun run backtest:backup SPY NDX                # the same through package.json
  *
  * In CI (agentic-workspace docs/repos/gex/spec-backtest.md): .github/workflows/backtest-backup.yml runs it by hand with
- * the tickers you type (empty = all), and update-partial-data.yml runs it every hour when the repository variable
+ * the tickers you type (empty = the preset of required tickers, `all` = everything), and update-partial-data.yml runs it every hour when the repository variable
  * BACKTEST_TICKERS is set (`all` or a ticker list). A ticker that has no file in api/options is an error and nothing is written. Each file is copied byte for byte, so
  * the backup holds exactly what the cache held at that moment. Run it after a data refresh (or after fetching the
  * tickers you care about with ./scripts/options-data.ts SPY NDX... via TICKERS=) as often as needed, for example every hour
@@ -34,6 +34,7 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { deflateRawSync } from "node:zlib";
+import { DEFAULT_TICKERS } from "../src/default-tickers";
 import { buildZip } from "../src/history-zip";
 import { backupStamp, isTickerName, manifestEntryName, manifestText, nextBackupId, sortEntries, tickerEntryName } from "../src/backtest/snapshot";
 export { backupStamp, nextBackupId };
@@ -45,14 +46,16 @@ const HISTORY_DIR = join(REPO_ROOT, "api", "history");
 const TICKER_FILE = /^([A-Z0-9][A-Z0-9._-]{0,15})\.json$/;
 
 export interface BackupArgs {
-    /** null = every available ticker */
+    /** null = every available ticker (the word `all`) */
     tickers: string[] | null;
+    /** no tickers given: the preset of required tickers (`tickers` is then that list) */
+    preset: boolean;
     help: boolean;
 }
 
 /**
- * Tickers from the command line: space or comma separated, any case, no duplicates. No tickers, or the word `all`, means
- * everything. A word that is not a ticker name is an error (the CI passes user input here).
+ * Tickers from the command line: space or comma separated, any case, no duplicates. No tickers means the preset of required
+ * tickers (the default), the word `all` means everything. A word that is not a ticker name is an error (the CI passes user input here).
  */
 export function parseArgs(argv: readonly string[]): BackupArgs {
     const help = argv.some((a) => a === "--help" || a === "-h");
@@ -60,7 +63,8 @@ export function parseArgs(argv: readonly string[]): BackupArgs {
     const bad = words.filter((w) => w !== "ALL" && !isTickerName(w));
     if (bad.length) throw new Error(`not a ticker name: ${bad.join(", ")}`);
     const tickers = words.filter((w) => w !== "ALL");
-    return { tickers: tickers.length && !words.includes("ALL") ? tickers : null, help };
+    if (words.includes("ALL")) return { tickers: null, preset: false, help };
+    return tickers.length ? { tickers, preset: false, help } : { tickers: [...DEFAULT_TICKERS], preset: true, help };
 }
 
 /** Ticker files of a folder (everything `<SYM>.json` except the index), sorted. */
@@ -110,12 +114,20 @@ export function createBackup(opts: { optionsDir: string; historyDir: string; sym
 function main(): void {
     const args = parseArgs(process.argv.slice(2));
     if (args.help) {
-        console.log("usage: bun scripts/backtest-backup.ts [TICKER ...]   (no tickers = all available data)");
+        console.log("usage: bun scripts/backtest-backup.ts [TICKER ... | all]   (no tickers = the preset of required tickers, all = all available data)");
         return;
     }
-    const r = createBackup({ optionsDir: OPTIONS_DIR, historyDir: HISTORY_DIR, symbols: args.tickers });
+    let symbols = args.tickers;
+    if (args.preset && symbols) {
+        // the preset skips a required ticker that has no file yet instead of failing the whole backup
+        const available = new Set(availableTickers(OPTIONS_DIR));
+        const missing = symbols.filter((t) => !available.has(t));
+        if (missing.length) console.log(`[ backup   ] preset: no file for ${missing.join(", ")}, left out`);
+        symbols = symbols.filter((t) => available.has(t));
+    }
+    const r = createBackup({ optionsDir: OPTIONS_DIR, historyDir: HISTORY_DIR, symbols });
     const mb = (n: number) => (n / 1e6).toFixed(2);
-    const what = args.tickers ? r.tickers.join(", ") : `all ${r.tickers.length} available tickers`;
+    const what = args.preset ? `preset of required tickers: ${r.tickers.join(", ")}` : args.tickers ? r.tickers.join(", ") : `all ${r.tickers.length} available tickers`;
     console.log(`[ backup   ] ${r.id}  ${what}`);
     console.log(`[ backup   ] ${relative(REPO_ROOT, r.path)}  ${mb(r.zipBytes)} MB zipped (${mb(r.sourceBytes)} MB of data)`);
 }
