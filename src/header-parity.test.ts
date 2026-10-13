@@ -17,7 +17,9 @@ describe('header parity + CACHE-muted proxies (gex)', () => {
     expect(main).toContain('bg-slate-950/95 text-slate-100');
     expect(main).toContain('bg-white/95 text-slate-900');
     expect(main).toContain('backdrop-blur-md');
-    expect(main).toContain('px-4 xl:px-8');
+    // side padding follows gex's own page gutter (tabs, <main>, footer), not fundamentals' `px-4 xl:px-8`,
+    // so the ticker input and the settings button line up with the content (src/layout.e2e.ts checks it)
+    expect(main).toContain('<div className="px-4 lg:px-6">');
     expect(main).toContain('gap-2 sm:gap-3 py-3');
   });
 

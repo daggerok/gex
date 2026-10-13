@@ -215,7 +215,7 @@ export const TopBar: React.FC<{
 
     return (
         <div className={`sticky top-0 z-50 ${bg} backdrop-blur-md border-b ${bdr}`}>
-            <div className="px-4 xl:px-8">
+            <div className="px-4 lg:px-6">
                 <div className="flex items-center gap-2 sm:gap-3 py-3">
                     {/* 3. Ticker — fundamentals mono input */}
                     <div className="flex-1 min-w-0 relative" title={t('topBar.ticker')}>
