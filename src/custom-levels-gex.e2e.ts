@@ -24,8 +24,8 @@ const expectedName = async (input: Locator, used: Array<{ name: string }>) => de
 // ============================================================================
 
 const KEY = 'gex.customLevels.v1.SPY';
-const PREMIUM: string[] = ['#fb7185', '#f43f5e', '#fda4af'];
-const DISCOUNT: string[] = ['#34d399', '#10b981', '#6ee7b7'];
+const ABOVE: string[] = ['#34d399', '#10b981', '#6ee7b7'];
+const BELOW: string[] = ['#fb7185', '#f43f5e', '#fda4af'];
 const strikes = new Set<number>((JSON.parse(readFileSync(join(import.meta.dir, '..', 'api', 'options', 'SPY.json'), 'utf8')).quotes as Array<{ strike: number }>).map((q) => q.strike));
 const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
@@ -106,12 +106,12 @@ try {
         await page.mouse.move(p.x + 260, p.y + 10, { steps: 6 });
         assert.equal(await page.locator('.recharts-reference-area').count(), 0, 'no range selection after a right click');
         await page.mouse.move(p.x, p.y);
-        // the proposed colour follows the price: a strike above the spot (778.57 for SPY) is reddish, below it greenish
+        // the proposed colour follows the price: a strike above the spot (778.57 for SPY) is greenish, below it reddish
         const swatchHex = () => page.locator('button[aria-label="Level colour"]').evaluate((e: HTMLElement) => {
             const m = /(\d+), (\d+), (\d+)/.exec(getComputedStyle(e).backgroundColor)!;
             return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
         });
-        assert.ok(PREMIUM.includes(await swatchHex()), 'a level above the price starts reddish');
+        assert.ok(ABOVE.includes(await swatchHex()), 'a level above the price starts greenish');
         await page.keyboard.press('Escape');
         const box = (await page.locator('.recharts-wrapper').first().boundingBox())!;
         const low = { x: box.x + box.width * 0.3, y: p.y };
@@ -119,7 +119,7 @@ try {
         await page.mouse.move(low.x, low.y, { steps: 6 });
         await page.waitForTimeout(250);
         await page.mouse.click(low.x, low.y, { button: 'right' });
-        assert.ok(DISCOUNT.includes(await swatchHex()), 'a level below the price starts greenish');
+        assert.ok(BELOW.includes(await swatchHex()), 'a level below the price starts reddish');
         await page.keyboard.press('Escape');
         await gexPoint(page);
         await page.mouse.click(p.x, p.y, { button: 'right' });
