@@ -5,10 +5,10 @@
 # DEFAULT_SYMBOLS (the indices, ETFs and mega caps the ticker search field hints,
 # src/default-tickers.ts), not the whole universe. The full refresh stays in update-data.yml.
 #
-# WHEN: Mon-Fri at 9:45, 10:45, ..., 16:45 New York time (8 runs a day). The schedule has its own time zone
+# WHEN: Mon-Fri at 8:45, 9:45, ..., 16:45 New York time (9 runs a day, the first one before the open). The schedule has its own time zone
 # (`timezone: America/New_York`, the owner's fix, 2026-10-12), so the summer and winter time switch needs no extra UTC
 # slots and no skipped runs. The "Market window" step below stays as a guard: it still skips a scheduled run that starts
-# outside 9:40-18:30 New York time. Scheduled runs can start many minutes late, the window allows for that. Market holidays
+# outside 8:40-18:30 New York time. Scheduled runs can start many minutes late, the window allows for that. Market holidays
 # are not skipped (the data is simply refreshed with the last prices).
 #
 # WHAT IS COMMITTED (owner's decision, keeps the repository small): the hourly data is NOT committed. Each run fetches
@@ -27,13 +27,13 @@ name: Update partial options data
 on:
   workflow_dispatch: {} # manual run, always refreshes
   schedule:
-    - cron: "45 9-16 * * 1-5" # 9:45, 10:45, ..., 16:45 in the time zone below, summer and winter alike
+    - cron: "45 8-16 * * 1-5" # 8:45, 9:45, ..., 16:45 in the time zone below, summer and winter alike
       timezone: America/New_York
 
 permissions:
   contents: write # the end-of-day archive and a backtest backup are committed
-  pages: write # the deploy job
-  id-token: write # the deploy job
+  pages: write # the deployment job
+  id-token: write # the deployment job
 
 # One data refresh at a time, shared with update-data.yml (a run waits, none is cancelled)
 concurrency:
@@ -67,8 +67,8 @@ jobs:
           mins=$((10#${now%:*} * 60 + 10#${now#*:}))
           run=true
           if [ -n "$SCHEDULE" ]; then
-            # accept 9:40 - 18:30: the 16:45 run writes the day's archive, so it still counts when GitHub starts it up to 1:45 late
-            if [ "$mins" -lt 580 ] || [ "$mins" -gt 1110 ]; then run=false; fi
+            # accept 8:40 - 18:30: the 16:45 run writes the day's archive, so it still counts when GitHub starts it up to 1:45 late
+            if [ "$mins" -lt 520 ] || [ "$mins" -gt 1110 ]; then run=false; fi
           fi
           # the last run of the day: 16:30 New York time or later, it writes and commits the day's archive
           final=false
