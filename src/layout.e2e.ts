@@ -31,6 +31,8 @@ interface Look {
     font: string[];
     link: string[];
     text: string;
+    /** left and right edge of the top bar row (ticker input .. settings button) and of the tab content inside its side padding */
+    gutters: { bar: [number, number]; content: [number, number] };
 }
 
 const look = (page: Page): Promise<Look> => page.evaluate(() => {
@@ -54,6 +56,16 @@ const look = (page: Page): Promise<Look> => page.evaluate(() => {
         font: [cs.fontSize, cs.lineHeight, cs.color, cs.textAlign],
         link: [ls.textDecorationLine, ls.color],
         text: (f.textContent ?? '').trim(),
+        gutters: (() => {
+            const bar = (document.querySelector('input[role=combobox]') as HTMLElement).parentElement!.parentElement!.getBoundingClientRect();
+            const m = [...document.querySelectorAll('main')].find((e) => e.getBoundingClientRect().width > 0) as HTMLElement;
+            const mr = m.getBoundingClientRect();
+            const ms = getComputedStyle(m);
+            return {
+                bar: [Math.round(bar.left), Math.round(bar.right)] as [number, number],
+                content: [Math.round(mr.left + parseFloat(ms.paddingLeft)), Math.round(mr.right - parseFloat(ms.paddingRight))] as [number, number],
+            };
+        })(),
     };
 });
 
@@ -68,6 +80,9 @@ const HINTS: Record<string, Record<string, string>> = {
         Desk: 'something below the table adds padding or margin above the footer.',
         GEX: 'src/views/GexView.tsx: <main> must not have bottom padding or margin (the footer has its own 24 px), and the content must fill the height (`lg:flex-1 lg:min-h-0` down the chain).',
         Chart: 'src/views/ChartView.tsx: <main> must not have bottom padding or margin, and the chart section must fill the height (`lg:flex-1`); a fixed chart height or a height formula leaves empty space.',
+    },
+    gutter: {
+        any: 'src/components/TopBar.tsx: the top bar row must use the same side padding as the tab content (`px-4 lg:px-6`, like <main> in the views, TabSwitcher and the footer).',
     },
     footer: {
         Desk: 'src/components/AttributionFooter.tsx: FOOTER_CLASS is the one footer design of all tabs.',
@@ -103,6 +118,11 @@ try {
                 report(size, tab, `THE PAGE SCROLLS, the footer is out of view (${l.scrollHeight - l.inner} px too tall)`,
                     `the tab fits the window (page height <= ${l.inner} px) on a window this wide, only the Desk table, the GEX sidebar and the Cursor list scroll inside themselves`,
                     `the page is ${l.scrollHeight} px high in a ${l.inner} px window`, HINTS.scroll[tab]);
+            }
+            if (Math.abs(l.gutters.bar[0] - l.gutters.content[0]) > 1 || Math.abs(l.gutters.bar[1] - l.gutters.content[1]) > 1) {
+                report(size, tab, 'THE TOP BAR IS NOT ALIGNED WITH THE CONTENT (ticker input on the left, settings button on the right)',
+                    `the top bar row spans x ${l.gutters.content[0]}..${l.gutters.content[1]} like the content below it`,
+                    `top bar x ${l.gutters.bar[0]}..${l.gutters.bar[1]}, content x ${l.gutters.content[0]}..${l.gutters.content[1]}`, HINTS.gutter.any);
             }
             if (l.footerHeight !== FOOTER_HEIGHT) {
                 report(size, tab, 'THE FOOTER HAS THE WRONG SIZE', `${FOOTER_HEIGHT} px high`, `${l.footerHeight} px high`, HINTS.footer[tab]);
