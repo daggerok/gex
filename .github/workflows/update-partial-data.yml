@@ -27,13 +27,13 @@ name: Update partial options data
 on:
   workflow_dispatch: {} # manual run, always refreshes
   schedule:
-    - cron: "45 9-16 * * 1-5" # 9:45, 10:45, ..., 16:45 in the time zone below, summer and winter alike
+    - cron: "45 8-16 * * 1-5" # 8:45, 9:45, ..., 16:45 in the time zone below, summer and winter alike
       timezone: America/New_York
 
 permissions:
   contents: write # the end-of-day archive and a backtest backup are committed
-  pages: write # the deploy job
-  id-token: write # the deploy job
+  pages: write # the deployment job
+  id-token: write # the deployment job
 
 # One data refresh at a time, shared with update-data.yml (a run waits, none is cancelled)
 concurrency:
