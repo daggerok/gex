@@ -1452,8 +1452,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                 </button>
                             </Tip>
                         </div>
-                        <div className="min-w-0 text-right">
-                            <h3 className={HEADING_CLASS}>
+                        {/* the full screen button sits in both top corners, the right one after the metrics */}
+                        <div className="flex min-w-0 items-start justify-end gap-2 text-right">
+                            <h3 className={'min-w-0 ' + HEADING_CLASS}>
                                 {otherMetrics.map((m, i) => (
                                     <React.Fragment key={m}>
                                         {i > 0 && <span className="text-slate-400">, </span>}
@@ -1461,6 +1462,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     </React.Fragment>
                                 ))}
                             </h3>
+                            <FullscreenButton full={fs.full} onToggle={fs.toggle} />
                         </div>
                     </div>
                     {/* select-none: dragging across the chart to zoom (onChartMouseDown/
