@@ -15,7 +15,9 @@ const page = await (await browser.newContext({ viewport: { width: 1200, height: 
 const errors: string[] = [];
 page.on('pageerror', (e) => errors.push(e.message));
 
-const button = (p: Page) => p.locator('[data-fullscreen-button]');
+const buttons = (p: Page) => p.locator('[data-fullscreen-button]');
+/** The first (top left) button; the GEX card has a second one at the top right. */
+const button = (p: Page) => buttons(p).first();
 /** The card around the chart: the nearest ancestor with a border that holds the button. */
 const card = (p: Page) => button(p).locator('xpath=ancestor::section[1]');
 const rect = async (p: Page) => { const b = (await card(p).boundingBox())!; return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
@@ -37,6 +39,19 @@ async function check(tab: 'GEX' | 'Chart') {
     assert.ok(chartFull > chartBefore, `${tab}: the chart itself grew (${chartBefore} -> ${chartFull})`);
     await button(page).click(); await settle();
     assert.deepEqual(await rect(page), normal, `${tab}: the button brings it back to where it was`);
+
+    // GEX: a button in both top corners of the card, the right one toggles too
+    if (tab === 'GEX') {
+        assert.equal(await buttons(page).count(), 2, 'GEX: two full screen buttons');
+        const [l, r] = [(await buttons(page).first().boundingBox())!, (await buttons(page).last().boundingBox())!];
+        assert.ok(l.x - normal.x < 40 && normal.x + normal.w - (r.x + r.width) < 40 && Math.abs(l.y - r.y) < 2, `GEX: one button top left, one top right (${l.x}, ${r.x}; card ${normal.x}..${normal.x + normal.w})`);
+        await buttons(page).last().click(); await settle();
+        assert.equal(await covers(page), true, 'GEX: the right button makes it cover the window');
+        const rf = (await buttons(page).last().boundingBox())!;
+        assert.ok(1200 - (rf.x + rf.width) < 40 && rf.y < 40, 'GEX: the right button stays top right in full screen');
+        await buttons(page).last().click(); await settle();
+        assert.deepEqual(await rect(page), normal, 'GEX: the right button brings it back');
+    }
 
     // F
     await page.mouse.move(600, 400);
