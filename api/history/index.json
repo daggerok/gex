@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "snapshots": {
+    "2026-10-14": [
+      "AAPL",
+      "AMZN",
+      "AVGO",
+      "DIA",
+      "DJX",
+      "GOOG",
+      "GOOGL",
+      "IWM",
+      "META",
+      "MSFT",
+      "MU",
+      "NDX",
+      "NVDA",
+      "QQQ",
+      "RUT",
+      "SPX",
+      "SPY",
+      "TSM"
+    ]
+  }
+}
