@@ -80,6 +80,26 @@
       "SPX",
       "SPY",
       "TSM"
+    ],
+    "2026-10-22": [
+      "AAPL",
+      "AMZN",
+      "AVGO",
+      "DIA",
+      "DJX",
+      "GOOG",
+      "GOOGL",
+      "IWM",
+      "META",
+      "MSFT",
+      "MU",
+      "NDX",
+      "NVDA",
+      "QQQ",
+      "RUT",
+      "SPX",
+      "SPY",
+      "TSM"
     ]
   }
 }
