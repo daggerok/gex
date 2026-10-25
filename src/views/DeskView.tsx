@@ -6,7 +6,7 @@ import { KeyOnboarding } from '../components/KeyOnboarding';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
 import type { ChainMeta, DataProvider, Settings } from '../types';
-import { fmt } from '../utils';
+import { fmt, type DataAge } from '../utils';
 
 // ============================================================================
 // DESK VIEW (Tab 1) — STEP 1/STEP 2 controls + notices + onboarding + chain
@@ -28,6 +28,8 @@ export interface DeskViewProps {
     chainSymbol: string;
     spot: number | null;
     spotIsEstimated: boolean;
+    /** Age of the loaded cache data (GEX-H4), null for live providers */
+    dataAge: DataAge | null;
     notice: string;
     error: string;
     showOnboarding: boolean;
@@ -42,7 +44,7 @@ export interface DeskViewProps {
 export const DeskView: React.FC<DeskViewProps> = ({
     settings, provider, meta, loadChain, getDates,
     tickerInput, metaLoading, expLoading, anyLoading, cancelAll, chainSymbol, spot,
-    spotIsEstimated, notice, error, showOnboarding, setToken, setSecret, onboardingPreview,
+    spotIsEstimated, dataAge, notice, error, showOnboarding, setToken, setSecret, onboardingPreview,
     previewLabel, sections, hasRows,
 }) => {
     const { t: tr } = useI18n();
@@ -58,7 +60,11 @@ export const DeskView: React.FC<DeskViewProps> = ({
                     {spotIsEstimated && <span className="ml-1 text-[11px] text-amber-500">{tr('spot.estimated')}</span>}
                 </span>
             )}
-            <span className="text-xs text-slate-400">{tr('spot.delayed', { provider: provider.label.split(' ')[0] })}</span>
+            <span className="text-xs text-slate-400">
+                {dataAge
+                    ? tr('spot.asOf', { at: dataAge.at, provider: provider.label.split(' ')[0] })
+                    : tr('spot.delayed', { provider: provider.label.split(' ')[0] })}
+            </span>
         </div>
     ) : null;
     return (

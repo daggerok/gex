@@ -1,5 +1,5 @@
 /// <reference lib="esnext" />
-import { enrichChainResult, enrichQuotesWithModelGreeks, hasFirstOrderGreeks, hasHigherOrderGreeks } from '../greeks';
+import { enrichChainResult, enrichQuotesWithModelGreeks, hasFirstOrderGreeks, hasHigherOrderGreeks, isExpired } from '../greeks';
 import { bulkCache, bulkKey, cacheGet, cacheSet } from '../settings-store';
 import { isAsOfProviderId } from './asof';
 import type { ChainMeta, ChainResult, DataProvider, OptionQuote, ProviderContext } from '../types';
@@ -72,13 +72,26 @@ export async function loadMeta(provider: DataProvider, symbol: string, ctx: Prov
         const result = await provider.fetchAll(symbol, ctx);
         await putBulk(provider.id, result, vixFuturesPricing);
         const cached = (await getBulk(provider.id, result.symbol, vixFuturesPricing)) ?? enrichChainResult(result, vixFuturesPricing);
-        return { symbol: cached.symbol, underlyingPrice: cached.underlyingPrice, expirations: cached.expirations, greeks: cached.greeks };
+        return withoutExpired({
+            symbol: cached.symbol, underlyingPrice: cached.underlyingPrice, expirations: cached.expirations, greeks: cached.greeks,
+            updated: cached.updated ?? null, dataDate: cached.dataDate ?? null,
+        });
     }
     if (!provider.fetchMeta) throw new Error('Provider misconfigured (lazy without fetchMeta).');
     const meta = await provider.fetchMeta(symbol, ctx);
     // Persist meta so expirations survive reloads (cheap; keyed with ":meta").
     await cacheSet(lazyKey(provider.id, meta.symbol, 'meta'), meta);
-    return meta;
+    return withoutExpired(meta);
+}
+
+/**
+ * The meta without the expirations that are already over (GEX-H4): a cache file refreshed weeks ago still lists them, the
+ * app picked one by default and showed its old gamma as current. "Over" is greeks.ts `isExpired` (before the New York date
+ * of now, or of the valuation time in a backtest, so a snapshot of day D keeps its D expiration). `expiredDropped` counts them.
+ */
+export function withoutExpired(meta: ChainMeta, now?: Date): ChainMeta {
+    const live = meta.expirations.filter((e) => !(now ? isExpired(e, now) : isExpired(e)));
+    return live.length === meta.expirations.length ? meta : { ...meta, expirations: live, expiredDropped: meta.expirations.length - live.length };
 }
 
 /** Load the quotes for one expiration for the active provider (cached + enriched). */

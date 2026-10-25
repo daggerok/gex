@@ -173,6 +173,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'spot.label': 'Spot',
         'spot.estimated': '(est.)',
         'spot.delayed': '· delayed · {{provider}}',
+        'spot.asOf': '· as of {{at}} ET · {{provider}}',
+        'data.stale': 'Data of {{day}}, {{days}} d old',
 
         'loading.expirations': 'Fetching expirations…',
         'loading.chain': 'Loading chain…',
@@ -187,6 +189,7 @@ export const translations: Record<Language, Record<string, string>> = {
 
         'error.enterTicker': 'Enter a ticker symbol.',
         'error.noContracts': 'No option contracts found for “{{symbol}}”.',
+        'error.allExpired': 'Every expiration of the cached “{{symbol}}” data (of {{day}}) has expired. Refresh the data or pick a live provider.',
         'error.providerBulk': 'Provider misconfigured (bulk without fetchAll).',
         'error.providerLazy': 'Provider misconfigured (lazy without fetchMeta).',
         'error.friendly.networkProxy':
@@ -613,6 +616,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'spot.label': 'Спот',
         'spot.estimated': '(оценка)',
         'spot.delayed': '· с задержкой · {{provider}}',
+        'spot.asOf': '· на {{at}} ET · {{provider}}',
+        'data.stale': 'Данные за {{day}}, {{days}} дн. назад',
 
         'loading.expirations': 'Загружаем экспирации…',
         'loading.chain': 'Загружаем цепочку…',
@@ -627,6 +632,7 @@ export const translations: Record<Language, Record<string, string>> = {
 
         'error.enterTicker': 'Введи тикер.',
         'error.noContracts': 'Для «{{symbol}}» не найдено опционных контрактов.',
+        'error.allExpired': 'Все экспирации сохранённых данных «{{symbol}}» (за {{day}}) уже истекли. Обновите данные или выберите живой источник.',
         'error.providerBulk': 'Провайдер настроен неверно (bulk без fetchAll).',
         'error.providerLazy': 'Провайдер настроен неверно (lazy без fetchMeta).',
         'error.friendly.networkProxy':

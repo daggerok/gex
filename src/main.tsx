@@ -809,6 +809,7 @@ import type { ChainSection } from './components/ChainTable';
 import { AsOfMenuSection, AsOfSelect } from './components/AsOfSelect';
 import { BackupDialog } from './components/BackupDialog';
 import { BacktestManager } from './components/BacktestManager';
+import { DataAgeBadge } from './components/DataAgeBadge';
 import { ExpirationChips } from './components/ExpirationChips';
 import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
@@ -828,7 +829,7 @@ import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
 import { useGexQuotesByExp } from './gex-chain';
 import { useGexLevels } from './use-gex-levels';
-import { dbg, estimateSpot, friendlyError, isAbortError } from './utils';
+import { dataAge, dbg, estimateSpot, friendlyError, isAbortError } from './utils';
 import { DeskView } from './views/DeskView';
 import { CHART_RANGES, type ChartRange, DEFAULT_RANGE } from './views/chart-range';
 import { loadChartRange, saveChartRange } from './chart-zoom-store';
@@ -1103,7 +1104,10 @@ const App: React.FC = () => {
             if (credsOverride?.secret != null) ctx.secret = credsOverride.secret;
             const m = await loadMeta(provider, sym, ctx, settings.vixFuturesPricing);
             if (ac.signal.aborted) return null;
-            if (m.expirations.length === 0) throw new Error(tr('error.noContracts', { symbol: sym }));
+            if (m.expirations.length === 0) {
+                // every expiration of a stale cache file is over (GEX-H4): say so instead of "no contracts"
+                throw new Error(m.expiredDropped ? tr('error.allExpired', { symbol: sym, day: m.dataDate ?? '?' }) : tr('error.noContracts', { symbol: sym }));
+            }
             setMeta(m);
             // Keep the previous selection when the new ticker has it, else everything inside its
             // date range, else the nearest expiration (pickExpirations, expiration-select.ts).
@@ -1492,6 +1496,8 @@ const App: React.FC = () => {
         return first ? estimateSpot(expData[first], first) : null;
     }, [meta, expData]);
     const spotIsEstimated = meta != null && meta.underlyingPrice == null && spot != null;
+    // Age of the loaded cache data (GEX-H4): null for live providers, which carry no `updated`
+    const metaAge = useMemo(() => dataAge(meta?.updated, meta?.dataDate), [meta]);
 
     // ---- GEX tab (Phase 3): reuses chain data already held, never fetches ----
     // Bulk providers (CACHE/CBOE/NASDAQ) offer every expiration of the bulk cache, lazy YAHOO what Desk loaded into
@@ -1723,6 +1729,7 @@ const App: React.FC = () => {
                     root cause). ---- */
                 endSlot={meta ? (
                     <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 lg:flex-nowrap">
+                        <DataAgeBadge age={asOf ? null : metaAge} />
                         <ExpirationChips
                             expirations={meta.expirations}
                             selected={selectedExps}
@@ -1771,6 +1778,7 @@ const App: React.FC = () => {
                     chainSymbol={chainSymbol}
                     spot={spot}
                     spotIsEstimated={spotIsEstimated}
+                    dataAge={metaAge}
                     notice={notice}
                     error={error}
                     showOnboarding={showOnboarding}

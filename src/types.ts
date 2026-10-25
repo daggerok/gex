@@ -96,6 +96,12 @@ export interface ChainMeta {
     expirations: string[];
     /** Optional greeks enrichment summary for static-cache files. */
     greeks?: GreeksSummary;
+    /** When a cache file was written (its `updated`, ISO with the market offset); absent for live providers (GEX-H4). */
+    updated?: string | null;
+    /** Trading day the cached data belongs to (the file's `date`, market time); absent for live providers. */
+    dataDate?: string | null;
+    /** How many expirations of the source were already expired and left out of `expirations` (loadMeta, GEX-H4). */
+    expiredDropped?: number;
 }
 
 /** Full chain result for a symbol (used internally by BULK providers). */
