@@ -102,6 +102,8 @@ export interface ChainMeta {
     dataDate?: string | null;
     /** How many expirations of the source were already expired and left out of `expirations` (loadMeta, GEX-H4). */
     expiredDropped?: number;
+    /** Lazy providers: when loadMeta fetched this meta (ms since the epoch); cached expirations of another fetch are stale (GEX-H6). */
+    fetchedAt?: number;
 }
 
 /** Full chain result for a symbol (used internally by BULK providers). */

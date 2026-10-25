@@ -1,9 +1,9 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { ProviderContext } from '../types';
+import type { OptionQuote, ProviderContext } from '../types';
 import { chainFromCacheFile, manifestFromIndex, staticProvider, staticTickerSuggestionsFromManifest } from './cache';
-import { withoutExpired } from './loader';
+import { lazyHit, withoutExpired } from './loader';
 
 const ctx = {} as ProviderContext;
 const realFetch = globalThis.fetch;
@@ -76,5 +76,20 @@ describe('data age and expired expirations of a cache file (GEX-H4)', () => {
     expect(withoutExpired(chain, new Date('2026-10-16T23:30:00-04:00')).expirations).toEqual(['2026-10-16', '2026-10-24', '2026-10-30']);
     // nothing expired: the same object
     expect(withoutExpired(chain, new Date('2026-10-01T12:00:00-04:00'))).toBe(chain);
+  });
+});
+
+describe('lazy expiration cache belongs to one meta fetch (GEX-H6)', () => {
+  const quotes = [{ symbol: 'AAPL261030C00250000', expiration: '2026-10-30', side: 'call', strike: 250, bid: 1, ask: 1.2, mid: 1.1, last: 1.1, volume: 1, openInterest: 1, iv: 0.3, delta: 0.5, gamma: 0.02, theta: -0.1, vega: 0.1 }] as OptionQuote[];
+  test('a hit only for the entry of the current meta fetch', () => {
+    // second date in the same session: same fetchedAt -> served from the cache
+    expect(lazyHit({ fetchedAt: 1000, quotes }, 1000)).toBe(quotes);
+    // reopened the next day: loadMeta stamped a new fetchedAt -> fetched again
+    expect(lazyHit({ fetchedAt: 1000, quotes }, 2000)).toBeNull();
+    // an entry of an older app version (plain array, no stamp) and a missing meta never hit
+    expect(lazyHit(quotes, 1000)).toBeNull();
+    expect(lazyHit({ fetchedAt: 1000, quotes }, null)).toBeNull();
+    expect(lazyHit(null, 1000)).toBeNull();
+    expect(lazyHit({ fetchedAt: 1000 }, 1000)).toBeNull();
   });
 });

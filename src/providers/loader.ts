@@ -61,6 +61,22 @@ export async function putBulk(providerId: string, result: ChainResult, vixFuture
     bulkCache.set(k, enriched);
     if (!isAsOfProviderId(providerId)) await cacheSet(k, enriched);
 }
+/** A lazy expiration in the persistent cache, tagged with the meta fetch it belongs to (GEX-H6). */
+export interface LazyEntry {
+    fetchedAt: number;
+    quotes: OptionQuote[];
+}
+
+/**
+ * The cached quotes of a lazy expiration when they belong to the current meta fetch (`fetchedAt` of the cached meta), else
+ * null: an entry of an earlier fetch, the plain array an older app version stored, or no current meta at all.
+ */
+export function lazyHit(entry: unknown, fetchedAt: number | null | undefined): OptionQuote[] | null {
+    if (fetchedAt == null || !entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const e = entry as Partial<LazyEntry>;
+    return e.fetchedAt === fetchedAt && Array.isArray(e.quotes) ? e.quotes : null;
+}
+
 /** Cache key for a single lazy expiration. */
 export const lazyKey = (providerId: string, symbol: string, exp: string) =>
     `${providerId}:${symbol.toUpperCase()}:${exp}`;
@@ -78,7 +94,8 @@ export async function loadMeta(provider: DataProvider, symbol: string, ctx: Prov
         });
     }
     if (!provider.fetchMeta) throw new Error('Provider misconfigured (lazy without fetchMeta).');
-    const meta = await provider.fetchMeta(symbol, ctx);
+    // stamped: the cached expirations of an earlier fetch no longer count (GEX-H6, see lazyHit)
+    const meta: ChainMeta = { ...(await provider.fetchMeta(symbol, ctx)), fetchedAt: Date.now() };
     // Persist meta so expirations survive reloads (cheap; keyed with ":meta").
     await cacheSet(lazyKey(provider.id, meta.symbol, 'meta'), meta);
     return withoutExpired(meta);
@@ -104,21 +121,22 @@ export async function loadExpiration(provider: DataProvider, symbol: string, exp
         return (final?.quotes ?? []).filter((q) => q.expiration === expiration);
     }
     if (!provider.fetchExpiration) throw new Error('Provider misconfigured (lazy without fetchExpiration).');
-    // Serve a lazy expiration from the persistent cache when available.
+    // Serve a lazy expiration from the persistent cache only when it was fetched for the current meta (GEX-H6): the quotes
+    // of an earlier session (Monday's bid, ask, IV and OI under Thursday's spot) are fetched again.
     const key = lazyKey(provider.id, symbol, expiration);
-    const hit = await cacheGet<OptionQuote[]>(key);
+    const meta = await cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
+    const fetchedAt = meta?.fetchedAt ?? null;
+    const hit = lazyHit(await cacheGet<unknown>(key), fetchedAt);
     if (hit) {
         dbg('cache hit (lazy)', key);
         // Re-enrich legacy cache entries that predate client-side BS/Black-76.
         if (hit.some((q) => hasHigherOrderGreeks(q) || q.greeksSource === 'black-scholes' || q.greeksSource === 'black-76')) return hit;
-        const meta = await cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
         const enriched = enrichQuotesWithModelGreeks(hit, meta?.underlyingPrice ?? null, symbol, vixFuturesPricing);
-        if (enriched !== hit) await cacheSet(key, enriched);
+        if (enriched !== hit) await cacheSet(key, { fetchedAt, quotes: enriched });
         return enriched;
     }
     const quotes = await provider.fetchExpiration(symbol, expiration, ctx);
-    const meta = await cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
     const enriched = enrichQuotesWithModelGreeks(quotes, meta?.underlyingPrice ?? null, symbol, vixFuturesPricing);
-    await cacheSet(key, enriched);
+    if (fetchedAt !== null) await cacheSet(key, { fetchedAt, quotes: enriched });
     return enriched;
 }
