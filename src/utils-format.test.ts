@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from './utils';
+import { fmt, fmtCompact, fmtDays, fmtInt, fmtSignedCompact } from './utils';
 
 // The number formatters are cached for speed, they must give exactly what toLocaleString gave.
 describe('fmt and fmtInt keep their output', () => {
@@ -38,5 +38,15 @@ describe('fmtCompact and fmtSignedCompact (moved from GexView to utils, shared w
     expect(fmtSignedCompact(2140000000)).toBe('+2.14B');
     expect(fmtSignedCompact(-1500)).toBe('-1.50K');
     expect(fmtSignedCompact(0)).toBe('0.00');
+  });
+});
+
+describe('fmtDays', () => {
+  test('two decimals below a day, one from a day on, empty for a non-number', () => {
+    expect(fmtDays(4 / 24)).toBe('0.17');
+    expect(fmtDays(15 / 1440)).toBe('0.01');
+    expect(fmtDays(30 + 4 / 24)).toBe('30.2');
+    expect(fmtDays(1)).toBe('1.0');
+    expect(fmtDays(NaN)).toBe('');
   });
 });

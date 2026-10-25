@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 /// <reference types="node" />
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   CONTRACT_MULTIPLIER,
   GAMMA_FLIP_GRID_POINTS,
@@ -37,7 +37,8 @@ import {
   gexPut,
   trimZeroBoundaries,
 } from './gex';
-import { blackScholesGamma } from './greeks';
+import { blackScholesGamma, setValuationTime } from './greeks';
+import { zonedTimeToMs } from './backtest/snapshot';
 import type { OptionQuote } from './types';
 
 // Hand-built synthetic fixture (plan section 11). Every expected number below
@@ -214,19 +215,16 @@ function bsQuote(side: 'call' | 'put', strike: number, openInterest: number, iv:
   };
 }
 
-/** `daysFromNow` days ahead of "today" (LOCAL calendar date), as the
- *  "YYYY-MM-DD" string yearsToExpiration (src/greeks.ts) expects. Resolved
- *  against the current date at test-run time - not a hardcoded calendar
- *  date - so T stays exactly `(daysFromNow + 1) / 365` (yearsToExpiration's
- *  +1-day floor) regardless of which day the suite runs on, and this
- *  fixture never silently starts failing once a hardcoded date passes. */
+/** Frozen pricing clock (GEX-M1: T is the real time to the 16:00 New York settlement): 16:00 New York on Monday 2026-03-09,
+ *  the day after the spring daylight saving switch (the next one is 2026-11-01), so `futureIsoDate(n)` settles exactly n days
+ *  later and T = n / 365 whatever day or time zone the suite runs in. */
+const CLOCK = zonedTimeToMs(2026, 3, 9, 16, 0);
+beforeAll(() => setValuationTime(CLOCK));
+afterAll(() => setValuationTime(null));
+
+/** `daysFromNow` days after the frozen clock's date, as the "YYYY-MM-DD" string yearsToExpiration expects: T = daysFromNow / 365. */
 function futureIsoDate(daysFromNow: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + daysFromNow);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return new Date(Date.UTC(2026, 2, 9 + daysFromNow)).toISOString().slice(0, 10);
 }
 
 describe('findGammaFlipHypotheticalSpot (7.3, rewritten: hypothetical-spot Black-Scholes recompute)', () => {
@@ -256,7 +254,7 @@ describe('findGammaFlipHypotheticalSpot (7.3, rewritten: hypothetical-spot Black
   // (~98.3051 and ~98.9831) lands at ~98.96855 - a ~0.00005 difference from
   // the true root, i.e. this grid is dense enough here for the
   // interpolation error to be negligible.
-  const T_DAYS = 29; // yearsToExpiration's +1-day floor makes this T = 30/365
+  const T_DAYS = 30; // T = 30/365 on the frozen clock
   const IV = 0.2;
   const EXPECTED_CROSSING = 98.9686;
 
@@ -947,27 +945,28 @@ describe('Sigma levels', () => {
   });
 
   test('statistical mode: 1 sigma = spot * ATM IV * sqrt(T) of the nearest expiration that is live and has an IV', () => {
-    const now = new Date(2026, 0, 1, 12);
+    const now = new Date(zonedTimeToMs(2026, 1, 1, 12, 0)); // noon New York, winter time all month
     const strikes = [85, 90, 95, 100, 105, 110, 115];
     const quotes = [
       // expired before `now`: skipped even though it has an IV
       sq('2025-12-01', 'call', 100, 0.9),
       // the nearest live expiration has no usable IV: skipped
       sq('2026-01-10', 'call', 100, null),
-      // 2026-01-31: 30 days after 2026-01-01 + 1 = 31 days (greeks.ts calendar rule), ATM IV 0.26 at spot 100
+      // 2026-01-31: 30 days and 4 hours from noon to the 16:00 settlement (greeks.ts, GEX-M1), ATM IV 0.26 at spot 100
       sq('2026-01-31', 'call', 95, 0.30), sq('2026-01-31', 'put', 95, 0.32),
       sq('2026-01-31', 'call', 105, 0.20), sq('2026-01-31', 'put', 105, 0.22),
       ...strikes.map((k) => sq('2026-01-31', 'call', k, null)),
     ];
     const s = computeSigmaLevels(quotes, 100, now);
-    const move = 100 * 0.26 * Math.sqrt(31 / 365); // 7.5766...
+    const days = 30 + 4 / 24;
+    const move = 100 * 0.26 * Math.sqrt(days / 365); // 7.4746...
     expect(s?.statBasis?.expiration).toBe('2026-01-31');
-    expect(s?.statBasis?.days).toBe(31);
+    expect(s?.statBasis?.days as number).toBeCloseTo(days, 9);
     expect(s?.statBasis?.iv).toBeCloseTo(0.26, 12);
     expect(s?.statBasis?.move).toBeCloseTo(move, 9);
-    // +1: 107.58 -> 110 (2.42 vs 2.58), +2: 115.15 -> 115, +3: 122.73 -> 115 (the last strike),
-    // -1: 92.42 -> 90, -2: 84.85 -> 85, -3: 77.27 -> 85
-    expect(s?.stat?.map((l) => [l.side * l.n, l.strike])).toEqual([[1, 110], [2, 115], [3, 115], [-1, 90], [-2, 85], [-3, 85]]);
+    // +1: 107.47 -> 105 (2.47 vs 2.53), +2: 114.95 -> 115, +3: 122.42 -> 115 (the last strike),
+    // -1: 92.53 -> 95 (2.47 vs 2.53), -2: 85.05 -> 85, -3: 77.58 -> 85
+    expect(s?.stat?.map((l) => [l.side * l.n, l.strike])).toEqual([[1, 105], [2, 115], [3, 115], [-1, 95], [-2, 85], [-3, 85]]);
     expect(s?.stat?.[1].price).toBeCloseTo(100 + 2 * move, 9);
   });
 
@@ -1006,7 +1005,7 @@ describe('nearestGammaFlip (GEX-M2)', () => {
 });
 
 describe('computeGexLevels: Gamma Flip by the GEX-M2 rule', () => {
-  const T_DAYS = 29;
+  const T_DAYS = 30;
   const withGamma = (q: OptionQuote, gamma: number): OptionQuote => ({ ...q, gamma });
 
   test('a negative total with only a negative -> positive crossing still shows that crossing (the SPX / SPY case)', () => {
@@ -1054,7 +1053,7 @@ describe('computeGexLevels: Gamma Flip by the GEX-M2 rule', () => {
 // Failed-solve IV repair + coverage gate of the Gamma Flip (owner-approved 2026-10-25)
 // ---------------------------------------------------------------------------
 describe('repairImpliedVols', () => {
-  const exp = futureIsoDate(29); // T = 30/365
+  const exp = futureIsoDate(30); // T = 30/365 on the frozen clock
   const T = 30 / 365;
   const q = (side: 'call' | 'put', strike: number, iv: number | null, gamma: number | null = null, oi = 100): OptionQuote => ({ ...bsQuote(side, strike, oi, iv as number, exp), iv, gamma });
 
@@ -1100,7 +1099,7 @@ describe('repairImpliedVols', () => {
 });
 
 describe('ivCoverageNearSpot', () => {
-  const exp = futureIsoDate(29);
+  const exp = futureIsoDate(30);
   const q = (strike: number, iv: number | null, gamma: number | null, oi: number): OptionQuote => ({ ...bsQuote('call', strike, oi, iv as number, exp), iv, gamma });
 
   test('share of the provider |GEX| within 2% of spot that has a usable IV', () => {
@@ -1115,7 +1114,7 @@ describe('ivCoverageNearSpot', () => {
 });
 
 describe('computeGexLevels: Gamma Flip on repaired IVs and the coverage gate', () => {
-  const exp = futureIsoDate(29);
+  const exp = futureIsoDate(30);
   const T = 30 / 365;
 
   test('broken IVs with a sane provider gamma: repaired from the gamma, the flip is the same as with the true IVs', () => {

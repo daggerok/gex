@@ -5,7 +5,7 @@ import { useI18n } from '../i18n';
 import { LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
 import { accentOf } from '../theme';
 import type { GexLevels, Settings } from '../types';
-import { fmt } from '../utils';
+import { fmt, fmtDays } from '../utils';
 import { useCustomLevels } from '../use-custom-levels';
 import { ChipSwitch, StableLabel } from './ChipSwitch';
 import { ToggleChip } from './ToggleChip';
@@ -40,7 +40,7 @@ export const LevelsPanel: React.FC<{
         if (!sigmaStat) return tr('gex.level.tooltip.sigmaPct');
         const basis = levels?.sigma?.statBasis;
         if (!basis) return tr('gex.level.tooltip.sigmaStatNone');
-        return tr('gex.level.tooltip.sigmaStat', { move: fmt(basis.move), iv: `${(basis.iv * 100).toFixed(1)}%`, expiration: basis.expiration, days: String(basis.days) });
+        return tr('gex.level.tooltip.sigmaStat', { move: fmt(basis.move), iv: `${(basis.iv * 100).toFixed(1)}%`, expiration: basis.expiration, days: fmtDays(basis.days) });
     };
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
     const entries = levelPanelOrder(levels, customLevels, showMaxAg ? [] : ['maxAbsGamma']);
