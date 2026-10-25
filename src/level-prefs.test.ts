@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { CustomLevel } from './custom-levels';
-import { DEFAULT_OFF_LEVELS, DEFAULT_SELECTED_LEVELS, getLevelPrefs, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, zeroGexDisplay } from './level-prefs';
+import { DEFAULT_OFF_LEVELS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, getLevelPrefs, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, zeroGexDisplay } from './level-prefs';
 import type { GexLevels, SigmaLevel } from './types';
 
 const levels = (over: Partial<GexLevels> = {}): GexLevels => ({
@@ -141,5 +141,15 @@ describe('Sigma level', () => {
     sigmaMode.set('stat');
     resetLevelPrefs();
     expect(sigmaMode.get()).toBe('pct');
+  });
+});
+
+describe('gammaFlipUnavailableText', () => {
+  const tr = (key: string, params?: Record<string, string | number>) => `${key}${params ? JSON.stringify(params) : ''}`;
+  test('one text per reason, empty when the flip is shown', () => {
+    expect(gammaFlipUnavailableText({ gammaFlipUnavailable: 'futuresPriced', gammaFlipIvCoverage: null } as GexLevels, tr)).toBe('gex.level.tooltip.gammaFlipFutures');
+    expect(gammaFlipUnavailableText({ gammaFlipUnavailable: 'ivCoverage', gammaFlipIvCoverage: 0.42 } as GexLevels, tr)).toBe('gex.level.tooltip.gammaFlipNoIv{"pct":"42%"}');
+    expect(gammaFlipUnavailableText({ gammaFlipUnavailable: null, gammaFlipIvCoverage: 1 } as GexLevels, tr)).toBe('');
+    expect(gammaFlipUnavailableText(null, tr)).toBe('');
   });
 });

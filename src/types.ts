@@ -394,8 +394,11 @@ export interface GexLevels {
      * carries a provider gamma (nothing to compare).
      */
     gammaFlipIvCoverage: number | null;
-    /** Why `gammaFlip` is null although the sweep ran: `ivCoverage` = that share is below GAMMA_FLIP_MIN_IV_COVERAGE. */
-    gammaFlipUnavailable: 'ivCoverage' | null;
+    /**
+     * Why `gammaFlip` is null: `ivCoverage` = the sweep ran but that share is below GAMMA_FLIP_MIN_IV_COVERAGE;
+     * `futuresPriced` = no sweep for a futures-priced symbol (VIX, VXN, review GEX-H5).
+     */
+    gammaFlipUnavailable: 'ivCoverage' | 'futuresPriced' | null;
     maxNetGex: number | null;
     minNetGex: number | null;
     /** "Net GEX+" - null if none qualifies. */

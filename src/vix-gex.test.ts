@@ -194,3 +194,45 @@ describe('GEX for a multi-expiration VIX chain (Phase 3, section 9)', () => {
     expect(Number.isFinite(walls.maxNetGex!)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GEX-H5: no Gamma Flip sweep for a futures-priced symbol
+// ---------------------------------------------------------------------------
+describe('Gamma Flip of a futures-priced symbol (review GEX-H5)', () => {
+  const R = 0.045;
+  const expA = expInDays(19);
+  const expB = expInDays(26);
+
+  test('an expiration whose forward did not resolve must not make a spot-model flip (the sweep is skipped)', () => {
+    // A resolves (two-sided chain, F = 17.648) and carries `forward` on every quote; B has no common call/put strike, so no
+    // forward resolves and its quotes keep the provider's spot-model IVs and gammas: a put 15 and a call 22 that cross
+    const enrichedA = enrichFuturesPricedQuotes(chain(expA, 17.648, 0.92, [16, 17, 18, 19, 20], R, 1000, 500), R);
+    expect(enrichedA.every((x) => typeof x.forward === 'number')).toBe(true);
+    const b = [
+      q({ side: 'put', strike: 15, expiration: expB, openInterest: 2000, iv: 0.6, gamma: 0.08, bid: 0.4, ask: 0.5 }),
+      q({ side: 'call', strike: 22, expiration: expB, openInterest: 2000, iv: 0.6, gamma: 0.06, bid: 0.3, ask: 0.4 }),
+    ];
+    const enrichedB = enrichFuturesPricedQuotes(b, R);
+    expect(enrichedB.some((x) => typeof x.forward === 'number')).toBe(false);
+    // the B quotes alone DO cross when swept as Black-Scholes spot quotes (what leaked into VIX's flip before the fix)
+    expect(computeGexLevels(enrichedB, 17.648).gammaFlip).not.toBeNull();
+
+    const levels = computeGexLevels([...enrichedA, ...enrichedB], 17.648, 'VIX');
+    expect(levels.gammaFlip).toBeNull();
+    expect(levels.gammaFlipPos).toBeNull();
+    expect(levels.gammaFlipNeg).toBeNull();
+    expect(levels.gammaFlipUnavailable).toBe('futuresPriced');
+    // the profile levels still come from the per-quote forwards
+    expect(levels.maxNetGex).not.toBeNull();
+  });
+
+  test('VXN too; a spot-priced symbol with the same quotes keeps its flip', () => {
+    const b = [
+      q({ side: 'put', strike: 15, expiration: expB, openInterest: 2000, iv: 0.6, gamma: 0.08 }),
+      q({ side: 'call', strike: 22, expiration: expB, openInterest: 2000, iv: 0.6, gamma: 0.06 }),
+    ];
+    expect(computeGexLevels(b, 17.648, 'VXN').gammaFlip).toBeNull();
+    expect(computeGexLevels(b, 17.648, 'SPY').gammaFlip).not.toBeNull();
+    expect(computeGexLevels(b, 17.648, 'SPY').gammaFlipUnavailable).toBeNull();
+  });
+});
