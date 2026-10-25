@@ -27,6 +27,7 @@ import {
   findGammaFlipHypotheticalSpot,
   gammaFlipSweepCrossings,
   computeBoard,
+  BOARD_COLUMNS,
   expirationOiShares,
   ivCoverageNearSpot,
   repairImpliedVols,
@@ -1228,6 +1229,23 @@ describe('computeBoard', () => {
     expect(board.peaks.notionalDelta).toEqual([95]);
     expect(board.atmStrike).toBe(100);
     expect(computeBoard(quotes, 102.5).atmStrike).toBe(100); // tie between 100 and 105 -> the lower
+  });
+
+  test('seconds: the runner-up of each column one rank below its peak, Net GEX and put GEX also on the negative side', () => {
+    expect(board.seconds.netGex).toEqual([105]); // one positive strike only (100), the negatives -5000 (95) then -500 (105)
+    expect(board.seconds.absGex).toEqual([95]); // 9000 (100), then 7000 (95)
+    expect(board.seconds.totalOi).toEqual([95]); // 55 (105), then 40 (95)
+    expect(board.seconds.callGex).toEqual([95]); // +6000 (100), then +1000 (95)
+    expect(board.seconds.putGex).toEqual([100]); // -6000 (95), then -3000 (100)
+    for (const c of BOARD_COLUMNS) for (const k of board.seconds[c]) expect(board.peaks[c]).not.toContain(k);
+  });
+
+  test('seconds: a strike tied with the peak is the runner-up; a single value has none', () => {
+    const tie = computeBoard([b('call', 90, { openInterest: 7 }), b('call', 110, { openInterest: 7 }), b('call', 100, { openInterest: 3 })], 100);
+    expect(tie.peaks.totalOi).toEqual([90]);
+    expect(tie.seconds.totalOi).toEqual([110]);
+    expect(computeBoard([b('call', 90, { openInterest: 7 })], 100).seconds.totalOi).toEqual([]);
+    expect(computeBoard([], 100).seconds.netGex).toEqual([]);
   });
 
   test('ties go to the lowest strike; no positive value -> no peak; an empty chain is empty', () => {
