@@ -127,6 +127,12 @@ async function main(): Promise<void> {
             const count = (k: string) => peaks.filter((p) => p === k).length;
             assert.ok(count('netGex') >= 1 && count('netGex') <= 2, `${at}: Net GEX peaks ${count('netGex')}`);
             for (const k of ['absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare']) assert.ok(count(k) <= 1, `${at}: ${k} peaks ${count(k)}`);
+            // ---- runner-ups: the same counts, a tinted cell of their own, never on a peak's cell ----
+            const seconds = await page.locator('[data-board-second]').evaluateAll((els) => els.map((e) => ({ k: e.getAttribute('data-board-second') ?? '', bg: getComputedStyle(e).backgroundColor, dot: !!e.querySelector('[data-board-dot]'), peak: e.hasAttribute('data-board-peak') })));
+            const secondCount = (k: string) => seconds.filter((s) => s.k === k).length;
+                        assert.ok(secondCount('netGex') <= 2, `${at}: Net GEX runner-ups ${secondCount('netGex')}`);
+            for (const k of ['absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare']) assert.ok(secondCount(k) <= 1, `${at}: ${k} runner-ups ${secondCount(k)}`);
+            for (const s of seconds) assert.ok(s.dot && !s.peak, `${at}: runner-up ${s.k} has a dot and is not a peak`);
 
             // ---- only the table scrolls, the footer stays in view ----
             const fit = await page.evaluate(() => ({ page: document.documentElement.scrollHeight, inner: window.innerHeight, footer: Math.round(document.querySelector('footer')!.getBoundingClientRect().bottom) }));

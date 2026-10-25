@@ -18,7 +18,7 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // volume (total, calls, puts) and each strike's share of the Abs GEX. The numbers come from src/gex.ts computeBoard
 // through useGexLevels (the view only renders). A dot marks each column's peak, coloured by the sign of the value it marks
 // (the Net GEX (+) / (-) colours, metric-prefs signColor), and tints its row by the sign of the
-// row's Net GEX; the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
+// row's Net GEX; the runner-up of a column (computeBoard seconds) gets the same dot and a tint of its own cell only; the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
 // and whenever the ticker or the expiration selection changes (src/center-row.ts, like the Desk). The table looks like the
 // Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel.
 // ============================================================================
@@ -103,6 +103,11 @@ export const BoardView: React.FC<{
     const peakSets = React.useMemo(() => {
         const out = {} as Record<BoardColumn, Set<number>>;
         for (const c of BOARD_COLUMNS) out[c] = new Set(board?.peaks[c] ?? []);
+        return out;
+    }, [board]);
+    const secondSets = React.useMemo(() => {
+        const out = {} as Record<BoardColumn, Set<number>>;
+        for (const c of BOARD_COLUMNS) out[c] = new Set(board?.seconds[c] ?? []);
         return out;
     }, [board]);
     // the enabled levels on their (nearest) strikes, with the chart's level names and colours (level-labels.ts)
@@ -190,9 +195,15 @@ export const BoardView: React.FC<{
                                         </td>
                                         {columns.map((c) => {
                                             const peak = !!c.peak && peakSets[c.peak].has(row.strike);
+                                            // the runner-up: the peak's dot (by the value's sign) and a tint of this cell only, by the sign of the
+                                            // row's Net GEX like a peak's row tint
+                                            const second = !peak && !!c.peak && secondSets[c.peak].has(row.strike);
+                                            const dot = peak || second ? signColor(c.value(row), colors) : undefined;
+                                            const netColor = second ? signColor(row.netGex, colors) : undefined;
+                                            const cellBg = netColor ? `color-mix(in srgb, ${netColor} 16%, transparent)` : undefined;
                                             return (
-                                                <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" data-board-peak={peak ? c.key : undefined} data-board-col={c.key}>
-                                                    {peak && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: signColor(c.value(row), colors) ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr('board.peak')} />}
+                                                <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" style={cellBg ? { backgroundColor: cellBg } : undefined} data-board-peak={peak ? c.key : undefined} data-board-second={second ? c.key : undefined} data-board-col={c.key}>
+                                                    {(peak || second) && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: dot ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr(peak ? 'board.peak' : 'board.second')} />}
                                                     {c.format(row)}
                                                 </td>
                                             );
