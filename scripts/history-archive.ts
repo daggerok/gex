@@ -101,7 +101,9 @@ export function readHistoryIndex(historyDir: string): HistoryIndex {
  * byte for byte (`dayOf` gives the day a file's text belongs to, null = not a cache file), an entry of the same ticker that
  * is already in that day's zip is replaced, tickers already in it that are not given stay. Run at the end of each trading
  * day, the zip is the last state of the day. The zip is only rewritten when its content changes, so running it again with
- * the same files changes nothing.
+ * the same files changes nothing. `sameData(old, next)` (optional) tells two texts of one ticker apart beyond their bytes: the
+ * fetcher passes "equal ignoring the `updated` stamp", so the post-close runs (16:30-23:59 New York time, all final) keep the
+ * zip and commit nothing when the chain did not change after the close.
  */
 export function archiveDay(opts: {
     optionsDir: string;
@@ -109,6 +111,7 @@ export function archiveDay(opts: {
     symbols: readonly string[];
     day: string;
     dayOf: (text: string) => string | null;
+    sameData?: (oldText: string, nextText: string) => boolean;
 }): ArchiveReport {
     const path = zipPathFor(opts.day, opts.historyDir);
     const entries = readDayZip(path);
@@ -126,6 +129,7 @@ export function archiveDay(opts: {
         const data = enc.encode(text);
         const old = entries.get(name);
         if (old && old.length === data.length && old.every((v, i) => v === data[i])) { already++; continue; }
+        if (old && opts.sameData?.(dec.decode(old), text)) { already++; continue; }
         entries.set(name, data);
         written.push(symbol);
     }

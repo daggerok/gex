@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { extractEntry, parseZipDirectory } from '../src/history-zip';
 import { archiveDay, pruneArchives, snapshotsOnDisk, readArchived, readHistoryIndex, syncHistoryIndex, zipPathFor } from './history-archive';
-import { fileDay } from './options-data';
+import { classifyPayload, fileDay } from './options-data';
 
 const setup = () => {
   const root = mkdtempSync(join(tmpdir(), 'gex-archive-'));
@@ -59,6 +59,23 @@ describe('archiveDay', () => {
     expect(r.added).toEqual({});
     expect(r.already).toBe(1);
     expect(readFileSync(zip).equals(before)).toBe(true);
+  });
+
+  test('with sameData a later run whose file differs only in the updated stamp keeps the zip (post-close reruns commit nothing)', () => {
+    const d = setup();
+    const first = put(d.optionsDir, 'SPY', '2026-10-09');
+    const sameData = (a: string, b: string) => classifyPayload(a, b) === 'unchanged';
+    archiveDay({ optionsDir: d.optionsDir, historyDir: d.historyDir, symbols: ['SPY'], day: '2026-10-09', dayOf: fileDay, sameData });
+    const zip = zipPathFor('2026-10-09', d.historyDir);
+    const before = readFileSync(zip);
+    writeFileSync(join(d.optionsDir, 'SPY.json'), first.replace('T15:30:00', 'T19:15:00'));
+    const r = archiveDay({ optionsDir: d.optionsDir, historyDir: d.historyDir, symbols: ['SPY'], day: '2026-10-09', dayOf: fileDay, sameData });
+    expect(r.added).toEqual({});
+    expect(r.already).toBe(1);
+    expect(readFileSync(zip).equals(before)).toBe(true);
+    // changed data still replaces the entry
+    put(d.optionsDir, 'SPY', '2026-10-09', 'after close');
+    expect(archiveDay({ optionsDir: d.optionsDir, historyDir: d.historyDir, symbols: ['SPY'], day: '2026-10-09', dayOf: fileDay, sameData }).added).toEqual({ '2026-10-09': ['SPY'] });
   });
 
   test('a later run of the same day replaces the ticker with the newer file (the zip is the last state of the day)', () => {
