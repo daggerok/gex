@@ -13,7 +13,7 @@
  * docs/repos/gex/spec-backtest.md).
  *
  * USAGE
- *   bun scripts/backtest-backup.ts                 # the PRESET of required tickers (DEFAULT_TICKERS, src/default-tickers.ts)
+ *   bun scripts/backtest-backup.ts                 # the PRESET of required tickers (DEFAULT_SYMBOLS, scripts/options-data.ts)
  *   bun scripts/backtest-backup.ts all             # ALL available data: every ticker file of api/options
  *   bun scripts/backtest-backup.ts SPY NDX         # only these tickers (space or comma separated)
  *   bun scripts/backtest-backup.ts SPY,QQQ
@@ -34,11 +34,11 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { deflateRawSync } from "node:zlib";
-import { DEFAULT_TICKERS } from "../src/default-tickers";
 import { buildZip } from "../src/history-zip";
 import { backupStamp, isTickerName, manifestEntryName, manifestText, nextBackupId, sortEntries, tickerEntryName } from "../src/backtest/snapshot";
 export { backupStamp, nextBackupId };
 import { snapshotsOnDisk, syncHistoryIndex, zipPathFor } from "./history-archive";
+import { DEFAULT_SYMBOLS } from "./options-data";
 
 const REPO_ROOT = dirname(__dirname);
 const OPTIONS_DIR = join(REPO_ROOT, "api", "options");
@@ -64,7 +64,7 @@ export function parseArgs(argv: readonly string[]): BackupArgs {
     if (bad.length) throw new Error(`not a ticker name: ${bad.join(", ")}`);
     const tickers = words.filter((w) => w !== "ALL");
     if (words.includes("ALL")) return { tickers: null, preset: false, help };
-    return tickers.length ? { tickers, preset: false, help } : { tickers: [...DEFAULT_TICKERS], preset: true, help };
+    return tickers.length ? { tickers, preset: false, help } : { tickers: [...DEFAULT_SYMBOLS], preset: true, help };
 }
 
 /** Ticker files of a folder (everything `<SYM>.json` except the index), sorted. */

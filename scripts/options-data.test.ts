@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -182,8 +182,8 @@ describe('symbols', () => {
 
 describe('which tickers a run covers (default list, DEFAULT_TICKERS, TICKERS, all)', () => {
   test('no env: the built-in default list, nothing discovered', () => {
-    expect(defaultSymbols({})).toEqual(DEFAULT_SYMBOLS);
-    expect(universeRequest({}, [])).toEqual({ fixed: DEFAULT_SYMBOLS, discover: false, source: `default set (${DEFAULT_SYMBOLS.length})` });
+    expect(defaultSymbols({})).toEqual([...DEFAULT_SYMBOLS]);
+    expect(universeRequest({}, [])).toEqual({ fixed: [...DEFAULT_SYMBOLS], discover: false, source: `default set (${DEFAULT_SYMBOLS.length})` });
   });
 
   test('TICKERS adds on top of the default list instead of replacing it; a ticker already in it is not repeated', () => {
@@ -197,7 +197,7 @@ describe('which tickers a run covers (default list, DEFAULT_TICKERS, TICKERS, al
     expect(defaultSymbols({ DEFAULT_TICKERS: 'spy,qqq' })).toEqual(['SPY', 'QQQ']);
     expect(universeRequest({ DEFAULT_TICKERS: 'SPY QQQ', TICKERS: 'AAPL QQQ' }, []).fixed).toEqual(['SPY', 'QQQ', 'AAPL']);
     expect(universeRequest({ DEFAULT_TICKERS: 'SPY', TICKERS: '' }, []).fixed).toEqual(['SPY']);
-    expect(defaultSymbols({ DEFAULT_TICKERS: '  ' })).toEqual(DEFAULT_SYMBOLS);
+    expect(defaultSymbols({ DEFAULT_TICKERS: '  ' })).toEqual([...DEFAULT_SYMBOLS]);
     expect(universeRequest({ DEFAULT_TICKERS: 'SPY' }, []).source).toBe('DEFAULT_TICKERS (1)');
   });
 
@@ -376,18 +376,39 @@ describe('index manifest', () => {
   });
 
   test('unchanged manifest is not rewritten', () => {
-    const prev = { files: ['A', 'B'], count: 2, names: { A: 'Alpha' }, no_options: { Z: '2026-10-01' } };
-    expect(planIndex(['B', 'A'], prev, { Z: '2026-10-01' }, names)).toBeNull();
-    expect(planIndex(['A', 'B'], prev, null, names)).toBeNull();
+    const prev = { files: ['A', 'B'], count: 2, names: { A: 'Alpha' }, no_options: { Z: '2026-10-01' }, defaults: ['B', 'A'] };
+    expect(planIndex(['B', 'A'], prev, { Z: '2026-10-01' }, names, ['B', 'A'])).toBeNull();
+    expect(planIndex(['A', 'B'], prev, null, names, ['B', 'A'])).toBeNull();
   });
 
-  test('changed tickers, names or skiplist rewrite it with the exact shape', () => {
-    const prev = { files: ['A'], count: 1, names: {}, no_options: {} };
-    const p = planIndex(['A', 'B'], prev, { Z: '2026-10-01' }, new Map([['B', ' Beta  Corp '], ['Z', 'None'], ['Q', 'Not wanted']]));
+  test('changed tickers, names or skiplist rewrite it with the exact shape, the default list last in its own order', () => {
+    const prev = { files: ['A'], count: 1, names: {}, no_options: {}, defaults: ['B', 'A'] };
+    const p = planIndex(['A', 'B'], prev, { Z: '2026-10-01' }, new Map([['B', ' Beta  Corp '], ['Z', 'None'], ['Q', 'Not wanted']]), ['B', 'A']);
     expect(p).not.toBeNull();
     expect(pyJsonDumps(p, 2)).toBe(
-      '{\n  "files": [\n    "A",\n    "B"\n  ],\n  "count": 2,\n  "names": {\n    "B": "Beta Corp"\n  },\n  "no_options": {\n    "Z": "2026-10-01"\n  }\n}',
+      '{\n  "files": [\n    "A",\n    "B"\n  ],\n  "count": 2,\n  "names": {\n    "B": "Beta Corp"\n  },\n  "no_options": {\n    "Z": "2026-10-01"\n  },\n  "defaults": [\n    "B",\n    "A"\n  ]\n}',
     );
+  });
+
+  test('a missing or different default list rewrites an otherwise unchanged manifest (t13: old index.json files gain it)', () => {
+    const prev = { files: ['A'], count: 1, names: {}, no_options: {} };
+    expect(planIndex(['A'], prev, {}, names, ['A'])?.defaults).toEqual(['A']);
+    expect(planIndex(['A'], { ...prev, defaults: ['A', 'B'] }, {}, names, ['B', 'A'])?.defaults).toEqual(['B', 'A']);
+    expect(planIndex(['A'], { ...prev, defaults: 'A' }, {}, names, ['A'])).not.toBeNull();
+    expect(planIndex(['A'], { ...prev, defaults: ['A'] }, {}, names, ['A'])).toBeNull();
+  });
+
+  test('the default list written is the built-in DEFAULT_SYMBOLS, never the DEFAULT_TICKERS override of one run', () => {
+    const p = planIndex(['A'], {}, {}, names);
+    expect(p?.defaults).toEqual([...DEFAULT_SYMBOLS]);
+    // a copy: changing the payload never changes DEFAULT_SYMBOLS
+    p?.defaults.push('X');
+    expect(DEFAULT_SYMBOLS).not.toContain('X');
+  });
+
+  test('the committed api/options/index.json carries the current default list', () => {
+    const index = JSON.parse(readFileSync(join(root, 'api/options/index.json'), 'utf8')) as { defaults?: unknown };
+    expect(index.defaults).toEqual([...DEFAULT_SYMBOLS]);
   });
 
   test('previous names survive when the run discovered none', () => {
@@ -935,11 +956,10 @@ describe('chart cache', () => {
 });
 
 describe('DEFAULT_SYMBOLS', () => {
-  test('is exactly the list of tickers the empty ticker search field hints, in both languages', () => {
-    const i18n = readFileSync(join(root, 'src/i18n.tsx'), 'utf8');
-    const hints = Array.from(i18n.matchAll(/'controls\.tickerPlaceholder': '([^']+)'/g)).map((m) => m[1].split(',').map((t) => t.trim()));
-    expect(hints.length).toBe(2);
-    for (const hint of hints) expect(hint).toEqual(DEFAULT_SYMBOLS);
+  test('is written once: no other source file repeats the list (the app reads it from index.json)', () => {
+    const files = ['src/i18n.tsx', 'src/main.tsx', 'src/components/BackupDialog.tsx', 'src/components/TopBar.tsx', 'scripts/backtest-backup.ts'];
+    for (const f of files) expect(readFileSync(join(root, f), 'utf8')).not.toContain(DEFAULT_SYMBOLS.slice(0, 4).join(', '));
+    expect(existsSync(join(root, 'src/default-tickers.ts'))).toBe(false);
   });
 
   test('has no duplicates and the priority symbols are inside it', () => {
@@ -947,8 +967,9 @@ describe('DEFAULT_SYMBOLS', () => {
     for (const s of PRIORITY_SYMBOLS) expect(DEFAULT_SYMBOLS).toContain(s);
   });
 
-  test('holds the indices, index ETFs and index proxies the owner trades (2026-10-25)', () => {
-    for (const s of ['SPX', 'SPY', 'NDX', 'QQQ', 'COMP', 'IWM', 'RUT', 'DJIA', 'INDU', 'NYA', 'XSP']) expect(DEFAULT_SYMBOLS).toContain(s);
+  test('holds the indices and index ETFs the owner trades, not the proxies without listed options (2026-10-25)', () => {
+    for (const s of ['SPX', 'SPY', 'NDX', 'QQQ', 'IWM', 'RUT', 'DJX', 'DIA', 'XSP']) expect(DEFAULT_SYMBOLS).toContain(s);
+    for (const s of ['COMP', 'DJIA', 'INDU', 'NYA']) expect(DEFAULT_SYMBOLS).not.toContain(s);
   });
 });
 
