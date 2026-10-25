@@ -387,6 +387,8 @@ export const GexView: React.FC<GexViewProps> = ({
     const fs = useFullscreen();
     const ax = accentOf(settings.colorTheme);
     const na = tr('gex.na');
+    /** Why the Gamma Flip is not shown: too little IV coverage near spot (computeGexLevels' gate). */
+    const gammaFlipNoIvText = (l: GexLevels): string => tr('gex.level.tooltip.gammaFlipNoIv', { pct: `${Math.round((l.gammaFlipIvCoverage ?? 0) * 100)}%` });
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
 
     // quotes / effSpot / levels come from App's useGexLevels (computed once,
@@ -1419,9 +1421,16 @@ export const GexView: React.FC<GexViewProps> = ({
                                         <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${GEX_LEVEL_COLORS[l.key].dot}`} aria-hidden="true" />
                                         {l.label}
                                     </span>
-                                    <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">
-                                        {l.value != null ? fmt(l.value) + (l.suffix ? ` ${l.suffix}` : '') : na}
-                                    </span>
+                                    {l.key === 'gammaFlip' && levels?.gammaFlipUnavailable ? (
+                                        // no flip: the sweep sees too little of the gamma near spot through usable IVs
+                                        <Tip text={gammaFlipNoIvText(levels)} wrap>
+                                            <span className="font-medium tabular-nums text-slate-400 dark:text-slate-500" data-gamma-flip-no-iv>{na}</span>
+                                        </Tip>
+                                    ) : (
+                                        <span className="font-medium tabular-nums text-slate-800 dark:text-slate-100">
+                                            {l.value != null ? fmt(l.value) + (l.suffix ? ` ${l.suffix}` : '') : na}
+                                        </span>
+                                    )}
                                 </div>
                             ))}
                         </div>

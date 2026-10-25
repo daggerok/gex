@@ -27,6 +27,9 @@ export interface GreeksSummary {
 }
 
 /** A single normalized option contract quote (provider-agnostic shape). */
+/** How repairImpliedVols (src/gex.ts) replaced a failed-solve IV, see OptionQuote.ivRepair. */
+export type IvRepair = 'smile' | 'otherSide' | 'gamma';
+
 export interface OptionQuote {
     /** OCC-style option symbol, e.g. "AAPL260717C00110000". */
     symbol: string;
@@ -45,6 +48,12 @@ export interface OptionQuote {
     openInterest: number | null;
     /** Implied volatility as a decimal (0.25 = 25%), when provided. */
     iv: number | null;
+    /**
+     * Set only on the copies src/gex.ts repairImpliedVols makes for the levels (never on loaded data): how a failed-solve
+     * provider IV (below 5%) was replaced - `smile` interpolated between valid IVs of the same side, `otherSide` the valid
+     * IV of the other side at the same strike, `gamma` the IV whose Black-Scholes gamma equals the provider gamma.
+     */
+    ivRepair?: IvRepair;
     delta: number | null;
     gamma: number | null;
     theta: number | null;
@@ -373,6 +382,14 @@ export interface GexLevels {
      * both are non-null.
      */
     gammaFlipNeg: number | null;
+    /**
+     * Share (0..1) of the provider |GEX| within GAMMA_FLIP_COVERAGE_WINDOW_PCT of spot that comes from quotes with a valid
+     * or repaired IV, i.e. how much of the real gamma near spot the Gamma Flip sweep can see. Null when nothing near spot
+     * carries a provider gamma (nothing to compare).
+     */
+    gammaFlipIvCoverage: number | null;
+    /** Why `gammaFlip` is null although the sweep ran: `ivCoverage` = that share is below GAMMA_FLIP_MIN_IV_COVERAGE. */
+    gammaFlipUnavailable: 'ivCoverage' | null;
     maxNetGex: number | null;
     minNetGex: number | null;
     /** "Net GEX+" - null if none qualifies. */

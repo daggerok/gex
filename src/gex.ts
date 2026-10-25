@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
-import { blackScholesGreeks, yearsToExpiration } from './greeks';
-import type { GexLevels, GexPoint, OptionQuote, SigmaLevel, SigmaLevels, SigmaStatBasis, ZeroGexZone } from './types';
+import { blackScholesGreeks, impliedVolFromGamma, yearsToExpiration } from './greeks';
+import type { GexLevels, GexPoint, IvRepair, OptionQuote, SigmaLevel, SigmaLevels, SigmaStatBasis, ZeroGexZone } from './types';
 
 // ---------------------------------------------------------------------------
 // Gamma exposure (GEX) math - SINGLE SOURCE OF TRUTH for GEX-derived levels
@@ -203,6 +203,10 @@ export const GAMMA_FLIP_RANGE_PCT = 0.20;
  * is well below any genuine SPX-family implied vol (even the 2020 crash
  * peaked under 0.9) and above the entire observed failed-solve sequence, so
  * it only excludes provably-degenerate quotes.
+ *
+ * Since 2026-10-25 such quotes are not simply dropped: computeGexLevels repairs their IV first (repairImpliedVols: smile,
+ * other side, or the IV of the provider gamma), because on some days CBOE fails the solve on EVERY near-money strike
+ * and the sweep then saw only far out-of-the-money quotes.
  */
 export const GAMMA_FLIP_MIN_IV = 0.05;
 
@@ -789,6 +793,129 @@ export function atmImpliedVol(quotes: readonly OptionQuote[], spot: number): num
     return (lo ?? hi)!.iv;
 }
 
+/** An IV the Gamma Flip sweep and the ATM IV accept: finite and at least GAMMA_FLIP_MIN_IV. */
+function hasUsableIv(q: Pick<OptionQuote, 'iv'>): boolean {
+    return typeof q.iv === 'number' && Number.isFinite(q.iv) && q.iv >= GAMMA_FLIP_MIN_IV;
+}
+
+/** Priced off its own futures curve (VIX, VXN): kept out of the sweep and of the IV repair. */
+function isForwardPriced(q: Pick<OptionQuote, 'forward'>): boolean {
+    return typeof q.forward === 'number' && Number.isFinite(q.forward) && q.forward > 0;
+}
+
+/**
+ * Replaces failed-solve IVs (null or below GAMMA_FLIP_MIN_IV) so the Gamma Flip sweep and the ATM IV of the Sigma
+ * levels can use those quotes (owner-approved 2026-10-25, our own repair, not a published method). Evidence: the cached
+ * SPX chain of 2026-10-23 had IV 1e-5 .. 0.004 on every strike within +/-3% of spot in its first 5 expirations while the
+ * CBOE gamma was sane (0.0022 at the money), so only 866 of 1955 quotes reached the sweep and the flip came from far
+ * out-of-the-money noise. Per expiration, for each quote whose IV is not usable (futures-priced quotes are left alone):
+ *  1. `smile`: linear interpolation in strike between the nearest strikes BELOW and ABOVE with a usable IV on the same
+ *     side (no extrapolation)
+ *  2. `otherSide`: the usable IV of the other side at the same strike
+ *  3. `gamma`: the IV whose Black-Scholes gamma at spot equals the quote's provider gamma (greeks.ts impliedVolFromGamma),
+ *     the root nearest to the expiration's ATM IV (atmImpliedVol of the usable IVs, else the gamma-implied IV of the
+ *     strike nearest to spot, a single root at the money; a chain with no strike near spot can pick the wrong one of two
+ *     roots out of the money, see impliedVolFromGamma)
+ *  otherwise the quote stays as it is. Only the RETURNED copies change (`iv` replaced, `ivRepair` says how); the input
+ * is never mutated and the provider gamma, used by every other level, is untouched. `now` is for tests.
+ */
+export function repairImpliedVols(quotes: readonly OptionQuote[], spot: number, now?: Date): OptionQuote[] {
+    const out = quotes.slice();
+    if (!Number.isFinite(spot) || spot <= 0) return out;
+    const byExp = new Map<string, number[]>();
+    quotes.forEach((q, i) => {
+        const list = byExp.get(q.expiration);
+        if (list) list.push(i); else byExp.set(q.expiration, [i]);
+    });
+    byExp.forEach((idx, expiration) => {
+        const group = idx.map((i) => quotes[i]);
+        const broken = idx.filter((i) => !hasUsableIv(quotes[i]) && !isForwardPriced(quotes[i]) && Number.isFinite(quotes[i].strike));
+        if (broken.length === 0) return;
+        // usable IVs of this expiration, per side, ascending by strike, and by strike for the other-side lookup
+        const valid: Record<'call' | 'put', Array<{ k: number; iv: number }>> = { call: [], put: [] };
+        const atStrike: Record<'call' | 'put', Map<number, number>> = { call: new Map(), put: new Map() };
+        for (const q of group) {
+            if (!hasUsableIv(q) || isForwardPriced(q) || !Number.isFinite(q.strike)) continue;
+            valid[q.side].push({ k: q.strike, iv: q.iv as number });
+            atStrike[q.side].set(q.strike, q.iv as number);
+        }
+        valid.call.sort((a, b) => a.k - b.k);
+        valid.put.sort((a, b) => a.k - b.k);
+        const years = now ? yearsToExpiration(expiration, now) : yearsToExpiration(expiration);
+        let ref: number | null | undefined; // the expiration's ATM IV for the gamma inversion, found on first need
+        const refVol = (): number | null => {
+            if (ref !== undefined) return ref;
+            ref = atmImpliedVol(group, spot);
+            if (ref === null && years !== null) {
+                // no usable IV at all: the gamma-implied IV at the strike nearest to spot (one root there)
+                const nearest = nearestStrikeTo(group.map((q) => q.strike), spot);
+                const ivs = group
+                    .filter((q) => q.strike === nearest && typeof q.gamma === 'number' && q.gamma > 0)
+                    .map((q) => impliedVolFromGamma(spot, q.strike, years, q.gamma as number))
+                    .filter((v): v is number => v !== null);
+                ref = ivs.length ? ivs.reduce((a, b) => a + b, 0) / ivs.length : null;
+            }
+            return ref;
+        };
+        for (const i of broken) {
+            const q = quotes[i];
+            let iv: number | null = null;
+            let how: IvRepair | null = null;
+            const side = valid[q.side];
+            let lo: { k: number; iv: number } | null = null;
+            let hi: { k: number; iv: number } | null = null;
+            for (const p of side) {
+                if (p.k < q.strike) lo = p;
+                else if (p.k > q.strike) { hi = p; break; }
+            }
+            if (lo && hi) {
+                iv = lo.iv + ((q.strike - lo.k) * (hi.iv - lo.iv)) / (hi.k - lo.k);
+                how = 'smile';
+            } else {
+                const other = atStrike[q.side === 'call' ? 'put' : 'call'].get(q.strike);
+                if (other !== undefined) {
+                    iv = other;
+                    how = 'otherSide';
+                } else if (years !== null && typeof q.gamma === 'number' && q.gamma > 0) {
+                    iv = impliedVolFromGamma(spot, q.strike, years, q.gamma, refVol());
+                    how = iv === null ? null : 'gamma';
+                }
+            }
+            if (iv !== null && how !== null) out[i] = { ...q, iv, ivRepair: how };
+        }
+    });
+    return out;
+}
+
+/** Half-width of the window around spot, as a share of spot, where the IV coverage of the Gamma Flip is measured. */
+export const GAMMA_FLIP_COVERAGE_WINDOW_PCT = 0.02;
+
+/** Minimum share of the provider |GEX| near spot the sweep must see through valid or repaired IVs to show a Gamma Flip. */
+export const GAMMA_FLIP_MIN_IV_COVERAGE = 0.8;
+
+/**
+ * Share (0..1) of the provider |GEX| (provider gamma x OI x 100 x spot^2 x 0.01, calls and puts as absolute values) of
+ * the quotes within GAMMA_FLIP_COVERAGE_WINDOW_PCT of spot that belongs to quotes with a usable IV, i.e. what the
+ * Black-Scholes sweep of the Gamma Flip can see of the real gamma there. Pass the REPAIRED quotes. Futures-priced quotes
+ * and quotes without a provider gamma or OI are left out; null when nothing is left (nothing to compare). Our own gate
+ * (owner-approved 2026-10-25): below GAMMA_FLIP_MIN_IV_COVERAGE the flip would come from the few quotes the sweep sees.
+ */
+export function ivCoverageNearSpot(quotes: readonly OptionQuote[], spot: number): number | null {
+    if (!Number.isFinite(spot) || spot <= 0) return null;
+    const window = spot * GAMMA_FLIP_COVERAGE_WINDOW_PCT;
+    let total = 0;
+    let covered = 0;
+    for (const q of quotes) {
+        if (isForwardPriced(q) || !(Math.abs(q.strike - spot) <= window)) continue;
+        const oi = finiteOr0(q.openInterest);
+        if (oi <= 0 || typeof q.gamma !== 'number' || !Number.isFinite(q.gamma)) continue;
+        const v = Math.abs(gexCall(q.gamma, oi, spot));
+        total += v;
+        if (hasUsableIv(q)) covered += v;
+    }
+    return total > 0 ? covered / total : null;
+}
+
 /**
  * Sigma levels (Chart tab and GEX chart), both modes, from the strikes of `quotes` (the selected expirations). ORIGINAL,
  * owner-requested heuristics, not published levels:
@@ -833,16 +960,24 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
     // Gamma flip (section 7.3): hypothetical-spot Black-Scholes recompute
     // against the RAW quotes, not the real-spot profile - see
     // findGammaFlipHypotheticalSpot's doc comment for why.
-    const crossings = gammaFlipSweepCrossings(quotes, spot);
+    // failed-solve IVs repaired first (repairImpliedVols), for the sweep and the ATM IV of Sigma; the provider gamma of
+    // every other level is untouched
+    const repaired = repairImpliedVols(quotes, spot);
+    const crossings = gammaFlipSweepCrossings(repaired, spot);
     const { pos: gammaFlipPos, neg: gammaFlipNeg } = crossingsByDirection(crossings);
     const totalNetGex = profile.reduce((sum, point) => sum + point.netGex, 0);
+    // the sweep must see most of the real gamma near spot, else no flip (ivCoverageNearSpot)
+    const gammaFlipIvCoverage = ivCoverageNearSpot(repaired, spot);
+    const gammaFlipUnavailable = gammaFlipIvCoverage !== null && gammaFlipIvCoverage < GAMMA_FLIP_MIN_IV_COVERAGE ? 'ivCoverage' : null;
     // GEX-M2: the only crossing, or the one nearest to spot (see nearestGammaFlip)
-    const gammaFlip = nearestGammaFlip(crossings, spot);
+    const gammaFlip = gammaFlipUnavailable ? null : nearestGammaFlip(crossings, spot);
     return {
         spot,
         gammaFlip,
         gammaFlipPos,
         gammaFlipNeg,
+        gammaFlipIvCoverage,
+        gammaFlipUnavailable,
         ...walls,
         ...findSumNetGexLevels(profile, spot),
         maxPain: computeMaxPain(quotes),
@@ -850,7 +985,7 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
         // Zero GEX: the owner's own per-strike sign-change method, an ADDITIONAL level next to the Gamma Flip above
         ...findZeroGex(profile, totalNetGex),
         // Sigma: strikes at +/- 1, 2, 3 % of spot and at +/- 1, 2, 3 statistical sigma (both modes, the UI picks one)
-        sigma: computeSigmaLevels(quotes, spot),
+        sigma: computeSigmaLevels(repaired, spot),
         pcRatioOi: pcr.byOi,
         pcRatioVolume: pcr.byVolume,
         totalNetGex,

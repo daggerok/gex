@@ -63,7 +63,11 @@ export const LevelsPanel: React.FC<{
                         const key = entry.builtin;
                         const on = selected.includes(key);
                         const label = tr(LEVEL_LABEL_KEY[key]);
-                        const tooltip = key === 'spot' && spotEstimated ? tr('gex.level.tooltip.spotEstimated') : key === 'sigma' ? sigmaTooltip() : tr(LEVEL_TOOLTIP_KEY[key]);
+                        const tooltip = key === 'spot' && spotEstimated ? tr('gex.level.tooltip.spotEstimated')
+                            : key === 'sigma' ? sigmaTooltip()
+                                : key === 'gammaFlip' && levels?.gammaFlipUnavailable
+                                    ? `${tr('gex.level.tooltip.gammaFlipNoIv', { pct: `${Math.round((levels.gammaFlipIvCoverage ?? 0) * 100)}%` })} ${tr(LEVEL_TOOLTIP_KEY[key])}`
+                                    : tr(LEVEL_TOOLTIP_KEY[key]);
                         return (
                             <ToggleChip
                                 key={entry.key}
