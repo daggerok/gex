@@ -77,8 +77,11 @@ export const ToggleChip: React.FC<{
     activeClass: string;
     idleClass: string;
     swatches: React.ReactNode;
+    /** Optional control on the LEFT of the label (a ChipSwitch that switches a mode of the metric or level). Like the
+     *  swatches, its clicks and keys never toggle the chip itself. */
+    leading?: React.ReactNode;
     children: React.ReactNode;
-}> = ({ on, onToggle, title, activeClass, idleClass, swatches, children }) => {
+}> = ({ on, onToggle, title, activeClass, idleClass, swatches, leading, children }) => {
     const chipRef = useRef<HTMLDivElement>(null);
     const tipRef = useRef<HTMLDivElement>(null);
     const tooltipId = useId();
@@ -139,6 +142,11 @@ export const ToggleChip: React.FC<{
                 stacking Net GEX's two swatches above its label in a separate
                 layout and reverted after seeing it live, wanting every chip
                 to look the same regardless of how many swatches it has. */}
+            {leading != null && (
+                <span className="flex shrink-0 items-center" onClick={stop} onMouseDown={stop} onKeyDown={stop}>
+                    {leading}
+                </span>
+            )}
             <span>{children}</span>
             <span className="flex shrink-0 items-center gap-1" onClick={stop} onMouseDown={stop}>
                 {swatches}
