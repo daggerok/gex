@@ -72,8 +72,9 @@ describe('data age and expired expirations of a cache file (GEX-H4)', () => {
     const meta = withoutExpired(chain, new Date('2026-10-24T12:00:00-04:00'));
     expect(meta.expirations).toEqual(['2026-10-24', '2026-10-30']);
     expect(meta.expiredDropped).toBe(2);
-    // the expiration day itself stays until midnight New York, also after the 16:00 settlement
-    expect(withoutExpired(chain, new Date('2026-10-16T23:30:00-04:00')).expirations).toEqual(['2026-10-16', '2026-10-24', '2026-10-30']);
+    // the expiration day itself stays up to its 16:00 settlement and is over after it (batch 4, owner 2026-10-25)
+    expect(withoutExpired(chain, new Date('2026-10-16T16:00:00-04:00')).expirations).toEqual(['2026-10-16', '2026-10-24', '2026-10-30']);
+    expect(withoutExpired(chain, new Date('2026-10-16T16:01:00-04:00')).expirations).toEqual(['2026-10-24', '2026-10-30']);
     // nothing expired: the same object
     expect(withoutExpired(chain, new Date('2026-10-01T12:00:00-04:00'))).toBe(chain);
   });

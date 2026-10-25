@@ -1,5 +1,5 @@
 /// <reference lib="esnext" />
-import { BS_DIVIDEND_YIELD, BS_RISK_FREE_RATE, impliedVolFromGamma, isFuturesPricedSymbol, normPdf, yearsToExpiration } from './greeks';
+import { BS_DIVIDEND_YIELD, BS_RISK_FREE_RATE, impliedVolFromGamma, isAmSettled, isFuturesPricedSymbol, normPdf, yearsToExpiration } from './greeks';
 import type { GexLevels, GexPoint, IvRepair, OptionQuote, SigmaLevel, SigmaLevels, SigmaStatBasis, ZeroGexZone } from './types';
 
 // ---------------------------------------------------------------------------
@@ -439,7 +439,7 @@ interface SweepLeg {
 /**
  * The quotes the sweep can price, in their order, with the terms of blackScholesGreeks' gamma that do not depend on S
  * (its defaults: BS_RISK_FREE_RATE, BS_DIVIDEND_YIELD). Left out like there: no open interest, a non-positive strike or
- * IV, an expired or malformed expiration (yearsToExpiration null, read once per expiration).
+ * IV, an expired or malformed expiration (yearsToExpiration null, read once per expiration and settlement style).
  */
 function sweepLegs(quotes: readonly OptionQuote[]): SweepLeg[] {
     const years = new Map<string, number | null>();
@@ -450,10 +450,13 @@ function sweepLegs(quotes: readonly OptionQuote[]): SweepLeg[] {
         const k = q.strike;
         const sigma = q.iv as number;
         if (!(Number.isFinite(k) && k > 0) || !(Number.isFinite(sigma) && sigma > 0)) continue;
-        let t = years.get(q.expiration);
+        // per expiration and settlement style (an SPX 3rd Friday has AM-settled SPX and PM-settled SPXW quotes)
+        const am = isAmSettled(q.symbol);
+        const key = am ? `${q.expiration}|am` : q.expiration;
+        let t = years.get(key);
         if (t === undefined) {
-            t = yearsToExpiration(q.expiration);
-            years.set(q.expiration, t);
+            t = yearsToExpiration(q.expiration, undefined, am);
+            years.set(key, t);
         }
         if (t == null || t <= 0) continue;
         const sqrtT = Math.sqrt(t);

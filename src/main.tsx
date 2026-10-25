@@ -818,7 +818,7 @@ import { liveLabel, pickTickerForSnapshot } from './backtest/entries';
 import { makeBackup, type BackupProgress } from './backtest/maker';
 import { saveBackupChoice, type BackupChoice } from './backtest/prefs';
 import { downloadBytes, useBacktest } from './backtest/use-backtest';
-import { setValuationTime } from './greeks';
+import { setValuationTime, withoutExpiredQuotes } from './greeks';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { asOfDayOf, makeAsOfProvider, valuationTimeOf } from './providers/asof';
 import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
@@ -1299,7 +1299,8 @@ const App: React.FC = () => {
             for (const exp of ordered) {
                 const quotes = await loadExpiration(provider, meta.symbol, exp, ctxFor(settings, provider, ac.signal), settings.vixFuturesPricing);
                 if (ac.signal.aborted) return;
-                collected[exp] = quotes;
+                // without the quotes already over (an SPX 3rd Friday after 9:30 keeps its SPXW, drops its AM-settled SPX)
+                collected[exp] = withoutExpiredQuotes(quotes);
             }
             setExpData(collected);
             setChainSymbol(meta.symbol);
