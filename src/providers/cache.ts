@@ -65,6 +65,11 @@ export interface StaticTickerManifest {
     noOptions: string[];
     /** Optional TICKER -> company / fund / index name, stored in api/options/index.json. */
     names: Record<string, string>;
+    /**
+     * The fetcher's default list (`defaults`, scripts/options-data.ts DEFAULT_SYMBOLS) in its own order: the ticker search
+     * hint and the backup preset. Empty when the index predates the field (an old cached index.json).
+     */
+    defaults: string[];
 }
 
 /** In-memory copy of api/options/index.json so typing in the ticker box stays instant. */
@@ -86,9 +91,14 @@ export function looksLikeTicker(sym: string): boolean {
  * suggestions so a user can see "XYZ (no options)" while typing and understand
  * that the ticker is valid but the latest cache scan found no listed contracts.
  */
-export async function loadStaticTickerManifest(ctx: ProviderContext): Promise<StaticTickerManifest> {
+export async function loadStaticTickerManifest(ctx: Pick<ProviderContext, 'signal'>): Promise<StaticTickerManifest> {
     if (staticTickerManifestCache) return staticTickerManifestCache;
-    const j: any = await fetchStaticJson('api/options/index.json', ctx.signal);
+    staticTickerManifestCache = manifestFromIndex(await fetchStaticJson('api/options/index.json', ctx.signal));
+    return staticTickerManifestCache;
+}
+
+/** The parsed api/options/index.json, normalized (pure). Anything malformed becomes an empty list, never a throw. */
+export function manifestFromIndex(j: any): StaticTickerManifest {
     // v13: `files` is a sorted ticker list. Legacy v4–v12 used { TICKER: updatedISO }.
     const rawFiles = j?.files;
     const fileSymbols: string[] = Array.isArray(rawFiles)
@@ -105,12 +115,23 @@ export async function loadStaticTickerManifest(ctx: ProviderContext): Promise<St
         const value = String(rawNames[sym] ?? '').trim();
         if (key && value) names[key] = value;
     });
-    staticTickerManifestCache = {
+    // the default list keeps its order (it is the order of the hint), only bad entries and repeats are dropped
+    const defaults = Array.isArray(j?.defaults) ? (j.defaults as unknown[]).map(normalizeTickerSymbol).filter(looksLikeTicker) : [];
+    return {
         options: fileSymbols.filter(Boolean).sort(),
         noOptions: noOptions.filter(Boolean).sort(),
         names,
+        defaults: defaults.filter((s, i) => defaults.indexOf(s) === i),
     };
-    return staticTickerManifestCache;
+}
+
+/** The fetcher's default list from api/options/index.json; [] while it cannot be read or when the index has no `defaults`. */
+export async function loadDefaultTickers(signal?: AbortSignal): Promise<string[]> {
+    try {
+        return (await loadStaticTickerManifest({ signal })).defaults;
+    } catch {
+        return [];
+    }
 }
 
 /** Rank a local-index match: exact ticker > ticker prefix > company prefix > substring; no match => null. */

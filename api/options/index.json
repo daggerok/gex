@@ -6239,5 +6239,26 @@
     "ZBZX": "2026-10-08",
     "ZTEST": "2026-10-08",
     "ZVV": "2026-10-08"
-  }
+  },
+  "defaults": [
+    "SPX",
+    "NDX",
+    "DJX",
+    "RUT",
+    "IWM",
+    "NVDA",
+    "AAPL",
+    "MSFT",
+    "AMZN",
+    "GOOGL",
+    "TSM",
+    "META",
+    "AVGO",
+    "MU",
+    "GOOG",
+    "SPY",
+    "QQQ",
+    "DIA",
+    "XSP"
+  ]
 }

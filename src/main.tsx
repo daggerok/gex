@@ -815,13 +815,13 @@ import { TopBar } from './components/TopBar';
 import { liveLabel, pickTickerForSnapshot } from './backtest/entries';
 import { makeBackup, type BackupProgress } from './backtest/maker';
 import { saveBackupChoice, type BackupChoice } from './backtest/prefs';
-import { DEFAULT_TICKERS } from './default-tickers';
 import { downloadBytes, useBacktest } from './backtest/use-backtest';
 import { setValuationDay } from './greeks';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { makeAsOfProvider, valuationDayOf } from './providers/asof';
 import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
+import { loadDefaultTickers } from './providers/cache';
 import { getBulk, loadExpiration, loadMeta } from './providers/loader';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
 import { accentOf, useThemeController } from './theme';
@@ -956,6 +956,15 @@ const App: React.FC = () => {
     const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null);
     const [backupError, setBackupError] = useState('');
     const [backupAll, setBackupAll] = useState<number | null>(null);
+    // The fetcher's default list (api/options/index.json `defaults`, written once in scripts/options-data.ts): the ticker
+    // search hint and the backup preset. [] while it loads, when the site cannot serve the index or the index is older
+    // than the field; the hint then shows a plain label and the preset is unavailable.
+    const [defaultTickers, setDefaultTickers] = useState<string[]>([]);
+    useEffect(() => {
+        let live = true;
+        void loadDefaultTickers().then((list) => { if (live) setDefaultTickers(list); });
+        return () => { live = false; };
+    }, []);
     const backupAbort = useRef<AbortController | null>(null);
 
     // ---- Chain data state (DEFERRED loading; nothing fetches on mount) ------
@@ -1148,13 +1157,15 @@ const App: React.FC = () => {
         setBackupProgress(null);
         setBackupAll(null);
         setShowBackup(true);
+        // a failed first load is not cached, so opening the dialog tries again
+        if (!defaultTickers.length) void loadDefaultTickers().then((list) => { if (list.length) setDefaultTickers(list); });
         void Promise.resolve(provider.listTickers?.(ctxFor(settings, provider)) ?? null).then((list) => setBackupAll(list ? list.length : null)).catch(() => setBackupAll(null));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [provider, settings]);
+    }, [provider, settings, defaultTickers.length]);
     const createBackup = useCallback(async (choice: BackupChoice) => {
         // the preset of required tickers is the default; a ticker the provider does not have is reported and left out
         const current = (meta?.symbol ?? '').toUpperCase();
-        const tickers: string[] | null = choice.mode === 'all' ? null : choice.mode === 'preset' ? [...DEFAULT_TICKERS] : choice.mode === 'current' ? (current ? [current] : [...DEFAULT_TICKERS]) : choice.tickers;
+        const tickers: string[] | null = choice.mode === 'all' ? null : choice.mode === 'preset' ? [...defaultTickers] : choice.mode === 'current' ? (current ? [current] : [...defaultTickers]) : choice.tickers;
         const ac = new AbortController();
         backupAbort.current = ac;
         setBackupError('');
@@ -1183,7 +1194,7 @@ const App: React.FC = () => {
             setBackupProgress(null);
             backupAbort.current = null;
         }
-    }, [provider, settings, btc, asOf, tr, meta]);
+    }, [provider, settings, btc, asOf, tr, meta, defaultTickers]);
     const cancelBackup = useCallback(() => {
         if (backupAbort.current) backupAbort.current.abort();
         else setShowBackup(false);
@@ -1603,6 +1614,7 @@ const App: React.FC = () => {
                     resetView();
                 }}
                 tickerInput={tickerInput}
+                tickerHint={defaultTickers.length ? defaultTickers.join(', ') : tr('topBar.ticker')}
                 onTickerInput={setTickerInput}
                 onSearch={() => getDates(tickerInput)}
                 searching={metaLoading}
@@ -1841,7 +1853,7 @@ const App: React.FC = () => {
                 />
             )}
             {showBackup && (
-                <BackupDialog currentTicker={(meta?.symbol ?? '').toUpperCase()} allCount={backupAll} progress={backupProgress} error={backupError} onCreate={(choice) => { void createBackup(choice); }} onCancel={cancelBackup} />
+                <BackupDialog currentTicker={(meta?.symbol ?? '').toUpperCase()} presetTickers={defaultTickers} allCount={backupAll} progress={backupProgress} error={backupError} onCreate={(choice) => { void createBackup(choice); }} onCancel={cancelBackup} />
             )}
             {toast && (
                 <div

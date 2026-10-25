@@ -105,6 +105,8 @@ export const TopBar: React.FC<{
     onClearSettings: () => void;
     onClearAll: () => Promise<void>;
     tickerInput: string;
+    /** placeholder of the empty ticker search: the fetcher's default list from api/options/index.json, or a plain label until it is known */
+    tickerHint: string;
     onTickerInput: (v: string) => void;
     onSearch: () => void;
     searching?: boolean;
@@ -126,7 +128,7 @@ export const TopBar: React.FC<{
     asOfMenuSlot?: React.ReactNode;
 }> = ({
     settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll,
-    tickerInput, onTickerInput, onSearch, searching,
+    tickerInput, tickerHint, onTickerInput, onSearch, searching,
     tickerSuggestions, tickerSuggestionsOpen, tickerSuggestionsLoading, activeTickerSuggestion,
     onTickerFocus, onTickerBlur, onTickerKeyDown, onChooseSuggestion, setActiveTickerSuggestion, setTickerSuggestionsOpen,
     proxyOk, proxyChecking, asOfSlot, asOfMenuSlot,
@@ -231,7 +233,7 @@ export const TopBar: React.FC<{
                             onClick={(e) => e.currentTarget.select()}
                             onBlur={onTickerBlur}
                             onKeyDown={onTickerKeyDown}
-                            placeholder={t('controls.tickerPlaceholder')}
+                            placeholder={tickerHint}
                             spellCheck={false}
                             autoCapitalize="characters"
                             role="combobox"

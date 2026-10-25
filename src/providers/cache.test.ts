@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ProviderContext } from '../types';
-import { staticProvider, staticTickerSuggestionsFromManifest } from './cache';
+import { manifestFromIndex, staticProvider, staticTickerSuggestionsFromManifest } from './cache';
 
 const ctx = {} as ProviderContext;
 const realFetch = globalThis.fetch;
@@ -35,7 +35,20 @@ describe('CACHE provider with a ticker in both files and no_options', () => {
   });
 
   test('the suggestions offer it once, with options', () => {
-    const s = staticTickerSuggestionsFromManifest('SPX', { options: ['SPX', 'SPY'], noOptions: ['INDU', 'SPX'], names: {} });
+    const s = staticTickerSuggestionsFromManifest('SPX', { options: ['SPX', 'SPY'], noOptions: ['INDU', 'SPX'], names: {}, defaults: [] });
     expect(s.filter((x) => x.symbol === 'SPX').map((x) => x.hasOptions)).toEqual([true]);
+  });
+});
+
+describe('manifestFromIndex: the default list of the fetcher (index.json `defaults`)', () => {
+  test('keeps the order of the list (the order of the hint), normalized, without repeats or bad entries', () => {
+    const m = manifestFromIndex({ ...INDEX, defaults: ['SPX', 'ndx', ' SPY ', 'SPX', '', 'not a ticker', null] });
+    expect(m.defaults).toEqual(['SPX', 'NDX', 'SPY']);
+  });
+
+  test('an index older than the field, or a broken one, gives an empty list instead of throwing', () => {
+    expect(manifestFromIndex(INDEX).defaults).toEqual([]);
+    expect(manifestFromIndex({ ...INDEX, defaults: 'SPX' }).defaults).toEqual([]);
+    expect(manifestFromIndex(null)).toEqual({ options: [], noOptions: [], names: {}, defaults: [] });
   });
 });

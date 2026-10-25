@@ -14,6 +14,10 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t13 - The default list lives only here (DEFAULT_SYMBOLS; src/default-tickers.ts is gone) and index.json carries it as the
+ *        additive field `defaults` (the built-in list, not a DEFAULT_TICKERS override of one run), so the app's ticker hint and
+ *        backup preset read it from there and the list is written once. COMP, DJIA, INDU and NYA left it again (COMP is
+ *        Compass Inc, DJIA a covered call ETF, INDU and NYA have no options; the Dow is DJX, the Nasdaq NDX and QQQ): 19 tickers.
  *   t12 - HTTP errors fail the ticker instead of writing a partial chain or a false "no options" (review GEX-C1, GEX-H3): a
  *        rate limit, an HTTP >= 400 answer (not 404), a timeout or a non-JSON page on any expiration fails the ticker, so its
  *        old file stays and RATE_LIMIT_HITS can halt the run. Only an answer of the wrong shape skips that one date, and the
@@ -40,7 +44,7 @@
  *        Kept quotes are not refetched from Yahoo (their bid, ask, last and IV stay as of the last run that covered them), but
  *        they get the Cboe overlay of the same request (greeks, open interest, volume). A full run still refreshes everything.
  *   t7 - DEFAULT_SYMBOLS grows to the 18 tickers the ticker search field hints (SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT,
- *        AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA). A unit test keeps it equal to `controls.tickerPlaceholder`.
+ *        AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA). (Until t13 a unit test kept it equal to the i18n hint.)
  *        The hourly workflow `update-partial-data.yml` runs this default set on weekdays during market hours.
  *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (see t7 above).
  *        `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins (until t11: it adds now).
@@ -128,7 +132,6 @@
  */
 
 /// <reference types="node" />
-import { DEFAULT_TICKERS } from "../src/default-tickers";
 import { archiveDay, pruneArchives } from "./history-archive";
 import { marketDay as sharedMarketDay } from "../src/backtest/snapshot";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -1244,8 +1247,14 @@ export function mergeUniverse(nasdaq: string[], cboe: string[], size: number): s
     return dedupe(FALLBACK_UNIVERSE.map((s) => canonical(s))).slice(0, size);
 }
 
-/** The built-in default list: the main indices and their ETFs plus the mega caps, exactly the tickers hinted in the ticker search field (`controls.tickerPlaceholder`). */
-export const DEFAULT_SYMBOLS: string[] = [...DEFAULT_TICKERS];
+/**
+ * The built-in default list, the ONLY place it is written: the main indices and their ETFs plus the mega caps. Every run
+ * fetches it (the DEFAULT_TICKERS env replaces it, TICKERS adds to it), the hourly workflow refreshes it, HISTORY archives
+ * it, scripts/backtest-backup.ts backs it up by default, and index.json carries it as `defaults` for the app (the ticker
+ * search hint and the backup preset show it in this order). Index proxies without listed options (COMP is Compass Inc,
+ * DJIA a covered call ETF, INDU and NYA have none) stay out: the Dow is DJX and DIA, the Nasdaq NDX and QQQ.
+ */
+export const DEFAULT_SYMBOLS: readonly string[] = ['SPX', 'NDX', 'DJX', 'RUT', 'IWM', 'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'TSM', 'META', 'AVGO', 'MU', 'GOOG', 'SPY', 'QQQ', 'DIA', 'XSP'];
 
 /** The default list of this run: the DEFAULT_TICKERS env replaces DEFAULT_SYMBOLS when it is set and not blank. Every run fetches it. */
 export function defaultSymbols(env: Record<string, string | undefined> = process.env): string[] {
@@ -1544,6 +1553,13 @@ export interface IndexPayload {
     count: PyInt;
     names: Record<string, string>;
     no_options: Record<string, string>;
+    /** the built-in default list (DEFAULT_SYMBOLS) in its own order, read by the app; added last so older readers ignore it (t13) */
+    defaults: string[];
+}
+
+/** True when `prev` is a list equal to `next`, element by element (order counts). */
+function sameList(prev: unknown, next: readonly string[]): boolean {
+    return Array.isArray(prev) && prev.length === next.length && next.every((v, i) => prev[i] === v);
 }
 
 function sameStringMap(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
@@ -1554,13 +1570,14 @@ function sameStringMap(a: Record<string, unknown>, b: Record<string, unknown>): 
 
 /**
  * Pure core of write_index: returns the payload to write, or null when nothing
- * changed (ticker set, names and skiplist equal, and not the legacy shape).
+ * changed (ticker set, names, skiplist and default list equal, and not the legacy shape).
  */
 export function planIndex(
     files: string[],
     prev: IndexDoc,
     skip: Record<string, string> | null,
     symbolNames: Map<string, string>,
+    defaults: readonly string[] = DEFAULT_SYMBOLS,
 ): IndexPayload | null {
     const sortedFiles = [...files].sort();
     const noOptions = skip === null
@@ -1588,11 +1605,12 @@ export function planIndex(
         prevFiles.every((f, i) => f === sortedFiles[i]) &&
         sameStringMap(prevNames, names) &&
         sameStringMap(prevSkip, noOptions) &&
+        sameList(prev.defaults, defaults) &&
         !legacy
     ) {
         return null;
     }
-    return { files: sortedFiles, count: new PyInt(sortedFiles.length), names, no_options: noOptions };
+    return { files: sortedFiles, count: new PyInt(sortedFiles.length), names, no_options: noOptions, defaults: [...defaults] };
 }
 
 function writeIndex(skip: Record<string, string> | null): boolean {
@@ -2078,7 +2096,7 @@ export async function main(): Promise<void> {
     }
 
     log(`skiplist: saving ${Object.keys(skip).length} entries to api/options/index.json (no_options)`);
-    log("index: rebuilding api/options/index.json manifest if files/names/skiplist changed");
+    log("index: rebuilding api/options/index.json manifest if files/names/skiplist/defaults changed");
     const indexChanged = writeIndex(skip);
     if (indexChanged && existsSync(LEGACY_SKIP_PATH)) {
         try {

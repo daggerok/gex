@@ -150,7 +150,6 @@ export const translations: Record<Language, Record<string, string>> = {
         'onboarding.previewDemo': 'or get {{symbol}}’s dates now (no key needed)',
         'onboarding.previewCache': 'or switch to CACHE (AAPL static data)',
 
-        'controls.tickerPlaceholder': 'SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA, XSP, COMP, DJIA, INDU, NYA',
         'controls.expirations': 'Expirations',
         'controls.loading': 'Loading…',
         'controls.reset': 'Reset',
@@ -392,7 +391,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'bt.backup.title': 'Create backup',
         'bt.backup.help': 'Saves the data of the chosen tickers (from the provider in use, or from the open archive) as one zip, the same file the CI backup makes, with your custom levels. It is also kept in this browser.',
         'bt.backup.preset': 'Required tickers (default)',
-        'bt.backup.presetHint': '{{list}}',
+        'bt.backup.presetUnknown': 'the list is not loaded yet (api/options/index.json)',
         'bt.backup.current': 'Current ticker',
         'bt.backup.currentNone': 'no ticker is loaded',
         'bt.backup.all': 'All available data',
@@ -566,7 +565,6 @@ export const translations: Record<Language, Record<string, string>> = {
         'onboarding.previewDemo': 'или получить даты для {{symbol}} прямо сейчас (без ключа)',
         'onboarding.previewCache': 'или переключиться на CACHE (статичные данные AAPL)',
 
-        'controls.tickerPlaceholder': 'SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA, XSP, COMP, DJIA, INDU, NYA',
         'controls.expirations': 'Экспирации',
         'controls.loading': 'Загрузка…',
         'controls.reset': 'Сбросить',
@@ -800,7 +798,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'bt.backup.title': 'Создать бэкап',
         'bt.backup.help': 'Сохраняет данные выбранных тикеров (от используемого провайдера или из открытого архива) одним zip, такой же файл делает CI-бэкап, вместе с вашими пользовательскими уровнями. Копия хранится и в этом браузере.',
         'bt.backup.preset': 'Обязательные тикеры (по умолчанию)',
-        'bt.backup.presetHint': '{{list}}',
+        'bt.backup.presetUnknown': 'список ещё не загружен (api/options/index.json)',
         'bt.backup.current': 'Текущий тикер',
         'bt.backup.currentNone': 'тикер не загружен',
         'bt.backup.all': 'Все доступные данные',
