@@ -22,6 +22,7 @@ import {
   SUM_NET_GEX_SHARE,
   findGammaFlipHypotheticalSpot,
   gexCall,
+  gexBarHalves,
   gexPut,
   trimZeroBoundaries,
 } from './gex';
@@ -757,5 +758,38 @@ describe('findMaxAbsGamma (Max AG)', () => {
     } as unknown as OptionQuote);
     const levels = computeGexLevels([q(770, 'call', 100), q(770, 'put', 100), q(775, 'call', 1000), q(775, 'put', 1000)], 772);
     expect(levels.maxAbsGamma).toBe(775);
+  });
+});
+
+describe('gexBarHalves (Net GEX view toggle)', () => {
+  test('net view: the positive or the negative part of netGex, the other half is 0', () => {
+    // fixture strike 105: callGex 110000, putGex -10000 -> netGex 100000 (see computeGexProfile above)
+    const k105 = { callGex: 110000, putGex: -10000, netGex: 100000 };
+    expect(gexBarHalves(k105, 'net')).toEqual({ pos: 100000, neg: 0 });
+    // strike 90: callGex 10000, putGex -50000 -> netGex -40000
+    const k90 = { callGex: 10000, putGex: -50000, netGex: -40000 };
+    expect(gexBarHalves(k90, 'net')).toEqual({ pos: 0, neg: -40000 });
+  });
+
+  test('split view: call GEX up and put GEX down at the same strike, not netted', () => {
+    expect(gexBarHalves({ callGex: 110000, putGex: -10000, netGex: 100000 }, 'split')).toEqual({ pos: 110000, neg: -10000 });
+    expect(gexBarHalves({ callGex: 10000, putGex: -50000, netGex: -40000 }, 'split')).toEqual({ pos: 10000, neg: -50000 });
+  });
+
+  test('split halves of the real profile add up to netGex and span absGamma', () => {
+    for (const p of computeGexProfile(FIXTURE, SPOT)) {
+      const { pos, neg } = gexBarHalves(p, 'split');
+      expect(pos).toBeGreaterThanOrEqual(0);
+      expect(neg).toBeLessThanOrEqual(0);
+      expect(pos + neg).toBeCloseTo(p.netGex, 9);
+      expect(pos - neg).toBeCloseTo(p.absGamma, 9);
+    }
+  });
+
+  test('a strike where calls and puts cancel shows nothing in the net view but both sides in the split view', () => {
+    // fixture EXP_A strike 100: 200 calls vs 200 puts, same gamma -> callGex 20000, putGex -20000, netGex 0
+    const k100 = { callGex: 20000, putGex: -20000, netGex: 0 };
+    expect(gexBarHalves(k100, 'net')).toEqual({ pos: 0, neg: 0 });
+    expect(gexBarHalves(k100, 'split')).toEqual({ pos: 20000, neg: -20000 });
   });
 });

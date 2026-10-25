@@ -136,6 +136,26 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
     return profile;
 }
 
+/**
+ * How the GEX chart draws the Net GEX metric (owner request 2026-10-25):
+ *  - `net`: one value per strike, netGex = callGex + putGex (the default, as before)
+ *  - `split`: both sides at every strike without netting, callGex up and putGex down
+ *    (the "Gamma Split" view: call gamma exposure above zero, put gamma exposure below it)
+ */
+export type NetGexView = 'net' | 'split';
+
+/**
+ * The two stacked bar heights of the Net GEX metric at one strike, in $ of gamma exposure per 1% move.
+ *  - `net`: `pos` = max(netGex, 0), `neg` = min(netGex, 0), so exactly one of them is non-zero
+ *  - `split`: `pos` = callGex (>= 0 for a non-negative gamma), `neg` = putGex (<= 0, puts are negative by the
+ *    gexPut convention), so `pos + neg` is still netGex and `pos - neg` is absGamma
+ * The values come straight from computeGexProfile (quotes with null gamma are already excluded there).
+ */
+export function gexBarHalves(point: Pick<GexPoint, 'callGex' | 'putGex' | 'netGex'>, view: NetGexView): { pos: number; neg: number } {
+    if (view === 'split') return { pos: point.callGex, neg: point.putGex };
+    return { pos: Math.max(point.netGex, 0), neg: Math.min(point.netGex, 0) };
+}
+
 export interface GammaFlipCrossings {
     /** Last negative -> positive netGex transition (ascending by strike). Null if none. */
     pos: number | null;

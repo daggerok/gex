@@ -15,12 +15,12 @@ import { ToggleChip } from '../components/ToggleChip';
 import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
 import { MetricsPanel } from '../components/MetricsPanel';
-import { DEFAULT_GEX_METRICS, GEX_METRICS, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
+import { DEFAULT_GEX_METRICS, GEX_METRICS, netGexView, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, defaultLevelName, proposeLevelColor } from '../custom-levels';
 import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
 import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
-import { computeGexProfile, computeOiVolumeTotals, computePCRatio, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
+import { computeGexProfile, computeOiVolumeTotals, computePCRatio, gexBarHalves, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
     CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
     type GexLevelKey, type LevelColorSet, type MetricColorSet,
@@ -416,6 +416,10 @@ export const GexView: React.FC<GexViewProps> = ({
     // single boundary marker on each side (trimZeroBoundaries, src/gex.ts),
     // evaluated against whichever metrics are currently selected - a strike
     // only counts as zero when every one of `metrics`'s fields reads 0 there.
+    // Net GEX view (the switch inside the Net GEX chip): 'net' draws netGex per strike, 'split' ("GEX") draws call GEX up and
+    // put GEX down at every strike (gexBarHalves, src/gex.ts)
+    const gexView = netGexView.use();
+    const split = gexView === 'split';
     const chart = useMemo(() => {
         if (!profile.length) return null;
         // metrics.map(metricDataKey): a metric name is usually its own
@@ -423,7 +427,9 @@ export const GexView: React.FC<GexViewProps> = ({
         // participates in the zero-boundary trim via its own field, exactly
         // like every other metric (e.g. AG selected alone trims by its own
         // leading/trailing zero strikes, same as netGex alone does today).
-        const visible = trimZeroBoundaries(profile, metrics.map(metricDataKey));
+        // In the split view a strike whose calls and puts cancel (netGex 0) still draws both bars, so the Net GEX metric
+        // trims by its absolute gamma there
+        const visible = trimZeroBoundaries(profile, metrics.map((m) => (m === 'netGex' && split ? 'absGamma' : metricDataKey(m))));
         if (!visible.length) return null; // pathological: all-zero across the current selection
         let gap = Infinity;
         for (let i = 1; i < visible.length; i++) gap = Math.min(gap, visible[i].strike - visible[i - 1].strike);
@@ -441,8 +447,7 @@ export const GexView: React.FC<GexViewProps> = ({
         // tooltip/legend can still report the actual non-negative count.
         const rows = visible.map((p) => ({
             ...p,
-            pos: Math.max(p.netGex, 0),
-            neg: Math.min(p.netGex, 0),
+            ...gexBarHalves(p, gexView),
             putOiNeg: -p.putOi,
             putVolumeNeg: -p.putVolume,
             // Per-strike put/call ratios (src/gex.ts, rule R1): the real value for
@@ -455,7 +460,7 @@ export const GexView: React.FC<GexViewProps> = ({
         }));
         // strikeStep: the smallest gap between two visible strikes = "one strike", the zoom-in floor is 4 of them
         return { rows, domain: [minK - pad, maxK + pad] as [number, number], strikeStep: pad };
-    }, [profile, effSpot, metrics]);
+    }, [profile, effSpot, metrics, gexView]);
 
     // ---- Multi-metric selection --------------------------------------------
     // netGex keeps its signed pos/neg stacked treatment. The 4 OI/Volume
@@ -487,7 +492,7 @@ export const GexView: React.FC<GexViewProps> = ({
     /** Short label (chip body, Legend abbreviation) - "AG" for Absolute
      *  Gamma, matching the reference tool's own abbreviation; the metric's
      *  one plain name for everything else. */
-    const metricLabel = (m: GexMetric) => tr('gex.metric.' + m);
+    const metricLabel = (m: GexMetric) => tr('gex.metric.' + (m === 'netGex' && split ? 'netGexSplit' : m));
     /** Fuller label used wherever there's room to spell things out (chart
      *  title, hover-tooltip rows) - every other metric already reads fully
      *  via metricLabel; only Absolute Gamma has a distinct short ("AG") vs.
@@ -510,6 +515,7 @@ export const GexView: React.FC<GexViewProps> = ({
     const resetMetricsPanel = () => {
         setMetrics([...DEFAULT_GEX_METRICS]);
         resetMetricColors();
+        netGexView.set(netGexView.fallback);
     };
     // AG is a dollar-gamma magnitude, same unit/scale as netGex (just
     // unsigned - no cancellation between call/put) - formatted the same way
@@ -1679,7 +1685,20 @@ export const GexView: React.FC<GexViewProps> = ({
                                             return (
                                                 <TooltipFade shown={!!live && tooltipArmed}>
                                                     <div className="text-slate-500 dark:text-slate-400">{tr('chain.strike')} {fmt(row.strike as number)}</div>
-                                                    {metrics.map((m) => (
+                                                    {metrics.flatMap((m) => (m === 'netGex' && split
+                                                        // split view: the two bars of the strike (call GEX, put GEX), then their net
+                                                        ? [['pos', metricColors.netGexPos, `${metricLabel('netGex')} (+)`], ['neg', metricColors.netGexNeg, `${metricLabel('netGex')} (−)`]].map(([key, color, label]) => (
+                                                            <div key={key} className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
+                                                                <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden="true" />
+                                                                {label}: {`${fmtSignedCompact(row[key] ?? 0)} ${tr('gex.unit')}`}
+                                                            </div>
+                                                        )).concat([(
+                                                            <div key={m} className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
+                                                                <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: colorFor('netGex', (row.netGex as number) >= 0 ? 'pos' : 'neg') }} aria-hidden="true" />
+                                                                {tr('gex.metric.netGex')}: {fmtMetricValue(m, metricValue(m, row))}
+                                                            </div>
+                                                        )])
+                                                        : [(
                                                         <div key={m} className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
                                                             <span
                                                                 className="inline-block h-2 w-2 shrink-0 rounded-full"
@@ -1688,7 +1707,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                             />
                                                             {metricLabelFull(m)}: {fmtMetricValue(m, metricValue(m, row))}
                                                         </div>
-                                                    ))}
+                                                    )]))}
                                                 </TooltipFade>
                                             );
                                         }}
@@ -1722,8 +1741,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                     )}
                                     {hasNetGex && (
                                         <>
-                                            <Bar dataKey="pos" stackId="net" name={`${tr('gex.metric.netGex')} (+)`} fill={metricColors.netGexPos} isAnimationActive={false} />
-                                            <Bar dataKey="neg" stackId="net" name={`${tr('gex.metric.netGex')} (−)`} fill={metricColors.netGexNeg} isAnimationActive={false} />
+                                            {/* "Net GEX (+)" / "Net GEX (−)", or "GEX (+)" / "GEX (−)" in the split view (metricLabel) */}
+                                            <Bar dataKey="pos" stackId="net" name={`${metricLabel('netGex')} (+)`} fill={metricColors.netGexPos} isAnimationActive={false} />
+                                            <Bar dataKey="neg" stackId="net" name={`${metricLabel('netGex')} (−)`} fill={metricColors.netGexNeg} isAnimationActive={false} />
                                         </>
                                     )}
                                     {/* OI / Volume: translucent areas like AG, each in its own
@@ -1778,6 +1798,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                             fill={metricColors.absoluteGamma}
                                             fillOpacity={0.18}
                                             strokeWidth={2}
+                                            // a dot at every strike makes the line easier to read (owner request 2026-10-25)
+                                            dot={{ r: 2, fill: metricColors.absoluteGamma, stroke: metricColors.absoluteGamma, strokeWidth: 1 }}
+                                            activeDot={{ r: 3.5 }}
                                             // recharts layers: Area 100 < Bar 300 < Line/ReferenceLine
                                             // 400. 350 draws AG on top of the GEX bars but below the
                                             // level lines.

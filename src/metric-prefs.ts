@@ -1,6 +1,8 @@
 /// <reference lib="esnext" />
 import { useSyncExternalStore } from 'react';
+import type { NetGexView } from './gex';
 import { DEFAULT_METRIC_COLORS, loadMetricColors, saveMetricColors, type MetricColorSet } from './gex-colors';
+import { persistedChoice } from './persisted-choice';
 
 // ============================================================================
 // METRIC PREFERENCES - the GEX metrics (what the bars plot) and the colours of
@@ -42,3 +44,7 @@ export function resetMetricColors(): void {
 export function useMetricColors(): MetricColorSet {
     return useSyncExternalStore((l) => { listeners.add(l); return () => { listeners.delete(l); }; }, getMetricColors, getMetricColors);
 }
+
+/** How the Net GEX metric is drawn (the switch inside its chip): `net` = Net GEX per strike (default), `split` = "GEX",
+ *  call GEX up and put GEX down at every strike (gexBarHalves in gex.ts). Remembered in the browser like the colours. */
+export const netGexView = persistedChoice<NetGexView>('gex.netGexView.v1', ['net', 'split'], 'net');
