@@ -195,7 +195,7 @@ The proxy starts on `http://localhost:8787` by default and listens on the loopba
 ### Proxy troubleshooting
 
 - **"Could not reach the proxy":** make sure the proxy is running (`bun ./scripts/options-local-proxy.ts`)
-- **CORS errors:** the proxy must run on `localhost`
+- **CORS errors or 403 "origin not allowed":** the proxy must run on `localhost`, and it answers only pages served from `localhost` or `127.0.0.1` (any port) and `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`)
 - **Port conflicts:** change the port in `scripts/options-local-proxy.ts` or use the `PORT` environment variable
 
 ## Companion infrastructure
