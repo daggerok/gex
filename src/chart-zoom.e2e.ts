@@ -15,9 +15,16 @@ const browser = await chromium.launch();
 
 /** The strike labels of the X axis (recharts puts the tick texts next to the tick marks, not inside them): whole strikes or one decimal. */
 const ticks = async (page: Page) => (await page.locator('.recharts-wrapper svg text').allTextContents()).filter((t) => /^\d{2,5}(\.\d)?$/.test(t));
-const zoomIn = (page: Page, times: number) => (async () => {
-    for (let i = 0; i < times; i++) { await page.getByRole('button', { name: 'Horizontal Zoom In' }).click(); await page.waitForTimeout(150); }
-})();
+/** Zooms in step by step until the strike labels change (how many steps that takes depends on the cached chain), at most 6 steps. */
+const zoomInUntilTicksChange = async (page: Page, full: string[]) => {
+    for (let i = 0; i < 6; i++) {
+        await page.getByRole('button', { name: 'Horizontal Zoom In' }).click();
+        await page.waitForTimeout(250);
+        const now = await ticks(page);
+        if (JSON.stringify(now) !== JSON.stringify(full)) return now;
+    }
+    return ticks(page);
+};
 /** The tick labels settle a moment after a load (longer on a busy machine): retry for a few seconds before judging them. */
 async function ticksBecome(page: Page, expected: unknown, message: string) {
     let last: unknown;
@@ -47,16 +54,14 @@ try {
     await page.waitForTimeout(2000);
 
     const spyFull = await ticks(page);
-    await zoomIn(page, 3);
-    const spyZoomed = await ticks(page);
+    const spyZoomed = await zoomInUntilTicksChange(page, spyFull);
     assert.notDeepEqual(spyZoomed, spyFull, 'zooming SPY changes the strike axis');
 
     // another ticker: its own zoom, different from SPY's
     await load(page, 'QQQ');
     await page.waitForTimeout(1000);
     const qqqFull = await ticks(page);
-    await zoomIn(page, 1);
-    const qqqZoomed = await ticks(page);
+    const qqqZoomed = await zoomInUntilTicksChange(page, qqqFull);
     assert.notDeepEqual(qqqZoomed, qqqFull, 'zooming QQQ changes its axis');
 
     // back to SPY: its zoom is still there (the reported bug: it was reset to the full view)
