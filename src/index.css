@@ -388,12 +388,6 @@ html[data-palette='fundamentals'].dark .od-bar.od-current {
     color: #a7f3d0;
     box-shadow: inset 3px 0 0 0 #34d399; /* emerald-400 */
 }
-html[data-palette='fundamentals'] .od-drow.od-atm {
-    background-color: #ecfdf5; /* emerald-50 */
-}
-html[data-palette='fundamentals'].dark .od-drow.od-atm {
-    background-color: rgba(6, 78, 59, 0.4);
-}
 html[data-palette='fundamentals'] .od-strike-cell {
     background-image: linear-gradient(rgba(16, 185, 129, 0.06), rgba(16, 185, 129, 0.06));
 }
@@ -563,8 +557,11 @@ body {
 .od-drow:nth-child(even) { background-color: rgba(248, 250, 252, 0.6); } /* slate-50/60 */
 .dark .od-drow:nth-child(odd)  { background-color: #0f172a; }            /* slate-900 */
 .dark .od-drow:nth-child(even) { background-color: rgba(15, 23, 42, 0.4); }
-.od-drow.od-atm  { background-color: #eef2ff; } /* indigo-50 */
-.dark .od-drow.od-atm { background-color: rgba(30, 27, 75, 0.4); }
+/* ATM row (the strike nearest to spot): the Spot level colour (--od-atm, set by ChainTable from the level colours, so a
+ * custom Spot colour follows), mixed into the row background so it stays opaque under the sticky cells: 22% on white in
+ * the light theme, 30% on slate-900 in the dark one. Clearly visible, the text keeps its contrast (owner 2026-10-25). */
+.od-drow.od-atm  { background-color: color-mix(in srgb, var(--od-atm, #f59e0b) 22%, #ffffff); }
+.dark .od-drow.od-atm { background-color: color-mix(in srgb, var(--od-atm, #f59e0b) 30%, #0f172a); }
 
 /* Center "Strike" column guide — a subtle vertical tint on the explicitly
  * marked strike cell (column index changes when users hide/show desk columns).
