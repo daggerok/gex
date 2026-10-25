@@ -94,7 +94,7 @@ describe('damaged and hostile zips are refused, not read', () => {
     const end = new DataView(new ArrayBuffer(22));
     const localPart = 30 + name.length + 4 + data.length;
     end.setUint32(0, 0x06054b50, true); end.setUint16(8, 1, true); end.setUint16(10, 1, true); end.setUint32(12, 46 + name.length, true); end.setUint32(16, localPart, true);
-    const zip = new Uint8Array([...new Uint8Array(local.buffer), ...name, 0, 0, 0, 0, ...data, ...new Uint8Array(cd.buffer), ...name, ...new Uint8Array(end.buffer)]);
+    const zip = new Uint8Array([new Uint8Array(local.buffer), name, [0, 0, 0, 0], data, new Uint8Array(cd.buffer), name, new Uint8Array(end.buffer)].flatMap((part) => Array.from(part)));
     const [e] = parseZipDirectory(zip);
     expect(e.name).toBe('a.txt');
     expect(dec.decode(extractEntry(zip, e, inflate))).toBe('hi');

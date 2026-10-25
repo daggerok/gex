@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { DataProvider, ProviderContext, Settings, TickerSuggestion } from '../types';
 import { dbg, isAbortError } from '../utils';
 import { dedupeTickerSuggestions, staticProvider, staticTickerSuggestions } from './cache';

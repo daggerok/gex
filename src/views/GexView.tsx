@@ -1,8 +1,7 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { attachLongPress } from '../long-press';
 import { FullscreenButton } from '../components/FullscreenButton';
@@ -189,11 +188,14 @@ const HEADING_CLASS = 'text-base font-semibold text-slate-800 dark:text-slate-10
 
 /** Y axis tick renderer that colors every label with `colorOf(value)` (recharts' default tick
  *  is one color per axis). `format` is applied here because a custom tick bypasses tickFormatter. */
-const coloredTick = (colorOf: (v: number) => string, format: (v: number) => string, placement?: { dx: number; anchor: 'start' | 'end' }) => (props: { x?: number; y?: number; payload?: { value: number }; textAnchor?: string }) => {
+const coloredTick = (colorOf: (v: number) => string, format: (v: number) => string, placement?: { dx: number; anchor: 'start' | 'end' }) => (props: { x?: number | string; y?: number | string; payload?: { value?: unknown }; textAnchor?: string }) => {
+    // recharts types x and y as number | string: coerce, so the dx offset is never a string concatenation
     const v = props.payload?.value;
-    if (v == null || props.x == null || props.y == null) return <React.Fragment />;
+    const x = Number(props.x);
+    const y = Number(props.y);
+    if (typeof v !== 'number' || props.x == null || props.y == null || !Number.isFinite(x) || !Number.isFinite(y)) return <React.Fragment />;
     return (
-        <text x={props.x + (placement?.dx ?? 0)} y={props.y} dy="0.355em" textAnchor={placement?.anchor ?? (props.textAnchor as 'start' | 'middle' | 'end' | 'inherit' | undefined) ?? 'end'} fill={colorOf(v)} fontSize={12}>
+        <text x={x + (placement?.dx ?? 0)} y={y} dy="0.355em" textAnchor={placement?.anchor ?? (props.textAnchor as 'start' | 'middle' | 'end' | 'inherit' | undefined) ?? 'end'} fill={colorOf(v)} fontSize={12}>
             {format(v)}
         </text>
     );

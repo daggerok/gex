@@ -1,4 +1,4 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ============================================================================

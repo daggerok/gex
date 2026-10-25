@@ -80,7 +80,7 @@ function readDayZip(path: string): Map<string, Uint8Array> {
 
 function tickersOf(day: string, entries: Map<string, Uint8Array>): string[] {
     const prefix = `${day}/`;
-    return [...entries.keys()]
+    return Array.from(entries.keys())
         .filter((n) => n.startsWith(prefix) && n.endsWith(".json") && n !== `${prefix}manifest.json`)
         .map((n) => n.slice(prefix.length, -".json".length))
         .sort();
@@ -132,7 +132,7 @@ export function archiveDay(opts: {
     const report: ArchiveReport = { added: {}, already };
     if (written.length) {
         entries.set(manifestEntryName(opts.day), enc.encode(manifestText(opts.day, tickersOf(opts.day, entries))));
-        const ordered = sortEntries([...entries].map(([name, data]) => ({ name, data })));
+        const ordered = sortEntries(Array.from(entries).map(([name, data]) => ({ name, data })));
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, buildZip(ordered, opts.day, deflate));
         report.added[opts.day] = written.sort();

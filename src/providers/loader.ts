@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { enrichChainResult, enrichQuotesWithModelGreeks, hasFirstOrderGreeks, hasHigherOrderGreeks } from '../greeks';
 import { bulkCache, bulkKey, cacheGet, cacheSet } from '../settings-store';
 import { isAsOfProviderId } from './asof';

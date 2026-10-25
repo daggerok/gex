@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { ChainResult, DataProvider, GreeksSummary, OptionQuote, ProviderContext, TickerSuggestion } from '../types';
 import { asArray, computeMid, num } from '../utils';
 

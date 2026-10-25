@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { blackScholesGreeks } from './greeks';
 import type { GexLevels, GexPoint, OptionQuote } from './types';
 
@@ -65,9 +66,9 @@ export const NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL: Readonly<Record<string, NetG
     SPY: { usd: 3 },
 };
 
-/** Resolved minimum second-wall distance in price units for `symbol` at `spot`. */
-export function netGexPlusMinusMinDistance(symbol: string | null | undefined, spot: number): number {
-    const rule = symbol ? NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL[symbol.toUpperCase()] : undefined;
+/** Resolved minimum second-wall distance in price units for `symbol` at `spot`. `bySymbol` is the override table (tests pass their own). */
+export function netGexPlusMinusMinDistance(symbol: string | null | undefined, spot: number, bySymbol: Readonly<Record<string, NetGexPlusMinusDistance>> = NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL): number {
+    const rule = symbol ? bySymbol[symbol.toUpperCase()] : undefined;
     if (rule && 'usd' in rule) return rule.usd;
     return (rule ? rule.pct : NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT) * spot;
 }
@@ -123,7 +124,7 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
             point.putVolume += volume;
         }
     }
-    const profile = [...byStrike.values()].sort((a, b) => a.strike - b.strike);
+    const profile = Array.from(byStrike.values()).sort((a, b) => a.strike - b.strike);
     for (const point of profile) {
         point.netGex = point.callGex + point.putGex;
         // Absolute Gamma (AG, see GexPoint.absGamma's doc comment): callGex
@@ -461,7 +462,7 @@ export function findSumNetGexLevels(
  * Null OI counts as 0. Ties resolve to the lowest strike. null only if empty.
  */
 export function computeMaxPain(quotes: readonly OptionQuote[]): number | null {
-    const strikes = [...new Set(quotes.map((q) => q.strike).filter((k) => Number.isFinite(k)))].sort((a, b) => a - b);
+    const strikes = Array.from(new Set(quotes.map((q) => q.strike).filter((k) => Number.isFinite(k)))).sort((a, b) => a - b);
     let best: number | null = null;
     let bestPayout = Infinity;
     for (const s of strikes) {

@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // Pure helpers for the GEX chart's Key Level labels: levels that land on the
 // same price share ONE label instead of drawing on top of each other. No
 // React, no DOM, unit-tested in level-labels.test.ts.

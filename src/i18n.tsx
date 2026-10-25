@@ -1,5 +1,6 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 // ============================================================================
 // I18N — English / Russian translations, I18nProvider, useI18n().

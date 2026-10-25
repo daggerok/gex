@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ============================================================================
 // LONG PRESS on a touch screen - holding one finger still on a chart opens the custom level editor there (the same editor a
 // right click opens with a mouse). Touch events only: a mouse has its own right click. Shared by the GEX and Chart tabs.

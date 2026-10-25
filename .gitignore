@@ -40,3 +40,6 @@ SCRATCHPAD.md
 package-lock.json
 
 .claude/worktrees/
+
+# local work files of agents and probes (never committed)
+.temp/

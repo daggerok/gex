@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { ChainResult, OptionQuote } from '../types';
 import { ZipError, buildZipFromRaw, crc32, type RawZipEntry } from '../history-zip';
 import { customLevelsEntryName, isoMarketTime, isSnapshotId, isTickerName, manifestEntryName, manifestText, marketDay, sortEntries, tickerEntryName } from './snapshot';

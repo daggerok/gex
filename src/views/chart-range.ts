@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // Chart tab range selector values (plan section 8.2). Kept out of
 // ChartView.tsx so App can import the default without pulling the lazily
 // loaded lightweight-charts chunk into the initial bundle.

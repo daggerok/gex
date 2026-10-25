@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ============================================================================
 // CHART ZOOM STORE - the horizontal zoom and position of the GEX chart, remembered PER TICKER in the
 // browser. A zoom is a strike range, meaningless for another ticker (SPX at 7000 against SPY at 700),

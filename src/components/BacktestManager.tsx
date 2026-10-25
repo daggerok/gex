@@ -1,5 +1,6 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useMemo, useRef, useState } from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { HistoryEntry } from '../backtest/entries';
 import { useI18n } from '../i18n';
 import { Modal } from './Modal';

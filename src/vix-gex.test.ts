@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { computeGexLevels, computeGexProfile, findNetGexLevels } from './gex';
 import { yearsToExpiration } from './greeks';
