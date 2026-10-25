@@ -822,10 +822,11 @@ import { asOfDayOf, makeAsOfProvider, valuationTimeOf } from './providers/asof';
 import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
 import { loadDefaultTickers } from './providers/cache';
-import { getBulk, loadExpiration, loadMeta } from './providers/loader';
+import { loadExpiration, loadMeta } from './providers/loader';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
 import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
+import { useGexQuotesByExp } from './gex-chain';
 import { useGexLevels } from './use-gex-levels';
 import { dbg, estimateSpot, friendlyError, isAbortError } from './utils';
 import { DeskView } from './views/DeskView';
@@ -1043,8 +1044,20 @@ const App: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [provider.id, tickerInput, settings.proxyBase, settings.proxyTemplate]);
 
-    // Reset the view whenever the provider changes (deferred: no auto-fetch).
+    // Reset the view whenever the provider changes (deferred: no auto-fetch). Requests of the old provider are dropped
+    // (GEX-H2): a late answer would otherwise show its meta and load it through the new provider. Only on a real switch:
+    // StrictMode runs the mount effects twice in development, that must not abort the boot restore's request.
+    const lastProviderId = useRef(provider.id);
     useEffect(() => {
+        if (lastProviderId.current !== provider.id) {
+            lastProviderId.current = provider.id;
+            metaAbort.current?.abort();
+            expAbort.current?.abort();
+            metaAbort.current = null;
+            expAbort.current = null;
+            setMetaLoading(false);
+            setExpLoading(false);
+        }
         resetView();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [provider.id]);
@@ -1073,6 +1086,11 @@ const App: React.FC = () => {
             setErrorNonce((n) => n + 1);
             return null;
         }
+        // A new ticker supersedes any request in flight (GEX-H2): a late answer of the old one must not land
+        metaAbort.current?.abort();
+        expAbort.current?.abort();
+        expAbort.current = null;
+        setExpLoading(false);
         const ac = new AbortController();
         metaAbort.current = ac;
         setMetaLoading(true);
@@ -1095,6 +1113,7 @@ const App: React.FC = () => {
             dbg('getDates ok', { expirations: m.expirations.length });
             return m;
         } catch (e: unknown) {
+            if (metaAbort.current !== ac) return null; // superseded by a newer ticker or a provider switch: say nothing
             if (isAbortError(e)) { setNotice(tr('notice.cancelled')); return null; }
             setMeta(null);
             setError(friendlyError(e, provider, lang));
@@ -1104,7 +1123,7 @@ const App: React.FC = () => {
         } finally {
             if (metaAbort.current === ac) { setMetaLoading(false); metaAbort.current = null; }
         }
-    }, [provider, settings, patchSettings]);
+    }, [provider, settings, patchSettings, tr, lang]);
 
     // Entering, changing or leaving a backtest reloads a ticker from the new source. Opening a snapshot picks the ticker: the
     // only one of a single-ticker backup; with two or more, the stored last ticker when the snapshot has it, else the first one
@@ -1282,6 +1301,7 @@ const App: React.FC = () => {
             if (total === 0) setNotice(tr('notice.noContracts'));
             dbg('loadChain ok', { expirations: ordered.length, total });
         } catch (e: unknown) {
+            if (expAbort.current !== ac) return; // superseded by a newer selection, ticker or provider: say nothing
             if (isAbortError(e)) { setNotice(tr('notice.cancelled')); return; }
             setExpData({});
             setError(friendlyError(e, provider, lang));
@@ -1290,7 +1310,7 @@ const App: React.FC = () => {
         } finally {
             if (expAbort.current === ac) { setExpLoading(false); expAbort.current = null; }
         }
-    }, [provider, settings, meta, selectedExps]);
+    }, [provider, settings, meta, selectedExps, tr, lang]);
 
     // Bulk providers (CACHE/CBOE/NASDAQ) already hold the whole chain in memory, so
     // loading the selected expirations costs nothing: do it whenever the selection
@@ -1301,8 +1321,13 @@ const App: React.FC = () => {
     const loadChainRef = useRef(loadChain);
     loadChainRef.current = loadChain;
     useEffect(() => {
+        // the load of the previous selection is superseded (its catch stays silent, see loadChain)
+        if (expAbort.current) {
+            expAbort.current.abort();
+            expAbort.current = null;
+            setExpLoading(false);
+        }
         if (!meta || selectedExps.length === 0) return;
-        expAbort.current?.abort();
         // Bulk data is in memory: load at once. Lazy (YAHOO) waits a moment so a quick run of
         // clicks on several dates becomes one load, and each date is already prefetched (below).
         const wait = provider.mode === 'bulk' ? 0 : 200;
@@ -1405,7 +1430,7 @@ const App: React.FC = () => {
         setNotice('');
         releaseSearchFocus();
         void getDates(s.symbol);
-    }, [focusGetDatesButton, getDates]);
+    }, [focusGetDatesButton, getDates, tr]);
 
     /** Keyboard navigation for the custom ticker suggestion popover. */
     const onTickerKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1469,34 +1494,9 @@ const App: React.FC = () => {
     const spotIsEstimated = meta != null && meta.underlyingPrice == null && spot != null;
 
     // ---- GEX tab (Phase 3): reuses chain data already held, never fetches ----
-    // Bulk providers (CACHE/CBOE/NASDAQ) already hold EVERY expiration in the
-    // in-memory bulk cache once "Expirations" succeeds, so the GEX tab can
-    // offer all of them. Lazy YAHOO only has what Desk loaded into expData.
-    // getBulk is now async (IndexedDB-backed persistent cache), so this can no
-    // longer be a plain useMemo — it's an effect + state, same
-    // cancelled-flag pattern used for ticker suggestions above. In practice
-    // the bulk entry is already sitting in the synchronous in-memory
-    // bulkCache (warmed by loadMeta's putBulk call before meta is ever set
-    // here), so this resolves within a tick with no visible loading state.
-    const [gexQuotesByExp, setGexQuotesByExp] = useState<Record<string, OptionQuote[]>>({});
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            if (!meta) { if (!cancelled) setGexQuotesByExp({}); return; }
-            if (provider.mode === 'bulk') {
-                const bulk = await getBulk(provider.id, meta.symbol, settings.vixFuturesPricing);
-                if (cancelled) return;
-                if (bulk) {
-                    const byExp: Record<string, OptionQuote[]> = {};
-                    for (const q of bulk.quotes) (byExp[q.expiration] ??= []).push(q);
-                    setGexQuotesByExp(byExp);
-                    return;
-                }
-            }
-            if (!cancelled) setGexQuotesByExp(expData);
-        })();
-        return () => { cancelled = true; };
-    }, [meta, provider, expData, settings.vixFuturesPricing]);
+    // Bulk providers (CACHE/CBOE/NASDAQ) offer every expiration of the bulk cache, lazy YAHOO what Desk loaded into
+    // expData. Never the previous ticker's quotes under a new symbol, one level computation per click (src/gex-chain.ts).
+    const gexQuotesByExp = useGexQuotesByExp(meta, provider, settings.vixFuturesPricing, expData, chainSymbol);
     // The GEX tab reads/writes the SAME `selectedExps` Desk uses (user request:
     // keep the expiration selection in sync between the Desk and GEX tabs,
     // not two independent copies). Desk already defaults a fresh chain's
