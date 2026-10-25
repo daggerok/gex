@@ -399,6 +399,7 @@ describe('vixFuturesPricing toggle wiring (Phase 2)', () => {
 describe('vixFuturesPricing call-site parity', () => {
   const loaderSrc = read('src/providers/loader.ts');
   const mainSrc = read('src/main.tsx');
+  const chainSrc = read('src/gex-chain.ts');
 
   test('every enrichChainResult / enrichQuotesWithModelGreeks call in providers/loader.ts forwards vixFuturesPricing', () => {
     const calls = loaderSrc
@@ -423,14 +424,15 @@ describe('vixFuturesPricing call-site parity', () => {
     }
   });
 
-  test('main.tsx passes settings.vixFuturesPricing to every loadMeta/loadExpiration/getBulk call site', () => {
+  test('main.tsx (and gex-chain.ts for the bulk read) pass settings.vixFuturesPricing to every loadMeta/loadExpiration/getBulk call site', () => {
     for (const snippet of [
       'await loadMeta(provider, sym, ctx, settings.vixFuturesPricing)',
       'await loadExpiration(provider, meta.symbol, exp, ctxFor(settings, provider, ac.signal), settings.vixFuturesPricing)',
-      'getBulk(provider.id, meta.symbol, settings.vixFuturesPricing)',
+      'useGexQuotesByExp(meta, provider, settings.vixFuturesPricing, expData, chainSymbol)',
     ]) {
       expect(mainSrc).toContain(snippet);
     }
+    expect(chainSrc).toContain('getBulk(provider.id, meta.symbol, vixFuturesPricing)');
     // Sanity: exactly one real call site each (ignoring comments/changelog
     // prose, which also mention these names) — if a second call site is
     // ever added without updating this test, this count check (not the
@@ -442,7 +444,8 @@ describe('vixFuturesPricing call-site parity', () => {
     expect(countCalls(/\bloadExpiration\(/)).toBe(2);
     const prefetchLine = codeLines.filter((l) => /\bloadExpiration\(/.test(l) && l.includes('settings.vixFuturesPricing'));
     expect(prefetchLine.length).toBe(2);
-    expect(countCalls(/\bgetBulk\(/)).toBe(1);
+    expect(countCalls(/\bgetBulk\(/)).toBe(0); // the bulk read lives in gex-chain.ts since GEX-H1
+    expect(chainSrc.split('\n').filter((l) => !/^\s*(\*|\/\/)/.test(l) && /\bgetBulk\(/.test(l)).length).toBe(1);
   });
 });
 
