@@ -11,8 +11,8 @@
  *   - NASDAQ/CBOE endpoints used here send no browser-usable CORS headers.
  *   - Provider-native suggestion endpoints are also relayed so the app can
  *     search symbols without exposing users to upstream CORS differences.
- *   This tiny Bun server relays those requests with permissive CORS for LOCAL
- *   development.
+ *   This tiny Bun server relays those requests for LOCAL development, with CORS
+ *   only for the local app and the published site (scripts/proxy-cors.ts).
  *
  * RUN:  bun run scripts/options-local-proxy.ts        (defaults to 127.0.0.1:8787)
  *       PORT=9000 bun run scripts/options-local-proxy.ts
@@ -42,6 +42,8 @@
 
 /// <reference types="bun" />
 /// <reference types="node" />
+
+import { corsFor } from "./proxy-cors";
 
 const PORT = Number(process.env.PORT ?? 8787);
 /** Interface the proxy listens on: loopback unless HOST says otherwise (GEX-M4). */
@@ -112,17 +114,10 @@ async function getSession(): Promise<YahooSession> {
     return session;
 }
 
-/** Standard permissive CORS headers for local development. */
-const CORS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "*",
-};
-
 function json(data: unknown, status = 200): Response {
     return new Response(JSON.stringify(data), {
         status,
-        headers: { "Content-Type": "application/json", ...CORS },
+        headers: { "Content-Type": "application/json" },
     });
 }
 
@@ -140,7 +135,7 @@ async function handleCboe(url: URL): Promise<Response> {
     const res = await fetch(target, { headers: { "User-Agent": UA, Accept: "application/json" } });
     return new Response(await res.text(), {
         status: res.status,
-        headers: { "Content-Type": "application/json", ...CORS },
+        headers: { "Content-Type": "application/json" },
     });
 }
 
@@ -167,7 +162,7 @@ async function handleChart(url: URL): Promise<Response> {
     const res = await fetch(target, { headers: { "User-Agent": UA, Accept: "application/json" } });
     return new Response(await res.text(), {
         status: res.status,
-        headers: { "Content-Type": res.headers.get("content-type") || "application/json", ...CORS },
+        headers: { "Content-Type": res.headers.get("content-type") || "application/json" },
     });
 }
 
@@ -189,7 +184,7 @@ async function handleNasdaq(url: URL): Promise<Response> {
     });
     return new Response(await res.text(), {
         status: res.status,
-        headers: { "Content-Type": "application/json", ...CORS },
+        headers: { "Content-Type": "application/json" },
     });
 }
 
@@ -367,9 +362,9 @@ async function handleOptions(url: URL): Promise<Response> {
         const retry = await fetch(y.toString(), {
             headers: { "User-Agent": UA, Cookie: s2.cookies, Accept: "application/json" },
         });
-        return new Response(await retry.text(), { status: retry.status, headers: { "Content-Type": "application/json", ...CORS } });
+        return new Response(await retry.text(), { status: retry.status, headers: { "Content-Type": "application/json" } });
     }
-    return new Response(await res.text(), { status: res.status, headers: { "Content-Type": "application/json", ...CORS } });
+    return new Response(await res.text(), { status: res.status, headers: { "Content-Type": "application/json" } });
 }
 
 // ─── Server ──────────────────────────────────────────────────────────────────
@@ -377,34 +372,44 @@ const server = Bun.serve({
     port: PORT,
     hostname: HOST,
     async fetch(req) {
-        const url = new URL(req.url);
-        if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-        if (url.pathname === "/api/options") {
-            try { return await handleOptions(url); }
-            catch (e) { return json({ error: String(e) }, 502); }
-        }
-        if (url.pathname === "/api/cboe") {
-            try { return await handleCboe(url); }
-            catch (e) { return json({ error: String(e) }, 502); }
-        }
-        if (url.pathname === "/api/chart") {
-            try { return await handleChart(url); }
-            catch (e) { return json({ error: String(e) }, 502); }
-        }
-        if (url.pathname === "/api/nasdaq") {
-            try { return await handleNasdaq(url); }
-            catch (e) { return json({ error: String(e) }, 502); }
-        }
-        if (url.pathname === "/api/search") {
-            try { return await handleSearch(url); }
-            catch (e) { return json({ error: String(e) }, 502); }
-        }
-        if (url.pathname === "/" || url.pathname === "/health") {
-            return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"] });
-        }
-        return json({ error: "not found" }, 404);
+        // CORS allowlist (scripts/proxy-cors.ts): the local app and the published site only, any other page gets 403
+        const cors = corsFor(req.headers.get("origin"));
+        if (!cors.allow) return new Response(JSON.stringify({ error: "origin not allowed" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        const res = await route(req);
+        for (const [k, v] of Object.entries(cors.headers)) res.headers.set(k, v);
+        return res;
     },
 });
+
+/** The proxy's endpoints (CORS headers are added by the server's fetch above). */
+async function route(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    if (req.method === "OPTIONS") return new Response(null, { status: 204 });
+    if (url.pathname === "/api/options") {
+        try { return await handleOptions(url); }
+        catch (e) { return json({ error: String(e) }, 502); }
+    }
+    if (url.pathname === "/api/cboe") {
+        try { return await handleCboe(url); }
+        catch (e) { return json({ error: String(e) }, 502); }
+    }
+    if (url.pathname === "/api/chart") {
+        try { return await handleChart(url); }
+        catch (e) { return json({ error: String(e) }, 502); }
+    }
+    if (url.pathname === "/api/nasdaq") {
+        try { return await handleNasdaq(url); }
+        catch (e) { return json({ error: String(e) }, 502); }
+    }
+    if (url.pathname === "/api/search") {
+        try { return await handleSearch(url); }
+        catch (e) { return json({ error: String(e) }, 502); }
+    }
+    if (url.pathname === "/" || url.pathname === "/health") {
+        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"] });
+    }
+    return json({ error: "not found" }, 404);
+}
 
 console.log(`\n🚀 GEX proxy running at http://localhost:${PORT} (listening on ${server.hostname}:${server.port}${HOST === DEFAULT_PROXY_HOST ? ", loopback only" : ""})`);
 console.log(`   Yahoo  | http://localhost:${PORT}/api/options?symbol=AAPL`);
