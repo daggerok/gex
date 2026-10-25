@@ -9,7 +9,7 @@ import { setValuationTime } from '../../src/greeks';
 import { chainFromCacheFile } from '../../src/providers/cache';
 import { rowsFromChain } from '../options-data';
 import {
-    buildPayload, familiesOf, futuresPrice, optionSymbol, parseScan, payloadText, pickSeries, scanBody, strikesInWindow,
+    allocateSessions, buildPayload, familiesOf, futuresPrice, isThirdFriday, MAX_EXPIRATIONS, optionSymbol, parseScan, payloadText, pickSeries, QUOTE_SESSION_LIMIT, SCAN_PAGE, scanBody, strikesInWindow,
     wantedOptions, type Family, type QuoteValues, type ScanRow, type WantedOption,
 } from './chain';
 import { cookieHeader, jwtExpiresAt, parseEnv, redact } from './env';
@@ -95,6 +95,39 @@ describe('option window', () => {
         const now = new Date('2026-10-25T12:00:00Z');
         expect(pickSeries(families, 'CME_MINI:ESZ2026', now, 2).map((x) => `${x.series.root}@${x.series.exp}`)).toEqual(['E4A@20261026', 'E4B@20261027']);
         expect(pickSeries(families, 'CME_MINI:ESZ2026', now, 3).map((x) => x.series.root)).toEqual(['E4A', 'E4B', 'EW', 'EW4']);
+    });
+
+    test('isThirdFriday: the standard monthly day', () => {
+        expect(isThirdFriday(20261120)).toBe(true);
+        expect(isThirdFriday(20261218)).toBe(true);
+        expect(isThirdFriday(20261016)).toBe(true);
+        expect(isThirdFriday(20261113)).toBe(false); // 2nd Friday
+        expect(isThirdFriday(20261127)).toBe(false); // 4th Friday
+        expect(isThirdFriday(20261119)).toBe(false); // a Thursday
+    });
+
+    test('default coverage: every date up to and including the nearest monthly (owner 2026-10-25)', () => {
+        const families = [
+            fam('E4A', [[20261026, 'CME_MINI:ESZ2026', [7600]], [20261123, 'CME_MINI:ESZ2026', [7600]]]),
+            fam('EW', [[20261030, 'CME_MINI:ESZ2026', [7600]]]),
+            fam('EW1', [[20261106, 'CME_MINI:ESZ2026', [7600]]]),
+            fam('EW2', [[20261113, 'CME_MINI:ESZ2026', [7600]]]),
+            fam('E3D', [[20261119, 'CME_MINI:ESZ2026', [7600]]]),
+            fam('EW3', [[20261120, 'CME_MINI:ESZ2026', [7600]], [20261218, 'CME_MINI:ESH2027', [7600]]]),
+            fam('ES', [[20261218, 'CME_MINI:ESZ2026', [7600]]]),
+        ];
+        const dates = (now: string) => pickSeries(families, 'CME_MINI:ESZ2026', new Date(now)).map((x) => x.series.exp);
+        // Sunday 2026-10-25: through Friday 2026-11-20 (EW3), not the 11-23 Monday after it
+        expect(dates('2026-10-25T12:00:00Z')).toEqual([20261026, 20261030, 20261106, 20261113, 20261119, 20261120]);
+        // after the November monthly expired: the December quarterly (ES) of the same front contract is the next monthly
+        expect(dates('2026-11-21T12:00:00Z')).toEqual([20261123, 20261218]);
+        // an explicit max still means the nearest N dates (tv:check uses 1)
+        expect(pickSeries(families, 'CME_MINI:ESZ2026', new Date('2026-10-25T12:00:00Z'), 1).map((x) => x.series.exp)).toEqual([20261026]);
+    });
+
+    test('no third Friday on the contract: the nearest MAX_EXPIRATIONS dates', () => {
+        const families = [fam('EW', [[20261030, 'CME_MINI:ESZ2026', [1]], [20261130, 'CME_MINI:ESZ2026', [1]]]), fam('E4A', [[20261026, 'CME_MINI:ESZ2026', [1]]]), fam('EW1', [[20261106, 'CME_MINI:ESZ2026', [1]]]), fam('EW2', [[20261113, 'CME_MINI:ESZ2026', [1]]])];
+        expect(pickSeries(families, 'CME_MINI:ESZ2026', new Date('2026-10-25T12:00:00Z')).map((x) => x.series.exp)).toEqual([20261026, 20261030, 20261106, 20261113].slice(0, MAX_EXPIRATIONS));
     });
 
     test('wanted options: calls and puts of the window', () => {
@@ -219,5 +252,23 @@ describe('tv:futures arguments', () => {
         expect(() => parseArgs(['XX'])).toThrow('unknown futures root');
         expect(() => parseArgs(['--watch'])).toThrow('needs a duration');
         expect(() => parseDuration('0.5')).toThrow('too short');
+    });
+});
+
+describe('quote sessions and scanner pages (coverage through the nearest monthly, owner 2026-10-25)', () => {
+    test('allocateSessions fills each session up to the limit, then opens the next', () => {
+        expect(allocateSessions([], 5, 2)).toEqual([0, 0, 1, 1, 2]);
+        expect(allocateSessions([2, 1], 3, 2)).toEqual([1, 2, 2]);
+        expect(allocateSessions([0], 0, 2)).toEqual([]);
+        // about 5,200 ES options: two sessions of the default size
+        const slots = allocateSessions([], 5200);
+        expect(Math.max(...slots)).toBe(1);
+        expect(slots.filter((x) => x === 0).length).toBe(QUOTE_SESSION_LIMIT);
+    });
+
+    test('scanBody pages the scanner by offset', () => {
+        const wanted = [{ symbol: 'CME_MINI:E4A261026C7630', root: 'E4A', exp: 20261026, side: 'call' as const, strike: 7630 }];
+        expect((scanBody('CME_MINI:ESZ2026', wanted) as { range: number[] }).range).toEqual([0, SCAN_PAGE]);
+        expect((scanBody('CME_MINI:ESZ2026', wanted, SCAN_PAGE) as { range: number[] }).range).toEqual([SCAN_PAGE, 2 * SCAN_PAGE]);
     });
 });

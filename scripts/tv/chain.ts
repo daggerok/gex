@@ -22,8 +22,22 @@ export const DIST_FUTURES_DIR = join(__dirname, '..', '..', 'dist', 'api', 'futu
 
 /** Strike window around the forward, each side (owner: at least 5%; Net GEX+ / - need 3% beyond the walls). */
 export const WINDOW_PCT = 0.06;
-/** Nearest expiration dates kept per root (all of them list the front futures contract as their underlying). */
+/**
+ * Fallback only: the nearest expiration dates kept per root when no monthly (3rd Friday) series is listed on the front
+ * contract. The normal coverage is every expiration up to and including the nearest monthly (owner 2026-10-25), see
+ * pickSeries.
+ */
 export const MAX_EXPIRATIONS = 4;
+/**
+ * Symbols one quote session holds. Measured 2026-10-25: a session answers about 3,500 symbols, every further one comes
+ * back as an error; the window through the nearest monthly is about 5,200 ES options, so a root spreads them over
+ * several sessions of this size on the same websocket (a second session took the rest with 0 errors).
+ */
+export const QUOTE_SESSION_LIMIT = 3000;
+/** Scanner rows per request; a larger window is read in pages of this size (the scanner caps `range` at 5,000 rows). */
+export const SCAN_PAGE = 5000;
+/** At most this many scanner pages per root and refresh (a guard, about 25,000 options). */
+export const SCAN_MAX_PAGES = 5;
 /** Option symbols per quote_add_symbols message. */
 export const WS_BATCH = 50;
 /** Pause between two quote_add_symbols messages, to stay at a human request rate. */
@@ -102,8 +116,22 @@ export function strikesInWindow(strikes: readonly number[], center: number, pct:
     return strikes.filter((k) => k >= lo && k <= hi).sort((a, b) => a - b);
 }
 
-/** The nearest `max` expiration dates (still open at `now`) of the series that underlie `underlying`, every family of them. */
-export function pickSeries(families: readonly Family[], underlying: string, now: Date, max: number = MAX_EXPIRATIONS): { family: Family; series: Series }[] {
+/** True when the YYYYMMDD date is the third Friday of its month (the standard monthly expiration day). */
+export function isThirdFriday(yyyymmdd: number): boolean {
+    const y = Math.floor(yyyymmdd / 10000);
+    const m = Math.floor(yyyymmdd / 100) % 100;
+    const d = yyyymmdd % 100;
+    return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 5 && d >= 15 && d <= 21;
+}
+
+/**
+ * The series (still open at `now`) that underlie `underlying`, every family of a picked date. With `max`: the nearest
+ * `max` dates. Without it (owner 2026-10-25, futures PR answer 3): every date up to and including the NEAREST MONTHLY
+ * expiration, the first open third-Friday date on that contract (EW3 / QN3 / YM3 in a serial month, the quarterly
+ * ES / NQ / OYM in March, June, September, December; the EOM series of the last business day are not "the monthly"); when
+ * the contract lists no third-Friday date, the nearest MAX_EXPIRATIONS dates.
+ */
+export function pickSeries(families: readonly Family[], underlying: string, now: Date, max?: number): { family: Family; series: Series }[] {
     const all: { family: Family; series: Series }[] = [];
     for (const family of families) {
         for (const series of family.series) {
@@ -112,18 +140,38 @@ export function pickSeries(families: readonly Family[], underlying: string, now:
             all.push({ family, series });
         }
     }
-    const dates = all.map((x) => x.series.exp).filter((d, i, arr) => arr.indexOf(d) === i).sort((a, b) => a - b).slice(0, max);
+    const open = all.map((x) => x.series.exp).filter((d, i, arr) => arr.indexOf(d) === i).sort((a, b) => a - b);
+    const monthly = open.find(isThirdFriday);
+    const dates = max != null ? open.slice(0, max) : monthly != null ? open.filter((d) => d <= monthly) : open.slice(0, MAX_EXPIRATIONS);
     return all.filter((x) => dates.indexOf(x.series.exp) >= 0).sort((a, b) => a.series.exp - b.series.exp || a.series.root.localeCompare(b.series.root));
 }
 
 /** The option symbols to watch: calls and puts of every picked series within the window around `center`. */
 export function wantedOptions(families: readonly Family[], front: string, center: number, now: Date, opts: { maxExpirations?: number; windowPct?: number } = {}): WantedOption[] {
     const out: WantedOption[] = [];
-    for (const { family, series } of pickSeries(families, front, now, opts.maxExpirations ?? MAX_EXPIRATIONS)) {
+    for (const { family, series } of pickSeries(families, front, now, opts.maxExpirations)) {
         for (const strike of strikesInWindow(series.strikes, center, opts.windowPct ?? WINDOW_PCT)) {
             out.push({ symbol: optionSymbol(family.prefix, series.root, series.exp, 'call', strike), root: series.root, exp: series.exp, side: 'call', strike });
             out.push({ symbol: optionSymbol(family.prefix, series.root, series.exp, 'put', strike), root: series.root, exp: series.exp, side: 'put', strike });
         }
+    }
+    return out;
+}
+
+/**
+ * Which quote session takes each of `n` new symbols: index into `counts` (the symbols each session holds now), filling
+ * the sessions in order up to `limit`; an index >= counts.length means a new session (counts.length = the first new
+ * one, and so on).
+ */
+export function allocateSessions(counts: readonly number[], n: number, limit: number = QUOTE_SESSION_LIMIT): number[] {
+    const load = counts.slice();
+    const out: number[] = [];
+    let i = 0;
+    for (let k = 0; k < n; k++) {
+        while (i < load.length && load[i] >= limit) i++;
+        if (i === load.length) load.push(0);
+        load[i]++;
+        out.push(i);
     }
     return out;
 }
@@ -163,7 +211,7 @@ export interface ScanRow {
 }
 
 /** One scanner request for every watched option of a front contract (`in_range` takes exactly two values, so ranges). */
-export function scanBody(front: string, wanted: readonly WantedOption[]): Record<string, unknown> {
+export function scanBody(front: string, wanted: readonly WantedOption[], offset: number = 0): Record<string, unknown> {
     const exps = wanted.map((w) => w.exp);
     const strikes = wanted.map((w) => w.strike);
     return {
@@ -176,7 +224,7 @@ export function scanBody(front: string, wanted: readonly WantedOption[]): Record
         ignore_unknown_fields: false,
         index_filters: [{ name: 'underlying_symbol', values: [front] }],
         sort: { sortBy: 'strike', sortOrder: 'asc' },
-        range: [0, 5000],
+        range: [offset, offset + SCAN_PAGE],
     };
 }
 
@@ -199,14 +247,21 @@ export class TvRateLimitError extends Error {}
 
 /** POST the scanner once for `wanted`. Throws TvRateLimitError on 429 / 403, Error on anything else that is not ok. */
 export async function scanGreeks(front: string, wanted: readonly WantedOption[], session: TvSession | null): Promise<Map<string, ScanRow>> {
-    if (!wanted.length) return new Map();
+    const out = new Map<string, ScanRow>();
+    if (!wanted.length) return out;
     const headers: Record<string, string> = { 'User-Agent': UA, 'Content-Type': 'application/json', Origin: 'https://www.tradingview.com', Referer: 'https://www.tradingview.com/' };
     if (session) headers.Cookie = cookieHeader(session);
-    const res = await fetch(SCAN_URL, { method: 'POST', headers, body: JSON.stringify(scanBody(front, wanted)) });
-    if (res.status === 429 || res.status === 403) throw new TvRateLimitError(`scanner answered ${res.status}`);
-    const text = await res.text();
-    if (!res.ok) throw new Error(`scanner ${res.status}: ${redact(text, session).slice(0, 200)}`);
-    return parseScan(JSON.parse(text));
+    // pages of SCAN_PAGE rows (sorted by strike, so the pages do not overlap) until a short page
+    for (let page = 0; page < SCAN_MAX_PAGES; page++) {
+        const res = await fetch(SCAN_URL, { method: 'POST', headers, body: JSON.stringify(scanBody(front, wanted, page * SCAN_PAGE)) });
+        if (res.status === 429 || res.status === 403) throw new TvRateLimitError(`scanner answered ${res.status}`);
+        const text = await res.text();
+        if (!res.ok) throw new Error(`scanner ${res.status}: ${redact(text, session).slice(0, 200)}`);
+        const rows = parseScan(JSON.parse(text));
+        rows.forEach((v, k) => out.set(k, v));
+        if (rows.size < SCAN_PAGE) break;
+    }
+    return out;
 }
 
 // ---- the cache file --------------------------------------------------------------------------------------------------

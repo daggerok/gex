@@ -14,7 +14,8 @@
  * How (one websocket, one quote session per root, both kept open):
  *  1. the logged-in chart page gives the auth token (a 4 h JWT, refreshed AUTH_REFRESH_BEFORE_MS before it expires)
  *  2. per root: the continuous future (ES1!) gives the front contract and `options-info` (every option series and its
- *     strikes); the nearest MAX_EXPIRATIONS dates on the front contract within +/- WINDOW_PCT of the forward are watched
+ *     strikes); every date up to and including the nearest monthly (3rd Friday) on the front contract within
+ *     +/- WINDOW_PCT of the forward is watched
  *     (chain.ts). OI (`oi`), volume, bid, ask and last arrive on the websocket and stay current through its pushes
  *  3. greeks (iv, delta, gamma, theta, vega, rho) come from one scanner POST per root, repeated every --refresh (5m),
  *     which also re-reads options-info so new strikes and series follow the forward (added / removed in the session)
@@ -31,7 +32,7 @@ import { join, relative } from 'node:path';
 import { writeFileAtomic } from '../history-archive';
 import {
     buildPayload, DEFAULT_ROOTS, DIST_FUTURES_DIR, familiesOf, FUTURES_DIR, futuresPrice, MICRO_ROOTS, payloadText,
-    QUOTE_FIELDS, scanGreeks, TV_ROOTS, TvRateLimitError, WS_BATCH, WS_BATCH_PAUSE_MS, WS_BATCH_TIMEOUT_MS, wantedOptions,
+    allocateSessions, QUOTE_FIELDS, scanGreeks, TV_ROOTS, TvRateLimitError, WS_BATCH, WS_BATCH_PAUSE_MS, WS_BATCH_TIMEOUT_MS, wantedOptions,
     type Family, type QuoteValues, type ScanRow, type WantedOption,
 } from './chain';
 import { jwtExpiresAt, loadTvSession, redact, sleep, type TvSession } from './env';
@@ -109,11 +110,16 @@ Files: api/futures/<ROOT>.json (+ dist/api/futures/ when dist/api exists). Open 
 
 const clock = (d: Date = new Date()) => d.toTimeString().slice(0, 8);
 
-/** One futures root inside the shared websocket: its own quote session and everything it knows. */
+/** One futures root inside the shared websocket: its own quote sessions and everything it knows. */
 class RootFeed {
     readonly continuous: string;
     readonly prefix: string;
+    /** the first quote session: the futures and the first QUOTE_SESSION_LIMIT options */
     qs = randomId('qs_');
+    /** every quote session of this root (the first is `qs`) and how many options each holds (allocateSessions) */
+    sessions: { qs: string; count: number }[] = [];
+    /** the session each watched option symbol was added to */
+    readonly sessionOf = new Map<string, string>();
     front: string | null = null;
     families: Family[] = [];
     wanted: WantedOption[] = [];
@@ -297,12 +303,11 @@ export class FuturesWatcher {
         this.byQs.clear();
         for (const feed of this.feeds) {
             if (this.sock !== sock) throw new Error('websocket dropped while subscribing');
-            feed.qs = randomId('qs_');
+            feed.sessions = [];
+            feed.sessionOf.clear();
             feed.completed.clear();
             feed.failed.clear();
-            this.byQs.set(feed.qs, feed);
-            sock.send('quote_create_session', [feed.qs]);
-            sock.send('quote_set_fields', [feed.qs, ...QUOTE_FIELDS]);
+            feed.qs = this.openSession(feed, sock);
             try {
                 await this.subscribe(feed, true);
             } catch (err) {
@@ -310,6 +315,47 @@ export class FuturesWatcher {
             }
         }
         this.reconnectDelay = RECONNECT_MIN_MS;
+    }
+
+    /** A new quote session of `feed` on `sock`, with the quote fields; returns its id. */
+    private openSession(feed: RootFeed, sock: TvSocket): string {
+        const qs = randomId('qs_');
+        this.byQs.set(qs, feed);
+        sock.send('quote_create_session', [qs]);
+        sock.send('quote_set_fields', [qs, ...QUOTE_FIELDS]);
+        feed.sessions.push({ qs, count: 0 });
+        return qs;
+    }
+
+    /** Add option symbols, spread over the root's quote sessions (QUOTE_SESSION_LIMIT each, new ones as needed). */
+    private addOptions(feed: RootFeed, sock: TvSocket, symbols: readonly string[]): void {
+        const slots = allocateSessions(feed.sessions.map((x) => x.count), symbols.length);
+        const groups = new Map<string, string[]>();
+        symbols.forEach((sym, k) => {
+            while (slots[k] >= feed.sessions.length) this.openSession(feed, sock);
+            const target = feed.sessions[slots[k]];
+            target.count++;
+            feed.sessionOf.set(sym, target.qs);
+            const list = groups.get(target.qs);
+            if (list) list.push(sym); else groups.set(target.qs, [sym]);
+        });
+        groups.forEach((list, qs) => sock.send('quote_add_symbols', [qs, ...list]));
+    }
+
+    /** Remove option symbols from the sessions that hold them. */
+    private removeOptions(feed: RootFeed, sock: TvSocket, symbols: readonly string[]): void {
+        const groups = new Map<string, string[]>();
+        for (const sym of symbols) {
+            const qs = feed.sessionOf.get(sym) ?? feed.qs;
+            feed.sessionOf.delete(sym);
+            const target = feed.sessions.find((x) => x.qs === qs);
+            if (target) target.count = Math.max(0, target.count - 1);
+            const list = groups.get(qs);
+            if (list) list.push(sym); else groups.set(qs, [sym]);
+        }
+        groups.forEach((list, qs) => {
+            for (let i = 0; i < list.length; i += WS_BATCH) sock.send('quote_remove_symbols', [qs, ...list.slice(i, i + WS_BATCH)]);
+        });
     }
 
     private scheduleReconnect(): void {
@@ -366,13 +412,15 @@ export class FuturesWatcher {
         const next = wantedOptions(feed.families, front, center, new Date());
         if (!next.length) throw new Error(`no option series on ${front} (TradingView lists none for this root)`);
 
-        const before = new Set(fresh ? [] : feed.wanted.map((w) => w.symbol));
+        // what the sessions hold now: nothing on a new connection, else the symbols added so far (a retry of a failed
+        // first subscription keeps what it already added)
+        const before = new Set(fresh ? feed.sessionOf.keys() : feed.wanted.map((w) => w.symbol));
         const nextSet = new Set(next.map((w) => w.symbol));
-        const removed = fresh ? [] : feed.wanted.filter((w) => !nextSet.has(w.symbol)).map((w) => w.symbol);
+        const removed = Array.from(before).filter((sym) => !nextSet.has(sym));
         const added = next.filter((w) => !before.has(w.symbol)).map((w) => w.symbol);
         feed.wanted = next;
         if (removed.length) {
-            for (let i = 0; i < removed.length; i += WS_BATCH) sock.send('quote_remove_symbols', [feed.qs, ...removed.slice(i, i + WS_BATCH)]);
+            this.removeOptions(feed, sock, removed);
             removed.forEach((s) => {
                 feed.values.delete(s);
                 feed.completed.delete(s);
@@ -384,7 +432,7 @@ export class FuturesWatcher {
             if (i > 0) await sleep(WS_BATCH_PAUSE_MS);
             if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
             const batch = added.slice(i, i + WS_BATCH);
-            sock.send('quote_add_symbols', [feed.qs, ...batch]);
+            this.addOptions(feed, sock, batch);
             await this.waitFor(feed, batch, WS_BATCH_TIMEOUT_MS);
         }
         if (!fresh && (added.length || removed.length)) this.log(`${feed.root}: window moved, +${added.length} -${removed.length} options`);
