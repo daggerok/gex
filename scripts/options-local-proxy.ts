@@ -14,8 +14,13 @@
  *   This tiny Bun server relays those requests with permissive CORS for LOCAL
  *   development.
  *
- * RUN:  bun run scripts/options-local-proxy.ts        (defaults to port 8787)
+ * RUN:  bun run scripts/options-local-proxy.ts        (defaults to 127.0.0.1:8787)
  *       PORT=9000 bun run scripts/options-local-proxy.ts
+ *       HOST=0.0.0.0 bun run scripts/options-local-proxy.ts   (reachable from the LAN, on purpose only)
+ *
+ * LISTENS ON LOOPBACK ONLY by default (review GEX-M4, 2026-10-25): it relays the user's own Yahoo session and IP, so a
+ * LAN host must not be able to use it. Any further local endpoint (e.g. a future TradingView provider) goes through this
+ * same server and inherits the loopback default; HOST opts out for everything at once.
  *
  * USE FROM THE APP (GEX → Settings → Proxy base URL = http://localhost:8787):
  *   - Provider "Yahoo (via proxy)" calls:
@@ -39,6 +44,9 @@
 /// <reference types="node" />
 
 const PORT = Number(process.env.PORT ?? 8787);
+/** Interface the proxy listens on: loopback unless HOST says otherwise (GEX-M4). */
+const DEFAULT_PROXY_HOST = "127.0.0.1";
+const HOST = (process.env.HOST ?? "").trim() || DEFAULT_PROXY_HOST;
 
 // ─── Yahoo session state (crumb + cookies), refreshed periodically ───────────
 interface YahooSession {
@@ -365,8 +373,9 @@ async function handleOptions(url: URL): Promise<Response> {
 }
 
 // ─── Server ──────────────────────────────────────────────────────────────────
-Bun.serve({
+const server = Bun.serve({
     port: PORT,
+    hostname: HOST,
     async fetch(req) {
         const url = new URL(req.url);
         if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
@@ -397,7 +406,7 @@ Bun.serve({
     },
 });
 
-console.log(`\n🚀 GEX proxy running at http://localhost:${PORT}`);
+console.log(`\n🚀 GEX proxy running at http://localhost:${PORT} (listening on ${server.hostname}:${server.port}${HOST === DEFAULT_PROXY_HOST ? ", loopback only" : ""})`);
 console.log(`   Yahoo  | http://localhost:${PORT}/api/options?symbol=AAPL`);
 console.log(`   CBOE   | http://localhost:${PORT}/api/cboe?symbol=AAPL   (indices: _SPX, _VIX)`);
 console.log(`   CHART  | http://localhost:${PORT}/api/chart?symbol=SPY&range=6mo&interval=1d   (indices: ^SPX)`);
