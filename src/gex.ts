@@ -1008,3 +1008,129 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
         totalNetGex,
     };
 }
+
+// ---------------------------------------------------------------------------
+// BOARD (the Board tab, owner 2026-10-25): one row per strike of the selected expirations
+// ---------------------------------------------------------------------------
+
+/** One strike of the Board. Money columns are $ (GEX per 1% move, delta notional), counts are contracts. */
+export interface BoardRow {
+    strike: number;
+    /** Net GEX: gexCall + gexPut of every quote at this strike (calls +, puts -), quotes with a null gamma left out. */
+    netGex: number;
+    /** Abs GEX: |call GEX| + |put GEX| (the Absolute Gamma of the GEX tab, no netting). */
+    absGex: number;
+    /**
+     * Notional delta, OUR OWN DEFINITION (not a published metric): the dealer delta exposure in $ under the same dealer
+     * positioning gexCall / gexPut assume (long the calls, short the puts): sum of delta x OI x 100 x spot for calls minus
+     * the same for puts (a put delta is negative, so both sides add up as the dealer's long delta). Quotes with a null
+     * delta are left out. Futures-priced quotes use their own forward like computeGexProfile.
+     */
+    notionalDelta: number;
+    callOi: number;
+    putOi: number;
+    totalOi: number;
+    callVolume: number;
+    putVolume: number;
+    totalVolume: number;
+    /** % column: this strike's Abs GEX as a share (0..1) of the Abs GEX of all strikes; 0 when that total is 0. */
+    absGexShare: number;
+}
+
+/** Columns of the Board that get a peak dot. */
+export type BoardColumn = 'netGex' | 'absGex' | 'notionalDelta' | 'totalOi' | 'callOi' | 'putOi' | 'totalVolume' | 'callVolume' | 'putVolume' | 'absGexShare';
+
+export const BOARD_COLUMNS: readonly BoardColumn[] = ['netGex', 'absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare'];
+
+export interface Board {
+    /** ascending by strike */
+    rows: BoardRow[];
+    /**
+     * The peak strikes of each column: the strike with the largest value (only when it is > 0). Net GEX has two, the
+     * largest positive and the most negative strike (its two walls, the Max / Min Net GEX of the levels). Ties go to the
+     * lowest strike, like the rest of gex.
+     */
+    peaks: Record<BoardColumn, number[]>;
+    /** The strike nearest to spot (ties to the lower), null without rows or spot. */
+    atmStrike: number | null;
+}
+
+/**
+ * The Board of `quotes` (the selected expirations) at `spot` in ONE pass over the quotes plus one over the strikes
+ * (pure; the 30k-quote chains stay fast, the caller memoizes). OI and volume count every quote, the money columns only
+ * quotes with the greek they need (null gamma / delta left out, never read as 0).
+ */
+export function computeBoard(quotes: readonly OptionQuote[], spot: number): Board {
+    const byStrike = new Map<number, BoardRow & { callGex: number; putGex: number }>();
+    for (const q of quotes) {
+        if (!Number.isFinite(q.strike)) continue;
+        let row = byStrike.get(q.strike);
+        if (!row) {
+            row = { strike: q.strike, netGex: 0, absGex: 0, notionalDelta: 0, callOi: 0, putOi: 0, totalOi: 0, callVolume: 0, putVolume: 0, totalVolume: 0, absGexShare: 0, callGex: 0, putGex: 0 };
+            byStrike.set(q.strike, row);
+        }
+        const oi = finiteOr0(q.openInterest);
+        const volume = finiteOr0(q.volume);
+        const ref = isForwardPriced(q) ? (q.forward as number) : spot;
+        const hasGamma = typeof q.gamma === 'number' && Number.isFinite(q.gamma);
+        const hasDelta = typeof q.delta === 'number' && Number.isFinite(q.delta);
+        if (q.side === 'call') {
+            row.callOi += oi;
+            row.callVolume += volume;
+            if (hasGamma) row.callGex += gexCall(q.gamma as number, oi, ref);
+            if (hasDelta) row.notionalDelta += (q.delta as number) * oi * CONTRACT_MULTIPLIER * ref;
+        } else {
+            row.putOi += oi;
+            row.putVolume += volume;
+            if (hasGamma) row.putGex += gexPut(q.gamma as number, oi, ref);
+            if (hasDelta) row.notionalDelta -= (q.delta as number) * oi * CONTRACT_MULTIPLIER * ref;
+        }
+    }
+    const rows: BoardRow[] = [];
+    let absTotal = 0;
+    for (const r of Array.from(byStrike.values()).sort((a, b) => a.strike - b.strike)) {
+        const { callGex, putGex, ...row } = r;
+        row.netGex = callGex + putGex;
+        row.absGex = callGex - putGex;
+        row.totalOi = row.callOi + row.putOi;
+        row.totalVolume = row.callVolume + row.putVolume;
+        absTotal += row.absGex;
+        rows.push(row);
+    }
+    const peaks = {} as Record<BoardColumn, number[]>;
+    for (const c of BOARD_COLUMNS) peaks[c] = [];
+    const best = {} as Record<BoardColumn, BoardRow | null>;
+    let netMin: BoardRow | null = null;
+    for (const row of rows) {
+        row.absGexShare = absTotal > 0 ? row.absGex / absTotal : 0;
+        for (const c of BOARD_COLUMNS) {
+            const b = best[c] ?? null;
+            if (row[c] > 0 && (b === null || row[c] > b[c])) best[c] = row;
+        }
+        if (row.netGex < 0 && (netMin === null || row.netGex < netMin.netGex)) netMin = row;
+    }
+    for (const c of BOARD_COLUMNS) {
+        const b = best[c] ?? null;
+        if (b) peaks[c].push(b.strike);
+    }
+    if (netMin) peaks.netGex.push(netMin.strike);
+    return { rows, peaks, atmStrike: Number.isFinite(spot) ? nearestStrikeTo(rows.map((r) => r.strike), spot) : null };
+}
+
+/**
+ * Share (0..1) of each expiration in the total open interest of ALL the given (loaded) expirations, for the Board's
+ * expiration chips. Expirations with no OI get 0; all 0 when there is no OI at all.
+ */
+export function expirationOiShares(quotesByExp: Readonly<Record<string, readonly OptionQuote[]>>): Record<string, number> {
+    const sums: Record<string, number> = {};
+    let total = 0;
+    for (const exp of Object.keys(quotesByExp)) {
+        let s = 0;
+        for (const q of quotesByExp[exp]) s += finiteOr0(q.openInterest);
+        sums[exp] = s;
+        total += s;
+    }
+    const out: Record<string, number> = {};
+    for (const exp of Object.keys(sums)) out[exp] = total > 0 ? sums[exp] / total : 0;
+    return out;
+}

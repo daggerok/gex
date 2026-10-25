@@ -36,7 +36,7 @@ export const ExpirationChips: React.FC<{
     const allOn = selected.length === expirations.length;
     return (
         <>
-            <span className="text-xs text-slate-400">{tr('controls.expirations')}</span>
+            <span className="shrink-0 whitespace-nowrap text-xs text-slate-400">{tr('controls.expirations')}</span>
             {/* Was max-w-[46vw]: that cap was sized to share a row with Desk's
                 ticker-input/provider-dropdown row. Now this strip lives alone
                 in the shared panel (main.tsx), so it can afford more room;
@@ -45,7 +45,7 @@ export const ExpirationChips: React.FC<{
                 the same line - the caller's row additionally wraps (flex-wrap)
                 as a second line of defense at widths where even 70vw plus the
                 toggle/Load button don't fit. */}
-            <div className="themed-scroll flex max-w-[70vw] items-center gap-1 overflow-x-auto">
+            <div className="themed-scroll flex min-w-0 max-w-[70vw] items-center gap-1 overflow-x-auto lg:max-w-none">
                 {expirations.map((exp) => {
                     const on = selected.includes(exp);
                     return (

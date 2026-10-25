@@ -442,7 +442,7 @@ export const DEFAULT_SETTINGS: Settings = {
 //    import (TabSwitcher.tsx already imports `ColorThemeId` from types.ts).
 // Keep these two arrays in sync by hand if those enums ever change.
 // ---------------------------------------------------------------------------
-const APP_TAB_VALUES: readonly string[] = ['desk', 'gex', 'chart'];
+const APP_TAB_VALUES: readonly string[] = ['desk', 'board', 'gex', 'chart'];
 const GEX_METRIC_VALUES: readonly string[] = ['netGex', 'absoluteGamma', 'callOi', 'putOi', 'callVolume', 'putVolume', 'pcRatioOi', 'pcRatioVolume'];
 
 /** Sanitize a loaded `activeTab`: any value outside the known tabs (missing,
