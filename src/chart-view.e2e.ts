@@ -34,6 +34,10 @@ async function main(): Promise<void> {
     try {
         await openChart();
 
+        // ---- one line at the current price: the named Spot level, not also the library's own last-close line and label ----
+        assert.equal(await page.locator('[data-last-bar]').getAttribute('data-series-last-price'), 'off', 'no built-in last-price line or axis label');
+        assert.equal(await page.getByRole('button', { name: /^Spot/ }).first().getAttribute('aria-pressed'), 'true', 'the Spot level is on by default');
+
         // ---- the panel is in the very corner of the chart: no gap above or left of it ----
         const container = (await page.locator('[data-last-bar]').boundingBox())!;
         const panel = (await page.locator('[data-chart-header]').boundingBox())!;
