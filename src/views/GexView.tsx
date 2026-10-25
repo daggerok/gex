@@ -443,6 +443,14 @@ export const GexView: React.FC<GexViewProps> = ({
     // ---- Per-metric bar colors (user-customizable, persisted) --------------
     // The colours are shared with the Chart tab (metric-prefs.ts)
     const metricColors = useMetricColors();
+    // AG dots (owner 2026-10-25): the AG colour, red (the Net GEX (-) colour) where the strike's Net GEX is negative - AG
+    // itself is never negative, so the dot carries the sign the line cannot show
+    const agDot = (r: number, active: boolean) => (props: { cx?: number; cy?: number; index?: number; payload?: { netGex?: number } }) => {
+        const neg = (props.payload?.netGex ?? 0) < 0;
+        const color = neg ? metricColors.netGexNeg : metricColors.absoluteGamma;
+        if (props.cx == null || props.cy == null) return <g key={`ag-dot-${props.index}`} />;
+        return <circle key={`ag-dot-${props.index}`} cx={props.cx} cy={props.cy} r={r} fill={color} stroke={active ? '#fff' : color} strokeWidth={active ? 2 : 1} data-ag-dot={neg ? 'neg' : 'pos'} />;
+    };
     const colorFor = (m: GexMetric, sign?: 'pos' | 'neg'): string => {
         if (m === 'netGex') return sign === 'neg' ? metricColors.netGexNeg : metricColors.netGexPos;
         return metricColors[m];
@@ -1735,9 +1743,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                             fill={metricColors.absoluteGamma}
                                             fillOpacity={0.18}
                                             strokeWidth={2}
-                                            // a dot at every strike makes the line easier to read (owner request 2026-10-25)
-                                            dot={{ r: 2, fill: metricColors.absoluteGamma, stroke: metricColors.absoluteGamma, strokeWidth: 1 }}
-                                            activeDot={{ r: 3.5 }}
+                                            // a dot at every strike makes the line easier to read (owner request 2026-10-25), red on a negative Net GEX
+                                            dot={agDot(2, false)}
+                                            activeDot={agDot(3.5, true)}
                                             // recharts layers: Area 100 < Bar 300 < Line/ReferenceLine
                                             // 400. 350 draws AG on top of the GEX bars but below the
                                             // level lines.
