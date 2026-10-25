@@ -113,9 +113,19 @@ async function main(): Promise<void> {
             await page.waitForTimeout(2500);
 
             const looks: Record<string, Look> = {};
+            // the upper part of Board, GEX and Chart is identical (owner 2026-10-25): the tab row, the shared Expirations panel,
+            // and the Metrics + Levels row (components/ToolbarRow.tsx) at the same place and size; the Desk has no such row
+            const toolbars: Record<string, string | null> = {};
             for (const tab of ['Desk', 'Board', 'GEX', 'Chart']) {
                 await page.getByRole('button', { name: tab, exact: true }).first().click();
                 await page.waitForTimeout(1800);
+                toolbars[tab] = await page.evaluate(() => {
+                    const rows = Array.from(document.querySelectorAll('[data-toolbar-row]')).filter((e) => (e as HTMLElement).offsetParent !== null);
+                    if (rows.length !== 1) return rows.length ? `${rows.length} rows` : null;
+                    const r = rows[0].getBoundingClientRect();
+                    const kids = Array.from(rows[0].children).map((c) => `${c.getAttribute('aria-label') ?? c.tagName}:${Math.round(c.getBoundingClientRect().height)}`);
+                    return `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)}x${Math.round(r.height)} [${kids.join(' ')}]`;
+                });
                 const l = (looks[tab] = await look(page));
                 // the Chart page may be 1 px over because of the chart library's own rounding, nothing more
                 if (l.scrollHeight > l.inner + 1) {
@@ -138,6 +148,15 @@ async function main(): Promise<void> {
                 if (l.gapAbove > 1) {
                     report(size, tab, `EMPTY SPACE ABOVE THE FOOTER (${l.gapAbove} px)`, 'the content ends right where the footer starts (at most 1 px between them)',
                         `${l.gapAbove} px of empty space between the last content and the footer`, HINTS.gap[tab]);
+                }
+            }
+            if (toolbars.Desk !== null) {
+                report(size, 'Desk', 'THE DESK HAS A METRICS / LEVELS ROW', 'no toolbar row on the Desk (only Board, GEX and Chart have it)', String(toolbars.Desk), 'src/views/DeskView.tsx');
+            }
+            for (const tab of ['Board', 'Chart']) {
+                if (!toolbars.GEX || toolbars[tab] !== toolbars.GEX) {
+                    report(size, tab, 'THE METRICS / LEVELS ROW DIFFERS FROM THE GEX TAB', 'the same row (components/ToolbarRow.tsx) at the same position and size as on the GEX tab',
+                        `${tab}: ${toolbars[tab]}  GEX: ${toolbars.GEX}`, 'src/components/ToolbarRow.tsx and the <main> wrapper of the tab (px-4 pt-4 lg:px-6)');
                 }
             }
             // one footer design on the three tabs, only the text differs

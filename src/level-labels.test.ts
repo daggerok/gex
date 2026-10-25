@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { chartLabelsWithSigma, groupLevelLabels, groupNearLevelLabels, labelLayout, MAX_INLINE_LABEL_CHARS, type LevelLabelItem } from './level-labels';
+import { chartLabelsWithSigma, groupLevelLabels, groupNearLevelLabels, labelLayout, levelMarksByStrike, MAX_INLINE_LABEL_CHARS, type LevelLabelItem } from './level-labels';
 
 const item = (key: string, value: number, text: string): LevelLabelItem => ({ key, value, text, color: '#000' });
 
@@ -115,5 +115,17 @@ describe('Sigma labels', () => {
 
   test('Chart tab: no Sigma keeps every title as it is', () => {
     expect(chartLabelsWithSigma([pl('maxPain', 100, 'Max Pain')], [], String)).toEqual({ titles: { maxPain: 'Max Pain' }, sigma: [] });
+  });
+});
+
+describe('levelMarksByStrike (Board marks)', () => {
+  const item = (key: string, value: number) => ({ key, value, text: key, color: '#000' });
+  test('a level on a strike marks it, one between strikes marks the nearest (tie -> lower), merged in input order', () => {
+    const marks = levelMarksByStrike([item('Spot', 102.4), item('Max Net GEX', 105), item('Gamma Flip', 102.5), item('Max Pain', 105), item('Far', 999)], [95, 100, 105, 110]);
+    expect(Array.from(marks.keys()).sort((a, b) => a - b)).toEqual([100, 105, 110]);
+    expect(marks.get(100)!.map((i) => i.key)).toEqual(['Spot', 'Gamma Flip']); // 102.4 and the 102.5 tie go to 100
+    expect(marks.get(105)!.map((i) => i.key)).toEqual(['Max Net GEX', 'Max Pain']);
+    expect(marks.get(110)!.map((i) => i.key)).toEqual(['Far']); // beyond the last strike: the last strike
+    expect(levelMarksByStrike([item('x', 1)], []).size).toBe(0);
   });
 });

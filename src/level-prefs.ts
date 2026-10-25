@@ -1,8 +1,9 @@
 /// <reference lib="esnext" />
 import { useSyncExternalStore } from 'react';
-import type { CustomLevel } from './custom-levels';
+import { levelColorOf, type CustomLevel } from './custom-levels';
 import { DEFAULT_LEVEL_COLORS, loadLevelColors, saveLevelColors, type GexLevelKey, type LevelColorSet, type PriceLevelKey } from './gex-colors';
 import { persistedChoice } from './persisted-choice';
+import type { LevelLabelItem } from './level-labels';
 import type { GexLevels, SigmaLevel } from './types';
 
 // ============================================================================
@@ -225,4 +226,37 @@ export function gammaFlipUnavailableText(levels: GexLevels | null | undefined, t
     if (levels?.gammaFlipUnavailable === 'futuresPriced') return tr('gex.level.tooltip.gammaFlipFutures');
     if (levels?.gammaFlipUnavailable === 'ivCoverage') return tr('gex.level.tooltip.gammaFlipNoIv', { pct: `${Math.round((levels.gammaFlipIvCoverage ?? 0) * 100)}%` });
     return '';
+}
+
+/**
+ * The level labels to draw (the GEX chart's level names, the Board's strike marks): every selected level with a price, in
+ * ALL_LEVEL_KEYS order, Max AG only while the AG metric is on, the six Sigma strikes of the chosen mode (1σ / 2σ / 3σ),
+ * then the visible custom levels. Grouping them by price is level-labels.ts's job.
+ */
+export function levelLabelItems(opts: {
+    levels: GexLevels | null;
+    selected: readonly ToggleableLevelKey[];
+    colors: LevelColorSet;
+    showMaxAg: boolean;
+    sigma: SigmaMode;
+    label: (key: ToggleableLevelKey) => string;
+    customLevels?: readonly CustomLevel[];
+}): LevelLabelItem[] {
+    const out: LevelLabelItem[] = [];
+    for (const key of ALL_LEVEL_KEYS) {
+        if (!opts.selected.includes(key)) continue;
+        if (key === 'maxAbsGamma' && !opts.showMaxAg) continue;
+        if (key === 'sigma') {
+            for (const l of sigmaLines(opts.levels, opts.sigma)) out.push({ key: l.key, value: l.strike, text: l.text, color: opts.colors.sigma });
+            continue;
+        }
+        const value = levelPrice(opts.levels, key);
+        if (value == null) continue;
+        out.push({ key, value, text: opts.label(key), color: opts.colors[key] });
+    }
+    for (const c of opts.customLevels ?? []) {
+        if (c.hidden) continue;
+        out.push({ key: `custom:${c.id}`, value: c.price, text: c.name, color: levelColorOf(c) });
+    }
+    return out;
 }

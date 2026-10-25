@@ -76,9 +76,9 @@ async function main(): Promise<void> {
                     return { size: c.fontSize, lh: c.lineHeight, num: c.fontVariantNumeric, pad: c.padding, h: Math.round(e.getBoundingClientRect().height) };
                 };
                 return {
-                    boardCell: st(desk('[data-board-row]:not([data-board-atm]) td')),
+                    boardCell: st(desk('[data-board-row]:not([data-board-atm]) td[data-board-col]')),
                     boardRow: Math.round((desk('[data-board-row]:not([data-board-atm])')?.getBoundingClientRect().height) ?? 0),
-                    boardHead: st(desk('[data-board-scroll] thead th:nth-child(2)')),
+                    boardHead: st(desk('[data-board-scroll] thead th:nth-child(3)')),
                     boardAtm: getComputedStyle(desk('[data-board-atm]') as HTMLElement).backgroundColor,
                 };
             });
@@ -93,6 +93,34 @@ async function main(): Promise<void> {
             assert.equal(look.boardAtm, deskAtm, `${at}: the Board ATM row has the Desk ATM tint`);
             await page.getByRole('button', { name: 'Board', exact: true }).first().click();
             await page.waitForTimeout(1000);
+
+            // ---- the Metrics + Levels row of the GEX tab: its chips show or hide columns and mark the level strikes ----
+            if (width > 1000) {
+                const toolbar = page.locator('[data-board] [data-toolbar-row]');
+                assert.equal(await toolbar.count(), 1, 'the Board has the Metrics + Levels row');
+                const col = (k: string) => page.locator(`[data-board-col="${k}"]`).count();
+                const metric = (name: string) => toolbar.locator('[role=group][aria-label="Metrics"]').getByRole('button', { name: new RegExp(`^\\s*${name}`) }).first();
+                const callOiBefore = await col('callOi');
+                await metric('Call OI').click();
+                await page.waitForTimeout(500);
+                assert.notEqual((await col('callOi')) > 0, callOiBefore > 0, 'the Call OI chip shows or hides the CALL OI column');
+                await metric('Call OI').click();
+                await page.waitForTimeout(500);
+                // the Net GEX switch: call GEX and put GEX instead of the net
+                assert.ok((await col('netGex')) > 0, 'NET GEX column in the net view');
+                const split = toolbar.locator('[role=switch]').first();
+                await split.click();
+                await page.waitForTimeout(500);
+                assert.equal(await col('netGex'), 0, 'no NET GEX column in the Abs GEX view');
+                assert.ok((await col('callGex')) > 0 && (await col('putGex')) > 0, 'CALL GEX and PUT GEX columns in the Abs GEX view');
+                await split.click();
+                await page.waitForTimeout(500);
+                // the Spot level marks the ATM row (the strike nearest to spot, the same rule)
+                const atmMarks = await page.locator('[data-board-atm] [data-board-mark]').evaluateAll((els) => els.map((e) => e.getAttribute('data-board-mark')));
+                assert.ok(atmMarks.includes('spot'), `the Spot mark is on the ATM row (${atmMarks.join(', ')})`);
+                assert.ok((await page.locator('[data-board-mark="maxNetGex"]').count()) === 1, 'Max Net GEX marks one row');
+                // GEX tab sees the same chip state (shared): the metrics row there is the same component
+            }
 
             // ---- peaks: Net GEX one or two (its walls), the others at most one ----
             const peaks = await page.locator('[data-board-peak]').evaluateAll((els) => els.map((e) => e.getAttribute('data-board-peak') ?? ''));

@@ -3,10 +3,14 @@ import * as React from 'react';
 import { useEffect, useRef } from 'react';
 import { centerRowInScroll } from '../center-row';
 import { HelpButton } from '../components/HelpButton';
-import type { Board, BoardColumn, BoardRow } from '../gex';
+import { ToolbarRow } from '../components/ToolbarRow';
+import { BOARD_COLUMNS, type Board, type BoardColumn, type BoardRow, type NetGexView } from '../gex';
+import { LEVEL_LABEL_SEPARATOR, levelMarksByStrike, type LevelLabelItem } from '../level-labels';
 import { useI18n } from '../i18n';
-import { signColor, useMetricColors } from '../metric-prefs';
-import { useLevelPrefs } from '../level-prefs';
+import { LEVEL_CHART_LABEL_KEY, levelLabelItems, sigmaMode, useLevelPrefs } from '../level-prefs';
+import { netGexView, signColor, useMetricColors, type GexMetric } from '../metric-prefs';
+import type { GexLevels, Settings } from '../types';
+import { useCustomLevels } from '../use-custom-levels';
 import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 
 // ============================================================================
@@ -19,18 +23,57 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel.
 // ============================================================================
 
-const COLUMNS: ReadonlyArray<{ key: BoardColumn; label: string; format: (r: BoardRow) => string }> = [
-    { key: 'netGex', label: 'board.col.netGex', format: (r) => fmtSignedCompact(r.netGex) },
-    { key: 'absGex', label: 'board.col.absGex', format: (r) => fmtCompact(r.absGex) },
-    { key: 'notionalDelta', label: 'board.col.notionalDelta', format: (r) => fmtSignedCompact(r.notionalDelta) },
-    { key: 'totalOi', label: 'board.col.totalOi', format: (r) => fmtInt(r.totalOi) },
-    { key: 'callOi', label: 'board.col.callOi', format: (r) => fmtInt(r.callOi) },
-    { key: 'putOi', label: 'board.col.putOi', format: (r) => fmtInt(r.putOi) },
-    { key: 'totalVolume', label: 'board.col.totalVolume', format: (r) => fmtInt(r.totalVolume) },
-    { key: 'callVolume', label: 'board.col.callVolume', format: (r) => fmtInt(r.callVolume) },
-    { key: 'putVolume', label: 'board.col.putVolume', format: (r) => fmtInt(r.putVolume) },
-    { key: 'absGexShare', label: 'board.col.absGexShare', format: (r) => `${(r.absGexShare * 100).toFixed(2)}%` },
-];
+interface BoardColumnDef {
+    key: string;
+    label: string;
+    format: (r: BoardRow) => string;
+    /** the column whose peak dot this is (computeBoard peaks), none for the ratios */
+    peak?: BoardColumn;
+    /** the value whose sign colours the peak dot */
+    value: (r: BoardRow) => number | null;
+}
+
+const ratio = (v: number | null): string => (v === null ? '-' : v.toFixed(2));
+
+/** Every column the Board can show, in order; which are shown follows the Metrics chips (boardColumns). */
+const ALL_COLUMNS: Record<string, BoardColumnDef> = {
+    netGex: { key: 'netGex', label: 'board.col.netGex', format: (r) => fmtSignedCompact(r.netGex), peak: 'netGex', value: (r) => r.netGex },
+    callGex: { key: 'callGex', label: 'board.col.callGex', format: (r) => fmtSignedCompact(r.callGex), peak: 'callGex', value: (r) => r.callGex },
+    putGex: { key: 'putGex', label: 'board.col.putGex', format: (r) => fmtSignedCompact(r.putGex), peak: 'putGex', value: (r) => r.putGex },
+    absGex: { key: 'absGex', label: 'board.col.absGex', format: (r) => fmtCompact(r.absGex), peak: 'absGex', value: (r) => r.absGex },
+    notionalDelta: { key: 'notionalDelta', label: 'board.col.notionalDelta', format: (r) => fmtSignedCompact(r.notionalDelta), peak: 'notionalDelta', value: (r) => r.notionalDelta },
+    totalOi: { key: 'totalOi', label: 'board.col.totalOi', format: (r) => fmtInt(r.totalOi), peak: 'totalOi', value: (r) => r.totalOi },
+    callOi: { key: 'callOi', label: 'board.col.callOi', format: (r) => fmtInt(r.callOi), peak: 'callOi', value: (r) => r.callOi },
+    putOi: { key: 'putOi', label: 'board.col.putOi', format: (r) => fmtInt(r.putOi), peak: 'putOi', value: (r) => r.putOi },
+    pcOi: { key: 'pcOi', label: 'board.col.pcOi', format: (r) => ratio(r.pcRatioOi), value: (r) => r.pcRatioOi },
+    totalVolume: { key: 'totalVolume', label: 'board.col.totalVolume', format: (r) => fmtInt(r.totalVolume), peak: 'totalVolume', value: (r) => r.totalVolume },
+    callVolume: { key: 'callVolume', label: 'board.col.callVolume', format: (r) => fmtInt(r.callVolume), peak: 'callVolume', value: (r) => r.callVolume },
+    putVolume: { key: 'putVolume', label: 'board.col.putVolume', format: (r) => fmtInt(r.putVolume), peak: 'putVolume', value: (r) => r.putVolume },
+    pcVolume: { key: 'pcVolume', label: 'board.col.pcVolume', format: (r) => ratio(r.pcRatioVolume), value: (r) => r.pcRatioVolume },
+    absGexShare: { key: 'absGexShare', label: 'board.col.absGexShare', format: (r) => `${(r.absGexShare * 100).toFixed(2)}%`, peak: 'absGexShare', value: (r) => r.absGexShare },
+};
+
+/**
+ * The Board columns for the chosen metrics (owner, 2026-10-25: the Metrics chips show or hide their columns): Net GEX ->
+ * NET GEX, or CALL GEX and PUT GEX in the Abs GEX view (`split`), AG -> ABS GEX, Call / Put OI and volume -> their columns,
+ * P/C OI / volume -> the ratio columns. Notional delta, total OI, total volume and % always show.
+ */
+export function boardColumns(metrics: readonly GexMetric[], view: NetGexView): string[] {
+    const on = (m: GexMetric) => metrics.includes(m);
+    const cols: string[] = [];
+    if (on('netGex')) cols.push(...(view === 'split' ? ['callGex', 'putGex'] : ['netGex']));
+    if (on('absoluteGamma')) cols.push('absGex');
+    cols.push('notionalDelta', 'totalOi');
+    if (on('callOi')) cols.push('callOi');
+    if (on('putOi')) cols.push('putOi');
+    if (on('pcRatioOi')) cols.push('pcOi');
+    cols.push('totalVolume');
+    if (on('callVolume')) cols.push('callVolume');
+    if (on('putVolume')) cols.push('putVolume');
+    if (on('pcRatioVolume')) cols.push('pcVolume');
+    cols.push('absGexShare');
+    return cols;
+}
 
 /** A peak dot of a zero value (no sign): grey. A positive value's dot is the Net GEX (+) colour, a negative one's (-). */
 const NEUTRAL_DOT = '#94a3b8';
@@ -39,19 +82,35 @@ export const BoardView: React.FC<{
     symbol: string;
     board: Board | null;
     selectedExps: readonly string[];
-}> = ({ symbol, board, selectedExps }) => {
+    levels: GexLevels | null;
+    metrics: GexMetric[];
+    setMetrics: (metrics: GexMetric[]) => void;
+    colorTheme: Settings['colorTheme'];
+    spotEstimated?: boolean;
+}> = ({ symbol, board, selectedExps, levels, metrics, setMetrics, colorTheme, spotEstimated = false }) => {
     const { t: tr } = useI18n();
     const colors = useMetricColors();
+    const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
     // the ATM row is tinted with the Spot level colour exactly like the Desk's (index.css `.od-atm`, --od-atm)
-    const atmColor = useLevelPrefs().colors.spot;
+    const atmColor = levelColors.spot;
+    const netView = netGexView.use();
+    const sigmaView = sigmaMode.use();
+    const [customLevels] = useCustomLevels(symbol);
+    const columns = React.useMemo(() => boardColumns(metrics, netView).map((k) => ALL_COLUMNS[k]), [metrics, netView]);
     const scrollRef = useRef<HTMLDivElement>(null);
     const headRef = useRef<HTMLTableSectionElement>(null);
     const atmRef = useRef<HTMLTableRowElement>(null);
     const peakSets = React.useMemo(() => {
         const out = {} as Record<BoardColumn, Set<number>>;
-        for (const c of COLUMNS) out[c.key] = new Set(board?.peaks[c.key] ?? []);
+        for (const c of BOARD_COLUMNS) out[c] = new Set(board?.peaks[c] ?? []);
         return out;
     }, [board]);
+    // the enabled levels on their (nearest) strikes, with the chart's level names and colours (level-labels.ts)
+    const marks = React.useMemo(() => {
+        if (!board) return new Map<number, LevelLabelItem[]>();
+        const items = levelLabelItems({ levels, selected: selectedLevels, colors: levelColors, showMaxAg: metrics.includes('absoluteGamma'), sigma: sigmaView, label: (k) => tr(LEVEL_CHART_LABEL_KEY[k]), customLevels });
+        return levelMarksByStrike(items, board.rows.map((r) => r.strike));
+    }, [board, levels, selectedLevels, levelColors, metrics, sigmaView, tr, customLevels]);
 
     // The ATM row in the vertical middle of the table (below the sticky header) on open and on a new ticker or selection
     const selectionKey = selectedExps.join(',');
@@ -62,14 +121,15 @@ export const BoardView: React.FC<{
     }, [symbol, selectionKey, hasRows]);
 
     const tint = (row: BoardRow): string | undefined => {
-        if (!COLUMNS.some((c) => peakSets[c.key].has(row.strike))) return undefined;
+        if (!columns.some((c) => c.peak && peakSets[c.peak].has(row.strike))) return undefined;
         const color = signColor(row.netGex, colors);
         return color ? `color-mix(in srgb, ${color} 16%, transparent)` : undefined;
     };
 
     return (
         <main className="mx-auto w-full px-4 pt-4 lg:px-6 h-full flex flex-col min-h-0" data-board>
-            {/* the expirations and their OI shares are in the shared Expirations panel above (main.tsx), like on every tab */}
+            {/* the Metrics + Levels row of the GEX and Chart tabs (the expirations and their OI shares are in the shared panel) */}
+            <ToolbarRow metrics={metrics} setMetrics={setMetrics} levels={levels} symbol={symbol} colorTheme={colorTheme} spotEstimated={spotEstimated} />
             <div
                 ref={scrollRef}
                 className="themed-scroll flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800"
@@ -87,10 +147,11 @@ export const BoardView: React.FC<{
                                 <th scope="col" className="sticky left-0 z-10 px-2 py-[3px] text-center font-medium">
                                     <span className="inline-flex items-center gap-1">
                                         {tr('board.col.strike')}
-                                        <HelpButton label={tr('board.help.label')} paragraphs={[tr('board.help.rows'), tr('board.help.gex'), tr('board.help.delta'), tr('board.help.counts')]} align="left" />
+                                        <HelpButton label={tr('board.help.label')} paragraphs={[tr('board.help.rows'), tr('board.help.gex'), tr('board.help.delta'), tr('board.help.counts'), tr('board.help.toolbar')]} align="left" />
                                     </span>
                                 </th>
-                                {COLUMNS.map((c) => (
+                                <th scope="col" className="px-2 py-[3px] text-left font-medium">{tr('board.col.levels')}</th>
+                                {columns.map((c) => (
                                     <th key={c.key} scope="col" className="px-2 py-[3px] text-right font-medium">{tr(c.label)}</th>
                                 ))}
                             </tr>
@@ -119,11 +180,19 @@ export const BoardView: React.FC<{
                                             {fmt(row.strike)}
                                             {atm && <span className="sr-only"> {tr('board.atm')}</span>}
                                         </th>
-                                        {COLUMNS.map((c) => {
-                                            const peak = peakSets[c.key].has(row.strike);
+                                        <td className="whitespace-nowrap px-2 py-[3px] text-left text-[11px] font-semibold" data-board-marks={marks.has(row.strike) ? '' : undefined}>
+                                            {(marks.get(row.strike) ?? []).map((m, i) => (
+                                                <React.Fragment key={m.key}>
+                                                    {i > 0 && <span className="text-slate-400">{LEVEL_LABEL_SEPARATOR}</span>}
+                                                    <span style={{ color: m.color }} data-board-mark={m.key}>{m.text}</span>
+                                                </React.Fragment>
+                                            ))}
+                                        </td>
+                                        {columns.map((c) => {
+                                            const peak = !!c.peak && peakSets[c.peak].has(row.strike);
                                             return (
-                                                <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" data-board-peak={peak ? c.key : undefined}>
-                                                    {peak && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: signColor(row[c.key], colors) ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr('board.peak')} />}
+                                                <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" data-board-peak={peak ? c.key : undefined} data-board-col={c.key}>
+                                                    {peak && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: signColor(c.value(row), colors) ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr('board.peak')} />}
                                                     {c.format(row)}
                                                 </td>
                                             );

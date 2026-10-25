@@ -99,3 +99,29 @@ export function chartLabelsWithSigma(
     }
     return { titles, sigma: own };
 }
+
+/**
+ * The Board's level marks: every item moved onto its nearest strike of `strikes` (ascending; equal distance -> the lower
+ * strike, like nearestStrikeTo in gex.ts), so a level between strikes (Spot, Gamma Flip) marks its nearest row. The items
+ * of one strike keep their input order; their texts joined by LEVEL_LABEL_SEPARATOR are the merged label of the charts.
+ */
+export function levelMarksByStrike(items: readonly LevelLabelItem[], strikes: readonly number[]): Map<number, LevelLabelItem[]> {
+    const out = new Map<number, LevelLabelItem[]>();
+    if (!strikes.length) return out;
+    for (const item of items) {
+        if (!Number.isFinite(item.value)) continue;
+        // binary search for the first strike >= value, then the nearer of it and the one before
+        let lo = 0;
+        let hi = strikes.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (strikes[mid] < item.value) lo = mid + 1; else hi = mid;
+        }
+        const above = lo < strikes.length ? strikes[lo] : null;
+        const below = lo > 0 ? strikes[lo - 1] : null;
+        const strike = above === null ? (below as number) : below === null ? above : (above - item.value < item.value - below ? above : below);
+        const list = out.get(strike);
+        if (list) list.push(item); else out.set(strike, [item]);
+    }
+    return out;
+}

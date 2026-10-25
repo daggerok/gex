@@ -7,15 +7,14 @@ import { attachLongPress } from '../long-press';
 import { FullscreenButton } from '../components/FullscreenButton';
 import { useFullscreen } from '../use-fullscreen';
 import { Tip } from '../components/Tip';
+import { ToolbarRow } from '../components/ToolbarRow';
 import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, pinchRange, recordEscape, RESET_ALL_EVENT, strikeTicks, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { FadePresence } from '../components/FadePresence';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
-import { LevelsPanel } from '../components/LevelsPanel';
 import { ToggleChip } from '../components/ToggleChip';
-import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPrice, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay, type ToggleableLevelKey } from '../level-prefs';
+import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, levelLabelItems, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPrice, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
-import { MetricsPanel } from '../components/MetricsPanel';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, netGexView, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, defaultLevelName, proposeLevelColor } from '../custom-levels';
 import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
@@ -1238,49 +1237,8 @@ export const GexView: React.FC<GexViewProps> = ({
 
     return (
         <main className="mx-auto flex w-full flex-1 flex-col px-4 pt-4 lg:min-h-0 lg:px-6">
-            {/* ---- Controls: metric toggle + Key Levels toggle (expiration
-                picker + Load live in the shared panel in main.tsx). One
-                flex-wrap row, `justify-between`, `items-center` so each
-                panel's height is independent of its sibling. Metrics sizes
-                to its content, capped at 50% of the row. Key Levels grows
-                leftward from the right edge until it reaches Metrics, up to
-                its own content width (see its comment below). ALL 6 metric
-                chips and ALL 7 level chips always render (toggling only
-                changes the fill), so the natural widths are constant
-                (~708px and ~972px). ---- */}
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                {/* Metrics: `shrink basis-auto max-w-[50%]` sizes to its own content,
-                    capped at half the row, with its own scrollable chip row as the
-                    fallback when even that is too tight. No `grow`, Key Levels takes
-                    the leftover space. */}
-                <MetricsPanel metrics={metrics} setMetrics={setMetrics} colorTheme={settings.colorTheme} />
-
-                {/* ---- Key Levels toggle+color panel: same per-item
-                    affordances as the metrics panel above (toggle button +
-                    color picker), one row per toggleable level (see
-                    `levelPanelKeys`). Purely additive - the sidebar's Key
-                    Levels card keeps showing text for every level.
-
-                    Sizing: `grow basis-0 min-w-[300px] max-w-fit`. The panel
-                    sits at the row's right edge and extends LEFT, like the
-                    Expirations form, until it reaches the Metrics panel
-                    (one `gap-2` away), so its chips are only scrolled when
-                    the viewport really has no more room. `max-w-fit` caps
-                    the growth at the panel's own content width, so on a wide
-                    row it ends right after its last chip instead of leaving
-                    dead space inside its border. (The earlier fixed
-                    `max-w-[45%]` cap clipped the first chip at 2000px while
-                    the gap to Metrics stayed empty.) `basis-0` keeps the
-                    wrap decision cheap: both panels stay on one line as long
-                    as Metrics + 300px + gap fit, the leftover goes to this
-                    panel. Below that, the documented wrap applies.
-                    Note `grow` and the row's `justify-between` do not
-                    conflict here: once this panel has taken the free space
-                    there is nothing left for `justify-between` to place,
-                    and when it is capped by `max-w-fit` the leftover is the
-                    gap between the two panels. ---- */}
-                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} spotEstimated={effSpotIsEstimated} showMaxAg={metrics.includes('absoluteGamma')} />
-            </div>
+            {/* ---- Metrics + Levels: the toolbar row shared with the Board and Chart tabs (components/ToolbarRow.tsx) ---- */}
+            <ToolbarRow metrics={metrics} setMetrics={setMetrics} levels={levels} symbol={symbol} colorTheme={settings.colorTheme} spotEstimated={effSpotIsEstimated} />
 
             {provider.mode === 'lazy' && (
                 <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
@@ -1825,24 +1783,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                         // Range High both at 778) are drawn as separate lines but
                                         // get ONE merged label on the first of them, so labels
                                         // never clash and every level stays visible.
-                                        const drawn: LevelLabelItem[] = [];
-                                        for (const key of ALL_LEVEL_KEYS) {
-                                            if (!selectedLevels.includes(key)) continue;
-                                            if (key === 'maxAbsGamma' && !metrics.includes('absoluteGamma')) continue;
-                                            // Sigma: six strikes of the chosen mode, labelled 1σ / 2σ / 3σ, through the same label grouping
-                                            // (a Sigma strike on Max Net GEX reads "Max Net GEX + 1σ")
-                                            if (key === 'sigma') {
-                                                for (const l of sigmaLines(levels, sigmaView)) drawn.push({ key: l.key, value: l.strike, text: l.text, color: levelColors.sigma });
-                                                continue;
-                                            }
-                                            const value = levelPrice(levels, key);
-                                            if (value == null) continue;
-                                            drawn.push({ key, value, text: levelChartLabel(key), color: levelColors[key] });
-                                        }
-                                        for (const c of customLevels) {
-                                            if (c.hidden) continue;
-                                            drawn.push({ key: `custom:${c.id}`, value: c.price, text: c.name, color: levelColorOf(c) });
-                                        }
+                                        // the selected levels, the Sigma strikes (a Sigma strike on Max Net GEX reads "Max Net GEX + 1σ") and the
+                                        // custom levels, the same list the Board marks its rows with (level-prefs.ts levelLabelItems)
+                                        const drawn: LevelLabelItem[] = levelLabelItems({ levels, selected: selectedLevels, colors: levelColors, showMaxAg: metrics.includes('absoluteGamma'), sigma: sigmaView, label: levelChartLabel, customLevels });
                                         const groups = labelGap > 0 ? groupNearLevelLabels(drawn, labelGap) : groupLevelLabels(drawn);
                                         return drawn.map((item) => {
                                             const group = groups.find((g) => g.items[0].key === item.key);
