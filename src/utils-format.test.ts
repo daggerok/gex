@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { translations } from './i18n';
 import type { DataProvider } from './types';
-import { dataAge, errorText, fmt, fmtCompact, fmtDays, fmtInt, fmtSignedCompact, friendlyError, UiError } from './utils';
+import { dataAge, errorText, fmt, fmtCompact, fmtDays, fmtInt, fmtSignedCompact, friendlyError, oiSharePct, UiError } from './utils';
 
 // The number formatters are cached for speed, they must give exactly what toLocaleString gave.
 describe('fmt and fmtInt keep their output', () => {
@@ -101,5 +101,16 @@ describe('UiError (GEX-H8): errors the user reads follow the app language', () =
       expect({ k, en: k in translations.en }).toEqual({ k, en: true });
       expect({ k, ru: k in translations.ru }).toEqual({ k, ru: true });
     });
+  });
+});
+
+describe('oiSharePct (the OI share next to each expiration)', () => {
+  test('one decimal, 100% whole, empty when there is no share', () => {
+    expect(oiSharePct(0.064)).toBe('6.4%');
+    expect(oiSharePct(0.1234)).toBe('12.3%');
+    expect(oiSharePct(1)).toBe('100%');
+    expect(oiSharePct(0)).toBe('0.0%');
+    expect(oiSharePct(undefined)).toBe('');
+    expect(oiSharePct(Number.NaN)).toBe('');
   });
 });

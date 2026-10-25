@@ -151,6 +151,12 @@ export function dataAge(updated: string | null | undefined, dataDate: string | n
     return { at: snapshotLabel(backupStamp(at)), day, daysOld, stale: day < today };
 }
 
+/** An expiration's OI share (0..1) as the Expirations panel shows it: "6.4%", "12.3%", "100%"; empty when there is none. */
+export function oiSharePct(share: number | null | undefined): string {
+    if (typeof share !== 'number' || !Number.isFinite(share)) return '';
+    return share >= 0.9995 ? '100%' : `${(share * 100).toFixed(1)}%`;
+}
+
 /** Format implied volatility (decimal) as a percentage string. */
 export function fmtPct(v: number | null | undefined): string {
     if (v == null || !Number.isFinite(v)) return '';
