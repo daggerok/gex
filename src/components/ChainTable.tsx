@@ -1,7 +1,9 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { centerRowInScroll } from '../center-row';
 import { useI18n } from '../i18n';
+import { useLevelPrefs } from '../level-prefs';
 import { DEFAULT_COLOR_THEME } from '../settings-store';
 import { accentOf } from '../theme';
 import type { ColorThemeId, DeskColumnSettings, OptionQuote, SideColumnSettings } from '../types';
@@ -300,6 +302,8 @@ export const ChainTable: React.FC<{
     // new chain is expanded too. (See the v0.9.16 note above loadCollapsed's
     // removal for the rationale.)
     const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+    // the ATM row is tinted with the Spot level colour (index.css .od-atm), a custom Spot colour included
+    const atmColor = useLevelPrefs().colors.spot;
 
     // A fresh chain (new symbol OR a different set of loaded expirations) resets
     // everything back to fully expanded. Collapse/expand is now PURELY MANUAL
@@ -338,35 +342,21 @@ export const ChainTable: React.FC<{
      * exists (bug: clicking a collapsed header only flipped the chevron because
      * the one-shot rAF found no row and bailed, leaving the desk off-screen).
      */
+    const stopCentering = useRef<(() => void) | null>(null);
     const centerStrike = useCallback((exp: string) => {
-        let tries = 0;
-        const attempt = () => {
-            const container = scrollRef.current;
-            const row = atmRefs.current.get(exp);
-            if (!container) return;
-            if (!row) {
-                // Row not mounted yet (section still expanding): retry a few frames.
-                if (tries++ < 30) requestAnimationFrame(attempt);
-                return;
-            }
-            const cRect = container.getBoundingClientRect();
-            const rRect = row.getBoundingClientRect();
-            // Sticky pile height above this section (bars stack at index*--od-bar).
-            const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
-            const idx = sections.findIndex((s) => s.expiration === exp);
-            const pile = Math.max(0, (idx + 1)) * barPx;
-            // Visible viewport (below the pile) whose center we aim the row at.
-            const usableTop = cRect.top + pile;
-            const usableCenter = usableTop + (cRect.bottom - usableTop) / 2;
-            const rowCenter = rRect.top + rRect.height / 2;
-            const delta = rowCenter - usableCenter;
-            container.scrollTop += delta;
-            // If the row was far off-screen it may still be settling (staggered
-            // fade-in changes heights); nudge once more next frame to land exact.
-            if (Math.abs(delta) > 1 && tries++ < 30) requestAnimationFrame(attempt);
-        };
-        requestAnimationFrame(attempt);
+        stopCentering.current?.();
+        stopCentering.current = centerRowInScroll(
+            () => scrollRef.current,
+            () => atmRefs.current.get(exp) ?? null,
+            () => {
+                // the sticky pile above this section: one --od-bar per bar up to and including its own
+                const container = scrollRef.current;
+                const barPx = (container ? parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 : 0) || 30;
+                return Math.max(0, sections.findIndex((s) => s.expiration === exp) + 1) * barPx;
+            },
+        );
     }, [sections]);
+    useEffect(() => () => stopCentering.current?.(), []);
 
     /**
      * Scroll so section `exp`'s expiration bar sits at its PINNED slot in the top
@@ -425,11 +415,12 @@ export const ChainTable: React.FC<{
             centerStrike(exp);
             return;
         }
-        // Clicking the active expiration itself -> toggle collapse/expand.
-        let willExpand = false;
+        // Clicking the active expiration itself -> toggle collapse/expand. Decided from the current state, not inside the
+        // updater: React runs a queued updater later, so a flag set there was still false here and an expand never centered.
+        const willExpand = collapsed.has(exp);
         setCollapsed((prev) => {
             const next = new Set(prev);
-            if (next.has(exp)) { next.delete(exp); willExpand = true; } else { next.add(exp); }
+            if (willExpand) next.delete(exp); else next.add(exp);
             return next;
         });
         setActiveExp(exp);
@@ -439,11 +430,15 @@ export const ChainTable: React.FC<{
             window.setTimeout(() => scrollBarToPinned(exp), 200);
         }
     }, [activeExp, collapsed, sections, centerStrike, scrollBarToPinned]);
+    // Expand all brings the FIRST expiration's ATM row to the middle of the desk (owner 2026-10-25), like a fresh load
     const toggleAll = useCallback(() => {
-        setCollapsed((prev) => (
-            sections.every((s) => prev.has(s.expiration)) ? new Set() : new Set(sections.map((s) => s.expiration))
-        ));
-    }, [sections]);
+        const expandAll = sections.every((s) => collapsed.has(s.expiration));
+        setCollapsed(expandAll ? new Set() : new Set(sections.map((s) => s.expiration)));
+        if (expandAll && sections.length) {
+            setActiveExp(sections[0].expiration);
+            centerStrike(sections[0].expiration);
+        }
+    }, [sections, collapsed, centerStrike]);
 
     // ---- Active-section tracking ----
     // The ACTIVE section is the LAST one whose bar has already reached its pinned
@@ -499,7 +494,7 @@ export const ChainTable: React.FC<{
             min-h-0`, see that file's doc comment) instead of the scroll container
             below guessing a `100dvh - Npx` offset - see `.table-container`'s own
             comment just below for the bug this replaced. */
-        <div className="flex flex-1 min-h-0 flex-col" style={{ ['--od-grid' as string]: odGrid }}>
+        <div className="flex flex-1 min-h-0 flex-col" style={{ ['--od-grid' as string]: odGrid, ['--od-atm' as string]: atmColor }}>
             {/* Controls ABOVE the desk (full width): count LEFT, the symbol and its spot in the MIDDLE, toggle RIGHT. */}
             <div className="mb-2 flex w-full items-center justify-between gap-3 shrink-0">
                 <span className="text-xs text-slate-400">
