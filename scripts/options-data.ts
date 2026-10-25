@@ -14,6 +14,10 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t17 - Default tickers keep their expirations by RULE (owner, 2026-10-25, selectDefaultExpirations / EXPIRATION_RULE): every
+ *        expiration up to 42 days, Fridays (weeklies) up to 92 days, monthlies and quarter-ends up to 366 days, no LEAPS.
+ *        Other tickers keep MAX_EXPIRATIONS. KEEP_EXPIRATIONS never keeps for a default what the rule drops. EXPIRATION_RULE=0
+ *        falls back to MAX_EXPIRATIONS for the defaults too (a quick local run). Holidays of 2028 added for the 1-year horizon.
  *   t16 - New default list (owner, 2026-10-25), 27 tickers: SPX, NDX, DJX, RUT, IWM, SPY, QQQ, DIA, then NVDA, AAPL, MSFT, AMZN,
  *        GOOGL, TSM, GOOG, META, AVGO, LLY, MU, WMT, AMD, JPM, V, BRK-B, XOM, ASML, JNJ. XSP removed (SPX and SPY cover it).
  *        BRK-B is the canonical spelling (file name, Yahoo), Cboe resolves it as BRK.B (live check: Cboe overlay 128/128).
@@ -114,8 +118,9 @@
  *   UNIVERSE_SIZE      default 6000      symbols considered
  *   MIN_MARKET_CAP     default 9000000   USD floor for NASDAQ rows
  *   NASDAQ_TIMEOUT     default 20        seconds before falling back to Cboe
- *   MAX_EXPIRATIONS    default 12        expirations stored per ticker (the nearest ones are fetched)
+ *   MAX_EXPIRATIONS    default 12        expirations stored per non-default ticker (the nearest ones are fetched; see t17)
  *   KEEP_EXPIRATIONS   default 0         1 = keep the later expirations already cached for the ticker (see t8)
+ *   EXPIRATION_RULE    default 1         default tickers keep expirations by rule (see t17); 0 = MAX_EXPIRATIONS for them too
  *   HISTORY            default 0         1 = after the run write the files of the DEFAULT_SYMBOLS into the zip of the day (see t10)
  *   HISTORY_KEEP_DAYS  default 14        daily archives older than this many days are deleted (0 = keep all)
  *   HISTORY_KEEP_BACKUP_DAYS default 14  the same for backups made on demand (YYYY-MM-DD-HH-mm.zip, by the date in the id; 0 = keep all)
@@ -526,11 +531,72 @@ export const US_MARKET_HOLIDAYS = new Set([
     "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
     "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
     "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+    // 2028 (added 2026-10-25 for the 1-year expiration horizon): MLK, Presidents, Good Friday, Memorial, Juneteenth,
+    // Independence, Labor, Thanksgiving, Christmas (New Year's Day falls on a Saturday and is not observed)
+    "2028-01-17", "2028-02-21", "2028-04-14", "2028-05-29", "2028-06-19",
+    "2028-07-04", "2028-09-04", "2028-11-23", "2028-12-25",
 ]);
 
 export function isTradingDay(d: CalDate): boolean {
     if (weekday(d) >= 5) return false;
     return !US_MARKET_HOLIDAYS.has(dateIso(d));
+}
+
+// ---- Expirations of the default tickers, by rule (owner, 2026-10-25) ------------------------------------------------
+
+/**
+ * Which expirations a DEFAULT ticker keeps (owner, 2026-10-25), instead of "the nearest MAX_EXPIRATIONS":
+ *  1. every listed expiration up to `allDays` (42) calendar days out: the exchanges list dailies only about 5-6 weeks out
+ *  2. then the weeklies, Fridays (or the Thursday before a Friday holiday), up to `weeklyDays` (92, about 3 months)
+ *  3. then the monthlies (the 3rd Friday, or the Thursday before it when that Friday is a holiday) and the quarter-ends
+ *     (the last business day of March, June, September, December) up to `monthlyDays` (366, 1 year)
+ * LEAPS beyond a year are left out (about 0.5% of SPY's OI; the quarter-ends hold far more, Dec 31 10.37% in the owner's
+ * reference, the monthlies 13.77% and 11.34%). Non-default tickers keep MAX_EXPIRATIONS.
+ */
+export const EXPIRATION_RULE = { allDays: 42, weeklyDays: 92, monthlyDays: 366 } as const;
+
+function parseIsoDay(text: string): CalDate | null {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    return m ? { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) } : null;
+}
+
+/** The monthly expiration of a month: its 3rd Friday, or the Thursday before it when that Friday is a market holiday. */
+export function monthlyExpiration(year: number, month: number): string {
+    let d: CalDate = { year, month, day: 1 };
+    while (weekday(d) !== 4) d = addDays(d, 1);
+    d = addDays(d, 14);
+    return dateIso(US_MARKET_HOLIDAYS.has(dateIso(d)) ? addDays(d, -1) : d);
+}
+
+/** The last business day of a month (a weekday that is not a market holiday): the quarter-end expiration in Mar/Jun/Sep/Dec. */
+export function lastBusinessDay(year: number, month: number): string {
+    let d = addDays({ year: month === 12 ? year + 1 : year, month: month === 12 ? 1 : month + 1, day: 1 }, -1);
+    while (!isTradingDay(d)) d = addDays(d, -1);
+    return dateIso(d);
+}
+
+/** A weekly expiration day: a Friday, or a Thursday whose Friday is a market holiday (the weekly expires a day early). */
+function isWeeklyExpiration(d: CalDate): boolean {
+    const wd = weekday(d);
+    return wd === 4 || (wd === 3 && US_MARKET_HOLIDAYS.has(dateIso(addDays(d, 1))));
+}
+
+/** The expirations the rule keeps (EXPIRATION_RULE), ascending, from `today` (ISO, market time) on; past ones are dropped. */
+export function selectDefaultExpirations(expirations: readonly string[], today: string, rule: { allDays: number; weeklyDays: number; monthlyDays: number } = EXPIRATION_RULE): string[] {
+    const t = parseIsoDay(today);
+    if (!t) return [];
+    const out = new Set<string>();
+    for (const exp of expirations) {
+        const d = parseIsoDay(exp);
+        if (!d) continue;
+        const days = Math.round((calMs(d) - calMs(t)) / 86400000);
+        if (days < 0) continue;
+        const keep = days <= rule.allDays
+            || (days <= rule.weeklyDays && isWeeklyExpiration(d))
+            || (days <= rule.monthlyDays && (exp === monthlyExpiration(d.year, d.month) || (d.month % 3 === 0 && exp === lastBusinessDay(d.year, d.month))));
+        if (keep) out.add(exp);
+    }
+    return Array.from(out).sort();
 }
 
 export function lastTradingDay(ref: CalDate): CalDate {
@@ -1299,6 +1365,16 @@ export const DEFAULT_SYMBOLS: readonly string[] = [
     'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'TSM', 'GOOG', 'META', 'AVGO', 'LLY', 'MU', 'WMT', 'AMD', 'JPM', 'V', 'BRK-B', 'XOM', 'ASML', 'JNJ',
 ];
 
+/** EXPIRATION_RULE env (default on), read when a ticker is fetched: 0 gives the defaults MAX_EXPIRATIONS too (a quick local run). */
+export function expirationRuleOn(env: Record<string, string | undefined> = process.env): boolean {
+    return !["0", "false", "no", "off"].includes((env.EXPIRATION_RULE ?? "1").trim().toLowerCase());
+}
+
+/** The default list of this run as canonical symbols (the names fetchTicker sees), for the expiration rule. */
+function defaultSymbolSet(): Set<string> {
+    return new Set(defaultSymbols().map((s) => canonical(s)));
+}
+
 /** The default list of this run: the DEFAULT_TICKERS env replaces DEFAULT_SYMBOLS when it is set and not blank. Every run fetches it. */
 export function defaultSymbols(env: Record<string, string | undefined> = process.env): string[] {
     const replaced = parseTickerList(env.DEFAULT_TICKERS);
@@ -1407,6 +1483,11 @@ export function keepLaterExpirations(freshExps: readonly string[], previous: unk
     return { expirations, quotes };
 }
 
+/** The kept expirations and quotes restricted to `allowed`. */
+export function onlyExpirations(kept: { expirations: string[]; quotes: Quote[] }, allowed: ReadonlySet<string>): { expirations: string[]; quotes: Quote[] } {
+    return { expirations: kept.expirations.filter((e) => allowed.has(e)), quotes: kept.quotes.filter((q) => allowed.has(q.expiration)) };
+}
+
 function readPreviousChain(symbol: string): unknown {
     try {
         return JSON.parse(readFileSync(join(DATA_DIR, `${symbol}.json`), "utf8"));
@@ -1421,7 +1502,10 @@ export async function fetchTicker(symbolIn: string): Promise<Payload | null> {
     const resolved = await resolveOptions(symbol);
     if (!resolved) return null;
     const { t, matched } = resolved;
-    const exps = resolved.exps.slice(0, cfg.MAX_EXPIRATIONS);
+    // a default ticker keeps its expirations by rule (selectDefaultExpirations), any other ticker the nearest MAX_EXPIRATIONS
+    const byRule = expirationRuleOn() && defaultSymbolSet().has(symbol);
+    const today = dateIso(todayDate());
+    const exps = byRule ? selectDefaultExpirations(resolved.exps, today) : resolved.exps.slice(0, cfg.MAX_EXPIRATIONS);
 
     const quotes: Quote[] = [];
     const fetched: string[] = [];
@@ -1454,7 +1538,9 @@ export async function fetchTicker(symbolIn: string): Promise<Payload | null> {
     // Later expirations of the previous file are kept as they were, except that the Cboe overlay of this request also
     // reaches them (it covers the whole chain). Without Cboe rows they are left exactly as stored.
     // a skipped date is left out of the expirations (it has no quotes), the later ones stay
-    const kept = cfg.KEEP_EXPIRATIONS ? keepLaterExpirations(fetched, readPreviousChain(symbol)) : { expirations: [], quotes: [] };
+    let kept = cfg.KEEP_EXPIRATIONS ? keepLaterExpirations(fetched, readPreviousChain(symbol)) : { expirations: [] as string[], quotes: [] as Quote[] };
+    // a default ticker never keeps an expiration the rule drops (expired ones go anyway, they come before the fresh ones)
+    if (byRule && kept.expirations.length) kept = onlyExpirations(kept, new Set(selectDefaultExpirations(kept.expirations, today)));
     const all = [...quotes, ...kept.quotes];
     const greeks = applyCboeRows(cboeRows.size ? all : quotes, cboeRows, cfg.CBOE_GREEKS);
 

@@ -60,7 +60,7 @@ jobs:
       MAX_FETCHES: "500"          # NEW (non-skipped) fetches per run (chunk size)
       UNIVERSE_SIZE: "5000"       # consider the FULL market-cap-ranked US universe
       MIN_MARKET_CAP: "9000000"   # Microcap floor ($10M); drops nano-caps
-      MAX_EXPIRATIONS: "50"       # expirations stored per ticker (keeps JSON small)
+      MAX_EXPIRATIONS: "50"       # expirations stored per NON-default ticker; the defaults keep theirs by rule (selectDefaultExpirations)
       REQUEST_SLEEP: "0.5"        # politeness delay between fetches (seconds)
     steps:
       - name: Checkout
