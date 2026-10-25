@@ -84,7 +84,6 @@ export const LevelsPanel: React.FC<{
                                         type="color"
                                         value={colors[key]}
                                         onChange={(e) => setLevelColor(key, e.target.value)}
-                                        title={tr('gex.level.color', { level: label })}
                                         aria-label={tr('gex.level.color', { level: label })}
                                         className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                     />
@@ -110,7 +109,6 @@ export const LevelsPanel: React.FC<{
                                     type="color"
                                     value={levelColorOf(c)}
                                     onChange={(e) => setCustomLevels(customLevels.map((x) => (x.id === c.id ? { ...x, color: e.target.value } : x)))}
-                                    title={tr('gex.level.color', { level: c.name })}
                                     aria-label={tr('gex.level.color', { level: c.name })}
                                     className="h-4 w-4 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-700"
                                 />

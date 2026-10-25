@@ -62,13 +62,13 @@ export const MetricsPanel: React.FC<{
                             swatches={m === 'netGex' ? (
                                 <>
                                     <input type="color" value={colors.netGexPos} onChange={(e) => setMetricColor('netGexPos', e.target.value)}
-                                           title={tr(split ? 'gex.metric.colorGexPos' : 'gex.metric.colorNetGexPos')} aria-label={tr(split ? 'gex.metric.colorGexPos' : 'gex.metric.colorNetGexPos')} className={SWATCH} />
+                                           aria-label={tr(split ? 'gex.metric.colorGexPos' : 'gex.metric.colorNetGexPos')} className={SWATCH} />
                                     <input type="color" value={colors.netGexNeg} onChange={(e) => setMetricColor('netGexNeg', e.target.value)}
-                                           title={tr(split ? 'gex.metric.colorGexNeg' : 'gex.metric.colorNetGexNeg')} aria-label={tr(split ? 'gex.metric.colorGexNeg' : 'gex.metric.colorNetGexNeg')} className={SWATCH} />
+                                           aria-label={tr(split ? 'gex.metric.colorGexNeg' : 'gex.metric.colorNetGexNeg')} className={SWATCH} />
                                 </>
                             ) : (
                                 <input type="color" value={colors[m]} onChange={(e) => setMetricColor(m, e.target.value)}
-                                       title={tr('gex.metric.color', { metric: labelFull(m) })} aria-label={tr('gex.metric.color', { metric: labelFull(m) })} className={SWATCH} />
+                                       aria-label={tr('gex.metric.color', { metric: labelFull(m) })} className={SWATCH} />
                             )}
                         >
                             {m === 'netGex'
