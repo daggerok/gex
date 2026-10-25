@@ -225,17 +225,20 @@ export function estimateSpot(quotes: OptionQuote[], expiration: string): number 
 export class UiError extends Error {
     readonly key: string;
     readonly params?: Record<string, string | number>;
-    constructor(key: string, params?: Record<string, string | number>) {
-        super(translate(key, 'en', params));
+    /** the error behind this one: its text (translated too when it is a UiError) fills the `{{detail}}` param */
+    readonly detail?: unknown;
+    constructor(key: string, params?: Record<string, string | number>, detail?: unknown) {
+        super(translate(key, 'en', detail === undefined ? params : { ...params, detail: errorText(detail, 'en') }));
         this.name = 'UiError';
         this.key = key;
         this.params = params;
+        this.detail = detail;
     }
 }
 
-/** The text of any error in `lang`: a UiError translated, anything else its message. */
+/** The text of any error in `lang`: a UiError translated (with its detail), anything else its message. */
 export function errorText(e: unknown, lang: Language): string {
-    if (e instanceof UiError) return translate(e.key, lang, e.params);
+    if (e instanceof UiError) return translate(e.key, lang, e.detail === undefined ? e.params : { ...e.params, detail: errorText(e.detail, lang) });
     return e instanceof Error ? e.message : String(e);
 }
 
