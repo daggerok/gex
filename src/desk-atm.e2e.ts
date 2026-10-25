@@ -7,7 +7,8 @@ import { startTestSite } from './e2e-site';
 // ============================================================================
 // Browser check of the Desk's ATM row (the strike nearest to spot, owner 2026-10-25): it is tinted with the Spot level
 // colour in both themes, "Expand all" brings the ATM row of the FIRST expiration to the vertical middle of the desk, and
-// expanding ONE expiration while all are collapsed brings THAT expiration's ATM row there. Run: `bun run test:e2e`.
+// expanding ONE expiration while all are collapsed brings THAT expiration's ATM row there; on a phone the expiration bar's
+// label stays in view and centered while the table scrolls sideways. Run: `bun run test:e2e`.
 // ============================================================================
 
 /** Where the ATM row of expiration `exp` sits in the desk's scroll area: 0 = top edge, 1 = bottom edge, null = no row. */
@@ -95,6 +96,32 @@ async function main(): Promise<void> {
             const exp = await page.locator('.od-sec').first().getAttribute('data-exp');
             const place = exp ? await atmPlace(page, exp) : null;
             assert.ok(place !== null && place > 1 / 3 && place < 2 / 3, `a chain loaded on the GEX tab: the Desk opens with its ATM row in the middle third (at ${place})`);
+            await page.close();
+        }
+        // ---- phone (390 px): the expiration bar's label is in view and centered in the visible part of the desk, also after
+        // the table scrolls sideways (batch 4 item 6) ----
+        {
+            const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+            await page.goto(site.url);
+            await page.getByText('💾').first().click();
+            const ticker = page.locator('input[role=combobox]');
+            await ticker.fill('SPY');
+            await ticker.press('Enter');
+            await page.waitForTimeout(2500);
+            const labelPlace = () => page.evaluate(() => {
+                const box = document.querySelector('.table-container')!.getBoundingClientRect();
+                const text = document.querySelector('[data-desk-bar-label] .tabular-nums')!.getBoundingClientRect();
+                return { inside: text.left >= box.left && text.right <= box.right && text.width > 0, offCenter: Math.abs((text.left + text.right) / 2 - (box.left + box.right) / 2) };
+            });
+            for (const scrollLeft of [0, 400, 100000]) {
+                await page.locator('.table-container').evaluate((e, x) => { e.scrollLeft = x; }, scrollLeft);
+                await page.waitForTimeout(200);
+                const at = await labelPlace();
+                assert.ok(at.inside, `390 px, scrolled ${scrollLeft}: the expiration label is inside the desk`);
+                assert.ok(at.offCenter <= 12, `390 px, scrolled ${scrollLeft}: the label is centered in the visible desk (${at.offCenter} px off)`);
+            }
+            const text = await page.locator('[data-desk-bar-label]').first().innerText();
+            assert.match(text, /\d{4}-\d{2}-\d{2}/, 'the label shows the date');
             await page.close();
         }
         console.log('desk atm e2e: ok');
