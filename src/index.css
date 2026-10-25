@@ -557,11 +557,30 @@ body {
 .od-drow:nth-child(even) { background-color: rgba(248, 250, 252, 0.6); } /* slate-50/60 */
 .dark .od-drow:nth-child(odd)  { background-color: #0f172a; }            /* slate-900 */
 .dark .od-drow:nth-child(even) { background-color: rgba(15, 23, 42, 0.4); }
+/* Board table (BoardView): the Desk's rows and header (owner 2026-10-25: the same font, size, rows and header as the Desk).
+ * The same zebra as .od-drow; the sticky strike cell needs an OPAQUE colour, so it gets the zebra colour as it looks on
+ * the page (slate-50/60 on white, slate-900/40 on slate-950). The header is the .od-sub slate-100 / slate-800. The ATM
+ * row shares the .od-atm rule below (after these, so it wins over the zebra). */
+.board-row:nth-child(odd)  { background-color: #ffffff; }
+.board-row:nth-child(even) { background-color: rgba(248, 250, 252, 0.6); }
+.dark .board-row:nth-child(odd)  { background-color: #0f172a; }
+.dark .board-row:nth-child(even) { background-color: rgba(15, 23, 42, 0.4); }
+.board-row:nth-child(odd) > th  { background-color: #ffffff; }
+.board-row:nth-child(even) > th { background-color: #fbfcfd; }
+.dark .board-row:nth-child(odd) > th  { background-color: #0f172a; }
+.dark .board-row:nth-child(even) > th { background-color: #070d1f; }
+.board-head > th { background-color: #f1f5f9; } /* slate-100, as .od-sub */
+.dark .board-head > th { background-color: #1e293b; } /* slate-800 */
+
 /* ATM row (the strike nearest to spot): the Spot level colour (--od-atm, set by ChainTable from the level colours, so a
  * custom Spot colour follows), mixed into the row background so it stays opaque under the sticky cells: 22% on white in
  * the light theme, 30% on slate-900 in the dark one. Clearly visible, the text keeps its contrast (owner 2026-10-25). */
-.od-drow.od-atm  { background-color: color-mix(in srgb, var(--od-atm, #f59e0b) 22%, #ffffff); }
-.dark .od-drow.od-atm { background-color: color-mix(in srgb, var(--od-atm, #f59e0b) 30%, #0f172a); }
+.od-drow.od-atm,
+.board-row.od-atm,
+.board-row.od-atm > th { background-color: color-mix(in srgb, var(--od-atm, #f59e0b) 22%, #ffffff); }
+.dark .od-drow.od-atm,
+.dark .board-row.od-atm,
+.dark .board-row.od-atm > th { background-color: color-mix(in srgb, var(--od-atm, #f59e0b) 30%, #0f172a); }
 
 /* Center "Strike" column guide — a subtle vertical tint on the explicitly
  * marked strike cell (column index changes when users hide/show desk columns).

@@ -6,8 +6,7 @@ import { HelpButton } from '../components/HelpButton';
 import type { Board, BoardColumn, BoardRow } from '../gex';
 import { useI18n } from '../i18n';
 import { signColor, useMetricColors } from '../metric-prefs';
-import { accentOf } from '../theme';
-import type { ColorThemeId } from '../types';
+import { useLevelPrefs } from '../level-prefs';
 import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 
 // ============================================================================
@@ -15,9 +14,9 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // volume (total, calls, puts) and each strike's share of the Abs GEX. The numbers come from src/gex.ts computeBoard
 // through useGexLevels (the view only renders). A dot marks each column's peak, coloured by the sign of the value it marks
 // (the Net GEX (+) / (-) colours, metric-prefs signColor), and tints its row by the sign of the
-// row's Net GEX; the ATM row (strike nearest to spot) is grey and sits in the middle of the table on open and whenever
-// the ticker or the expiration selection changes (src/center-row.ts, like the Desk). Above the table the expirations
-// with their share of the open interest; a click toggles one in the shared selection.
+// row's Net GEX; the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
+// and whenever the ticker or the expiration selection changes (src/center-row.ts, like the Desk). The table looks like the
+// Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel.
 // ============================================================================
 
 const COLUMNS: ReadonlyArray<{ key: BoardColumn; label: string; format: (r: BoardRow) => string }> = [
@@ -36,23 +35,15 @@ const COLUMNS: ReadonlyArray<{ key: BoardColumn; label: string; format: (r: Boar
 /** A peak dot of a zero value (no sign): grey. A positive value's dot is the Net GEX (+) colour, a negative one's (-). */
 const NEUTRAL_DOT = '#94a3b8';
 
-/** Opaque header / strike cell backgrounds (sticky cells must hide what scrolls under them). */
-const STICKY_BG = 'bg-slate-50 dark:bg-slate-900';
-
 export const BoardView: React.FC<{
     symbol: string;
     board: Board | null;
-    /** every expiration of the ticker, in order */
-    expirations: readonly string[];
     selectedExps: readonly string[];
-    /** each LOADED expiration's share (0..1) of the open interest of all loaded expirations */
-    oiShares: Readonly<Record<string, number>>;
-    onToggleExpiration: (exp: string) => void;
-    colorTheme: ColorThemeId;
-}> = ({ symbol, board, expirations, selectedExps, oiShares, onToggleExpiration, colorTheme }) => {
+}> = ({ symbol, board, selectedExps }) => {
     const { t: tr } = useI18n();
-    const ax = accentOf(colorTheme);
     const colors = useMetricColors();
+    // the ATM row is tinted with the Spot level colour exactly like the Desk's (index.css `.od-atm`, --od-atm)
+    const atmColor = useLevelPrefs().colors.spot;
     const scrollRef = useRef<HTMLDivElement>(null);
     const headRef = useRef<HTMLTableSectionElement>(null);
     const atmRef = useRef<HTMLTableRowElement>(null);
@@ -72,55 +63,43 @@ export const BoardView: React.FC<{
 
     const tint = (row: BoardRow): string | undefined => {
         if (!COLUMNS.some((c) => peakSets[c.key].has(row.strike))) return undefined;
-        if (row.netGex === 0) return undefined;
-        return `color-mix(in srgb, ${row.netGex > 0 ? colors.netGexPos : colors.netGexNeg} 16%, transparent)`;
+        const color = signColor(row.netGex, colors);
+        return color ? `color-mix(in srgb, ${color} 16%, transparent)` : undefined;
     };
 
     return (
         <main className="mx-auto w-full px-4 pt-4 lg:px-6 h-full flex flex-col min-h-0" data-board>
-            {/* expiration chips with their share of the open interest (the shared selection, like the Expirations panel) */}
-            <div className="mb-2 flex shrink-0 items-center gap-2">
-                <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">{tr('board.expirations')}</span>
-                <div className="themed-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" data-board-expirations>
-                    {expirations.map((exp) => {
-                        const on = selectedExps.includes(exp);
-                        const share = oiShares[exp];
-                        const pct = share === undefined ? null : `${(share * 100).toFixed(1)}%`;
-                        return (
-                            <button
-                                key={exp}
-                                type="button"
-                                onClick={() => onToggleExpiration(exp)}
-                                aria-pressed={on}
-                                aria-label={pct === null ? `${exp}: ${tr('board.notLoaded')}` : tr('board.expShare', { exp, pct })}
-                                data-board-exp={exp}
-                                className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums ' + (on ? ax.chipActive : ax.chipIdle)}
-                            >
-                                {exp} <span className="opacity-70">{pct ?? '-'}</span>
-                            </button>
-                        );
-                    })}
-                </div>
-                <HelpButton label={tr('board.help.label')} paragraphs={[tr('board.help.rows'), tr('board.help.gex'), tr('board.help.delta'), tr('board.help.counts')]} align="right" />
-            </div>
-
-            <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800" data-board-scroll>
+            {/* the expirations and their OI shares are in the shared Expirations panel above (main.tsx), like on every tab */}
+            <div
+                ref={scrollRef}
+                className="themed-scroll flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800"
+                style={{ ['--od-atm' as string]: atmColor }}
+                data-board-scroll
+            >
                 {!board || !hasRows ? (
                     <p className="p-4 text-sm text-slate-500 dark:text-slate-400">{tr('board.empty')}</p>
                 ) : (
-                    <table className="w-full min-w-[60rem] border-separate border-spacing-0 text-xs tabular-nums" aria-label={tr('board.label')}>
+                    // the Desk's look (ChainTable): 16 px tabular numbers, 3 px x 8 px cells, 30 px rows, the zebra and the
+                    // 11 px uppercase header on slate-100 / slate-800 (index.css `.board-*`, next to the `.od-*` rules)
+                    <table className="w-full min-w-[60rem] border-separate border-spacing-0 tabular-nums text-slate-700 dark:text-slate-200" aria-label={tr('board.label')}>
                         <thead ref={headRef} className="sticky top-0 z-10">
-                            <tr className={STICKY_BG + ' text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400'}>
-                                <th scope="col" className={`sticky left-0 z-10 ${STICKY_BG} border-b border-slate-200 px-3 py-2 text-right font-semibold dark:border-slate-700`}>{tr('board.col.strike')}</th>
+                            <tr className="board-head text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                <th scope="col" className="sticky left-0 z-10 px-2 py-[3px] text-center font-medium">
+                                    <span className="inline-flex items-center gap-1">
+                                        {tr('board.col.strike')}
+                                        <HelpButton label={tr('board.help.label')} paragraphs={[tr('board.help.rows'), tr('board.help.gex'), tr('board.help.delta'), tr('board.help.counts')]} align="left" />
+                                    </span>
+                                </th>
                                 {COLUMNS.map((c) => (
-                                    <th key={c.key} scope="col" className="border-b border-slate-200 px-3 py-2 text-right font-semibold dark:border-slate-700">{tr(c.label)}</th>
+                                    <th key={c.key} scope="col" className="px-2 py-[3px] text-right font-medium">{tr(c.label)}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {board.rows.map((row) => {
                                 const atm = row.strike === board.atmStrike;
-                                const bg = tint(row);
+                                // the ATM tint wins over a peak tint (the peak dots stay)
+                                const bg = atm ? undefined : tint(row);
                                 return (
                                     <tr
                                         key={row.strike}
@@ -128,14 +107,14 @@ export const BoardView: React.FC<{
                                         data-board-row={row.strike}
                                         data-board-atm={atm ? '' : undefined}
                                         aria-current={atm ? 'true' : undefined}
-                                        className={(atm ? 'bg-slate-200/80 font-semibold dark:bg-slate-700/70 ' : '') + 'text-slate-700 dark:text-slate-200'}
-                                        style={bg && !atm ? { backgroundColor: bg } : atm && bg ? { boxShadow: `inset 3px 0 0 0 ${row.netGex > 0 ? colors.netGexPos : colors.netGexNeg}` } : undefined}
+                                        className={'board-row' + (atm ? ' od-atm' : '')}
+                                        style={bg ? { backgroundColor: bg } : undefined}
                                     >
                                         <th
                                             scope="row"
-                                            className={`sticky left-0 ${atm ? 'bg-slate-200 dark:bg-slate-700' : STICKY_BG} border-b border-slate-100 px-3 py-1 text-right font-semibold text-slate-900 dark:border-slate-800 dark:text-slate-100`}
-                                            // the sticky strike cell is opaque; the row tint is laid over its background
-                                            style={bg && !atm ? { backgroundImage: `linear-gradient(${bg}, ${bg})` } : undefined}
+                                            className="od-strike-cell sticky left-0 px-1.5 py-[3px] text-center font-semibold text-slate-900 dark:text-slate-100"
+                                            // the sticky strike cell is opaque; a peak's tint is laid over its background
+                                            style={bg ? { backgroundImage: `linear-gradient(${bg}, ${bg})` } : undefined}
                                         >
                                             {fmt(row.strike)}
                                             {atm && <span className="sr-only"> {tr('board.atm')}</span>}
@@ -143,7 +122,7 @@ export const BoardView: React.FC<{
                                         {COLUMNS.map((c) => {
                                             const peak = peakSets[c.key].has(row.strike);
                                             return (
-                                                <td key={c.key} className="whitespace-nowrap border-b border-slate-100 px-3 py-1 text-right dark:border-slate-800" data-board-peak={peak ? c.key : undefined}>
+                                                <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" data-board-peak={peak ? c.key : undefined}>
                                                     {peak && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: signColor(row[c.key], colors) ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr('board.peak')} />}
                                                     {c.format(row)}
                                                 </td>
