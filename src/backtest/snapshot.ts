@@ -17,8 +17,23 @@ export const isTickerName = (s: string): boolean => TICKER_NAME.test(s);
 /** `YYYY-MM-DD` (automatic end-of-day archive) or `YYYY-MM-DD-HH-mm` (a backup made on demand). */
 export const isSnapshotId = (id: string): boolean => ID_RE.test(id);
 
-/** The calendar date (`YYYY-MM-DD`) of a snapshot id: what the app values the greeks on and cuts the chart at. */
+/** The calendar date (`YYYY-MM-DD`) of a snapshot id: the day the app cuts the chart at. */
 export const snapshotDate = (id: string): string => id.slice(0, 10);
+
+/** Hour (market time) a day snapshot `YYYY-MM-DD` is valued at: the 16:00 close, the archive holds the last state of the day. */
+export const SNAPSHOT_CLOSE_HOUR = 16;
+
+/**
+ * The moment (ms since the epoch) the greeks of a snapshot are valued at (GEX-M1): a backup `YYYY-MM-DD-HH-mm` at its own
+ * minute in market time, a day archive `YYYY-MM-DD` at the 16:00 close of that day. Null for anything that is not an id.
+ */
+export function snapshotValuationTime(id: string, tz: string = MARKET_TZ): number | null {
+    if (!isSnapshotId(id)) return null;
+    const [y, m, d] = id.slice(0, 10).split('-').map(Number);
+    const hour = id.length > 10 ? Number(id.slice(11, 13)) : SNAPSHOT_CLOSE_HOUR;
+    const minute = id.length > 10 ? Number(id.slice(14, 16)) : 0;
+    return zonedTimeToMs(y, m, d, hour, minute, tz);
+}
 
 /** `2026-10-09` stays, `2026-10-09-15-42` becomes `2026-10-09 15:42` (market time). */
 export function snapshotLabel(id: string): string {
@@ -62,12 +77,36 @@ export function sortEntries<T extends { name: string }>(entries: readonly T[]): 
     return [...entries].sort((a, b) => (a.name < b.name ? -1 : 1));
 }
 
-/** Year, month, day, hour, minute, second of a moment on the wall clock of a time zone. */
+const wallFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** Year, month, day, hour, minute, second of a moment on the wall clock of a time zone (one cached formatter per zone). */
 function wall(now: Date, tz: string) {
+    let fmt = wallFormats.get(tz);
+    if (!fmt) {
+        fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+        wallFormats.set(tz, fmt);
+    }
     const p: Record<string, number> = {};
-    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
     for (const part of fmt.formatToParts(now)) if (part.type !== 'literal') p[part.type] = Number(part.value);
     return { year: p.year, month: p.month, day: p.day, hour: p.hour, minute: p.minute, second: p.second };
+}
+
+/** The calendar date (`YYYY-MM-DD`) of a moment on the wall clock of the market (not the trading day, see marketDay). */
+export function marketDate(now: Date = new Date(), tz: string = MARKET_TZ): string {
+    const w = wall(now, tz);
+    return new Date(Date.UTC(w.year, w.month - 1, w.day)).toISOString().slice(0, 10);
+}
+
+/** Ms since the epoch of a wall-clock time in a time zone, e.g. 16:00 New York on a day (daylight saving time included). */
+export function zonedTimeToMs(year: number, month: number, day: number, hour: number, minute: number, tz: string = MARKET_TZ): number {
+    const target = Date.UTC(year, month - 1, day, hour, minute);
+    let t = target;
+    // the wall clock at t differs from the target by the zone offset; two corrections settle it, also next to a DST switch
+    for (let i = 0; i < 2; i++) {
+        const w = wall(new Date(t), tz);
+        t += target - Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second);
+    }
+    return t;
 }
 
 /**

@@ -1,6 +1,7 @@
 /// <reference lib="esnext" />
 import type { ChainResult, GreeksSummary, OptionQuote } from './types';
 import { estimateSpot, num } from './utils';
+import { marketDate, zonedTimeToMs } from './backtest/snapshot';
 // Lazily-bound to avoid a hard circular-import ordering requirement at module
 // init: vix-pricing.ts itself imports BS_RISK_FREE_RATE/normCdf/normPdf/
 // yearsToExpiration/hasFirstOrderGreeks/hasHigherOrderGreeks from this file.
@@ -92,33 +93,57 @@ export function normCdf(x: number): number {
     return 0.5 * (1 + erf(x / Math.SQRT2));
 }
 
-let valuationDay: string | null = null;
+let valuationTime: number | null = null;
 
 /**
- * Backtest ("As of" a past day): the day the model greeks are valued on instead of today, as `YYYY-MM-DD`, or null for
- * the real current time. This is the only place the app reads the clock for pricing, so a past snapshot shows the greeks
- * it showed on that day. Set when the mode is entered and cleared when it is left.
+ * Backtest ("As of" a snapshot): the moment the model greeks are valued at instead of now, in ms since the epoch
+ * (snapshotValuationTime: a backup at its own minute, a day archive at the 16:00 close), or null for the real clock. This is
+ * the only place the app reads the clock for pricing, so a past snapshot shows the greeks it showed at that time. Set when
+ * the mode is entered and cleared when it is left.
  */
-export function setValuationDay(day: string | null): void {
-    valuationDay = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+export function setValuationTime(ms: number | null): void {
+    valuationTime = typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
 }
 
-/** "Now" for pricing: noon of the valuation day (local time, so the calendar day cannot slip), else the real clock. */
+/** "Now" for pricing: the valuation time of a backtest, else the real clock. */
 function valuationNow(): Date {
-    if (!valuationDay) return new Date();
-    const [y, m, d] = valuationDay.split('-').map(Number);
-    return new Date(y, m - 1, d, 12);
+    return valuationTime === null ? new Date() : new Date(valuationTime);
 }
 
-/** Years to expiration (calendar), +1 day floor — same rule as the old Python fetcher. */
+/** Options settle at 16:00 New York time on their expiration day (PM settlement; AM-settled monthlies are not told apart). */
+export const SETTLEMENT_HOUR_ET = 16;
+/** Smallest time to expiration the model uses: 15 minutes (GEX-M1), so gamma stays finite at and after the 16:00 settlement. */
+export const MIN_MINUTES_TO_EXPIRATION = 15;
+const YEAR_MS = 365 * 86_400_000;
+const MIN_MS_TO_EXPIRATION = MIN_MINUTES_TO_EXPIRATION * 60_000;
+const settlementMs = new Map<string, number>();
+let todayCache: { minute: number; date: string } | null = null;
+
+/** Market calendar date of `now`, cached per minute (yearsToExpiration runs for every quote). */
+function marketToday(now: Date): string {
+    const minute = Math.floor(now.getTime() / 60_000);
+    if (todayCache?.minute !== minute) todayCache = { minute, date: marketDate(now) };
+    return todayCache.date;
+}
+
+/**
+ * Years to expiration (GEX-M1, owner-approved 2026-10-25): the real time from `now` to the 16:00 New York settlement of the
+ * expiration day, as a share of a 365-day calendar year, never below 15 minutes. Null when the expiration day is before the
+ * market (New York) calendar date of `now`; on the expiration day itself the 15-minute floor holds also after 16:00, so a
+ * chain fetched or archived after the close still values its 0DTE. Replaces the "calendar days + 1" rule of the old Python
+ * fetcher (0DTE was 1 day, 24x the real T at 15:00, its at-the-money gamma about 4.9x too low); the day is the New York one, not the
+ * browser's local date (review GEX-L2).
+ */
 export function yearsToExpiration(expiration: string, now: Date = valuationNow()): number | null {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(expiration || ''));
     if (!m) return null;
-    const expUtc = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-    const days = Math.round((expUtc - todayUtc) / 86_400_000) + 1;
-    if (days <= 0) return null;
-    return Math.max(days / 365.0, 1.0 / 365.0);
+    if (expiration < marketToday(now)) return null;
+    let settle = settlementMs.get(expiration);
+    if (settle === undefined) {
+        settle = zonedTimeToMs(Number(m[1]), Number(m[2]), Number(m[3]), SETTLEMENT_HOUR_ET, 0);
+        settlementMs.set(expiration, settle);
+    }
+    return Math.max(settle - now.getTime(), MIN_MS_TO_EXPIRATION) / YEAR_MS;
 }
 
 export type BsGreeks = {

@@ -1,8 +1,9 @@
 /// <reference types="bun" />
 /// <reference types="node" />
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { computeGexLevels, computeGexProfile, findNetGexLevels } from './gex';
-import { yearsToExpiration } from './greeks';
+import { setValuationTime, yearsToExpiration } from './greeks';
+import { zonedTimeToMs } from './backtest/snapshot';
 import type { OptionQuote } from './types';
 import { black76Greeks, black76Price, enrichFuturesPricedQuotes } from './vix-pricing';
 
@@ -29,9 +30,16 @@ function q(overrides: Partial<OptionQuote> & { side: 'call' | 'put'; strike: num
   };
 }
 
+/** Frozen pricing clock (GEX-M1: T is the real time to the 16:00 New York settlement): 16:00 New York on Monday 2026-03-09,
+ *  the day after the spring daylight saving switch (the next one is 2026-11-01). */
+const CLOCK = zonedTimeToMs(2026, 3, 9, 16, 0);
+beforeAll(() => setValuationTime(CLOCK));
+afterAll(() => setValuationTime(null));
+
+/** Expiration `days + 1` days after the frozen clock: T = (days + 1) / 365, the numbers the hand-derived fixtures were made
+ *  with under the old "+1 day" rule, now exact whatever day or time zone the suite runs in. */
 function expInDays(days: number): string {
-  const d = new Date(Date.now() + days * 86_400_000);
-  return d.toISOString().slice(0, 10);
+  return new Date(Date.UTC(2026, 2, 9 + days + 1)).toISOString().slice(0, 10);
 }
 
 /** A self-consistent two-sided chain for one expiration, priced exactly off

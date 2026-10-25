@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
 import type { Snapshot } from '../backtest/archive';
-import { snapshotDate, snapshotLabel } from '../backtest/snapshot';
+import { snapshotDate, snapshotLabel, snapshotValuationTime } from '../backtest/snapshot';
 import type { DataProvider, TickerSuggestion } from '../types';
 import { chainFromCacheFile, staticProvider } from './cache';
 
@@ -62,5 +62,8 @@ export function makeAsOfProvider(snapshot: Snapshot): DataProvider {
     };
 }
 
-/** The calendar date the model greeks are valued on for a snapshot (setValuationDay in greeks.ts). */
-export const valuationDayOf = snapshotDate;
+/** The calendar date of a snapshot: the chart is cut there. */
+export const asOfDayOf = snapshotDate;
+
+/** The moment the model greeks of a snapshot are valued at (setValuationTime in greeks.ts): a backup's minute, a day's close. */
+export const valuationTimeOf = snapshotValuationTime;

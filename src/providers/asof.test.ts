@@ -4,10 +4,10 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { deflateRawSync } from 'node:zlib';
 import { openSnapshot } from '../backtest/archive';
 import { buildBackupZip } from '../backtest/backup';
-import { setValuationDay, yearsToExpiration } from '../greeks';
+import { setValuationTime, yearsToExpiration } from '../greeks';
 import { bulkCache, bulkKey } from '../settings-store';
 import type { ProviderContext } from '../types';
-import { ASOF_PREFIX, asOfProviderId, isAsOfProviderId, makeAsOfProvider } from './asof';
+import { ASOF_PREFIX, asOfDayOf, asOfProviderId, isAsOfProviderId, makeAsOfProvider, valuationTimeOf } from './asof';
 import { loadMeta } from './loader';
 
 void deflateRawSync;
@@ -19,7 +19,7 @@ const chainText = (symbol: string, price: number) => JSON.stringify({
 const ID = '2026-10-09-15-42';
 const snapshot = async () => openSnapshot(ID, await buildBackupZip(ID, [{ symbol: 'SPY', text: chainText('SPY', 778.5) }, { symbol: 'NDX', text: chainText('NDX', 30000) }]));
 
-afterEach(() => setValuationDay(null));
+afterEach(() => setValuationTime(null));
 
 describe('as-of provider', () => {
   test('its id marks an archived snapshot, the four real providers are never taken for one', () => {
@@ -58,18 +58,34 @@ describe('as-of provider', () => {
   });
 });
 
-describe('model greeks are valued on the snapshot date', () => {
-  test('time to expiration counts from the valuation day, then from the real clock again', () => {
-    setValuationDay('2026-10-09');
-    expect(yearsToExpiration('2026-10-16')).toBeCloseTo(8 / 365, 10); // 7 days + the +1 day floor of the model
-    expect(yearsToExpiration('2026-10-09')).toBeCloseTo(1 / 365, 10);
+describe('model greeks are valued at the snapshot time (GEX-M1)', () => {
+  const HOUR = 1 / (365 * 24);
+  test('a backup is valued at its own minute, a day archive at the 16:00 close, both New York time', () => {
+    // 2026-10-09 15:42 EDT = 19:42 UTC; the day archive 16:00 EDT = 20:00 UTC
+    expect(valuationTimeOf('2026-10-09-15-42')).toBe(Date.UTC(2026, 9, 9, 19, 42));
+    expect(valuationTimeOf('2026-10-09')).toBe(Date.UTC(2026, 9, 9, 20, 0));
+    // winter time: 16:00 EST = 21:00 UTC
+    expect(valuationTimeOf('2026-12-04')).toBe(Date.UTC(2026, 11, 4, 21, 0));
+    expect(valuationTimeOf('yesterday')).toBeNull();
+    expect(asOfDayOf('2026-10-09-15-42')).toBe('2026-10-09');
+  });
+
+  test('time to expiration counts from the snapshot time, then from the real clock again', () => {
+    setValuationTime(valuationTimeOf(ID));
+    // 15:42 Friday -> 16:00 next Friday: 7 days and 18 minutes
+    expect(yearsToExpiration('2026-10-16') as number).toBeCloseTo(7 / 365 + (18 / 60) * HOUR, 12);
+    // the same day: 18 minutes to the settlement, above the 15-minute floor
+    expect(yearsToExpiration('2026-10-09') as number).toBeCloseTo((18 / 60) * HOUR, 12);
     expect(yearsToExpiration('2026-10-08')).toBeNull(); // already expired on that day
-    setValuationDay(null);
+    // a day archive is valued at the close: its 0DTE gets the 15-minute floor
+    setValuationTime(valuationTimeOf('2026-10-09'));
+    expect(yearsToExpiration('2026-10-09') as number).toBeCloseTo(0.25 * HOUR, 12);
+    setValuationTime(null);
     expect(yearsToExpiration('2020-01-01')).toBeNull(); // the real clock: long expired
   });
 
-  test('a malformed day is ignored', () => {
-    setValuationDay('yesterday');
+  test('a malformed time is ignored', () => {
+    setValuationTime(Number.NaN);
     expect(yearsToExpiration('2020-01-01')).toBeNull();
   });
 });

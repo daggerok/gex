@@ -117,6 +117,12 @@ export function fmtSignedCompact(v: number): string {
     return (v > 0 ? '+' : v < 0 ? '-' : '') + fmtCompact(v);
 }
 
+/** Fractional days to an expiration (Sigma tooltip): 2 decimals below 1 day (0.17 = 4 hours), 1 decimal from there. */
+export function fmtDays(days: number): string {
+    if (!Number.isFinite(days)) return '';
+    return days.toFixed(days < 1 ? 2 : 1);
+}
+
 /** Format implied volatility (decimal) as a percentage string. */
 export function fmtPct(v: number | null | undefined): string {
     if (v == null || !Number.isFinite(v)) return '';
