@@ -2,6 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { extractEntry, parseZipDirectory } from './history-zip';
@@ -64,7 +65,9 @@ async function main(): Promise<void> {
         await page.getByText('Create backup...').click();
         const mode = (m: string) => page.locator(`[data-backup-mode="${m}"]`);
         assert.equal(await mode('preset').isChecked(), true, 'the preset of required tickers is the default');
-        assert.ok((await page.locator('[role=dialog]').innerText()).includes('SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA'), 'the preset lists its tickers');
+        // the fetcher's default list, as the site's index.json carries it
+        const defaults = (JSON.parse(readFileSync(join(__dirname, '..', 'api', 'options', 'index.json'), 'utf8')) as { defaults: string[] }).defaults;
+        assert.ok((await page.locator('[role=dialog]').innerText()).includes(defaults.join(', ')), 'the preset lists its tickers');
         const tickers = page.locator('[data-backup-tickers]');
         await tickers.fill('SPY');
         assert.equal(await mode('custom').isChecked(), true, 'typing tickers selects the chosen-tickers option');

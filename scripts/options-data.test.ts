@@ -968,8 +968,21 @@ describe('DEFAULT_SYMBOLS', () => {
   });
 
   test('holds the indices and index ETFs the owner trades, not the proxies without listed options (2026-10-25)', () => {
-    for (const s of ['SPX', 'SPY', 'NDX', 'QQQ', 'IWM', 'RUT', 'DJX', 'DIA', 'XSP']) expect(DEFAULT_SYMBOLS).toContain(s);
-    for (const s of ['COMP', 'DJIA', 'INDU', 'NYA']) expect(DEFAULT_SYMBOLS).not.toContain(s);
+    for (const s of ['SPX', 'SPY', 'NDX', 'QQQ', 'IWM', 'RUT', 'DJX', 'DIA']) expect(DEFAULT_SYMBOLS).toContain(s);
+    for (const s of ['COMP', 'DJIA', 'INDU', 'NYA', 'XSP']) expect(DEFAULT_SYMBOLS).not.toContain(s);
+  });
+
+  test("is the owner's list of 2026-10-25 in his order, BRK-B in its canonical spelling", () => {
+    expect(DEFAULT_SYMBOLS).toEqual([
+      'SPX', 'NDX', 'DJX', 'RUT', 'IWM', 'SPY', 'QQQ', 'DIA',
+      'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'TSM', 'GOOG', 'META', 'AVGO', 'LLY', 'MU', 'WMT', 'AMD', 'JPM', 'V', 'BRK-B', 'XOM', 'ASML', 'JNJ',
+    ]);
+    for (const s of DEFAULT_SYMBOLS) expect(canonical(s)).toBe(s); // the file name of every default is the symbol itself
+  });
+
+  test('the committed index.json carries this list as `defaults`', () => {
+    const index = JSON.parse(readFileSync(join(root, 'api/options/index.json'), 'utf8')) as { defaults?: string[] };
+    expect(index.defaults).toEqual([...DEFAULT_SYMBOLS]);
   });
 });
 
