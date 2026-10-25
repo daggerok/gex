@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
-import { blackScholesGreeks } from './greeks';
-import type { GexLevels, GexPoint, OptionQuote, ZeroGexZone } from './types';
+import { blackScholesGreeks, yearsToExpiration } from './greeks';
+import type { GexLevels, GexPoint, OptionQuote, SigmaLevel, SigmaLevels, SigmaStatBasis, ZeroGexZone } from './types';
 
 // ---------------------------------------------------------------------------
 // Gamma exposure (GEX) math - SINGLE SOURCE OF TRUTH for GEX-derived levels
@@ -690,6 +690,101 @@ export function findZeroGex(profile: readonly GexPoint[], totalNetGex: number): 
     return none;
 }
 
+/** Steps of the Sigma levels: 1, 2 and 3 sigma (or 1%, 2%, 3% in the % mode), above and below spot. */
+export const SIGMA_STEPS = [1, 2, 3] as const;
+
+/** One step of the % mode: 1% of spot (the owner's "1σ" of that mode, a plain distance, not a statistical sigma). */
+export const SIGMA_PCT_STEP = 0.01;
+
+/**
+ * The nearest strike to `price` among `strikes` (any order); ties go to the LOWER strike, like pointAtPrice. Null when
+ * there is no finite strike or the price is not finite.
+ */
+export function nearestStrikeTo(strikes: readonly number[], price: number): number | null {
+    if (!Number.isFinite(price)) return null;
+    let best: number | null = null;
+    for (const k of strikes) {
+        if (!Number.isFinite(k)) continue;
+        if (best === null) { best = k; continue; }
+        const d = Math.abs(k - price);
+        const bd = Math.abs(best - price);
+        if (d < bd || (d === bd && k < best)) best = k;
+    }
+    return best;
+}
+
+/** Distinct finite strikes of the quotes, ascending. */
+function strikesOf(quotes: readonly OptionQuote[]): number[] {
+    return Array.from(new Set(quotes.map((q) => q.strike).filter((k) => Number.isFinite(k)))).sort((a, b) => a - b);
+}
+
+/**
+ * ATM implied volatility of ONE expiration at `spot` (used by the statistical Sigma levels):
+ *  1. per strike, the mean of the call IV and the put IV (either alone when the other is missing); an IV counts only when
+ *     it is finite and >= GAMMA_FLIP_MIN_IV (5%), which drops CBOE's failed-solve placeholders (see that constant)
+ *  2. linear interpolation in strike between the nearest strike with an IV at or below spot and the nearest at or above it;
+ *     spot outside the strikes with an IV takes the IV of the closest one
+ * Null when no quote of `quotes` has a usable IV. The caller passes the quotes of a single expiration.
+ */
+export function atmImpliedVol(quotes: readonly OptionQuote[], spot: number): number | null {
+    if (!Number.isFinite(spot)) return null;
+    const byStrike = new Map<number, { sum: number; n: number }>();
+    for (const q of quotes) {
+        if (typeof q.iv !== 'number' || !Number.isFinite(q.iv) || q.iv < GAMMA_FLIP_MIN_IV || !Number.isFinite(q.strike)) continue;
+        const e = byStrike.get(q.strike) ?? { sum: 0, n: 0 };
+        e.sum += q.iv;
+        e.n += 1;
+        byStrike.set(q.strike, e);
+    }
+    const points = Array.from(byStrike.entries()).map(([k, e]) => ({ k, iv: e.sum / e.n })).sort((a, b) => a.k - b.k);
+    if (points.length === 0) return null;
+    let lo: { k: number; iv: number } | null = null;
+    let hi: { k: number; iv: number } | null = null;
+    for (const p of points) {
+        if (p.k <= spot) lo = p;
+        if (p.k >= spot && hi === null) hi = p;
+    }
+    if (lo && hi) return hi.k === lo.k ? lo.iv : lo.iv + ((spot - lo.k) * (hi.iv - lo.iv)) / (hi.k - lo.k);
+    return (lo ?? hi)!.iv;
+}
+
+/**
+ * Sigma levels (Chart tab and GEX chart), both modes, from the strikes of `quotes` (the selected expirations). ORIGINAL,
+ * owner-requested heuristics, not published levels:
+ *  - % mode: strike nearest to spot * (1 + side * n * 1%), n = 1, 2, 3. A % distance, NOT a statistical sigma
+ *  - statistical mode: 1σ = spot * ATM IV * sqrt(T), T = years to the NEAREST given expiration that is not expired and
+ *    has a usable ATM IV (yearsToExpiration, the same calendar count the greeks use), the strike nearest to
+ *    spot + side * n * 1σ. The textbook one-standard-deviation move of a lognormal price at that IV, approximated as
+ *    linear in price (no drift, no skew)
+ * Levels are ordered +1, +2, +3, -1, -2, -3. Null when there is no strike or no valid spot. `now` is for tests.
+ */
+export function computeSigmaLevels(quotes: readonly OptionQuote[], spot: number, now?: Date): SigmaLevels | null {
+    if (!Number.isFinite(spot) || spot <= 0) return null;
+    const strikes = strikesOf(quotes);
+    if (strikes.length === 0) return null;
+    const ladder = (step: number): SigmaLevel[] => {
+        const out: SigmaLevel[] = [];
+        for (const side of [1, -1] as const) {
+            for (const n of SIGMA_STEPS) {
+                const price = spot + side * n * step;
+                out.push({ n, side, price, strike: nearestStrikeTo(strikes, price) as number });
+            }
+        }
+        return out;
+    };
+    let statBasis: SigmaStatBasis | null = null;
+    const expirations = Array.from(new Set(quotes.map((q) => q.expiration))).sort();
+    for (const expiration of expirations) {
+        const years = now ? yearsToExpiration(expiration, now) : yearsToExpiration(expiration);
+        if (years == null) continue;
+        const iv = atmImpliedVol(quotes.filter((q) => q.expiration === expiration), spot);
+        if (iv == null) continue;
+        statBasis = { expiration, iv, days: Math.round(years * 365), move: spot * iv * Math.sqrt(years) };
+        break;
+    }
+    return { pct: ladder(spot * SIGMA_PCT_STEP), stat: statBasis ? ladder(statBasis.move) : null, statBasis };
+}
+
 export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, symbol?: string | null): GexLevels {
     const profile = computeGexProfile(quotes, spot);
     const walls = findNetGexLevels(profile, spot, netGexPlusMinusMinDistance(symbol, spot));
@@ -714,6 +809,8 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
         maxAbsGamma: findMaxAbsGamma(profile),
         // Zero GEX: the owner's own per-strike sign-change method, an ADDITIONAL level next to the Gamma Flip above
         ...findZeroGex(profile, totalNetGex),
+        // Sigma: strikes at +/- 1, 2, 3 % of spot and at +/- 1, 2, 3 statistical sigma (both modes, the UI picks one)
+        sigma: computeSigmaLevels(quotes, spot),
         pcRatioOi: pcr.byOi,
         pcRatioVolume: pcr.byVolume,
         totalNetGex,

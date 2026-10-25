@@ -2,12 +2,12 @@
 import * as React from 'react';
 import { levelColorOf } from '../custom-levels';
 import { useI18n } from '../i18n';
-import { LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
+import { LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
 import { accentOf } from '../theme';
 import type { GexLevels, Settings } from '../types';
 import { fmt } from '../utils';
 import { useCustomLevels } from '../use-custom-levels';
-import { ChipSwitch } from './ChipSwitch';
+import { ChipSwitch, StableLabel } from './ChipSwitch';
 import { ToggleChip } from './ToggleChip';
 
 // ============================================================================
@@ -34,6 +34,14 @@ export const LevelsPanel: React.FC<{
     const ax = accentOf(colorTheme);
     const { selected, colors } = useLevelPrefs();
     const zeroArea = zeroGexDisplay.use() === 'area';
+    const sigmaStat = sigmaMode.use() === 'stat';
+    /** The Sigma tooltip says which mode is shown, and in the statistical mode what it was computed from. */
+    const sigmaTooltip = (): string => {
+        if (!sigmaStat) return tr('gex.level.tooltip.sigmaPct');
+        const basis = levels?.sigma?.statBasis;
+        if (!basis) return tr('gex.level.tooltip.sigmaStatNone');
+        return tr('gex.level.tooltip.sigmaStat', { move: fmt(basis.move), iv: `${(basis.iv * 100).toFixed(1)}%`, expiration: basis.expiration, days: String(basis.days) });
+    };
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
     const entries = levelPanelOrder(levels, customLevels, showMaxAg ? [] : ['maxAbsGamma']);
 
@@ -55,7 +63,7 @@ export const LevelsPanel: React.FC<{
                         const key = entry.builtin;
                         const on = selected.includes(key);
                         const label = tr(LEVEL_LABEL_KEY[key]);
-                        const tooltip = key === 'spot' && spotEstimated ? tr('gex.level.tooltip.spotEstimated') : tr(LEVEL_TOOLTIP_KEY[key]);
+                        const tooltip = key === 'spot' && spotEstimated ? tr('gex.level.tooltip.spotEstimated') : key === 'sigma' ? sigmaTooltip() : tr(LEVEL_TOOLTIP_KEY[key]);
                         return (
                             <ToggleChip
                                 key={entry.key}
@@ -67,6 +75,9 @@ export const LevelsPanel: React.FC<{
                                 // Zero GEX: the switch on the left of the label draws it as a band (area) instead of a line
                                 leading={key === 'zeroGex' ? (
                                     <ChipSwitch checked={zeroArea} onChange={(on) => zeroGexDisplay.set(on ? 'area' : 'line')} label={tr('gex.level.zeroGexSwitch')} />
+                                ) : key === 'sigma' ? (
+                                    // Sigma: % steps (off) or statistical sigma (on); the label names the mode, same width in both
+                                    <ChipSwitch checked={sigmaStat} onChange={(on) => sigmaMode.set(on ? 'stat' : 'pct')} label={tr('gex.level.sigmaSwitch')} />
                                 ) : undefined}
                                 swatches={
                                     <input
@@ -79,7 +90,9 @@ export const LevelsPanel: React.FC<{
                                     />
                                 }
                             >
-                                {label}
+                                {key === 'sigma'
+                                    ? <StableLabel value={tr(sigmaStat ? 'gex.level.sigmaStatLabel' : 'gex.level.sigmaPctLabel')} options={[tr('gex.level.sigmaPctLabel'), tr('gex.level.sigmaStatLabel')]} />
+                                    : label}
                             </ToggleChip>
                         );
                     }

@@ -17,6 +17,9 @@ import {
   findNetGexLevels,
   findSumNetGexLevels,
   findZeroGex,
+  atmImpliedVol,
+  computeSigmaLevels,
+  nearestStrikeTo,
   pcRatioByStrike,
   pointAtPrice,
   sumAbsGamma,
@@ -577,6 +580,7 @@ describe('computeGexLevels (7.7)', () => {
       maxAbsGamma: null,
       zeroGex: null,
       zeroGexZone: null,
+      sigma: null,
       pcRatioOi: null,
       pcRatioVolume: null,
       totalNetGex: 0,
@@ -850,5 +854,75 @@ describe('findZeroGex (Zero GEX, the owner\'s method)', () => {
     expect(levels.totalNetGex).toBeGreaterThan(0);
     expect(levels.zeroGex).toBe(95);
     expect(levels.zeroGexZone).toEqual({ low: 95, high: 100 });
+  });
+});
+
+describe('Sigma levels', () => {
+  const sq = (expiration: string, side: 'call' | 'put', strike: number, iv: number | null): OptionQuote => ({
+    symbol: `X${expiration}${side}${strike}`, expiration, side, strike, bid: 1, ask: 1, mid: 1, last: 1, volume: 0, openInterest: 10, iv,
+    delta: 0, gamma: 0.01, theta: 0, vega: 0, rho: 0, greeksSource: 'cboe', greeksMissingReason: null,
+  } as unknown as OptionQuote);
+
+  test('nearestStrikeTo: the closest strike, a tie goes to the lower one, nothing for no strikes', () => {
+    expect(nearestStrikeTo([90, 95, 100, 105], 101)).toBe(100);
+    expect(nearestStrikeTo([105, 95], 100)).toBe(95);
+    expect(nearestStrikeTo([], 100)).toBeNull();
+    expect(nearestStrikeTo([100], NaN)).toBeNull();
+  });
+
+  test('atmImpliedVol: call and put IV averaged per strike, interpolated at spot, placeholder IVs ignored', () => {
+    const quotes = [
+      sq('E', 'call', 95, 0.30), sq('E', 'put', 95, 0.32), // 0.31
+      sq('E', 'call', 100, 0.00001), // a CBOE failed-solve placeholder: below GAMMA_FLIP_MIN_IV, ignored
+      sq('E', 'call', 105, 0.20), sq('E', 'put', 105, 0.22), // 0.21
+    ];
+    expect(atmImpliedVol(quotes, 100)).toBeCloseTo(0.26, 12); // halfway between 0.31 and 0.21
+    expect(atmImpliedVol(quotes, 95)).toBeCloseTo(0.31, 12); // on a strike
+    expect(atmImpliedVol(quotes, 80)).toBeCloseTo(0.31, 12); // below every strike: the closest one
+    expect(atmImpliedVol(quotes, 120)).toBeCloseTo(0.21, 12);
+    expect(atmImpliedVol([sq('E', 'put', 100, null)], 100)).toBeNull();
+  });
+
+  test('% mode: strikes nearest to spot +/- 1, 2, 3 %, in the order +1 +2 +3 -1 -2 -3', () => {
+    const quotes = [90, 95, 97.5, 100, 102.5, 105, 110].map((k) => sq('2099-01-15', 'call', k, null));
+    const s = computeSigmaLevels(quotes, 100);
+    // 101 -> 100 (1 vs 1.5), 102 -> 102.5, 103 -> 102.5, 99 -> 100, 98 -> 97.5, 97 -> 97.5
+    expect(s?.pct.map((l) => [l.side * l.n, l.strike])).toEqual([[1, 100], [2, 102.5], [3, 102.5], [-1, 100], [-2, 97.5], [-3, 97.5]]);
+    expect(s?.pct[0].price).toBeCloseTo(101, 12);
+    // no usable IV anywhere: no statistical mode
+    expect(s?.stat).toBeNull();
+    expect(s?.statBasis).toBeNull();
+  });
+
+  test('statistical mode: 1 sigma = spot * ATM IV * sqrt(T) of the nearest expiration that is live and has an IV', () => {
+    const now = new Date(2026, 0, 1, 12);
+    const strikes = [85, 90, 95, 100, 105, 110, 115];
+    const quotes = [
+      // expired before `now`: skipped even though it has an IV
+      sq('2025-12-01', 'call', 100, 0.9),
+      // the nearest live expiration has no usable IV: skipped
+      sq('2026-01-10', 'call', 100, null),
+      // 2026-01-31: 30 days after 2026-01-01 + 1 = 31 days (greeks.ts calendar rule), ATM IV 0.26 at spot 100
+      sq('2026-01-31', 'call', 95, 0.30), sq('2026-01-31', 'put', 95, 0.32),
+      sq('2026-01-31', 'call', 105, 0.20), sq('2026-01-31', 'put', 105, 0.22),
+      ...strikes.map((k) => sq('2026-01-31', 'call', k, null)),
+    ];
+    const s = computeSigmaLevels(quotes, 100, now);
+    const move = 100 * 0.26 * Math.sqrt(31 / 365); // 7.5766...
+    expect(s?.statBasis?.expiration).toBe('2026-01-31');
+    expect(s?.statBasis?.days).toBe(31);
+    expect(s?.statBasis?.iv).toBeCloseTo(0.26, 12);
+    expect(s?.statBasis?.move).toBeCloseTo(move, 9);
+    // +1: 107.58 -> 110 (2.42 vs 2.58), +2: 115.15 -> 115, +3: 122.73 -> 115 (the last strike),
+    // -1: 92.42 -> 90, -2: 84.85 -> 85, -3: 77.27 -> 85
+    expect(s?.stat?.map((l) => [l.side * l.n, l.strike])).toEqual([[1, 110], [2, 115], [3, 115], [-1, 90], [-2, 85], [-3, 85]]);
+    expect(s?.stat?.[1].price).toBeCloseTo(100 + 2 * move, 9);
+  });
+
+  test('no strikes or no spot: no Sigma levels; computeGexLevels carries them', () => {
+    expect(computeSigmaLevels([], 100)).toBeNull();
+    expect(computeSigmaLevels([sq('2099-01-15', 'call', 100, 0.2)], NaN)).toBeNull();
+    const levels = computeGexLevels([sq('2099-01-15', 'call', 100, 0.2), sq('2099-01-15', 'call', 101, 0.2)], 100);
+    expect(levels.sigma?.pct.map((l) => l.strike)).toEqual([101, 101, 101, 100, 100, 100]);
   });
 });

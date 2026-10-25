@@ -321,6 +321,34 @@ export interface ZeroGexZone {
     high: number;
 }
 
+/** One Sigma level: `n` steps (1, 2, 3) on `side` (1 above spot, -1 below), its exact `price` and the strike it snaps to. */
+export interface SigmaLevel {
+    n: 1 | 2 | 3;
+    side: 1 | -1;
+    price: number;
+    strike: number;
+}
+
+/** What the statistical mode was computed from. */
+export interface SigmaStatBasis {
+    /** the expiration whose ATM IV and time are used: the nearest of the given quotes that is not expired and has an IV */
+    expiration: string;
+    /** ATM IV at spot of that expiration (atmImpliedVol), as a decimal */
+    iv: number;
+    /** calendar days to that expiration as greeks.ts counts them (yearsToExpiration * 365, 1 day minimum) */
+    days: number;
+    /** 1 sigma in price: spot * iv * sqrt(days / 365) */
+    move: number;
+}
+
+export interface SigmaLevels {
+    /** % mode: the strikes nearest to spot * (1 +/- 1%, 2%, 3%) */
+    pct: SigmaLevel[];
+    /** statistical mode: the strikes nearest to spot +/- 1, 2, 3 * move; null when no expiration has an ATM IV */
+    stat: SigmaLevel[] | null;
+    statBasis: SigmaStatBasis | null;
+}
+
 /** Key levels derived from a chain slice (output of computeGexLevels). */
 export interface GexLevels {
     spot: number;
@@ -381,6 +409,8 @@ export interface GexLevels {
     zeroGex: number | null;
     /** The Zero GEX band: from the last strike of the starting sign to the first strike of the other sign. Null with zeroGex. */
     zeroGexZone: ZeroGexZone | null;
+    /** Sigma levels in both modes (src/gex.ts computeSigmaLevels): original heuristics, off by default in the UI. Null without strikes. */
+    sigma: SigmaLevels | null;
     pcRatioOi: number | null;
     pcRatioVolume: number | null;
     totalNetGex: number;
