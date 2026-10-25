@@ -24,8 +24,9 @@
 # here (repository variable BACKTEST_TICKERS) is committed by the run that made it. Any other deploy (a code push)
 # refreshes the default tickers before it builds, see github-pages.yml, so it never shows the older committed files.
 #
-# SPEED: the job is kept as short as possible, it is billed per started minute. The default 19 tickers take about
-# 20 s with CONCURRENCY=4 (55 s one by one), build and deploy are two more short jobs, about 2 billed minutes a run.
+# SPEED: the job is kept as short as possible, it is billed per started minute. The default 27 tickers with every
+# expiration of the rule take about 30 s with CONCURRENCY=4, build and deploy are two more short jobs, about 2-3 billed
+# minutes a run.
 # =============================================================================
 name: Update partial options data
 
@@ -54,13 +55,14 @@ jobs:
     outputs:
       run: ${{ steps.window.outputs.run }}
     env:
-      # The nearest 15 expirations of every ticker are fetched again each hour (15 is the cap the index chains use in
-      # update-data.yml). The later expirations already in the files are kept, not cut off: only their Cboe greeks, open
-      # interest and volume are refreshed, a full run (update-data.yml) refreshes everything else.
+      # The default tickers keep their expirations by rule (owner, 2026-10-25; scripts/options-data.ts
+      # selectDefaultExpirations): every listed date up to 42 days (the dailies), Fridays up to 92 days, monthlies and
+      # quarter-ends up to 1 year, no LEAPS. All of them are fetched again each hour (SPX 40, SPY and QQQ 20, a stock
+      # 10-17; 27 tickers, about 23 MB of JSON, a 3.4 MB day zip, measured 2026-10-25). MAX_EXPIRATIONS caps only other
+      # tickers (TICKERS added on top); KEEP_EXPIRATIONS never keeps for a default what the rule drops.
       MAX_EXPIRATIONS: "15"
       KEEP_EXPIRATIONS: "1"
-      # 4 tickers at a time and a short pause: 20 s instead of 55 s for the 18 tickers, no failures (measured, 6 workers
-      # were not faster, the slowest ticker sets the time)
+      # 4 tickers at a time and a short pause: the 27 defaults with every rule expiration took 30 s (measured), no failures
       CONCURRENCY: "4"
       REQUEST_SLEEP: "0.1"
     steps:

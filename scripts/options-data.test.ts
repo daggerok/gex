@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 /// <reference types="node" />
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +9,12 @@ import {
   fileDay,
   writeLatest,
   keepLaterExpirations,
+  EXPIRATION_RULE,
+  lastBusinessDay,
+  monthlyExpiration,
+  onlyExpirations,
+  selectDefaultExpirations,
+  expirationRuleOn,
   marketDay,
   PyInt,
   YahooTicker,
@@ -767,6 +773,10 @@ describe('worker pool', () => {
 
 describe('fetchTicker fails on HTTP errors instead of writing a partial chain (GEX-C1, GEX-H3)', () => {
   const realFetch = globalThis.fetch;
+  // the fixtures use fixed October 2026 dates with default tickers: the expiration rule (which drops past dates) is off here
+  const ruleBefore = process.env.EXPIRATION_RULE;
+  beforeAll(() => { process.env.EXPIRATION_RULE = '0'; });
+  afterAll(() => { if (ruleBefore === undefined) delete process.env.EXPIRATION_RULE; else process.env.EXPIRATION_RULE = ruleBefore; });
   afterEach(() => {
     globalThis.fetch = realFetch;
     resetYahooSession();
@@ -1070,5 +1080,110 @@ describe('writeLatest', () => {
     expect(writeLatest(dir, '2026-10-10')).toBe(true);
     expect(writeLatest(dir, 'yesterday')).toBe(false);
     expect(JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8')).date).toBe('2026-10-10');
+  });
+});
+
+describe('expirations of the default tickers by rule (owner, 2026-10-25)', () => {
+  const weekdays = (from: string, to: string): string[] => {
+    const out: string[] = [];
+    for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`); t += 86400000) {
+      const d = new Date(t);
+      if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) out.push(d.toISOString().slice(0, 10));
+    }
+    return out;
+  };
+
+  test('the constants: every expiration 42 days, weeklies 92 days, monthlies and quarter-ends 366 days', () => {
+    expect(EXPIRATION_RULE).toEqual({ allDays: 42, weeklyDays: 92, monthlyDays: 366 });
+  });
+
+  test('monthly = 3rd Friday, or the Thursday before it on a holiday; quarter-end = last business day', () => {
+    expect(monthlyExpiration(2026, 11)).toBe('2026-11-20');
+    expect(monthlyExpiration(2027, 1)).toBe('2027-01-15');
+    expect(monthlyExpiration(2027, 6)).toBe('2027-06-17'); // Friday 06-18 is Juneteenth (observed)
+    expect(lastBusinessDay(2026, 12)).toBe('2026-12-31');
+    expect(lastBusinessDay(2027, 3)).toBe('2027-03-31');
+    expect(lastBusinessDay(2027, 6)).toBe('2027-06-30');
+    expect(lastBusinessDay(2027, 7)).toBe('2027-07-30'); // 07-31 is a Saturday
+    expect(lastBusinessDay(2027, 12)).toBe('2027-12-31');
+  });
+
+  test("SPX on 2026-10-25 (the owner's list): 28 within 42 days, 4 weekly or quarter-end, 12 monthly or quarter-end, no LEAPS", () => {
+    const spx = [
+      ...weekdays('2026-10-26', '2026-11-25'),
+      '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-03', '2026-12-04', '2026-12-11', '2026-12-18', '2026-12-31',
+      '2027-01-15', '2027-01-29', '2027-02-19', '2027-02-26', '2027-03-19', '2027-03-31', '2027-04-16', '2027-05-21',
+      '2027-06-17', '2027-06-30', '2027-07-16', '2027-08-20', '2027-09-17', '2027-09-30', '2027-10-15', '2027-11-19',
+      '2027-12-17', '2028-12-15', '2029-12-21', '2030-12-20', '2031-12-19',
+    ];
+    const kept = selectDefaultExpirations(spx, '2026-10-25');
+    const dailies = [...weekdays('2026-10-26', '2026-11-25'), '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-03', '2026-12-04'];
+    expect(dailies.length).toBe(28);
+    expect(kept).toEqual([
+      ...dailies,
+      // weeklies (Fridays) up to 92 days, and the 12-31 quarter-end (a Thursday)
+      '2026-12-11', '2026-12-18', '2026-12-31', '2027-01-15',
+      // 01-29 and 02-26 are plain Fridays after 92 days: out; monthlies and quarter-ends up to 366 days
+      '2027-02-19', '2027-03-19', '2027-03-31', '2027-04-16', '2027-05-21', '2027-06-17', '2027-06-30', '2027-07-16',
+      '2027-08-20', '2027-09-17', '2027-09-30', '2027-10-15',
+      // 2027-11-19 (390 days), 2027-12-17 and the LEAPS are beyond a year
+    ]);
+    expect(kept.length).toBe(44);
+  });
+
+  test('a stock with weeklies only: Fridays up to 92 days, then only the 3rd Fridays up to a year', () => {
+    const fridays: string[] = [];
+    for (let t = Date.parse('2026-10-30T00:00:00Z'); t <= Date.parse('2028-01-21T00:00:00Z'); t += 7 * 86400000) fridays.push(new Date(t).toISOString().slice(0, 10));
+    const kept = selectDefaultExpirations(fridays, '2026-10-25');
+    expect(kept.filter((e) => e <= '2027-01-25')).toEqual(fridays.filter((e) => e <= '2027-01-25')); // 92 days: 2027-01-25
+    expect(kept.filter((e) => e > '2027-01-25')).toEqual(['2027-02-19', '2027-03-19', '2027-04-16', '2027-05-21', '2027-07-16', '2027-08-20', '2027-09-17', '2027-10-15']);
+    // June 2027: the 3rd Friday is a holiday, a stock without a Thursday listing has no June monthly in this list
+    expect(kept).not.toContain('2027-06-18');
+  });
+
+  test('past and malformed dates are dropped, duplicates collapse, the order is ascending', () => {
+    expect(selectDefaultExpirations(['2026-10-30', '2026-10-23', 'nope', '2026-10-30', '2026-10-26'], '2026-10-25')).toEqual(['2026-10-26', '2026-10-30']);
+    expect(selectDefaultExpirations(['2026-10-30'], 'bad')).toEqual([]);
+  });
+
+  test('KEEP_EXPIRATIONS for a default keeps only what the rule allows', () => {
+    const kept = { expirations: ['2027-01-29', '2027-02-19'], quotes: [{ expiration: '2027-01-29' }, { expiration: '2027-02-19' }] as never[] };
+    const allowed = new Set(selectDefaultExpirations(kept.expirations, '2026-10-25'));
+    expect(onlyExpirations(kept, allowed)).toEqual({ expirations: ['2027-02-19'], quotes: [{ expiration: '2027-02-19' }] as never[] });
+  });
+});
+
+describe('EXPIRATION_RULE env', () => {
+  test('on by default, 0 / false / no / off turn it off', () => {
+    expect(expirationRuleOn({})).toBe(true);
+    expect(expirationRuleOn({ EXPIRATION_RULE: '1' })).toBe(true);
+    for (const v of ['0', 'false', 'NO', ' off ']) expect(expirationRuleOn({ EXPIRATION_RULE: v })).toBe(false);
+  });
+});
+
+describe('fetchTicker applies the expiration rule to default tickers only', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = realFetch; resetYahooSession(); });
+
+  test('SPY (default) drops a plain Monday 50+ days out and a date beyond a year; a non-default ticker keeps them', async () => {
+    const DAY = 86400;
+    const todayUtc = Date.parse(`${new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })}T00:00:00Z`) / 1000;
+    let monday = todayUtc + 50 * DAY;
+    while (new Date(monday * 1000).getUTCDay() !== 1) monday += DAY; // 50..56 days out: not daily range, not a Friday
+    const dates = [todayUtc + 1 * DAY, monday, todayUtc + 400 * DAY];
+    const iso = (u: number) => new Date(u * 1000).toISOString().slice(0, 10);
+    const row = (sym: string) => ({ contractSymbol: sym, strike: 100, lastPrice: 1, bid: 1, ask: 1.1, volume: 1, openInterest: 10, impliedVolatility: 0.2 });
+    const chainOf = (d: number) => ({ optionChain: { result: [{ expirationDates: dates, quote: { regularMarketPrice: 100 }, options: [{ expirationDate: d, calls: [row(`C${d}`)], puts: [row(`P${d}`)] }] }], error: null } });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=x; Path=/' } });
+      if (url.includes('getcrumb')) return new Response('CRUMB');
+      if (url.includes('cdn.cboe.com')) return new Response('', { status: 404 });
+      if (url.includes('/v8/finance/chart/')) return new Response(JSON.stringify({ chart: { result: [{ indicators: { quote: [{ close: [100] }] } }] } }));
+      const m = /[?&]date=(\d+)/.exec(url);
+      return new Response(JSON.stringify(chainOf(m ? Number(m[1]) : dates[0])));
+    }) as typeof fetch;
+    expect((await fetchTicker('SPY'))?.expirations).toEqual([iso(dates[0])]);
+    expect((await fetchTicker('ZZZZ'))?.expirations).toEqual(dates.map(iso));
   });
 });

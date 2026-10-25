@@ -42,6 +42,8 @@ jobs:
       # The hourly refresh does not commit the default tickers (update-partial-data.yml), so the committed files are older
       # than the site: refresh them before building, so a code deploy never publishes older data. A failure (a rate limit)
       # keeps the committed files and the deploy goes on.
+      # The default tickers keep their expirations by rule (scripts/options-data.ts selectDefaultExpirations: every date up
+      # to 42 days, Fridays to 92, monthlies and quarter-ends to 1 year); MAX_EXPIRATIONS only caps other tickers.
       - name: Refresh the default tickers
         continue-on-error: true
         env:
