@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { levelColorOf } from '../custom-levels';
 import { useI18n } from '../i18n';
-import { LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
+import { gammaFlipUnavailableText, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
 import { accentOf } from '../theme';
 import type { GexLevels, Settings } from '../types';
 import { fmt, fmtDays } from '../utils';
@@ -66,7 +66,7 @@ export const LevelsPanel: React.FC<{
                         const tooltip = key === 'spot' && spotEstimated ? tr('gex.level.tooltip.spotEstimated')
                             : key === 'sigma' ? sigmaTooltip()
                                 : key === 'gammaFlip' && levels?.gammaFlipUnavailable
-                                    ? `${tr('gex.level.tooltip.gammaFlipNoIv', { pct: `${Math.round((levels.gammaFlipIvCoverage ?? 0) * 100)}%` })} ${tr(LEVEL_TOOLTIP_KEY[key])}`
+                                    ? `${gammaFlipUnavailableText(levels, tr)} ${tr(LEVEL_TOOLTIP_KEY[key])}`
                                     : tr(LEVEL_TOOLTIP_KEY[key]);
                         return (
                             <ToggleChip
