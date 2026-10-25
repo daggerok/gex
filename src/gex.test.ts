@@ -822,6 +822,15 @@ describe('findZeroGex (Zero GEX, the owner\'s method)', () => {
     expect(findZeroGex(profile, -30)).toEqual({ zeroGex: 110, zeroGexZone: { low: 100, high: 110 } });
   });
 
+  test('the line sits on the LEFT strike of the zone with a positive total, on the RIGHT strike with a negative one (owner)', () => {
+    const up = findZeroGex([pt(90, -10), pt(95, -5), pt(100, 3), pt(105, 20), pt(110, 5)], 13);
+    expect(up.zeroGex).toBe(up.zeroGexZone?.low ?? NaN);
+    expect(up.zeroGex).toBe(95);
+    const down = findZeroGex([pt(90, 2), pt(95, -30), pt(100, -5), pt(105, 0), pt(110, 4), pt(115, -1)], -30);
+    expect(down.zeroGex).toBe(down.zeroGexZone?.high ?? NaN);
+    expect(down.zeroGex).toBe(110);
+  });
+
   test('no sign change in the walking direction -> null', () => {
     expect(findZeroGex([pt(90, 1), pt(95, 2), pt(100, 3)], 6)).toEqual({ zeroGex: null, zeroGexZone: null });
     // positive total, the only negative strike is ABOVE the max: walking down never meets it
