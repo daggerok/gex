@@ -25,6 +25,8 @@ import {
   sumAbsGamma,
   SUM_NET_GEX_SHARE,
   findGammaFlipHypotheticalSpot,
+  gammaFlipSweepCrossings,
+  nearestGammaFlip,
   gexCall,
   gexBarHalves,
   gexPut,
@@ -924,5 +926,76 @@ describe('Sigma levels', () => {
     expect(computeSigmaLevels([sq('2099-01-15', 'call', 100, 0.2)], NaN)).toBeNull();
     const levels = computeGexLevels([sq('2099-01-15', 'call', 100, 0.2), sq('2099-01-15', 'call', 101, 0.2)], 100);
     expect(levels.sigma?.pct.map((l) => l.strike)).toEqual([101, 101, 101, 100, 100, 100]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GEX-M2 (owner-approved 2026-10-25): the Gamma Flip is the only crossing of the sweep, or the one nearest to spot.
+// The old rule picked by the sign of the total net GEX and hid a lone crossing of the other direction (SPX, SPY).
+// ---------------------------------------------------------------------------
+describe('nearestGammaFlip (GEX-M2)', () => {
+  test('no crossing -> null', () => {
+    expect(nearestGammaFlip([], 100)).toBeNull();
+  });
+
+  test('one crossing is the flip whatever its direction', () => {
+    expect(nearestGammaFlip([{ price: 97, direction: 1 }], 100)).toBe(97);
+    expect(nearestGammaFlip([{ price: 104, direction: -1 }], 100)).toBe(104);
+  });
+
+  test('two crossings: the one nearest to spot, on either side', () => {
+    expect(nearestGammaFlip([{ price: 95, direction: 1 }, { price: 106, direction: -1 }], 100)).toBe(95);
+    expect(nearestGammaFlip([{ price: 93, direction: 1 }, { price: 103, direction: -1 }], 100)).toBe(103);
+    expect(nearestGammaFlip([{ price: 101, direction: -1 }, { price: 108, direction: 1 }], 100)).toBe(101);
+  });
+
+  test('equal distance resolves to the lower price', () => {
+    expect(nearestGammaFlip([{ price: 96, direction: 1 }, { price: 104, direction: -1 }], 100)).toBe(96);
+    expect(nearestGammaFlip([{ price: 104, direction: -1 }, { price: 96, direction: 1 }], 100)).toBe(96);
+  });
+});
+
+describe('computeGexLevels: Gamma Flip by the GEX-M2 rule', () => {
+  const T_DAYS = 29;
+  const withGamma = (q: OptionQuote, gamma: number): OptionQuote => ({ ...q, gamma });
+
+  test('a negative total with only a negative -> positive crossing still shows that crossing (the SPX / SPY case)', () => {
+    const exp = futureIsoDate(T_DAYS);
+    // the sweep crosses once, upward, near 98.97 (fixture of findGammaFlipHypotheticalSpot above); the put's real gamma
+    // is larger, so the total net GEX at spot is negative: the old rule picked `neg` (null) and showed no flip
+    const quotes = [withGamma(bsQuote('put', 90, 500, 0.2, exp), 0.03), withGamma(bsQuote('call', 110, 500, 0.2, exp), 0.01)];
+    const levels = computeGexLevels(quotes, 100);
+    expect(levels.totalNetGex).toBeLessThan(0);
+    expect(levels.gammaFlipNeg).toBeNull();
+    expect(levels.gammaFlipPos as number).toBeCloseTo(98.9686, 1);
+    expect(levels.gammaFlip).toBe(levels.gammaFlipPos);
+  });
+
+  test('two crossings: the nearer one wins even when the total sign points at the farther one', () => {
+    const exp = futureIsoDate(T_DAYS);
+    // put 90 / call 102 / put 112: negative -> positive between 90 and 102, positive -> negative between 102 and 112;
+    // spot 100 is nearer the first. The total at spot is negative, so the old rule showed the farther `neg`.
+    const quotes = [
+      withGamma(bsQuote('put', 90, 500, 0.2, exp), 0.03),
+      withGamma(bsQuote('call', 102, 500, 0.2, exp), 0.02),
+      withGamma(bsQuote('put', 112, 500, 0.2, exp), 0.03),
+    ];
+    const crossings = gammaFlipSweepCrossings(quotes, 100);
+    expect(crossings.map((c) => c.direction)).toEqual([1, -1]);
+    const levels = computeGexLevels(quotes, 100);
+    expect(levels.totalNetGex).toBeLessThan(0);
+    const pos = levels.gammaFlipPos as number;
+    const neg = levels.gammaFlipNeg as number;
+    expect(pos).toBeGreaterThan(90);
+    expect(pos).toBeLessThan(100);
+    expect(neg).toBeGreaterThan(102);
+    expect(neg).toBeLessThan(112);
+    expect(Math.abs(pos - 100)).toBeLessThan(Math.abs(neg - 100));
+    expect(levels.gammaFlip).toBe(pos);
+  });
+
+  test('no crossing -> no Gamma Flip', () => {
+    const exp = futureIsoDate(T_DAYS);
+    expect(computeGexLevels([withGamma(bsQuote('put', 90, 500, 0.2, exp), 0.03)], 100).gammaFlip).toBeNull();
   });
 });
