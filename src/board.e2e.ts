@@ -10,7 +10,8 @@ import { startTestSite } from './e2e-site';
 // the shared one shows each expiration's OI share in a slot of fixed width; the table has the Desk's look and the very
 // same ATM tint (both themes); Net GEX has one or two peak dots, every other column
 // at most one; the page never scrolls (desktop and phone), only the table does; switching to the Board with every
-// expiration selected stays fast. Run: `bun run test:e2e`.
+// expiration selected stays fast; a runner-up cell has exactly a peak row's tint and never stacks a second background on a
+// tinted row. Run: `bun run test:e2e`.
 // ============================================================================
 
 /** Where the ATM row sits in the visible part of the table below its header: 0 = top, 1 = bottom, null = no row. */
@@ -127,12 +128,48 @@ async function main(): Promise<void> {
             const count = (k: string) => peaks.filter((p) => p === k).length;
             assert.ok(count('netGex') >= 1 && count('netGex') <= 2, `${at}: Net GEX peaks ${count('netGex')}`);
             for (const k of ['absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare']) assert.ok(count(k) <= 1, `${at}: ${k} peaks ${count(k)}`);
-            // ---- runner-ups: the same counts, a tinted cell of their own, never on a peak's cell ----
-            const seconds = await page.locator('[data-board-second]').evaluateAll((els) => els.map((e) => ({ k: e.getAttribute('data-board-second') ?? '', bg: getComputedStyle(e).backgroundColor, dot: !!e.querySelector('[data-board-dot]'), peak: e.hasAttribute('data-board-peak') })));
+            // ---- runner-ups: the same counts, a dot, never on a peak's cell ----
+            const seconds = await page.locator('[data-board-second]').evaluateAll((els) => els.map((e) => {
+                const row = e.closest('tr')!;
+                return {
+                    k: e.getAttribute('data-board-second') ?? '',
+                    bg: getComputedStyle(e).backgroundColor,
+                    dot: !!e.querySelector('[data-board-dot]'),
+                    peak: e.hasAttribute('data-board-peak'),
+                    rowTinted: row.hasAttribute('data-board-tinted') || row.hasAttribute('data-board-atm'),
+                    sign: row.getAttribute('data-board-sign') ?? '',
+                };
+            }));
             const secondCount = (k: string) => seconds.filter((s) => s.k === k).length;
-                        assert.ok(secondCount('netGex') <= 2, `${at}: Net GEX runner-ups ${secondCount('netGex')}`);
+            assert.ok(secondCount('netGex') <= 2, `${at}: Net GEX runner-ups ${secondCount('netGex')}`);
             for (const k of ['absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare']) assert.ok(secondCount(k) <= 1, `${at}: ${k} runner-ups ${secondCount(k)}`);
             for (const s of seconds) assert.ok(s.dot && !s.peak, `${at}: runner-up ${s.k} has a dot and is not a peak`);
+            // ---- no double background: a runner-up on a tinted row (peak, ATM) has no background of its own; on an untinted
+            // row it has exactly the peak row tint of its row's Net GEX sign (owner 2026-10-25, "runner-ups v2") ----
+            const TRANSPARENT = 'rgba(0, 0, 0, 0)';
+            const peakRows = await page.locator('[data-board-row][data-board-tinted]').evaluateAll((els) => els.map((e) => ({ sign: e.getAttribute('data-board-sign') ?? '', bg: getComputedStyle(e).backgroundColor, th: getComputedStyle(e.querySelector('th')!).backgroundColor, cells: Array.from(e.querySelectorAll('td')).map((td) => getComputedStyle(td).backgroundColor) })));
+            assert.ok(peakRows.length > 0, `${at}: peak rows are tinted`);
+            const rowTint: Record<string, string> = {};
+            for (const r of peakRows) {
+                assert.equal(r.th, r.bg, `${at}: a peak row's sticky strike cell has the row tint, not a second layer`);
+                assert.ok(r.cells.every((c) => c === TRANSPARENT), `${at}: no cell of a peak row has a background of its own (${r.cells.filter((c) => c !== TRANSPARENT).join(', ')})`);
+                if (rowTint[r.sign]) assert.equal(r.bg, rowTint[r.sign], `${at}: peak rows of one sign share one tint`);
+                rowTint[r.sign] = r.bg;
+            }
+            const atmCells = await page.locator('[data-board-atm] td').evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
+            assert.ok(atmCells.every((c) => c === TRANSPARENT), `${at}: no cell of the ATM row has a background of its own`);
+            let compared = 0;
+            for (const s of seconds) {
+                if (s.rowTinted) {
+                    assert.equal(s.bg, TRANSPARENT, `${at}: runner-up ${s.k} on a tinted row has only its dot`);
+                } else if (rowTint[s.sign]) {
+                    assert.equal(s.bg, rowTint[s.sign], `${at}: runner-up ${s.k} has exactly the ${s.sign} peak row tint`);
+                    compared++;
+                } else if (s.sign) {
+                    assert.notEqual(s.bg, TRANSPARENT, `${at}: runner-up ${s.k} on an untinted row is tinted`);
+                }
+            }
+            console.log(`board e2e ${at}: ${seconds.length} runner-ups, ${seconds.filter((s) => s.rowTinted).length} on tinted rows, ${compared} compared with a peak row tint`);
 
             // ---- only the table scrolls, the footer stays in view ----
             const fit = await page.evaluate(() => ({ page: document.documentElement.scrollHeight, inner: window.innerHeight, footer: Math.round(document.querySelector('footer')!.getBoundingClientRect().bottom) }));

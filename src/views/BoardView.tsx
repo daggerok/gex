@@ -18,7 +18,7 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // volume (total, calls, puts) and each strike's share of the Abs GEX. The numbers come from src/gex.ts computeBoard
 // through useGexLevels (the view only renders). A dot marks each column's peak, coloured by the sign of the value it marks
 // (the Net GEX (+) / (-) colours, metric-prefs signColor), and tints its row by the sign of the
-// row's Net GEX; the runner-up of a column (computeBoard seconds) gets the same dot and a tint of its own cell only; the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
+// row's Net GEX; the runner-up of a column (computeBoard seconds) gets the same dot and, on an untinted row only, its own cell tinted exactly like a peak row (signTint); the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
 // and whenever the ticker or the expiration selection changes (src/center-row.ts, like the Desk). The table looks like the
 // Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel.
 // ============================================================================
@@ -75,6 +75,19 @@ export function boardColumns(metrics: readonly GexMetric[], view: NetGexView): s
     return cols;
 }
 
+/** Strength of a peak row's tint and of a runner-up cell's tint (one value, owner 2026-10-25: exactly the same tint). */
+const PEAK_TINT_PCT = 16;
+
+/**
+ * The tint of a peak's row and of a runner-up's cell, by the sign of the row's Net GEX: the sign colour mixed into the
+ * table's opaque base (`--board-base`, index.css), so it reads the same on a row and on a cell and never stacks on the
+ * zebra. null for a zero Net GEX (no sign).
+ */
+export function signTint(netGex: number, colors: { netGexPos: string; netGexNeg: string }): string | undefined {
+    const color = signColor(netGex, colors);
+    return color ? `color-mix(in srgb, ${color} ${PEAK_TINT_PCT}%, var(--board-base))` : undefined;
+}
+
 /** A peak dot of a zero value (no sign): grey. A positive value's dot is the Net GEX (+) colour, a negative one's (-). */
 const NEUTRAL_DOT = '#94a3b8';
 
@@ -125,11 +138,9 @@ export const BoardView: React.FC<{
         return centerRowInScroll(() => scrollRef.current, () => atmRef.current, () => headRef.current?.getBoundingClientRect().height ?? 0);
     }, [symbol, selectionKey, hasRows]);
 
-    const tint = (row: BoardRow): string | undefined => {
-        if (!columns.some((c) => c.peak && peakSets[c.peak].has(row.strike))) return undefined;
-        const color = signColor(row.netGex, colors);
-        return color ? `color-mix(in srgb, ${color} 16%, transparent)` : undefined;
-    };
+    /** A peak's row tint (null when no shown column peaks on this row). */
+    const peakRowTint = (row: BoardRow): string | undefined =>
+        columns.some((c) => c.peak && peakSets[c.peak].has(row.strike)) ? signTint(row.netGex, colors) : undefined;
 
     return (
         <main className="mx-auto w-full px-4 pt-4 lg:px-6 h-full flex flex-col min-h-0" data-board>
@@ -165,13 +176,17 @@ export const BoardView: React.FC<{
                             {board.rows.map((row) => {
                                 const atm = row.strike === board.atmStrike;
                                 // the ATM tint wins over a peak tint (the peak dots stay)
-                                const bg = atm ? undefined : tint(row);
+                                const bg = atm ? undefined : peakRowTint(row);
+                                // a row with a background of its own (ATM, peak) never gets a second one in a runner-up cell
+                                const rowTinted = atm || bg != null;
                                 return (
                                     <tr
                                         key={row.strike}
                                         ref={atm ? atmRef : undefined}
                                         data-board-row={row.strike}
                                         data-board-atm={atm ? '' : undefined}
+                                        data-board-sign={row.netGex > 0 ? 'pos' : row.netGex < 0 ? 'neg' : undefined}
+                                        data-board-tinted={bg ? '' : undefined}
                                         aria-current={atm ? 'true' : undefined}
                                         className={'board-row' + (atm ? ' od-atm' : '')}
                                         style={bg ? { backgroundColor: bg } : undefined}
@@ -179,8 +194,8 @@ export const BoardView: React.FC<{
                                         <th
                                             scope="row"
                                             className="od-strike-cell sticky left-0 px-1.5 py-[3px] text-center font-semibold text-slate-900 dark:text-slate-100"
-                                            // the sticky strike cell is opaque; a peak's tint is laid over its background
-                                            style={bg ? { backgroundImage: `linear-gradient(${bg}, ${bg})` } : undefined}
+                                            // the sticky strike cell is opaque, so it takes the (opaque) peak tint itself
+                                            style={bg ? { backgroundColor: bg } : undefined}
                                         >
                                             {fmt(row.strike)}
                                             {atm && <span className="sr-only"> {tr('board.atm')}</span>}
@@ -195,12 +210,11 @@ export const BoardView: React.FC<{
                                         </td>
                                         {columns.map((c) => {
                                             const peak = !!c.peak && peakSets[c.peak].has(row.strike);
-                                            // the runner-up: the peak's dot (by the value's sign) and a tint of this cell only, by the sign of the
-                                            // row's Net GEX like a peak's row tint
+                                            // the runner-up: the peak's dot (by the value's sign) and, on an untinted row only, this cell
+                                            // tinted exactly like a peak's row (signTint by the row's Net GEX) - never two backgrounds stacked
                                             const second = !peak && !!c.peak && secondSets[c.peak].has(row.strike);
                                             const dot = peak || second ? signColor(c.value(row), colors) : undefined;
-                                            const netColor = second ? signColor(row.netGex, colors) : undefined;
-                                            const cellBg = netColor ? `color-mix(in srgb, ${netColor} 16%, transparent)` : undefined;
+                                            const cellBg = second && !rowTinted ? signTint(row.netGex, colors) : undefined;
                                             return (
                                                 <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" style={cellBg ? { backgroundColor: cellBg } : undefined} data-board-peak={peak ? c.key : undefined} data-board-second={second ? c.key : undefined} data-board-col={c.key}>
                                                     {(peak || second) && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: dot ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr(peak ? 'board.peak' : 'board.second')} />}
