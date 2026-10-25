@@ -1,5 +1,6 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
+import { Tip } from './Tip';
 import { useEffect, useRef, useState } from 'react';
 import { LANG_FLAGS, LANGUAGES, useI18n, type Language } from '../i18n';
 import { DEFAULT_COLOR_THEME } from '../settings-store';
@@ -32,9 +33,9 @@ export const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language)
 
     return (
         <div ref={rootRef} className="relative">
+            <Tip text={t('topBar.language')} wrapperClassName="inline-flex">
             <button
                 type="button"
-                title={t('topBar.language')}
                 aria-label={t('topBar.language')}
                 aria-haspopup="menu"
                 aria-expanded={open}
@@ -49,6 +50,7 @@ export const LanguageSwitch: React.FC<{ value: Language; onChange: (l: Language)
                 <span className="text-base leading-none" aria-hidden="true">{LANG_FLAGS[value]}</span>
                 <span className="text-xs font-semibold uppercase">{value}</span>
             </button>
+            </Tip>
             {open && (
                 <div
                     role="menu"

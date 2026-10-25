@@ -1,5 +1,6 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
+import { Tip } from './Tip';
 import { useEffect, useRef, useState } from 'react';
 import type { HistoryEntry } from '../backtest/entries';
 import { useI18n } from '../i18n';
@@ -45,12 +46,13 @@ export const AsOfSelect: React.FC<{
     const item = 'flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800';
     return (
         <div ref={wrapRef} className="relative hidden flex-shrink-0 sm:block" data-asof-select={active ? 'backtest' : 'live'}>
+            <Tip text={t('bt.asOfTitle')} wrapperClassName="inline-flex">
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 aria-haspopup="listbox"
                 aria-expanded={open}
-                title={t('bt.asOfTitle')}
+                data-asof-trigger
                 className={`box-border flex max-w-[11rem] items-center gap-1 rounded-lg border px-2 py-1.5 text-sm font-bold outline-none transition-colors ${
                     active
                         ? 'border-amber-400 bg-amber-100 text-amber-900 dark:border-amber-500/60 dark:bg-amber-500/20 dark:text-amber-200'
@@ -60,6 +62,7 @@ export const AsOfSelect: React.FC<{
                 <span className="truncate">{loading ? '...' : text}</span>
                 <span aria-hidden className="text-[10px]">▾</span>
             </button>
+            </Tip>
             {open && (
                 <div role="listbox" className="absolute right-0 top-full z-[60] mt-2 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-800 shadow-xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                     <button type="button" role="option" aria-selected={!active} onClick={() => { setOpen(false); onSelect(null); }} className={item}>

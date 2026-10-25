@@ -813,6 +813,7 @@ import { DataAgeBadge } from './components/DataAgeBadge';
 import { ExpirationChips } from './components/ExpirationChips';
 import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
+import { Tip } from './components/Tip';
 import { liveLabel, pickTickerForSnapshot } from './backtest/entries';
 import { makeBackup, type BackupProgress } from './backtest/maker';
 import { saveBackupChoice, type BackupChoice } from './backtest/prefs';
@@ -1733,16 +1734,17 @@ const App: React.FC = () => {
                             onSetAll={setSelectedExpsAndPersist}
                             colorTheme={settings.colorTheme}
                         />
+                        <Tip text={tr('controls.resetTooltip')} wrapperClassName="inline-flex shrink-0">
                         <button
                             ref={loadBtnRef}
                             type="button"
                             onClick={resetExpirations}
                             disabled={meta.expirations.length === 0}
-                            title={tr('controls.resetTooltip')}
                             className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium disabled:opacity-50 ' + ax.chipIdle}
                         >
                             {tr('controls.reset')}
                         </button>
+                        </Tip>
                     </div>
                 ) : null}
             />

@@ -1,6 +1,7 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { Tip } from './Tip';
 import { useI18n, type Language } from '../i18n';
 import { LIVE_PROVIDERS, PROVIDERS } from '../providers';
 import { normalizeColorTheme } from '../settings-store';
@@ -41,7 +42,6 @@ export const Pill = ({
     options,
     onChange,
     dark,
-    title,
     accentActive,
     disabled,
     size = 'sm',
@@ -50,14 +50,12 @@ export const Pill = ({
     options: PillOption[];
     onChange: (k: string) => void;
     dark: boolean;
-    title?: string;
     /** Active fill classes, e.g. "bg-indigo-600 text-white shadow-sm" */
     accentActive: string;
     disabled?: boolean;
     size?: 'sm' | 'md';
 }) => (
     <div
-        title={title}
         // `rounded-lg p-0.5 border` stays LITERAL and unconditional (header-
         // parity.test.ts source-matches this exact substring against the
         // fundamentals reference design) - `size="md"`'s wider padding is
@@ -221,7 +219,7 @@ export const TopBar: React.FC<{
             <div className="px-4 lg:px-6">
                 <div className="flex items-center gap-2 sm:gap-3 py-3">
                     {/* 3. Ticker — fundamentals mono input */}
-                    <div className="flex-1 min-w-0 relative" title={t('topBar.ticker')}>
+                    <div className="flex-1 min-w-0 relative">
                         <input
                             type="text"
                             value={tickerInput}
@@ -269,11 +267,11 @@ export const TopBar: React.FC<{
                     </div>
 
                     {/* 4. Search — fundamentals solid accent button */}
+                    <Tip text={t('topBar.search')} wrapperClassName="inline-flex flex-shrink-0">
                     <button
                         type="button"
                         onClick={onSearch}
                         disabled={!!searching}
-                        title={t('topBar.search')}
                         aria-label={t('topBar.search')}
                         className={`flex-shrink-0 flex items-center ${btn} text-white font-bold px-3 sm:px-4 py-2 rounded-lg text-sm transition-all active:scale-95 disabled:opacity-40`}
                     >
@@ -285,12 +283,13 @@ export const TopBar: React.FC<{
                             </svg>
                         )}
                     </button>
+                    </Tip>
 
                     {/* 5b. "As of" selector (backtest), same for all tabs */}
                     {asOfSlot}
 
                     {/* 6. CACHE / LIVE — fundamentals Pill */}
-                    <div title={isCache ? t('topBar.cache') : t('topBar.live')} className="flex-shrink-0">
+                    <Tip text={isCache ? t('topBar.cache') : t('topBar.live')} wrapperClassName="inline-flex flex-shrink-0">
                         <Pill
                             value={isCache ? 'cache' : 'live'}
                             options={[
@@ -303,15 +302,14 @@ export const TopBar: React.FC<{
                             }}
                             dark={dark}
                             accentActive={pillActive}
-                            title={isCache ? t('topBar.cache') : t('topBar.live')}
                         />
-                    </div>
+                    </Tip>
 
                     {/* 7. Theme — fundamentals sun/moon text button */}
+                    <Tip text={t('theme.' + (dark ? 'light' : 'dark'))} wrapperClassName="inline-flex flex-shrink-0">
                     <button
                         type="button"
                         onClick={toggleDark}
-                        title={t('theme.' + (dark ? 'light' : 'dark'))}
                         aria-label={t('theme.' + (dark ? 'light' : 'dark'))}
                         className={`flex-shrink-0 text-base leading-none px-2 py-1.5 rounded-lg transition-colors ${
                             dark ? `${sun} hover:bg-slate-800` : 'text-slate-500 hover:bg-slate-100'
@@ -319,11 +317,12 @@ export const TopBar: React.FC<{
                     >
                         {dark ? '☀️' : '🌙'}
                     </button>
+                    </Tip>
 
                     {/* 8. i18n — fundamentals flag Pill. Hidden below sm (like the
                         provider select): the row's fixed-width items overflow a
                         390px viewport otherwise; language stays in the ⚙️ panel. */}
-                    <div title={t('settings.language')} className="hidden sm:block flex-shrink-0">
+                    <Tip text={t('settings.language')} wrapperClassName="hidden sm:inline-flex flex-shrink-0">
                         <Pill
                             value={settings.language}
                             options={[
@@ -336,16 +335,15 @@ export const TopBar: React.FC<{
                             }}
                             dark={dark}
                             accentActive={pillActive}
-                            title={t('settings.language')}
                         />
-                    </div>
+                    </Tip>
 
                     {/* 9. Settings — fundamentals gear emoji button + card popover shell */}
                     <div className="relative flex-shrink-0" ref={settingsRef}>
+                        <Tip text={t('topBar.settings')} wrapperClassName="inline-flex">
                         <button
                             type="button"
                             onClick={() => setOpenSettings((v) => !v)}
-                            title={t('topBar.settings')}
                             aria-label={t('topBar.settings')}
                             aria-expanded={openSettings}
                             className={`flex-shrink-0 text-base leading-none px-2 py-1.5 rounded-lg transition-colors ${
@@ -358,6 +356,7 @@ export const TopBar: React.FC<{
                         >
                             ⚙️
                         </button>
+                        </Tip>
                         {openSettings && (
                             <div
                                 className={`absolute right-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3 max-h-[calc(100dvh-5rem)] overflow-y-auto`}
@@ -486,14 +485,15 @@ export const TopBar: React.FC<{
                                     <div className={`rounded-lg border ${bdr} divide-y ${bdr}`}>
                                         <div className="flex items-start justify-between gap-3 px-3 py-2">
                                             <span className={`text-xs ${mt}`}>{t('topBar.proxy')}</span>
+                                            <Tip text={isCache ? `${t('topBar.proxy')} (${t('topBar.cache')} - ${t('topBar.proxyDisabled')})` : t('topBar.proxy')} wrapperClassName="inline-flex">
                                             <span
                                                 className={`flex items-center gap-2 text-xs font-mono font-semibold ${proxyStatusCls}`}
                                                 data-proxy-indicators={isCache ? 'disabled' : 'live'}
-                                                title={isCache ? `${t('topBar.proxy')} (${t('topBar.cache')} — ${t('topBar.proxyDisabled')})` : t('topBar.proxy')}
                                             >
                                                 <span className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
                                                 {proxyStatusLabel.replace('● ', '')}
                                             </span>
+                                            </Tip>
                                         </div>
                                         <div className="flex items-start justify-between gap-3 px-3 py-2">
                                             <span className={`text-xs ${mt}`}>{t('topBar.provider')}</span>

@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { centerRowInScroll } from '../center-row';
+import { Tip } from './Tip';
 import { useI18n } from '../i18n';
 import { useLevelPrefs } from '../level-prefs';
 import { DEFAULT_COLOR_THEME } from '../settings-store';
@@ -198,19 +199,21 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
                 type="button"
                 onClick={() => onToggle(expiration)}
                 aria-expanded={!collapsed}
-                title={collapsed ? t('chain.expandExp') : t('chain.collapseExp')}
+                aria-label={`${collapsed ? t('chain.expandExp') : t('chain.collapseExp')}: ${expiration}`}
                 style={barTop}
                 className={
                     'od-bar sticky flex w-full items-center justify-center gap-2 px-2 text-[11px] font-semibold ' +
                     (active ? 'od-current' : '')
                 }
             >
+                <Tip text={collapsed ? t('chain.expandExp') : t('chain.collapseExp')} wrapperClassName="inline-flex items-center gap-2">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
                      strokeLinecap="round" strokeLinejoin="round"
                      className={'h-3 w-3 transition-transform ' + (collapsed ? '-rotate-90' : '')}>
                     <path d="m6 9 6 6 6-6" />
                 </svg>
                 <span className="tabular-nums">{expiration}&nbsp; {t('chain.strikes', { count: strikes.length })}</span>
+                </Tip>
             </button>
 
             {rendered && (
@@ -236,11 +239,11 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
                         }
                     >
                         {callColumns.map((c) => (
-                            <div key={`c${c.key}`} title={c.label} className="px-2 py-[3px] text-right font-medium">{c.headerLabel || c.label}</div>
+                            <div key={`c${c.key}`} className="px-2 py-[3px] text-right font-medium"><Tip text={c.label} wrapperClassName="inline-flex">{c.headerLabel || c.label}</Tip></div>
                         ))}
                         <div className="od-strike-cell px-1.5 py-1 text-center font-medium">{t('chain.strikeSymbol')}</div>
                         {putColumns.map((c) => (
-                            <div key={`p${c.key}`} title={c.label} className="px-2 py-[3px] text-right font-medium">{c.headerLabel || c.label}</div>
+                            <div key={`p${c.key}`} className="px-2 py-[3px] text-right font-medium"><Tip text={c.label} wrapperClassName="inline-flex">{c.headerLabel || c.label}</Tip></div>
                         ))}
                     </div>
                     {/* Strike rows: staggered fade-in on open; uniform fade-out on close. */}
@@ -261,7 +264,6 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
                             >
                                 <QuoteCells q={calls.get(strike)} columns={callColumns} />
                                 <div
-                                    title={fmt(strike)}
                                     className={
                                         'od-strike-cell px-1.5 py-[3px] text-center font-semibold tabular-nums ' +
                                         (isAtm ? ax.atm : 'text-slate-900 dark:text-slate-100')

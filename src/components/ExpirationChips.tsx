@@ -1,5 +1,6 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
+import { Tip } from './Tip';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
 import type { ColorThemeId } from '../types';
@@ -66,14 +67,15 @@ export const ExpirationChips: React.FC<{
                     );
                 })}
             </div>
+            <Tip text={tr('controls.all') + ' / ' + tr('controls.none')} wrapperClassName="inline-flex shrink-0">
             <button
                 type="button"
                 onClick={() => onSetAll(allOn ? [] : [...expirations])}
                 className="shrink-0 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                title={tr('controls.all') + ' / ' + tr('controls.none')}
             >
                 {allOn ? tr('controls.none') : tr('controls.all')}
             </button>
+            </Tip>
         </>
     );
 };

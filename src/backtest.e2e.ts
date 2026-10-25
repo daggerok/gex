@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    const selector = page.locator('[data-asof-select] > button');
+    const selector = page.locator('[data-asof-select] [data-asof-trigger]');
     const banner = page.locator('[data-backtest-banner]');
     const option = (id: string) => page.locator(`[data-asof-option="${id}"]`);
     const openMenu = async () => { await selector.click(); await page.locator('[role=listbox]').waitFor(); };
@@ -229,7 +229,7 @@ async function main(): Promise<void> {
         // ---- a phone: the selector is hidden in the top bar, the same controls are in the settings menu ----
         await page.setViewportSize({ width: 390, height: 800 });
         await page.waitForTimeout(500);
-        assert.equal(await page.locator('[data-asof-select] > button').isVisible(), false, 'the top bar selector is hidden on a phone');
+        assert.equal(await page.locator('[data-asof-select] [data-asof-trigger]').isVisible(), false, 'the top bar selector is hidden on a phone');
         await page.locator('button[aria-label="Settings"]').click();
         const mobile = page.locator('[data-asof-mobile]');
         assert.equal(await mobile.isVisible(), true, 'the settings menu has the backtest block on a phone');
