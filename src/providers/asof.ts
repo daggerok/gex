@@ -3,6 +3,7 @@ import type { Snapshot } from '../backtest/archive';
 import { snapshotDate, snapshotLabel, snapshotValuationTime } from '../backtest/snapshot';
 import type { DataProvider, TickerSuggestion } from '../types';
 import { chainFromCacheFile, staticProvider } from './cache';
+import { UiError } from '../utils';
 
 // ============================================================================
 // "AS OF" PROVIDER - the CACHE provider reading one archived snapshot instead of
@@ -49,13 +50,13 @@ export function makeAsOfProvider(snapshot: Snapshot): DataProvider {
             const raw = symbol.toUpperCase();
             const text = await snapshot.read(raw);
             if (text === null) {
-                throw new Error(`"${raw}" is not in the archive of ${label}. Tickers in it: ${snapshot.tickers.slice(0, 20).join(', ')}${snapshot.tickers.length > 20 ? ', ...' : ''}.`);
+                throw new UiError('error.asof.missing', { symbol: raw, label, tickers: `${snapshot.tickers.slice(0, 20).join(', ')}${snapshot.tickers.length > 20 ? ', ...' : ''}` });
             }
             let parsed: unknown;
             try {
                 parsed = JSON.parse(text);
             } catch {
-                throw new Error(`${raw} in the archive of ${label} is damaged (not valid JSON).`);
+                throw new UiError('error.asof.damaged', { symbol: raw, label });
             }
             return chainFromCacheFile(raw, parsed, `${snapshot.id}/${raw}.json`);
         },
