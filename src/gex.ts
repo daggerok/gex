@@ -304,7 +304,49 @@ export const GAMMA_FLIP_MIN_IV = 0.05;
  * non-finite/non-positive `spot`.
  */
 export function findGammaFlipHypotheticalSpot(quotes: readonly OptionQuote[], spot: number): GammaFlipCrossings {
-    if (!Number.isFinite(spot) || spot <= 0) return { pos: null, neg: null };
+    return crossingsByDirection(gammaFlipSweepCrossings(quotes, spot));
+}
+
+/** One zero crossing of the swept total GEX: where it is and which way the sign goes (1 = negative -> positive). */
+export interface GammaFlipCrossing {
+    price: number;
+    direction: 1 | -1;
+}
+
+/** The last crossing of each direction (the `pos` / `neg` pair of findGammaFlipHypotheticalSpot). */
+export function crossingsByDirection(crossings: readonly GammaFlipCrossing[]): GammaFlipCrossings {
+    let pos: number | null = null;
+    let neg: number | null = null;
+    for (const c of crossings) {
+        if (c.direction === 1) pos = c.price; else neg = c.price;
+    }
+    return { pos, neg };
+}
+
+/**
+ * The Gamma Flip shown in the app (GEX-M2, owner-approved 2026-10-25): the only crossing of the sweep when there is one,
+ * the one nearest to spot when there are more (equal distance: the lower price, like every other tie in gex). Null when
+ * the sweep never changes sign. Replaces the old pick by the sign of the total net GEX (positive total -> `pos`, else
+ * `neg`), which hid the flip whenever the one crossing had the "wrong" direction: on 2026-10-23 SPX (total -31.5B, one
+ * negative -> positive crossing at 7597.78) and SPY (total -9.87B, one at 772.55) showed no Gamma Flip at all.
+ */
+export function nearestGammaFlip(crossings: readonly GammaFlipCrossing[], spot: number): number | null {
+    let best: number | null = null;
+    for (const { price } of crossings) {
+        if (best === null) { best = price; continue; }
+        const d = Math.abs(price - spot);
+        const bestD = Math.abs(best - spot);
+        if (d < bestD || (d === bestD && price < best)) best = price;
+    }
+    return best;
+}
+
+/**
+ * Every sign change of the hypothetical-spot sweep, ascending by price (the core of findGammaFlipHypotheticalSpot, see
+ * its doc comment for the method). Empty for a non-finite or non-positive spot, no eligible quote, or no sign change.
+ */
+export function gammaFlipSweepCrossings(quotes: readonly OptionQuote[], spot: number): GammaFlipCrossing[] {
+    if (!Number.isFinite(spot) || spot <= 0) return [];
     // Exclude futures-priced quotes (VIX/VXN) - see doc comment above - and
     // quotes whose `iv` is below GAMMA_FLIP_MIN_IV (degenerate/failed-solve
     // placeholder, not a real vol - see that constant's doc comment for the
@@ -315,7 +357,7 @@ export function findGammaFlipHypotheticalSpot(quotes: readonly OptionQuote[], sp
         (q) => !(typeof q.forward === 'number' && Number.isFinite(q.forward) && q.forward > 0)
             && typeof q.iv === 'number' && Number.isFinite(q.iv) && q.iv >= GAMMA_FLIP_MIN_IV,
     );
-    if (eligible.length === 0) return { pos: null, neg: null };
+    if (eligible.length === 0) return [];
 
     const low = spot * (1 - GAMMA_FLIP_RANGE_PCT);
     const high = spot * (1 + GAMMA_FLIP_RANGE_PCT);
@@ -337,8 +379,7 @@ export function findGammaFlipHypotheticalSpot(quotes: readonly OptionQuote[], sp
         grid.push({ S, total });
     }
 
-    let pos: number | null = null;
-    let neg: number | null = null;
+    const crossings: GammaFlipCrossing[] = [];
     let prevSign: -1 | 1 | null = null;
     let prevNonZero: { S: number; total: number } | null = null;
     let pendingZeroS: number[] = [];
@@ -362,14 +403,14 @@ export function findGammaFlipHypotheticalSpot(quotes: readonly OptionQuote[], sp
                 const b = point;
                 crossing = a.S + (0 - a.total) * (b.S - a.S) / (b.total - a.total);
             }
-            if (sign === 1) pos = crossing; else neg = crossing;
+            crossings.push({ price: crossing, direction: sign });
         }
         pendingZeroS = [];
         prevSign = sign;
         prevNonZero = point;
     }
 
-    return { pos, neg };
+    return crossings;
 }
 
 export interface NetGexLevels {
@@ -792,12 +833,11 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
     // Gamma flip (section 7.3): hypothetical-spot Black-Scholes recompute
     // against the RAW quotes, not the real-spot profile - see
     // findGammaFlipHypotheticalSpot's doc comment for why.
-    const { pos: gammaFlipPos, neg: gammaFlipNeg } = findGammaFlipHypotheticalSpot(quotes, spot);
+    const crossings = gammaFlipSweepCrossings(quotes, spot);
+    const { pos: gammaFlipPos, neg: gammaFlipNeg } = crossingsByDirection(crossings);
     const totalNetGex = profile.reduce((sum, point) => sum + point.netGex, 0);
-    // Legacy single-field collapse - see GexLevels.gammaFlip's doc comment
-    // for the full rule (totalNetGex-sign tie-break, temporary placeholder
-    // when both gammaFlipPos and gammaFlipNeg are non-null).
-    const gammaFlip = totalNetGex > 0 ? gammaFlipPos : gammaFlipNeg;
+    // GEX-M2: the only crossing, or the one nearest to spot (see nearestGammaFlip)
+    const gammaFlip = nearestGammaFlip(crossings, spot);
     return {
         spot,
         gammaFlip,

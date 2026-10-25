@@ -353,16 +353,10 @@ export interface SigmaLevels {
 export interface GexLevels {
     spot: number;
     /**
-     * The legacy single gamma-flip value, collapsed from `gammaFlipPos` /
-     * `gammaFlipNeg` by the sign of `totalNetGex`: positive total picks
-     * `gammaFlipPos`, non-positive picks `gammaFlipNeg` (either may be null).
-     * Kept as a plain convenience field so existing consumers (src/views/
-     * GexView.tsx) keep compiling and working unchanged. This is a TEMPORARY
-     * PLACEHOLDER for the rare case where both directional fields are
-     * non-null (a genuine two-crossing chain) - a separate, already-planned
-     * follow-up PR replaces GexView.tsx's consumption of this field with the
-     * `gammaFlipPos`/`gammaFlipNeg` pair directly. See src/gex.ts's
-     * findGammaFlip/findGammaFlipCrossings doc comments for the full rule.
+     * The Gamma Flip shown in the app (GEX-M2, 2026-10-25): the only zero crossing of the hypothetical-spot sweep
+     * (src/gex.ts gammaFlipSweepCrossings) when there is one, the one nearest to spot when there are more, null when the
+     * sweep never changes sign. Until 2026-10-25 it was picked by the sign of the total net GEX, which hid a lone
+     * crossing of the other direction (SPX and SPY showed no flip). See nearestGammaFlip.
      */
     gammaFlip: number | null;
     /**
