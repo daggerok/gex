@@ -20,6 +20,7 @@ import { MetricsPanel } from '../components/MetricsPanel';
 import type { GexMetric } from '../metric-prefs';
 import { sigmaLines, sigmaMode, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
 import { PriceBand, RightSegments } from '../chart-primitives';
+import { attachCrosshairMagnet } from '../crosshair-magnet';
 import { defaultLevelName, isApplePlatform, levelColorOf, nearestStrike, proposeLevelColor, roundPrice } from '../custom-levels';
 import { cutBarsAfter } from '../backtest/bars';
 import { attachLongPress } from '../long-press';
@@ -250,7 +251,11 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         // for the browser checks: the library's own last-close line and label stay off (only the named Spot level shows)
         const own = series.options();
         el.dataset.seriesLastPrice = own.priceLineVisible || own.lastValueVisible ? 'on' : 'off';
+        // the crosshair snaps to the hovered candle's open, high, low or close only when the cursor is close to it
+        // (crosshair-magnet.ts); data-crosshair-snap is the snapped price or '' (free), for the browser checks
+        const detachMagnet = attachCrosshairMagnet(chart, series, (price) => { el.dataset.crosshairSnap = price === null ? '' : String(price); });
         return () => {
+            detachMagnet();
             bandRef.current = null;
             segmentsRef.current = null;
             priceLinesRef.current = [];
