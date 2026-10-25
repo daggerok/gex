@@ -61,8 +61,10 @@ async function main(): Promise<void> {
             assert.ok(!/Net GEX/.test(text), `no "Net GEX" in the split legend: ${text}`);
             // the same positions in both views (Absolute Gamma, (+), (−)), only the words change
             assert.equal(text, netLegend.replace(/Net GEX/g, 'Abs GEX'), `the split legend keeps the net order:\n${netLegend}\nvs\n${text}`);
+            // negative bars left, positive right: (−), Absolute Gamma, (+) in both views (owner 2026-10-25)
             const at = (t: string, s: string) => t.indexOf(s);
-            assert.ok(at(text, 'Absolute Gamma') >= 0 && at(text, 'Absolute Gamma') < at(text, 'Abs GEX (+)') && at(text, 'Abs GEX (+)') < at(text, 'Abs GEX (−)'), `legend order: ${text}`);
+            assert.ok(at(netLegend, 'Net GEX (−)') >= 0 && at(netLegend, 'Net GEX (−)') < at(netLegend, 'Absolute Gamma') && at(netLegend, 'Absolute Gamma') < at(netLegend, 'Net GEX (+)'), `net legend order: ${netLegend}`);
+            assert.ok(at(text, 'Abs GEX (−)') >= 0 && at(text, 'Abs GEX (−)') < at(text, 'Absolute Gamma') && at(text, 'Absolute Gamma') < at(text, 'Abs GEX (+)'), `split legend order: ${text}`);
             await page.reload();
             await loadSpy(page);
             await page.getByRole('button', { name: 'GEX' }).first().click();

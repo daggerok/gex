@@ -499,11 +499,15 @@ export const GexView: React.FC<GexViewProps> = ({
      *  title, hover-tooltip rows) - every other metric already reads fully
      *  via metricLabel; only Absolute Gamma has a distinct short ("AG") vs.
      *  full ("Absolute Gamma") form. */
-    /** Legend order key: the Net GEX bars keep the place of their Net GEX names in the split ("Abs GEX") view too. */
+    /**
+     * Legend order key (owner 2026-10-25): negative bars sit left and positive right, so the legend reads "(−)", Absolute
+     * Gamma, "(+)" in both the Net GEX and the Abs GEX view (only the words change); the other metrics follow by name.
+     */
     const legendSortKey = (dataKey: unknown, value: unknown): string => {
-        if (dataKey === 'pos') return `${tr('gex.metric.netGex')} (+)`;
-        if (dataKey === 'neg') return `${tr('gex.metric.netGex')} (−)`;
-        return String(value ?? '');
+        if (dataKey === 'neg') return '0';
+        if (dataKey === 'absGamma') return '1';
+        if (dataKey === 'pos') return '2';
+        return `3 ${String(value ?? '')}`;
     };
     const metricLabelFull = (m: GexMetric) => (m === 'absoluteGamma' ? tr('gex.metric.absoluteGammaFull') : metricLabel(m));
     /** Reads a chart row's value for a metric generically (see
@@ -1744,8 +1748,8 @@ export const GexView: React.FC<GexViewProps> = ({
                                         labels' way; moving the Legend to the top (clear of the
                                         bars, which only draw up to the plot's own top margin) was
                                         simpler than trying to out-position it from the bottom. */}
-                                    {/* recharts sorts the legend by its text: "Abs GEX (+)" would jump before "Absolute Gamma".
-                                        The Net GEX bars sort under their Net GEX names in both views, so the switch only changes words */}
+                                    {/* recharts sorts the legend by its text; legendSortKey fixes the order (−), Absolute Gamma, (+)
+                                        in both views, so the Abs GEX switch only changes words */}
                                     <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} itemSorter={(item) => legendSortKey(item.dataKey, item.value)} />
                                     {/* Plain horizontal zero-line label - unlike the Key Levels'
                                         diagonal below-axis labels (renderRotatedLevelLabel), this
