@@ -1,4 +1,4 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
 import { useEffect } from 'react';
 import { DEFAULT_COLOR_THEME } from './settings-store';
 import type { ColorThemeId, ThemeMode } from './types';

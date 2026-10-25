@@ -58,7 +58,7 @@ import {
 } from './options-data';
 
 const NY = 'America/New_York';
-const root = join(import.meta.dir, '..');
+const root = join(__dirname, '..');
 
 describe('python float and json formatting', () => {
   test('pyFloatRepr matches Python repr', () => {
@@ -802,7 +802,7 @@ describe('chart cache', () => {
 describe('DEFAULT_SYMBOLS', () => {
   test('is exactly the list of tickers the empty ticker search field hints, in both languages', () => {
     const i18n = readFileSync(join(root, 'src/i18n.tsx'), 'utf8');
-    const hints = [...i18n.matchAll(/'controls\.tickerPlaceholder': '([^']+)'/g)].map((m) => m[1].split(',').map((t) => t.trim()));
+    const hints = Array.from(i18n.matchAll(/'controls\.tickerPlaceholder': '([^']+)'/g)).map((m) => m[1].split(',').map((t) => t.trim()));
     expect(hints.length).toBe(2);
     for (const hint of hints) expect(hint).toEqual(DEFAULT_SYMBOLS);
   });

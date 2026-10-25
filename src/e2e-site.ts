@@ -13,7 +13,7 @@ import { siteZipPath } from './backtest/entries';
 // imported by src/ code.
 // ============================================================================
 
-const ROOT = join(import.meta.dir, '..');
+const ROOT = join(__dirname, '..');
 
 export interface TestSite {
     url: string;

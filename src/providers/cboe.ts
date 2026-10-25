@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { INDEX_SYMBOLS } from '../greeks';
 import type { DataProvider, OptionQuote } from '../types';
 import { computeMid, num, parseOccSymbol, proxied } from '../utils';
@@ -17,7 +18,7 @@ import { proxyTickerSuggestions } from './proxy-search';
 // (and the proxy suggests them), so narrowing it to INDEX_SYMBOLS would regress
 // CBOE-only lookups like VIX, VXN, and OEX. Model-greek and Yahoo/NASDAQ index
 // handling stays limited to INDEX_SYMBOLS.
-export const CBOE_INDEX_SYMBOLS: ReadonlySet<string> = new Set([...INDEX_SYMBOLS, 'VIX', 'NDX', 'RUT', 'DJX', 'XSP', 'OEX', 'VXN']);
+export const CBOE_INDEX_SYMBOLS: ReadonlySet<string> = new Set([...Array.from(INDEX_SYMBOLS), 'VIX', 'NDX', 'RUT', 'DJX', 'XSP', 'OEX', 'VXN']);
 export const cboeProvider: DataProvider = {
     id: 'cboe',
     label: 'CBOE',

@@ -1,16 +1,18 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // App source is split into modules under src/ (Phase 0), so scan all of it.
-const main = readdirSync(import.meta.dir, { recursive: true })
+const main = readdirSync(__dirname, { recursive: true })
     .map(String)
     .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
     .sort()
-    .map((f) => readFileSync(join(import.meta.dir, f), 'utf8'))
+    .map((f) => readFileSync(join(__dirname, f), 'utf8'))
     .join('\n');
-const ci = readFileSync(join(import.meta.dir, '../.github/workflows/ci.yaml'), 'utf8');
-const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8'));
+const ci = readFileSync(join(__dirname, '../.github/workflows/ci.yaml'), 'utf8');
+const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
 
 describe('header parity + CACHE-muted proxies (gex)', () => {
   test('uses fundamentals surface tokens on sticky header', () => {
@@ -44,7 +46,7 @@ describe('header parity + CACHE-muted proxies (gex)', () => {
   });
 
   test('debug info and the proxy status are the last block of the settings menu, the header has no debug button and no dots', () => {
-    const topBar = readFileSync(join(import.meta.dir, 'components/TopBar.tsx'), 'utf8');
+    const topBar = readFileSync(join(__dirname, 'components/TopBar.tsx'), 'utf8');
     const header = topBar.slice(0, topBar.indexOf('{openSettings && ('));
     const menu = topBar.slice(topBar.indexOf('{openSettings && ('));
     expect(header).not.toContain('data-proxy-indicators');
@@ -54,7 +56,7 @@ describe('header parity + CACHE-muted proxies (gex)', () => {
   });
 
   test('the provider select lives in the settings menu (Online data / Cached data buttons), not in the header', () => {
-    const topBar = readFileSync(join(import.meta.dir, 'components/TopBar.tsx'), 'utf8');
+    const topBar = readFileSync(join(__dirname, 'components/TopBar.tsx'), 'utf8');
     const header = topBar.slice(0, topBar.indexOf('{openSettings && ('));
     const menu = topBar.slice(topBar.indexOf('{openSettings && ('));
     expect(header).not.toContain('<select');

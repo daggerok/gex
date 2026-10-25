@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ============================================================================
 // BACKUP PREFERENCES - what the last backup was made of, remembered in the browser so
 // the next "Create backup" dialog opens with it selected. Nothing remembered = the
@@ -35,7 +36,7 @@ export function loadBackupChoice(storage: Storage | null = defaultStorage()): Ba
         if (j.mode === 'all') return { mode: 'all' };
         if (j.mode === 'current') return { mode: 'current' };
         if (j.mode === 'custom' && Array.isArray(j.tickers)) {
-            const tickers = [...new Set(j.tickers.filter((t): t is string => typeof t === 'string' && TICKER.test(t)))];
+            const tickers = Array.from(new Set(j.tickers.filter((t): t is string => typeof t === 'string' && TICKER.test(t))));
             if (tickers.length) return { mode: 'custom', tickers };
         }
         return PRESET_CHOICE;
@@ -48,7 +49,7 @@ export function loadBackupChoice(storage: Storage | null = defaultStorage()): Ba
 export function saveBackupChoice(choice: BackupChoice, storage: Storage | null = defaultStorage()): void {
     try {
         if (choice.mode === 'preset') storage?.removeItem(KEY);
-        else storage?.setItem(KEY, JSON.stringify(choice.mode === 'all' || choice.mode === 'current' ? { mode: choice.mode } : { mode: 'custom', tickers: [...new Set(choice.tickers)] }));
+        else storage?.setItem(KEY, JSON.stringify(choice.mode === 'all' || choice.mode === 'current' ? { mode: choice.mode } : { mode: 'custom', tickers: Array.from(new Set(choice.tickers)) }));
     } catch {
         // storage blocked or full: the choice is just not remembered
     }

@@ -188,6 +188,6 @@ describe('takenIds', () => {
   test('site and browser ids, so a new backup never takes one', async () => {
     const { c } = await setup();
     await c.saveBackup('2026-10-09-15-42', await zip('2026-10-09-15-42', ['SPY']), ['SPY']);
-    expect([...c.takenIds()].sort()).toEqual(['2026-10-08', '2026-10-09', '2026-10-09-15-42']);
+    expect(Array.from(c.takenIds()).sort()).toEqual(['2026-10-08', '2026-10-09', '2026-10-09-15-42']);
   });
 });

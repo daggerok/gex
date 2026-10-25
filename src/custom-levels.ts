@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ============================================================================
 // CUSTOM CHART LEVELS - horizontal price lines the user adds to the Chart tab
 // with a right click (Ctrl+click on macOS). Pure helpers plus a per-symbol

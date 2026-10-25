@@ -1,5 +1,5 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
 import { useI18n } from '../i18n';
 import type { DataProvider } from '../types';
 

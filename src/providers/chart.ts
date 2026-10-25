@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { FUTURES_PRICED_SYMBOLS, INDEX_SYMBOLS } from '../greeks';
 import type { OhlcBar, ProviderContext } from '../types';
 import { dbg, num } from '../utils';
@@ -83,7 +84,7 @@ export function parseYahooChart(body: any, interval: string = DEFAULT_CHART_INTE
         // Later rows win on a duplicate time (e.g. a live partial bar for today).
         byTime.set(time, { time, open, high, low, close, volume: num(q.volume?.[i]) });
     }
-    return [...byTime.values()].sort((a, b) => a.time - b.time);
+    return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
 }
 
 /** Fetch OHLC history for `symbol` through the companion proxy's /api/chart route. */

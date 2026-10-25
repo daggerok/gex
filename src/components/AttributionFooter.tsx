@@ -1,5 +1,5 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
 
 // ---------------------------------------------------------------------------
 // Attribution for lightweight-charts, rendered below the active view ONLY ON

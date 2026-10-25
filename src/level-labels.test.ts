@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, MAX_INLINE_LABEL_CHARS, type LevelLabelItem } from './level-labels';
 

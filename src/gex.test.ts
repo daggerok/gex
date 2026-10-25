@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import {
   CONTRACT_MULTIPLIER,
@@ -359,12 +361,7 @@ describe('second walls: direction and per-symbol distance', () => {
   });
 
   test('a pct rule scales with spot', () => {
-    NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL.TEST_PCT = { pct: 0.005 };
-    try {
-      expect(netGexPlusMinusMinDistance('TEST_PCT', 800)).toBeCloseTo(4, 9);
-    } finally {
-      delete (NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL as Record<string, unknown>).TEST_PCT;
-    }
+    expect(netGexPlusMinusMinDistance('TEST_PCT', 800, { ...NET_GEX_PLUS_MINUS_DISTANCE_BY_SYMBOL, TEST_PCT: { pct: 0.005 } })).toBeCloseTo(4, 9);
   });
 });
 

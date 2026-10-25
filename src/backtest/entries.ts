@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { isSnapshotId, snapshotLabel } from './snapshot';
 import type { StoredDayMeta } from './store';
 
@@ -43,14 +44,14 @@ export function parseSiteIndex(json: unknown): Map<string, string[]> {
  */
 export function mergeEntries(site: ReadonlyMap<string, readonly string[]>, local: ReadonlyArray<Pick<StoredDayMeta, 'day' | 'source' | 'size' | 'tickers'>>): HistoryEntry[] {
     const byId = new Map<string, HistoryEntry>();
-    for (const [id, tickers] of site) byId.set(id, { id, label: snapshotLabel(id), source: 'site', tickers: [...tickers], size: null });
+    site.forEach((tickers, id) => { byId.set(id, { id, label: snapshotLabel(id), source: 'site', tickers: [...tickers], size: null }); });
     for (const m of local) {
         const onSite = site.has(m.day);
         // a site zip that was only fetched and kept is still "site" for the user, an imported or app-made one is "local"
         const source: EntrySource = onSite ? (m.source === 'local' ? 'both' : 'site') : 'local';
         byId.set(m.day, { id: m.day, label: snapshotLabel(m.day), source, tickers: [...m.tickers], size: m.size });
     }
-    return [...byId.values()].sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    return Array.from(byId.values()).sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
 }
 
 /**

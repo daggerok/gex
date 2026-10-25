@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ============================================================================
 // SNAPSHOT FORMAT - the parts of a backtest zip that the CI jobs (scripts/) and the
 // app must produce identically, in one place. A snapshot zip holds

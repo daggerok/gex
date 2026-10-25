@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const root = join(import.meta.dir, '..');
+const root = join(__dirname, '..');
 const fetcherTs = readFileSync(join(root, 'scripts/options-data.ts'), 'utf8');
 // App source is split into modules under src/ (Phase 0), so scan all of it.
 const main = readdirSync(join(root, 'src'), { recursive: true })

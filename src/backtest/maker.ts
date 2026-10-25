@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { ChainResult, DataProvider, OptionQuote, ProviderContext } from '../types';
 import { getBulk, loadExpiration, loadMeta } from '../providers/loader';
 import { customLevelsFileText, type CustomLevel } from '../custom-levels';

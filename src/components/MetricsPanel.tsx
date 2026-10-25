@@ -1,5 +1,5 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
 import { useI18n } from '../i18n';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, resetMetricColors, setMetricColor, useMetricColors, type GexMetric } from '../metric-prefs';
 import { accentOf } from '../theme';

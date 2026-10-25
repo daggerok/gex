@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ---------------------------------------------------------------------------
 // GEX level colors - shared by the GEX tab (Key Levels card + recharts
 // reference lines) and the Chart tab's lightweight-charts price lines (plan sections

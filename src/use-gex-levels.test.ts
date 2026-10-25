@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { pickReferenceForward } from './use-gex-levels';
 import type { OptionQuote } from './types';

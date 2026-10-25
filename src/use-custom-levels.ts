@@ -1,4 +1,4 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
 import { useCallback, useSyncExternalStore } from 'react';
 import { STORAGE_PREFIX, loadCustomLevels, saveCustomLevels, type CustomLevel } from './custom-levels';
 

@@ -1,4 +1,4 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
 import { useSyncExternalStore } from 'react';
 import type { CustomLevel } from './custom-levels';
 import { DEFAULT_LEVEL_COLORS, loadLevelColors, saveLevelColors, type GexLevelKey, type LevelColorSet } from './gex-colors';

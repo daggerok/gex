@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { DEFAULT_LEVEL_COLORS, mergeLevelColors } from './gex-colors';
 

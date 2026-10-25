@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { canPanRange, chartKeyAction, clickStep, ESCAPE_RUN_MS, panRange, panRangeBy, pinchRange, recordEscape, strikeTicks, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from './zoom-pan';
 

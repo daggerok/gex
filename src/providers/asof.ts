@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { Snapshot } from '../backtest/archive';
 import { snapshotDate, snapshotLabel } from '../backtest/snapshot';
 import type { DataProvider, TickerSuggestion } from '../types';

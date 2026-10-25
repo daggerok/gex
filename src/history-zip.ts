@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ============================================================================
 // HISTORY ZIP - the one place that knows the zip format of the daily archives
 // (api/history/<YYYY-MM-DD>.zip, see agentic-workspace docs/repos/gex/spec-backtest.md).
@@ -258,7 +259,7 @@ export function mergeZips(zips: ReadonlyArray<Uint8Array>, limits: ZipLimits = Z
     for (const bytes of zips) {
         for (const e of rawEntries(bytes, limits)) if (!byName.has(e.name) && entrySnapshotId(e.name)) byName.set(e.name, e);
     }
-    const ordered = [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
+    const ordered = Array.from(byName.values()).sort((a, b) => (a.name < b.name ? -1 : 1));
     const first = ordered.length ? entrySnapshotId(ordered[0].name)! : '1980-01-01';
     return buildZipFromRaw(ordered, first);
 }

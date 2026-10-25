@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ============================================================================
 // BACKTEST STORE - the day zips the app holds, kept in the browser until the
 // owner cleans them up (agentic-workspace docs/repos/gex/spec-backtest.md). A
@@ -48,7 +49,7 @@ const byDay = (a: StoredDayMeta, b: StoredDayMeta) => (a.day < b.day ? -1 : a.da
 export function createMemoryStore(): BacktestStore {
     const days = new Map<string, StoredDay>();
     return {
-        async list() { return [...days.values()].map(meta).sort(byDay); },
+        async list() { return Array.from(days.values()).map(meta).sort(byDay); },
         async get(day) { return days.get(day) ?? null; },
         async put(d) { days.set(d.day, { ...d }); },
         async remove(list) { for (const d of list) days.delete(d); },

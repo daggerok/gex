@@ -1,5 +1,6 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useRef, useState } from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // ============================================================================
 // FADE PRESENCE - shows a box with a quick fade in when `value` appears (create, edit) and keeps it on screen
@@ -48,8 +49,7 @@ export function FadePresence<T>({ value, children }: { value: T | null; children
     return (
         <div
             ref={boxRef}
-            // @ts-ignore -- `inert` is not in the older React typings
-            inert={open ? undefined : ''}
+            inert={!open}
             data-fade={open && visible ? 'in' : 'out'}
             style={{ opacity: open && visible ? 1 : 0, transition: `opacity ${FADE_MS}ms ease-out`, pointerEvents: open ? undefined : 'none' }}
             className="motion-reduce:!transition-none"

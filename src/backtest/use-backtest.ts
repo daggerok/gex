@@ -1,4 +1,4 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
 import { useEffect, useSyncExternalStore } from 'react';
 import { createBacktestController, type BacktestController, type BacktestState, type SiteReader } from './controller';
 import { createBacktestStore } from './store';

@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { OptionQuote } from './types';
 import {
     BS_RISK_FREE_RATE,

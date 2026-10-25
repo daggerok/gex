@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { DEFAULT_LANGUAGE, LANGUAGES, type Language } from './i18n';
 import { defaultProviderId, PROVIDERS, PROXY_PRESETS } from './providers';
 import type { ChainResult, ColorThemeId, Settings } from './types';

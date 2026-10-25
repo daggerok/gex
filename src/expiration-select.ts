@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // Which expirations to select when the user switches to another ticker. Pure, unit-tested in
 // expiration-select.test.ts. Dates are ISO strings (YYYY-MM-DD), so plain string comparison orders them.
 

@@ -1,5 +1,5 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
 import { levelColorOf } from '../custom-levels';
 import { useI18n } from '../i18n';
 import { LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs } from '../level-prefs';

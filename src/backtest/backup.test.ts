@@ -90,7 +90,7 @@ describe('a backup made in the app has the structure of the one the CI job makes
     expect(openSnapshot(ID, ci.zip).tickers).toEqual(['NDX', 'SPY']);
     expect(await openSnapshot(ID, app).read('SPY')).toBe(texts.SPY);
     const second = await buildBackupZip('2026-10-09-16-05', [{ symbol: 'SPY', text: texts.SPY }]);
-    const imported = await importArchive(new Uint8Array([...(await buildBackupZip(ID, [{ symbol: 'QQQ', text: texts.SPY }]))]));
+    const imported = await importArchive(new Uint8Array(await buildBackupZip(ID, [{ symbol: 'QQQ', text: texts.SPY }])));
     expect(imported.map((s) => s.id)).toEqual([ID]);
     expect((await importArchive(second)).map((s) => s.id)).toEqual(['2026-10-09-16-05']);
   });

@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,23 +20,23 @@ import {
 import type { ChainResult, OptionQuote } from './types';
 import { black76Price } from './vix-pricing';
 
-const root = join(import.meta.dir, '..');
+const root = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
 
 /** Pull the string members out of `const SUPPORTED_INDEX_SYMBOLS = new Set([...])`. */
 function proxyIndexSymbols(src: string): string[] {
   const m = /const SUPPORTED_INDEX_SYMBOLS = new Set\(\[([^\]]*)\]\)/.exec(src);
   if (!m) throw new Error('SUPPORTED_INDEX_SYMBOLS not found');
-  return [...m[1].matchAll(/"([A-Z]+)"/g)].map((x) => x[1]).sort();
+  return Array.from(m[1].matchAll(/"([A-Z]+)"/g)).map((x) => x[1]).sort();
 }
 
 describe('index symbols', () => {
   test('INDEX_SYMBOLS is exactly the verified index set', () => {
-    expect([...INDEX_SYMBOLS].sort()).toEqual(['DJX', 'NDX', 'RUT', 'SPX', 'XSP']);
+    expect(Array.from(INDEX_SYMBOLS).sort()).toEqual(['DJX', 'NDX', 'RUT', 'SPX', 'XSP']);
   });
 
   test('every index symbol has its own yield entry', () => {
-    expect([...INDEX_SYMBOLS].sort()).toEqual(Object.keys(INDEX_DIVIDEND_YIELDS).sort());
+    expect(Array.from(INDEX_SYMBOLS).sort()).toEqual(Object.keys(INDEX_DIVIDEND_YIELDS).sort());
   });
 
   test('VIX (futures-priced) and OEX (dead chain) are not supported', () => {
@@ -44,11 +46,11 @@ describe('index symbols', () => {
 
   test('api/Indices.txt matches INDEX_SYMBOLS', () => {
     const lines = read('api/Indices.txt').split('\n').map((l) => l.trim()).filter(Boolean).sort();
-    expect(lines).toEqual([...INDEX_SYMBOLS].sort());
+    expect(lines).toEqual(Array.from(INDEX_SYMBOLS).sort());
   });
 
   test('the local proxy mirrors INDEX_SYMBOLS in SUPPORTED_INDEX_SYMBOLS', () => {
-    const expected = [...INDEX_SYMBOLS].sort();
+    const expected = Array.from(INDEX_SYMBOLS).sort();
     expect(proxyIndexSymbols(read('scripts/options-local-proxy.ts'))).toEqual(expected);
   });
 });
@@ -121,7 +123,7 @@ describe('blackScholesGreeks dividend yield', () => {
 // ---------------------------------------------------------------------------
 describe('futures-priced symbols (VIX, VXN)', () => {
   test('FUTURES_PRICED_SYMBOLS is exactly VIX and VXN', () => {
-    expect([...FUTURES_PRICED_SYMBOLS].sort()).toEqual(['VIX', 'VXN']);
+    expect(Array.from(FUTURES_PRICED_SYMBOLS).sort()).toEqual(['VIX', 'VXN']);
   });
 
   test('isFuturesPricedSymbol accepts provider spellings and casing', () => {

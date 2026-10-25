@@ -1,5 +1,6 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useRef, useState } from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n, type Language } from '../i18n';
 import { LIVE_PROVIDERS, PROVIDERS } from '../providers';
 import { normalizeColorTheme } from '../settings-store';

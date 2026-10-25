@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { translate, type Language } from './i18n';
 import type { DataProvider, OptionQuote } from './types';
 

@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+/// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { blackScholesGreeks, type BsGreeks, yearsToExpiration } from './greeks';
 import type { OptionQuote } from './types';

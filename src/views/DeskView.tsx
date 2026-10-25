@@ -1,5 +1,5 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
 import { ChainTable, type ChainSection } from '../components/ChainTable';
 import { Icon } from '../components/Icon';
 import { KeyOnboarding } from '../components/KeyOnboarding';
@@ -19,7 +19,7 @@ export interface DeskViewProps {
     provider: DataProvider;
     meta: ChainMeta | null;
     loadChain: () => Promise<void>;
-    getDates: (symbol: string, credsOverride?: { token?: string; secret?: string }) => Promise<void>;
+    getDates: (symbol: string, credsOverride?: { token?: string; secret?: string }) => Promise<unknown>;
     tickerInput: string;
     metaLoading: boolean;
     expLoading: boolean;
