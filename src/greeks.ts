@@ -110,9 +110,18 @@ function valuationNow(): Date {
     return valuationTime === null ? new Date() : new Date(valuationTime);
 }
 
-/** Options settle at 16:00 New York time on their expiration day (PM settlement; AM-settled monthlies are not told apart). */
+/** PM-settled options settle at 16:00 New York time on their expiration day. */
 export const SETTLEMENT_HOUR_ET = 16;
-/** Smallest time to expiration the model uses: 15 minutes (GEX-M1), so gamma stays finite at and after the 16:00 settlement. */
+/**
+ * AM-settled options (batch 4, owner 2026-10-25): the SPX monthlies (root `SPX`, not the PM-settled `SPXW`) settle on the
+ * opening prints of their expiration day (Cboe lists the standard SPX monthlies as AM-settled and the SPXW weeklies as
+ * PM-settled), so the app treats them as settled at 9:30 New York time that day (the owner's rule, not an exchange time:
+ * the settlement value is computed from the opening prices, published later in the morning).
+ */
+export const AM_SETTLEMENT_ET = { hour: 9, minute: 30 } as const;
+/** Option roots settled in the morning (the leading letters of an OCC symbol). Only SPX for now (owner 2026-10-25). */
+export const AM_SETTLED_ROOTS: ReadonlySet<string> = new Set(['SPX']);
+/** Smallest time to expiration the model uses before the settlement: 15 minutes (GEX-M1), so gamma stays finite near it. */
 export const MIN_MINUTES_TO_EXPIRATION = 15;
 const YEAR_MS = 365 * 86_400_000;
 const MIN_MS_TO_EXPIRATION = MIN_MINUTES_TO_EXPIRATION * 60_000;
@@ -126,33 +135,77 @@ function marketToday(now: Date): string {
     return todayCache.date;
 }
 
-/**
- * Years to expiration (GEX-M1, owner-approved 2026-10-25): the real time from `now` to the 16:00 New York settlement of the
- * expiration day, as a share of a 365-day calendar year, never below 15 minutes. Null when the expiration day is before the
- * market (New York) calendar date of `now`; on the expiration day itself the 15-minute floor holds also after 16:00, so a
- * chain fetched or archived after the close still values its 0DTE. Replaces the "calendar days + 1" rule of the old Python
- * fetcher (0DTE was 1 day, 24x the real T at 15:00, its at-the-money gamma about 4.9x too low); the day is the New York one, not the
- * browser's local date (review GEX-L2).
- */
-export function yearsToExpiration(expiration: string, now: Date = valuationNow()): number | null {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(expiration || ''));
-    if (!m) return null;
-    if (expiration < marketToday(now)) return null;
-    let settle = settlementMs.get(expiration);
+/** The root of an OCC option symbol ("SPXW261026C06000000" -> "SPXW"), or '' when it is not one. */
+export function optionRoot(symbol: string | null | undefined): string {
+    const m = /^([A-Z][A-Z0-9.]*?)\d{6}[CP]\d{8}$/.exec(String(symbol ?? '').trim().toUpperCase());
+    return m ? m[1] : '';
+}
+
+/** True for an AM-settled option (AM_SETTLED_ROOTS: SPX monthlies, not SPXW), by its OCC symbol. */
+export function isAmSettled(symbol: string | null | undefined): boolean {
+    return AM_SETTLED_ROOTS.has(optionRoot(symbol));
+}
+
+/** The settlement moment (ms) of an expiration day: 16:00 New York, or 9:30 for an AM-settled option. Null when malformed. */
+function settlementOf(expiration: string, amSettled: boolean): number | null {
+    const key = amSettled ? `${expiration}|am` : expiration;
+    let settle = settlementMs.get(key);
     if (settle === undefined) {
-        settle = zonedTimeToMs(Number(m[1]), Number(m[2]), Number(m[3]), SETTLEMENT_HOUR_ET, 0);
-        settlementMs.set(expiration, settle);
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(expiration || ''));
+        if (!m) return null;
+        settle = amSettled
+            ? zonedTimeToMs(Number(m[1]), Number(m[2]), Number(m[3]), AM_SETTLEMENT_ET.hour, AM_SETTLEMENT_ET.minute)
+            : zonedTimeToMs(Number(m[1]), Number(m[2]), Number(m[3]), SETTLEMENT_HOUR_ET, 0);
+        settlementMs.set(key, settle);
     }
-    return Math.max(settle - now.getTime(), MIN_MS_TO_EXPIRATION) / YEAR_MS;
+    return settle;
 }
 
 /**
- * True when the expiration day is before the market (New York) calendar date of `now` (the valuation time in a backtest):
- * the same rule as yearsToExpiration's null, so the lists the app shows and the model math agree (GEX-H4). A malformed
- * date is not "expired" here (yearsToExpiration still refuses it).
+ * Years to expiration (GEX-M1, owner-approved 2026-10-25): the real time from `now` to the settlement of the expiration
+ * day (16:00 New York, 9:30 for an AM-settled option), as a share of a 365-day calendar year, never below 15 minutes while
+ * the option is alive. Null when the option is over: its expiration day is before the market (New York) calendar date of
+ * `now`, or it is that day and `now` is AFTER the settlement (batch 4, owner 2026-10-25: after 16:00 the options expiring
+ * today count as expired, no 15-minute floor for them; exactly at the settlement, e.g. a day archive valued at the 16:00
+ * close, the floor still holds). Replaces the "calendar days + 1" rule of the old Python fetcher (0DTE was 1 day, 24x the
+ * real T at 15:00, its at-the-money gamma about 4.9x too low); the day is the New York one, not the browser's local date
+ * (review GEX-L2).
+ */
+export function yearsToExpiration(expiration: string, now: Date = valuationNow(), amSettled: boolean = false): number | null {
+    const settle = settlementOf(expiration, amSettled);
+    if (settle === null) return null;
+    if (expiration < marketToday(now) || now.getTime() > settle) return null;
+    return Math.max(settle - now.getTime(), MIN_MS_TO_EXPIRATION) / YEAR_MS;
+}
+
+/** yearsToExpiration of one quote: its settlement time follows its root (isAmSettled). */
+export function quoteYearsToExpiration(q: { expiration: string; symbol?: string }, now: Date = valuationNow()): number | null {
+    return yearsToExpiration(q.expiration, now, isAmSettled(q.symbol));
+}
+
+/**
+ * True when the expiration is over at `now` (the valuation time in a backtest): its day is before the market (New York)
+ * calendar date, or it is that day after the 16:00 settlement (batch 4). The same rule as yearsToExpiration's null, so the
+ * lists the app shows and the model math agree (GEX-H4). An expiration DATE uses the PM settlement: on an SPX 3rd Friday
+ * the date stays listed after 9:30 for its PM-settled SPXW options, its AM-settled SPX quotes are dropped by
+ * withoutExpiredQuotes. A malformed date is not "expired" here (yearsToExpiration still refuses it).
  */
 export function isExpired(expiration: string, now: Date = valuationNow()): boolean {
-    return /^\d{4}-\d{2}-\d{2}$/.test(expiration) && expiration < marketToday(now);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiration)) return false;
+    if (expiration < marketToday(now)) return true;
+    return expiration === marketToday(now) && now.getTime() > (settlementOf(expiration, false) as number);
+}
+
+/** True when this quote is over at `now`: isExpired of its date, or an AM-settled quote after 9:30 on its day. */
+export function isQuoteExpired(q: { expiration: string; symbol?: string }, now: Date = valuationNow()): boolean {
+    if (isExpired(q.expiration, now)) return true;
+    if (!isAmSettled(q.symbol) || q.expiration !== marketToday(now)) return false;
+    return now.getTime() > (settlementOf(q.expiration, true) ?? Infinity);
+}
+
+/** The quotes that are not over at `now` (isQuoteExpired), a new array. */
+export function withoutExpiredQuotes<T extends { expiration: string; symbol?: string }>(quotes: readonly T[], now: Date = valuationNow()): T[] {
+    return quotes.filter((q) => !isQuoteExpired(q, now));
 }
 
 export type BsGreeks = {
@@ -175,7 +228,7 @@ export type BsGreeks = {
  * insufficient (missing spot/strike/IV/expiration). Does not mutate `q`.
  */
 export function blackScholesGreeks(
-    q: Pick<OptionQuote, 'side' | 'strike' | 'expiration' | 'iv' | 'last' | 'mid' | 'bid' | 'ask'>,
+    q: Pick<OptionQuote, 'side' | 'strike' | 'expiration' | 'iv' | 'last' | 'mid' | 'bid' | 'ask'> & { symbol?: string },
     spot: number,
     riskFree: number = BS_RISK_FREE_RATE,
     dividendYield: number = BS_DIVIDEND_YIELD,
@@ -186,7 +239,7 @@ export function blackScholesGreeks(
     if (s == null || s <= 0) return { greeks: null, reason: 'missing_spot' };
     if (k == null || k <= 0) return { greeks: null, reason: 'missing_strike' };
     if (sigma == null || sigma <= 0) return { greeks: null, reason: 'missing_iv' };
-    const t = yearsToExpiration(q.expiration);
+    const t = quoteYearsToExpiration(q);
     if (t == null || t <= 0) return { greeks: null, reason: 'expired' };
 
     try {

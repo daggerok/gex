@@ -3,6 +3,10 @@
 import { describe, expect, test } from 'bun:test';
 import { EMPTY_QUOTES_BY_EXP, gexChainKey, groupByExpiration, pickGexQuotesByExp, type QuotesByExp } from './gex-chain';
 import type { OptionQuote } from './types';
+import { zonedTimeToMs } from './backtest/snapshot';
+
+/** A fixed clock before every expiration of the fixtures (the real one would expire them one day). */
+const NOW = new Date(zonedTimeToMs(2026, 10, 20, 12, 0));
 
 const quote = (symbol: string, expiration: string, strike: number): OptionQuote => ({
     symbol, expiration, side: 'call', strike,
@@ -24,13 +28,22 @@ describe('gexChainKey and groupByExpiration', () => {
         const a = quote('X', '2026-10-30', 1);
         const b = quote('X', '2026-11-06', 2);
         const c = quote('X', '2026-10-30', 3);
-        expect(groupByExpiration([a, b, c])).toEqual({ '2026-10-30': [a, c], '2026-11-06': [b] });
+        expect(groupByExpiration([a, b, c], undefined, NOW)).toEqual({ '2026-10-30': [a, c], '2026-11-06': [b] });
     });
 
     test('only the listed expirations (an expired one of a stale file is left out, GEX-H4)', () => {
         const old = quote('X', '2026-10-16', 1);
         const live = quote('X', '2026-10-30', 2);
-        expect(groupByExpiration([old, live], ['2026-10-30'])).toEqual({ '2026-10-30': [live] });
+        expect(groupByExpiration([old, live], ['2026-10-30'], NOW)).toEqual({ '2026-10-30': [live] });
+    });
+
+    test('quotes already over are left out (batch 4): AM-settled SPX after 9:30, every 0DTE after 16:00 New York', () => {
+        const spx = quote('SPX261120C06000000', '2026-11-20', 6000);
+        const spxw = quote('SPXW261120C06000000', '2026-11-20', 6000);
+        const next = quote('SPXW261127C06000000', '2026-11-27', 6000);
+        expect(groupByExpiration([spx, spxw, next], undefined, new Date(zonedTimeToMs(2026, 11, 20, 9, 0)))).toEqual({ '2026-11-20': [spx, spxw], '2026-11-27': [next] });
+        expect(groupByExpiration([spx, spxw, next], undefined, new Date(zonedTimeToMs(2026, 11, 20, 10, 0)))).toEqual({ '2026-11-20': [spxw], '2026-11-27': [next] });
+        expect(groupByExpiration([spx, spxw, next], undefined, new Date(zonedTimeToMs(2026, 11, 20, 16, 5)))).toEqual({ '2026-11-27': [next] });
     });
 });
 
