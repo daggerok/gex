@@ -31,7 +31,7 @@
  * thousand files, so a backup of everything is tens of MB, a backup of a few tickers is well under 1 MB.
  * =============================================================================
  */
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { buildZip } from "../src/history-zip";
@@ -106,7 +106,14 @@ export function createBackup(opts: { optionsDir: string; historyDir: string; sym
     const zip = buildZip(sortEntries(files), id, (d) => new Uint8Array(deflateRawSync(d)));
     const path = zipPathFor(id, opts.historyDir);
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, zip, { flag: "wx" }); // never overwrites
+    // never overwrites, never leaves half a zip: written to <path>.tmp, then hard-linked to the name (fails if it exists)
+    const tmp = `${path}.tmp`;
+    try {
+        writeFileSync(tmp, zip);
+        linkSync(tmp, path);
+    } finally {
+        rmSync(tmp, { force: true });
+    }
     syncHistoryIndex(opts.historyDir, [id]);
     return { id, path, tickers, zipBytes: zip.length, sourceBytes };
 }
