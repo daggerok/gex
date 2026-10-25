@@ -1156,6 +1156,12 @@ export interface Board {
      * <= 0) has the most negative strike. Ties go to the lowest strike, like the rest of gex.
      */
     peaks: Record<BoardColumn, number[]>;
+    /**
+     * The runner-up strikes of each column, the same rules one rank down: the second largest value (> 0), and for Net GEX
+     * also the second most negative strike, for put GEX the second most negative. A strike tied with the peak is the
+     * runner-up (the peak keeps the lowest strike).
+     */
+    seconds: Record<BoardColumn, number[]>;
     /** The strike nearest to spot (ties to the lower), null without rows or spot. */
     atmStrike: number | null;
 }
@@ -1205,26 +1211,52 @@ export function computeBoard(quotes: readonly OptionQuote[], spot: number): Boar
         rows.push(row);
     }
     const peaks = {} as Record<BoardColumn, number[]>;
-    for (const c of BOARD_COLUMNS) peaks[c] = [];
+    const seconds = {} as Record<BoardColumn, number[]>;
+    for (const c of BOARD_COLUMNS) {
+        peaks[c] = [];
+        seconds[c] = [];
+    }
     const best = {} as Record<BoardColumn, BoardRow | null>;
+    const next = {} as Record<BoardColumn, BoardRow | null>;
     let netMin: BoardRow | null = null;
+    let netMin2: BoardRow | null = null;
     let putMin: BoardRow | null = null;
+    let putMin2: BoardRow | null = null;
     for (const row of rows) {
         row.absGexShare = absTotal > 0 ? row.absGex / absTotal : 0;
         for (const c of BOARD_COLUMNS) {
+            if (!(row[c] > 0)) continue;
             const b = best[c] ?? null;
-            if (row[c] > 0 && (b === null || row[c] > b[c])) best[c] = row;
+            const n = next[c] ?? null;
+            if (b === null || row[c] > b[c]) {
+                next[c] = b;
+                best[c] = row;
+            } else if (n === null || row[c] > n[c]) next[c] = row;
         }
-        if (row.netGex < 0 && (netMin === null || row.netGex < netMin.netGex)) netMin = row;
-        if (row.putGex < 0 && (putMin === null || row.putGex < putMin.putGex)) putMin = row;
+        if (row.netGex < 0) {
+            if (netMin === null || row.netGex < netMin.netGex) {
+                netMin2 = netMin;
+                netMin = row;
+            } else if (netMin2 === null || row.netGex < netMin2.netGex) netMin2 = row;
+        }
+        if (row.putGex < 0) {
+            if (putMin === null || row.putGex < putMin.putGex) {
+                putMin2 = putMin;
+                putMin = row;
+            } else if (putMin2 === null || row.putGex < putMin2.putGex) putMin2 = row;
+        }
     }
     for (const c of BOARD_COLUMNS) {
         const b = best[c] ?? null;
         if (b) peaks[c].push(b.strike);
+        const n = next[c] ?? null;
+        if (n) seconds[c].push(n.strike);
     }
     if (netMin) peaks.netGex.push(netMin.strike);
+    if (netMin2) seconds.netGex.push(netMin2.strike);
     if (putMin) peaks.putGex.push(putMin.strike);
-    return { rows, peaks, atmStrike: Number.isFinite(spot) ? nearestStrikeTo(rows.map((r) => r.strike), spot) : null };
+    if (putMin2) seconds.putGex.push(putMin2.strike);
+    return { rows, peaks, seconds, atmStrike: Number.isFinite(spot) ? nearestStrikeTo(rows.map((r) => r.strike), spot) : null };
 }
 
 /**
