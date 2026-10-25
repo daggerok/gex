@@ -22,6 +22,11 @@ describe('groupLevelLabels', () => {
   test('empty input -> no groups', () => {
     expect(groupLevelLabels([])).toEqual([]);
   });
+
+  test('Zero GEX on the same strike as Min Net GEX shares its label, never prints over it', () => {
+    const groups = groupLevelLabels([item('minNetGex', 755, 'Min Net GEX'), item('zeroGex', 755, 'Zero GEX'), item('maxPain', 766, 'Max Pain')]);
+    expect(groups.map((g) => [g.value, g.items.map((i) => i.text).join(' + ')])).toEqual([[755, 'Min Net GEX + Zero GEX'], [766, 'Max Pain']]);
+  });
 });
 
 describe('groupNearLevelLabels', () => {
@@ -29,6 +34,11 @@ describe('groupNearLevelLabels', () => {
     // Gamma Flip 774.68 and Max Pain 774.00 on a chart where 1 price unit is about 17 px: their labels overlapped
     const groups = groupNearLevelLabels([item('gammaFlip', 774.68, 'Gamma Flip'), item('maxPain', 774, 'Max Pain'), item('spot', 778.57, 'Spot')], 1);
     expect(groups.map((g) => [g.value, g.items.map((i) => i.key)])).toEqual([[774, ['maxPain', 'gammaFlip']], [778.57, ['spot']]]);
+  });
+
+  test('Zero GEX next to the Gamma Flip joins one label, ordered by price', () => {
+    const groups = groupNearLevelLabels([item('gammaFlip', 757.4, 'Gamma Flip'), item('zeroGex', 757, 'Zero GEX'), item('spot', 760, 'Spot')], 1);
+    expect(groups.map((g) => [g.value, g.items.map((i) => i.key)])).toEqual([[757, ['zeroGex', 'gammaFlip']], [760, ['spot']]]);
   });
 
   test('levels far enough apart keep their own labels', () => {

@@ -9,6 +9,7 @@ import { startTestSite } from './e2e-site';
 // changes the mode but NOT whether the metric or level is on, the chip keeps exactly the same width (no layout jump), the
 // chart shows the new mode, and the choice comes back after a reload.
 //  - Net GEX metric: "Net GEX" <-> "GEX" (call GEX up, put GEX down), legend "Net GEX (+)" <-> "GEX (+)"
+//  - Zero GEX level: line <-> area (a band over the two strikes of the zone on the GEX chart)
 // Run: `bun run test:e2e`.
 // ============================================================================
 
@@ -61,6 +62,35 @@ async function main(): Promise<void> {
             await page.waitForTimeout(1200);
             assert.equal(await page.getByRole('switch', { name: /call GEX and put GEX/ }).first().getAttribute('aria-checked'), 'true', 'the split view is remembered');
             await page.getByRole('switch', { name: /call GEX and put GEX/ }).first().click();
+
+            // ---- Zero GEX line / area (a level chip of the Levels panel) ----
+            const zsw = page.getByRole('switch', { name: /Zero GEX/ }).first();
+            const zchip = chipOf(zsw);
+            assert.equal(await zsw.getAttribute('aria-checked'), 'false', 'Zero GEX is a line by default');
+            assert.equal(await zchip.getAttribute('aria-pressed'), 'true', 'Zero GEX is on by default');
+            const band = page.locator('.recharts-reference-area [fill="#d946ef"]');
+            assert.equal(await band.count(), 0, 'no band while it is a line');
+            // the cached SPY chain changes every hour: the band needs a sign change of the per-strike Net GEX
+            // the Levels table of the sidebar: a row of a label and a strike ("-" without a value)
+            const hasLevel = await page.evaluate(() => {
+                const label = Array.from(document.querySelectorAll('aside span')).find((s) => s.textContent?.trim() === 'Zero GEX');
+                const value = label?.parentElement?.lastElementChild?.textContent ?? '';
+                return /\d/.test(value);
+            });
+            const zBefore = await width(zchip);
+            await zsw.scrollIntoViewIfNeeded();
+            await zsw.click();
+            await page.waitForTimeout(400);
+            assert.equal(await zsw.getAttribute('aria-checked'), 'true', 'the Zero GEX switch is on');
+            assert.equal(await zchip.getAttribute('aria-pressed'), 'true', 'the switch does not hide the level');
+            assert.equal(await width(zchip), zBefore, `the Zero GEX chip keeps its width at ${vw}px`);
+            if (hasLevel) assert.equal(await band.count(), 1, 'the Zero GEX band is drawn on the GEX chart');
+            else console.log('chip switch e2e: the cached SPY chain has no Zero GEX right now, band not checked');
+            await page.reload();
+            await loadSpy(page);
+            await page.getByRole('button', { name: 'GEX' }).first().click();
+            await page.waitForTimeout(1200);
+            assert.equal(await page.getByRole('switch', { name: /Zero GEX/ }).first().getAttribute('aria-checked'), 'true', 'the area display is remembered');
             await page.close();
         }
         console.log('chip switch e2e: ok');

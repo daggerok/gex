@@ -12,7 +12,7 @@ import { FadePresence } from '../components/FadePresence';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { LevelsPanel } from '../components/LevelsPanel';
 import { ToggleChip } from '../components/ToggleChip';
-import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, type ToggleableLevelKey } from '../level-prefs';
+import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, zeroGexDisplay, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, netGexView, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
@@ -547,6 +547,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // Gamma Flip/Max Pain start ON), not "every level on".
     // Which levels are on and their colours are shared with the Chart tab (level-prefs.ts)
     const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
+    const zeroArea = zeroGexDisplay.use() === 'area';
     const resetLevelsPanel = () => resetLevelPrefs();
 
     const levelLabel = (key: ToggleableLevelKey): string => tr(LEVEL_LABEL_KEY[key]);
@@ -1167,6 +1168,7 @@ export const GexView: React.FC<GexViewProps> = ({
         { key: 'maxNetGex', label: levelLabel('maxNetGex'), value: levels?.maxNetGex ?? null },
         { key: 'netGexPlus', label: levelLabel('netGexPlus'), value: levels?.netGexPlus ?? null, optional: true },
         { key: 'gammaFlip', label: levelLabel('gammaFlip'), value: levels?.gammaFlip ?? null },
+        { key: 'zeroGex', label: levelLabel('zeroGex'), value: levels?.zeroGex ?? null },
         { key: 'spot', label: levelLabel('spot'), value: levels?.spot ?? null, suffix: effSpotIsEstimated ? tr('spot.estimated') : undefined },
         { key: 'minNetGex', label: levelLabel('minNetGex'), value: levels?.minNetGex ?? null },
         { key: 'netGexMinus', label: levelLabel('netGexMinus'), value: levels?.netGexMinus ?? null, optional: true },
@@ -1863,6 +1865,19 @@ export const GexView: React.FC<GexViewProps> = ({
                                         const groups = labelGap > 0 ? groupNearLevelLabels(drawn, labelGap) : groupLevelLabels(drawn);
                                         return drawn.map((item) => {
                                             const group = groups.find((g) => g.items[0].key === item.key);
+                                            // Zero GEX as an AREA (the switch in its chip): a band over both bars of the zone
+                                            // (half a strike step beyond each of its two strikes), the label stays on a line
+                                            // without a stroke at the level's own strike like every other label
+                                            const zone = item.key === 'zeroGex' && zeroArea ? levels?.zeroGexZone ?? null : null;
+                                            if (zone && chart) {
+                                                const half = chart.strikeStep / 2;
+                                                return (
+                                                    <React.Fragment key={item.key}>
+                                                        <ReferenceArea x1={zone.low - half} x2={zone.high + half} fill={item.color} fillOpacity={0.18} stroke={item.color} strokeOpacity={0.5} strokeDasharray="2 4" ifOverflow="hidden" />
+                                                        <ReferenceLine x={item.value} stroke="transparent" label={group ? renderRotatedLevelLabel(group) : undefined} />
+                                                    </React.Fragment>
+                                                );
+                                            }
                                             return (
                                                 <ReferenceLine
                                                     key={item.key}
