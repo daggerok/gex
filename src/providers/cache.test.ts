@@ -2,7 +2,8 @@
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ProviderContext } from '../types';
-import { manifestFromIndex, staticProvider, staticTickerSuggestionsFromManifest } from './cache';
+import { chainFromCacheFile, manifestFromIndex, staticProvider, staticTickerSuggestionsFromManifest } from './cache';
+import { withoutExpired } from './loader';
 
 const ctx = {} as ProviderContext;
 const realFetch = globalThis.fetch;
@@ -50,5 +51,30 @@ describe('manifestFromIndex: the default list of the fetcher (index.json `defaul
     expect(manifestFromIndex(INDEX).defaults).toEqual([]);
     expect(manifestFromIndex({ ...INDEX, defaults: 'SPX' }).defaults).toEqual([]);
     expect(manifestFromIndex(null)).toEqual({ options: [], noOptions: [], names: {}, defaults: [] });
+  });
+});
+
+describe('data age and expired expirations of a cache file (GEX-H4)', () => {
+  const file = {
+    symbol: 'AAPL', updated: '2026-10-05T18:30:00.120000-04:00', date: '2026-10-05', underlyingPrice: 250,
+    expirations: ['2026-10-09', '2026-10-16', '2026-10-24', '2026-10-30'], quotes: [],
+  };
+
+  test('the file stamp and trading day reach the chain', () => {
+    const chain = chainFromCacheFile('AAPL', file, 'AAPL.json');
+    expect(chain.updated).toBe('2026-10-05T18:30:00.120000-04:00');
+    expect(chain.dataDate).toBe('2026-10-05');
+    expect(chainFromCacheFile('AAPL', { quotes: [] }, 'x').updated).toBeNull();
+  });
+
+  test('opened on 2026-10-24 (a Saturday, New York): the expirations before that day are left out and counted', () => {
+    const chain = chainFromCacheFile('AAPL', file, 'AAPL.json');
+    const meta = withoutExpired(chain, new Date('2026-10-24T12:00:00-04:00'));
+    expect(meta.expirations).toEqual(['2026-10-24', '2026-10-30']);
+    expect(meta.expiredDropped).toBe(2);
+    // the expiration day itself stays until midnight New York, also after the 16:00 settlement
+    expect(withoutExpired(chain, new Date('2026-10-16T23:30:00-04:00')).expirations).toEqual(['2026-10-16', '2026-10-24', '2026-10-30']);
+    // nothing expired: the same object
+    expect(withoutExpired(chain, new Date('2026-10-01T12:00:00-04:00'))).toBe(chain);
   });
 });

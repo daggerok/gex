@@ -22,10 +22,14 @@ export function gexChainKey(providerId: string, symbol: string, vixFuturesPricin
     return `${providerId}|${symbol}|${vixFuturesPricing ? 1 : 0}`;
 }
 
-/** Quotes grouped by expiration, in their original order. */
-export function groupByExpiration(quotes: readonly OptionQuote[]): QuotesByExp {
+/**
+ * Quotes grouped by expiration, in their original order. With `only`, just those expirations: the meta's list, which leaves
+ * out the expired ones of a stale cache file (GEX-H4), so the Board's OI shares do not count them either.
+ */
+export function groupByExpiration(quotes: readonly OptionQuote[], only?: readonly string[]): QuotesByExp {
+    const keep = only ? new Set(only) : null;
     const byExp: QuotesByExp = {};
-    for (const q of quotes) (byExp[q.expiration] ??= []).push(q);
+    for (const q of quotes) if (!keep || keep.has(q.expiration)) (byExp[q.expiration] ??= []).push(q);
     return byExp;
 }
 
@@ -77,7 +81,7 @@ export function useGexQuotesByExp(
         let cancelled = false;
         getBulk(provider.id, meta.symbol, vixFuturesPricing)
             .then((chain) => {
-                if (!cancelled) setBulk({ key, byExp: chain ? groupByExpiration(chain.quotes) : null });
+                if (!cancelled) setBulk({ key, byExp: chain ? groupByExpiration(chain.quotes, meta.expirations) : null });
             })
             .catch((e: unknown) => {
                 dbg('getBulk error', e);

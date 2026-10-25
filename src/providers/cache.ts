@@ -231,7 +231,10 @@ export function chainFromCacheFile(raw: string, j: any, where: string): ChainRes
         ? asArray<string>(j.expirations).map(String)
         : Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
     const greeks = j.greeks && typeof j.greeks === 'object' ? j.greeks as GreeksSummary : undefined;
-    return { symbol: raw, underlyingPrice: num(j.underlyingPrice), expirations, quotes, greeks };
+    // GEX-H4: when the file was written and the trading day it belongs to, for the data age shown in the app
+    const updated = typeof j.updated === 'string' && j.updated ? j.updated : null;
+    const dataDate = typeof j.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(j.date) ? j.date : null;
+    return { symbol: raw, underlyingPrice: num(j.underlyingPrice), expirations, quotes, greeks, updated, dataDate };
 }
 
 /**

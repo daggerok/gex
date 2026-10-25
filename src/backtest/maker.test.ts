@@ -73,15 +73,16 @@ describe('makeBackup', () => {
 });
 
 describe('loadFullChain', () => {
+  // future dates: loadMeta leaves expired expirations out (GEX-H4)
   test('a lazy provider is assembled expiration by expiration', async () => {
     const lazy: DataProvider = {
       id: 'lazy-test', label: 'lazy', description: '', mode: 'lazy', setup: 'none', supportsToken: false, needsProxy: false, needsKeyFor: () => false,
-      fetchMeta: async (symbol) => ({ symbol, underlyingPrice: 50, expirations: ['2026-10-16', '2026-10-23'] }),
+      fetchMeta: async (symbol) => ({ symbol, underlyingPrice: 50, expirations: ['2099-10-16', '2099-10-23'] }),
       fetchExpiration: async (symbol, exp) => [q(symbol, exp)],
     };
     const c = await loadFullChain(lazy, 'SPY', ctx);
-    expect(c.expirations).toEqual(['2026-10-16', '2026-10-23']);
-    expect(c.quotes.map((x) => x.expiration)).toEqual(['2026-10-16', '2026-10-23']);
+    expect(c.expirations).toEqual(['2099-10-16', '2099-10-23']);
+    expect(c.quotes.map((x) => x.expiration)).toEqual(['2099-10-16', '2099-10-23']);
   });
 });
 
