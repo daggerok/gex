@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { CustomLevel } from './custom-levels';
-import { DEFAULT_OFF_LEVELS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, getLevelPrefs, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, zeroGexDisplay } from './level-prefs';
+import { DEFAULT_OFF_LEVELS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, levelLabelItems, getLevelPrefs, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, zeroGexDisplay } from './level-prefs';
 import type { GexLevels, SigmaLevel } from './types';
 
 const levels = (over: Partial<GexLevels> = {}): GexLevels => ({
@@ -151,5 +151,17 @@ describe('gammaFlipUnavailableText', () => {
     expect(gammaFlipUnavailableText({ gammaFlipUnavailable: 'ivCoverage', gammaFlipIvCoverage: 0.42 } as GexLevels, tr)).toBe('gex.level.tooltip.gammaFlipNoIv{"pct":"42%"}');
     expect(gammaFlipUnavailableText({ gammaFlipUnavailable: null, gammaFlipIvCoverage: 1 } as GexLevels, tr)).toBe('');
     expect(gammaFlipUnavailableText(null, tr)).toBe('');
+  });
+});
+
+describe('levelLabelItems', () => {
+  const levels = { maxNetGex: 105, minNetGex: 95, gammaFlip: 101.3, spot: 100.2, maxAbsGamma: 105, maxPain: null, sigma: null } as unknown as GexLevels;
+  const colors = { ...getLevelPrefs().colors, maxNetGex: '#0f0', minNetGex: '#f00' };
+  test('the selected levels with a price, Max AG only with the AG metric, then the visible custom levels', () => {
+    const items = levelLabelItems({ levels, selected: ['maxNetGex', 'minNetGex', 'gammaFlip', 'maxAbsGamma', 'maxPain', 'spot'], colors, showMaxAg: false, sigma: 'pct', label: (k) => k.toUpperCase(),
+      customLevels: [{ id: 'a', name: 'Mine', price: 99, color: '#123456' }, { id: 'b', name: 'Hidden', price: 98, color: '#123456', hidden: true }] });
+    expect(items.map((i) => [i.key, i.value, i.text])).toEqual([['maxNetGex', 105, 'MAXNETGEX'], ['gammaFlip', 101.3, 'GAMMAFLIP'], ['minNetGex', 95, 'MINNETGEX'], ['spot', 100.2, 'SPOT'], ['custom:a', 99, 'Mine']]);
+    expect(items[0].color).toBe('#0f0');
+    expect(levelLabelItems({ levels, selected: ['maxAbsGamma'], colors, showMaxAg: true, sigma: 'pct', label: (k) => k }).map((i) => i.key)).toEqual(['maxAbsGamma']);
   });
 });

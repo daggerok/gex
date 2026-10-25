@@ -1200,6 +1200,20 @@ describe('computeBoard', () => {
     expect(row(105).notionalDelta).toBeCloseTo(40000, 6);
   });
 
+  test('call GEX and put GEX halves (the Abs GEX view of the Net GEX column) and the per-strike P/C ratios', () => {
+    expect(row(95).callGex).toBeCloseTo(1000, 9);
+    expect(row(95).putGex).toBeCloseTo(-6000, 9);
+    expect(row(95).callGex + row(95).putGex).toBeCloseTo(row(95).netGex, 9);
+    expect(row(95).callGex - row(95).putGex).toBeCloseTo(row(95).absGex, 9);
+    expect(row(95).pcRatioOi).toBeCloseTo(3, 12); // 30 / 10
+    expect(row(95).pcRatioVolume).toBeCloseTo(7 / 5, 12);
+    expect(row(105).pcRatioVolume).toBe(0); // 0 put contracts over 1 call contract
+    expect(computeBoard([b('put', 90, { openInterest: 4 })], 100).rows[0].pcRatioOi).toBeNull(); // no call side
+    // peaks: call GEX the largest (100: +6000), put GEX the most negative (95: -6000)
+    expect(board.peaks.callGex).toEqual([100]);
+    expect(board.peaks.putGex).toEqual([95]);
+  });
+
   test('% is the strike Abs GEX over the total Abs GEX', () => {
     expect(row(100).absGexShare).toBeCloseTo(9000 / 16500, 12);
     expect(board.rows.reduce((s, r) => s + r.absGexShare, 0)).toBeCloseTo(1, 12);

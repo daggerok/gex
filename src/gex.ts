@@ -1134,20 +1134,26 @@ export interface BoardRow {
     totalVolume: number;
     /** % column: this strike's Abs GEX as a share (0..1) of the Abs GEX of all strikes; 0 when that total is 0. */
     absGexShare: number;
+    /** Call GEX (>= 0) and put GEX (<= 0) of the strike: the two halves of the Abs GEX view (Net GEX column switched). */
+    callGex: number;
+    putGex: number;
+    /** Put / call ratio of the strike by OI and by volume (pcRatioByStrike), null when the call side is 0. */
+    pcRatioOi: number | null;
+    pcRatioVolume: number | null;
 }
 
 /** Columns of the Board that get a peak dot. */
-export type BoardColumn = 'netGex' | 'absGex' | 'notionalDelta' | 'totalOi' | 'callOi' | 'putOi' | 'totalVolume' | 'callVolume' | 'putVolume' | 'absGexShare';
+export type BoardColumn = 'netGex' | 'callGex' | 'putGex' | 'absGex' | 'notionalDelta' | 'totalOi' | 'callOi' | 'putOi' | 'totalVolume' | 'callVolume' | 'putVolume' | 'absGexShare';
 
-export const BOARD_COLUMNS: readonly BoardColumn[] = ['netGex', 'absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare'];
+export const BOARD_COLUMNS: readonly BoardColumn[] = ['netGex', 'callGex', 'putGex', 'absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare'];
 
 export interface Board {
     /** ascending by strike */
     rows: BoardRow[];
     /**
      * The peak strikes of each column: the strike with the largest value (only when it is > 0). Net GEX has two, the
-     * largest positive and the most negative strike (its two walls, the Max / Min Net GEX of the levels). Ties go to the
-     * lowest strike, like the rest of gex.
+     * largest positive and the most negative strike (its two walls, the Max / Min Net GEX of the levels); put GEX (all
+     * <= 0) has the most negative strike. Ties go to the lowest strike, like the rest of gex.
      */
     peaks: Record<BoardColumn, number[]>;
     /** The strike nearest to spot (ties to the lower), null without rows or spot. */
@@ -1160,12 +1166,12 @@ export interface Board {
  * quotes with the greek they need (null gamma / delta left out, never read as 0).
  */
 export function computeBoard(quotes: readonly OptionQuote[], spot: number): Board {
-    const byStrike = new Map<number, BoardRow & { callGex: number; putGex: number }>();
+    const byStrike = new Map<number, BoardRow>();
     for (const q of quotes) {
         if (!Number.isFinite(q.strike)) continue;
         let row = byStrike.get(q.strike);
         if (!row) {
-            row = { strike: q.strike, netGex: 0, absGex: 0, notionalDelta: 0, callOi: 0, putOi: 0, totalOi: 0, callVolume: 0, putVolume: 0, totalVolume: 0, absGexShare: 0, callGex: 0, putGex: 0 };
+            row = { strike: q.strike, netGex: 0, absGex: 0, notionalDelta: 0, callOi: 0, putOi: 0, totalOi: 0, callVolume: 0, putVolume: 0, totalVolume: 0, absGexShare: 0, callGex: 0, putGex: 0, pcRatioOi: null, pcRatioVolume: null };
             byStrike.set(q.strike, row);
         }
         const oi = finiteOr0(q.openInterest);
@@ -1187,12 +1193,14 @@ export function computeBoard(quotes: readonly OptionQuote[], spot: number): Boar
     }
     const rows: BoardRow[] = [];
     let absTotal = 0;
-    for (const r of Array.from(byStrike.values()).sort((a, b) => a.strike - b.strike)) {
-        const { callGex, putGex, ...row } = r;
-        row.netGex = callGex + putGex;
-        row.absGex = callGex - putGex;
+    for (const row of Array.from(byStrike.values()).sort((a, b) => a.strike - b.strike)) {
+        row.netGex = row.callGex + row.putGex;
+        row.absGex = row.callGex - row.putGex;
         row.totalOi = row.callOi + row.putOi;
         row.totalVolume = row.callVolume + row.putVolume;
+        const pcr = pcRatioByStrike(row);
+        row.pcRatioOi = pcr.byOi;
+        row.pcRatioVolume = pcr.byVolume;
         absTotal += row.absGex;
         rows.push(row);
     }
@@ -1200,6 +1208,7 @@ export function computeBoard(quotes: readonly OptionQuote[], spot: number): Boar
     for (const c of BOARD_COLUMNS) peaks[c] = [];
     const best = {} as Record<BoardColumn, BoardRow | null>;
     let netMin: BoardRow | null = null;
+    let putMin: BoardRow | null = null;
     for (const row of rows) {
         row.absGexShare = absTotal > 0 ? row.absGex / absTotal : 0;
         for (const c of BOARD_COLUMNS) {
@@ -1207,12 +1216,14 @@ export function computeBoard(quotes: readonly OptionQuote[], spot: number): Boar
             if (row[c] > 0 && (b === null || row[c] > b[c])) best[c] = row;
         }
         if (row.netGex < 0 && (netMin === null || row.netGex < netMin.netGex)) netMin = row;
+        if (row.putGex < 0 && (putMin === null || row.putGex < putMin.putGex)) putMin = row;
     }
     for (const c of BOARD_COLUMNS) {
         const b = best[c] ?? null;
         if (b) peaks[c].push(b.strike);
     }
     if (netMin) peaks.netGex.push(netMin.strike);
+    if (putMin) peaks.putGex.push(putMin.strike);
     return { rows, peaks, atmStrike: Number.isFinite(spot) ? nearestStrikeTo(rows.map((r) => r.strike), spot) : null };
 }
 
