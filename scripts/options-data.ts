@@ -14,6 +14,9 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t16 - New default list (owner, 2026-10-25), 27 tickers: SPX, NDX, DJX, RUT, IWM, SPY, QQQ, DIA, then NVDA, AAPL, MSFT, AMZN,
+ *        GOOGL, TSM, GOOG, META, AVGO, LLY, MU, WMT, AMD, JPM, V, BRK-B, XOM, ASML, JNJ. XSP removed (SPX and SPY cover it).
+ *        BRK-B is the canonical spelling (file name, Yahoo), Cboe resolves it as BRK.B (live check: Cboe overlay 128/128).
  *   t15 - Every file is written atomically (writeFileAtomic: `<file>.tmp`, then a rename), so a killed run never leaves a
  *        truncated chain, index, chart or zip (review F7). The HISTORY step never throws (archiveHistory, review GEX-M5): a
  *        damaged day zip is started afresh and any other error is printed, so index.json and the charts are still written.
@@ -1288,7 +1291,13 @@ export function mergeUniverse(nasdaq: string[], cboe: string[], size: number): s
  * search hint and the backup preset show it in this order). Index proxies without listed options (COMP is Compass Inc,
  * DJIA a covered call ETF, INDU and NYA have none) stay out: the Dow is DJX and DIA, the Nasdaq NDX and QQQ.
  */
-export const DEFAULT_SYMBOLS: readonly string[] = ['SPX', 'NDX', 'DJX', 'RUT', 'IWM', 'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'TSM', 'META', 'AVGO', 'MU', 'GOOG', 'SPY', 'QQQ', 'DIA', 'XSP'];
+// Indices and ETFs first (the ticker hint starts with them), then the stocks in the owner's order (2026-10-25). BRK-B is the
+// canonical spelling (file name, Yahoo); Cboe gets BRK.B / BRKB through cboeSymbolCandidates. XSP left: SPX and SPY cover it
+// with more volume and tighter spreads.
+export const DEFAULT_SYMBOLS: readonly string[] = [
+    'SPX', 'NDX', 'DJX', 'RUT', 'IWM', 'SPY', 'QQQ', 'DIA',
+    'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'TSM', 'GOOG', 'META', 'AVGO', 'LLY', 'MU', 'WMT', 'AMD', 'JPM', 'V', 'BRK-B', 'XOM', 'ASML', 'JNJ',
+];
 
 /** The default list of this run: the DEFAULT_TICKERS env replaces DEFAULT_SYMBOLS when it is set and not blank. Every run fetches it. */
 export function defaultSymbols(env: Record<string, string | undefined> = process.env): string[] {
