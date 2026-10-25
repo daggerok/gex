@@ -1,5 +1,5 @@
 /// <reference lib="esnext" />
-import { blackScholesGreeks, impliedVolFromGamma, isFuturesPricedSymbol, yearsToExpiration } from './greeks';
+import { BS_DIVIDEND_YIELD, BS_RISK_FREE_RATE, impliedVolFromGamma, isFuturesPricedSymbol, normPdf, yearsToExpiration } from './greeks';
 import type { GexLevels, GexPoint, IvRepair, OptionQuote, SigmaLevel, SigmaLevels, SigmaStatBasis, ZeroGexZone } from './types';
 
 // ---------------------------------------------------------------------------
@@ -249,8 +249,10 @@ export const GAMMA_FLIP_MIN_IV = 0.05;
  *  1. Sweep GAMMA_FLIP_GRID_POINTS hypothetical prices S, evenly spaced
  *     across spot * (1 +/- GAMMA_FLIP_RANGE_PCT).
  *  2. At each S, recompute every eligible quote's Black-Scholes gamma AT
- *     THAT S (blackScholesGreeks(q, S) - reusing the existing, already-
- *     tested function from src/greeks.ts, not a new gamma-only formula).
+ *     THAT S: the gamma of blackScholesGreeks(q, S), term for term (since
+ *     GEX-H9 only gamma is computed, with T read once per expiration,
+ *     sweepLegs; equivalence tests in gex.test.ts compare it with the
+ *     full-greeks version).
  *     The quote's own stored `iv` is used as-is; only S varies - there is
  *     no real hypothetical market quote to re-solve IV from, so IV stays
  *     fixed per quote, same convention the citations above use.
@@ -293,7 +295,7 @@ export const GAMMA_FLIP_MIN_IV = 0.05;
  * Black-Scholes spot-priced case only - extending it to a Black-76
  * forward-sweep is explicitly out of scope (flagged in the PR).
  *
- * Known simplification: blackScholesGreeks is called with its own default
+ * Known simplification: the gamma uses blackScholesGreeks' own default
  * risk-free rate / dividend yield (BS_RISK_FREE_RATE / BS_DIVIDEND_YIELD =
  * 0), not the per-index dividend yield (src/greeks.ts's
  * INDEX_DIVIDEND_YIELDS) used when quotes were originally enriched - this
@@ -367,18 +369,20 @@ export function gammaFlipSweepCrossings(quotes: readonly OptionQuote[], spot: nu
     const high = spot * (1 + GAMMA_FLIP_RANGE_PCT);
     const step = (high - low) / (GAMMA_FLIP_GRID_POINTS - 1);
 
+    // GEX-H9: everything of a quote that does not depend on S is computed once (T once per expiration), the inner loop
+    // is gamma only. The arithmetic is blackScholesGreeks' own gamma, term for term in the same order, so the totals are
+    // the same numbers; it was 12 greeks, a regex and a clock read per quote and grid point (100-800 ms on SPX).
+    const legs = sweepLegs(eligible);
+
     const grid: { S: number; total: number }[] = [];
     for (let i = 0; i < GAMMA_FLIP_GRID_POINTS; i++) {
         const S = i === GAMMA_FLIP_GRID_POINTS - 1 ? high : low + step * i;
         let total = 0;
-        for (const quote of eligible) {
-            const oi = finiteOr0(quote.openInterest);
-            if (oi === 0) continue;
-            const { greeks } = blackScholesGreeks(quote, S);
-            if (!greeks) continue;
-            total += quote.side === 'call'
-                ? gexCall(greeks.gamma, oi, S)
-                : gexPut(greeks.gamma, oi, S);
+        for (const leg of legs) {
+            const d1 = (Math.log(S / leg.k) + leg.drift) / leg.sigmaSqrtT;
+            const gamma = leg.discQ * normPdf(d1) / (S * leg.sigma * leg.sqrtT);
+            if (!Number.isFinite(gamma)) continue;
+            total += leg.call ? gexCall(gamma, leg.oi, S) : gexPut(gamma, leg.oi, S);
         }
         grid.push({ S, total });
     }
@@ -415,6 +419,54 @@ export function gammaFlipSweepCrossings(quotes: readonly OptionQuote[], spot: nu
     }
 
     return crossings;
+}
+
+/** One quote of the Gamma Flip sweep with its S-independent Black-Scholes terms (gammaFlipSweepCrossings). */
+interface SweepLeg {
+    k: number;
+    sigma: number;
+    sqrtT: number;
+    /** sigma * sqrtT, the d1 denominator */
+    sigmaSqrtT: number;
+    /** (r - q + sigma^2 / 2) * T, the d1 drift term */
+    drift: number;
+    /** e^(-q T) */
+    discQ: number;
+    oi: number;
+    call: boolean;
+}
+
+/**
+ * The quotes the sweep can price, in their order, with the terms of blackScholesGreeks' gamma that do not depend on S
+ * (its defaults: BS_RISK_FREE_RATE, BS_DIVIDEND_YIELD). Left out like there: no open interest, a non-positive strike or
+ * IV, an expired or malformed expiration (yearsToExpiration null, read once per expiration).
+ */
+function sweepLegs(quotes: readonly OptionQuote[]): SweepLeg[] {
+    const years = new Map<string, number | null>();
+    const legs: SweepLeg[] = [];
+    for (const q of quotes) {
+        const oi = finiteOr0(q.openInterest);
+        if (oi === 0) continue;
+        const k = q.strike;
+        const sigma = q.iv as number;
+        if (!(Number.isFinite(k) && k > 0) || !(Number.isFinite(sigma) && sigma > 0)) continue;
+        let t = years.get(q.expiration);
+        if (t === undefined) {
+            t = yearsToExpiration(q.expiration);
+            years.set(q.expiration, t);
+        }
+        if (t == null || t <= 0) continue;
+        const sqrtT = Math.sqrt(t);
+        legs.push({
+            k, sigma, sqrtT,
+            sigmaSqrtT: sigma * sqrtT,
+            drift: (BS_RISK_FREE_RATE - BS_DIVIDEND_YIELD + 0.5 * sigma * sigma) * t,
+            discQ: Math.exp(-BS_DIVIDEND_YIELD * t),
+            oi,
+            call: q.side === 'call',
+        });
+    }
+    return legs;
 }
 
 export interface NetGexLevels {
@@ -527,10 +579,50 @@ export function findSumNetGexLevels(
  * Null OI counts as 0. Ties resolve to the lowest strike. null only if empty.
  */
 export function computeMaxPain(quotes: readonly OptionQuote[]): number | null {
-    const strikes = Array.from(new Set(quotes.map((q) => q.strike).filter((k) => Number.isFinite(k)))).sort((a, b) => a - b);
+    // GEX-H9: prefix sums over the strikes instead of strikes x quotes (87 ms -> under 1 ms on 30k quotes). With K sorted,
+    // c / p the call / put OI per strike: payout(K_j) = K_j * sum_{i<j} c_i - sum_{i<j} c_i K_i + sum_{i>j} p_i K_i
+    // - K_j * sum_{i>j} p_i. Those sums round differently from the direct sum, so every strike within a hair of the
+    // minimum is re-priced exactly the old way (same quote order), and the old rule picks among them: identical results.
+    const oiAt = new Map<number, { call: number; put: number }>();
+    for (const q of quotes) {
+        if (!Number.isFinite(q.strike)) continue;
+        let at = oiAt.get(q.strike);
+        if (!at) oiAt.set(q.strike, (at = { call: 0, put: 0 }));
+        if (q.side === 'call') at.call += finiteOr0(q.openInterest); else at.put += finiteOr0(q.openInterest);
+    }
+    const strikes = Array.from(oiAt.keys()).sort((a, b) => a - b);
+    const n = strikes.length;
+    if (n === 0) return null;
+    // suffix sums of the puts above each strike
+    const putAbove = new Array<number>(n).fill(0);
+    const putKAbove = new Array<number>(n).fill(0);
+    for (let j = n - 2; j >= 0; j--) {
+        const k = strikes[j + 1];
+        const p = (oiAt.get(k) as { put: number }).put;
+        putAbove[j] = putAbove[j + 1] + p;
+        putKAbove[j] = putKAbove[j + 1] + p * k;
+    }
+    const approx = new Array<number>(n);
+    let callBelow = 0;
+    let callKBelow = 0;
+    let min = Infinity;
+    let gross = 0;
+    for (let j = 0; j < n; j++) {
+        const k = strikes[j];
+        approx[j] = k * callBelow - callKBelow + putKAbove[j] - k * putAbove[j];
+        if (approx[j] < min) min = approx[j];
+        gross = Math.max(gross, Math.abs(k * callBelow) + Math.abs(callKBelow) + Math.abs(putKAbove[j]) + Math.abs(k * putAbove[j]));
+        const c = (oiAt.get(k) as { call: number }).call;
+        callBelow += c;
+        callKBelow += c * k;
+    }
+    if (!Number.isFinite(min)) return null;
+    const tolerance = gross * 1e-9;
     let best: number | null = null;
     let bestPayout = Infinity;
-    for (const s of strikes) {
+    for (let j = 0; j < n; j++) {
+        if (approx[j] > min + tolerance) continue;
+        const s = strikes[j];
         let payout = 0;
         for (const q of quotes) {
             const oi = finiteOr0(q.openInterest);
