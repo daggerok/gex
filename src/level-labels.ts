@@ -63,3 +63,39 @@ export function labelLayout(group: LevelLabelGroup): 'inline' | 'stacked' {
     const joined = group.items.map((i) => i.text).join(LEVEL_LABEL_SEPARATOR);
     return joined.length > MAX_INLINE_LABEL_CHARS ? 'stacked' : 'inline';
 }
+
+/** A price line label of the Chart tab: a level's key, its price and its title. */
+export interface PriceLineLabel {
+    key: string;
+    value: number;
+    text: string;
+}
+
+/**
+ * Chart tab labels with the Sigma levels (owner 2026-10-25: Sigma labels never overlap the other level labels and go
+ * through the same grouping as on the GEX chart). The levels keep one price line each (the chart library stacks their
+ * labels at the price axis). A Sigma strike on the price of a shown level joins that level's title in the same group
+ * order, "Max Net GEX + 1σ", and gets no label of its own. The other Sigma strikes get one label per strike,
+ * "<strike> 1σ" (or "<strike> 1σ + 2σ" when two steps snap to one strike), drawn as a price line without a line.
+ * `levels` and `sigma` are in display order (levels in their fixed order, Sigma by strike then step).
+ */
+export function chartLabelsWithSigma(
+    levels: readonly PriceLineLabel[],
+    sigma: readonly PriceLineLabel[],
+    strikeText: (value: number) => string,
+): { titles: Record<string, string>; sigma: PriceLineLabel[] } {
+    const sigmaKeys = new Set(sigma.map((s) => s.key));
+    const groups = groupLevelLabels([...levels, ...sigma].map((l) => ({ ...l, color: '' })));
+    const titles: Record<string, string> = {};
+    for (const l of levels) titles[l.key] = l.text;
+    const own: PriceLineLabel[] = [];
+    for (const g of groups) {
+        const steps = g.items.filter((i) => sigmaKeys.has(i.key));
+        if (steps.length === 0) continue;
+        const host = g.items.find((i) => !sigmaKeys.has(i.key));
+        const joined = steps.map((i) => i.text).join(LEVEL_LABEL_SEPARATOR);
+        if (host) titles[host.key] = `${host.text}${LEVEL_LABEL_SEPARATOR}${joined}`;
+        else own.push({ key: steps[0].key, value: g.value, text: `${strikeText(g.value)} ${joined}` });
+    }
+    return { titles, sigma: own };
+}

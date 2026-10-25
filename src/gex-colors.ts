@@ -26,7 +26,11 @@
  * comment, and the corresponding math/field removal in src/gex.ts/
  * src/types.ts, done in a separate PR).
  */
-export type GexLevelKey = 'maxNetGex' | 'netGexPlus' | 'gammaFlip' | 'zeroGex' | 'minNetGex' | 'netGexMinus' | 'sumNetGexPlus' | 'sumNetGexMinus' | 'maxPain' | 'maxAbsGamma' | 'spot';
+export type GexLevelKey = 'maxNetGex' | 'netGexPlus' | 'gammaFlip' | 'zeroGex' | 'minNetGex' | 'netGexMinus' | 'sumNetGexPlus' | 'sumNetGexMinus' | 'maxPain' | 'maxAbsGamma' | 'sigma' | 'spot';
+
+/** Every level key with ONE price in GexLevels (`levels[key]` is a number or null). `sigma` is a ladder of six strikes
+ *  (GexLevels.sigma), read through its own helpers in level-prefs.ts. */
+export type PriceLevelKey = Exclude<GexLevelKey, 'sigma'>;
 
 export interface GexLevelColor {
     hex: string;
@@ -44,6 +48,9 @@ export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
     sumNetGexMinus: { hex: '#f472b6', dot: 'bg-pink-400' },   // pink-400
     maxPain: { hex: '#facc15', dot: 'bg-yellow-400' },   // yellow-400
     maxAbsGamma: { hex: '#60a5fa', dot: 'bg-blue-400' }, // blue-400 (the AG series is blue too)
+    // Sigma levels (all six, both modes): one grey, readable on the white and the dark card (owner 2026-10-25: grey and
+    // dotted, 1σ / 2σ / 3σ told apart by their labels only)
+    sigma: { hex: '#64748b', dot: 'bg-slate-500' },     // slate-500
     spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
 };
 
@@ -166,6 +173,7 @@ export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
     sumNetGexMinus: GEX_LEVEL_COLORS.sumNetGexMinus.hex,
     maxPain: GEX_LEVEL_COLORS.maxPain.hex,
     maxAbsGamma: GEX_LEVEL_COLORS.maxAbsGamma.hex,
+    sigma: GEX_LEVEL_COLORS.sigma.hex,
     spot: GEX_LEVEL_COLORS.spot.hex,
 };
 

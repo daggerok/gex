@@ -12,7 +12,7 @@ import { FadePresence } from '../components/FadePresence';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { LevelsPanel } from '../components/LevelsPanel';
 import { ToggleChip } from '../components/ToggleChip';
-import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, zeroGexDisplay, type ToggleableLevelKey } from '../level-prefs';
+import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPrice, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, netGexView, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
@@ -548,6 +548,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // Which levels are on and their colours are shared with the Chart tab (level-prefs.ts)
     const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
     const zeroArea = zeroGexDisplay.use() === 'area';
+    const sigmaView = sigmaMode.use();
     const resetLevelsPanel = () => resetLevelPrefs();
 
     const levelLabel = (key: ToggleableLevelKey): string => tr(LEVEL_LABEL_KEY[key]);
@@ -1164,7 +1165,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // price descending (see `.sort()` at the JSX usage site) - this array's
     // build order is otherwise unused for display purposes, only for feeding
     // that sort.
-    const keyLevels: Array<{ key: ToggleableLevelKey; label: string; value: number | null; optional?: boolean; suffix?: string }> = [
+    const keyLevels: Array<{ key: ToggleableLevelKey; id?: string; label: string; value: number | null; optional?: boolean; suffix?: string }> = [
         { key: 'maxNetGex', label: levelLabel('maxNetGex'), value: levels?.maxNetGex ?? null },
         { key: 'netGexPlus', label: levelLabel('netGexPlus'), value: levels?.netGexPlus ?? null, optional: true },
         { key: 'gammaFlip', label: levelLabel('gammaFlip'), value: levels?.gammaFlip ?? null },
@@ -1177,6 +1178,10 @@ export const GexView: React.FC<GexViewProps> = ({
         { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
         // Max AG exists only while the AG metric is on (a null optional level is left out of the tables)
         { key: 'maxAbsGamma', label: levelLabel('maxAbsGamma'), value: metrics.includes('absoluteGamma') ? levels?.maxAbsGamma ?? null : null, optional: true },
+        // Sigma: one row per strike of the chosen mode ("Sigma +1σ"), only while the Sigma level is on (off by default)
+        ...(selectedLevels.includes('sigma') ? sigmaLines(levels, sigmaView).map((l) => ({
+            key: 'sigma' as const, id: l.key, label: `${levelLabel('sigma')} ${l.level.side > 0 ? '+' : '−'}${l.text}`, value: l.strike, optional: true,
+        })) : []),
     ];
 
     // Values panel open/closed: per-viewer convenience, remembered in localStorage
@@ -1203,7 +1208,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // Spot, Gamma Flip), or none for a level without a price.
     const valueRows = levelRows.map((l) => {
         const hit = l.value != null ? pointAtPrice(profile, l.value) : null;
-        return { key: l.key, point: hit ? hit.point : null, exact: hit ? hit.exact : true, pc: hit ? pcRatioByStrike(hit.point) : null };
+        return { key: l.id ?? l.key, point: hit ? hit.point : null, exact: hit ? hit.exact : true, pc: hit ? pcRatioByStrike(hit.point) : null };
     });
 
     // Cursor table rows: the profile row of the strike under the mouse (or the tapped one on a touch screen),
@@ -1403,7 +1408,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                 <span className="font-medium">{tr('gex.values.strike')}</span>
                             </div>
                             {levelRows.map((l) => (
-                                <div key={l.key} className={`flex ${LEVEL_ROW_H} items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/50 px-3 text-sm last:border-0`}>
+                                <div key={l.id ?? l.key} className={`flex ${LEVEL_ROW_H} items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/50 px-3 text-sm last:border-0`}>
                                     <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
                                         <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${GEX_LEVEL_COLORS[l.key].dot}`} aria-hidden="true" />
                                         {l.label}
@@ -1854,7 +1859,13 @@ export const GexView: React.FC<GexViewProps> = ({
                                         for (const key of ALL_LEVEL_KEYS) {
                                             if (!selectedLevels.includes(key)) continue;
                                             if (key === 'maxAbsGamma' && !metrics.includes('absoluteGamma')) continue;
-                                            const value = levels?.[key];
+                                            // Sigma: six strikes of the chosen mode, labelled 1σ / 2σ / 3σ, through the same label grouping
+                                            // (a Sigma strike on Max Net GEX reads "Max Net GEX + 1σ")
+                                            if (key === 'sigma') {
+                                                for (const l of sigmaLines(levels, sigmaView)) drawn.push({ key: l.key, value: l.strike, text: l.text, color: levelColors.sigma });
+                                                continue;
+                                            }
+                                            const value = levelPrice(levels, key);
                                             if (value == null) continue;
                                             drawn.push({ key, value, text: levelChartLabel(key), color: levelColors[key] });
                                         }
@@ -1883,7 +1894,8 @@ export const GexView: React.FC<GexViewProps> = ({
                                                     key={item.key}
                                                     x={item.value}
                                                     stroke={item.color}
-                                                    strokeDasharray="2 4"
+                                                    // Sigma levels are dotted (owner), the others dashed
+                                                    strokeDasharray={item.key.startsWith('sigma:') ? '1 3' : '2 4'}
                                                     label={group ? renderRotatedLevelLabel(group) : undefined}
                                                 />
                                             );

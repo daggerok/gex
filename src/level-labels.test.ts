@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { groupLevelLabels, groupNearLevelLabels, labelLayout, MAX_INLINE_LABEL_CHARS, type LevelLabelItem } from './level-labels';
+import { chartLabelsWithSigma, groupLevelLabels, groupNearLevelLabels, labelLayout, MAX_INLINE_LABEL_CHARS, type LevelLabelItem } from './level-labels';
 
 const item = (key: string, value: number, text: string): LevelLabelItem => ({ key, value, text, color: '#000' });
 
@@ -82,5 +82,38 @@ describe('labelLayout', () => {
     const base = 'A'.repeat(MAX_INLINE_LABEL_CHARS - 3 - 1); // + ' + ' + 1 char
     expect(labelLayout({ value: 1, items: [item('a', 1, base), item('b', 1, 'B')] })).toBe('inline');
     expect(labelLayout({ value: 1, items: [item('a', 1, base + 'A'), item('b', 1, 'B')] })).toBe('stacked');
+  });
+});
+
+describe('Sigma labels', () => {
+  const pl = (key: string, value: number, text: string) => ({ key, value, text });
+
+  test('GEX chart: a Sigma strike on Max Net GEX shares one label "Max Net GEX + 1σ"', () => {
+    const groups = groupLevelLabels([item('maxNetGex', 7770, 'Max Net GEX'), item('sigma:+1', 7770, '1σ'), item('sigma:+2', 7850, '2σ')]);
+    expect(groups.map((g) => [g.value, g.items.map((i) => i.text).join(' + ')])).toEqual([[7770, 'Max Net GEX + 1σ'], [7850, '2σ']]);
+  });
+
+  test('GEX chart: close Sigma and level labels join in price order, lowest first', () => {
+    const groups = groupNearLevelLabels([item('sigma:+1', 7772, '1σ'), item('maxNetGex', 7770, 'Max Net GEX'), item('sigma:-1', 7620, '1σ')], 5);
+    expect(groups.map((g) => g.items.map((i) => i.text))).toEqual([['1σ'], ['Max Net GEX', '1σ']]);
+  });
+
+  test('Chart tab: a Sigma strike on a shown level joins its title, the others get "<strike> 1σ", none is lost', () => {
+    const out = chartLabelsWithSigma(
+      [pl('maxNetGex', 7770, 'Max Net GEX'), pl('spot', 7700.5, 'Spot')],
+      [pl('sigma:+2', 7850, '2σ'), pl('sigma:+1', 7770, '1σ'), pl('sigma:-1', 7620, '1σ')],
+      (v) => String(v),
+    );
+    expect(out.titles).toEqual({ maxNetGex: 'Max Net GEX + 1σ', spot: 'Spot' });
+    expect(out.sigma).toEqual([pl('sigma:+2', 7850, '7850 2σ'), pl('sigma:-1', 7620, '7620 1σ')]);
+  });
+
+  test('Chart tab: two Sigma steps on one strike are one label, in step order', () => {
+    const out = chartLabelsWithSigma([], [pl('sigma:+2', 102, '2σ'), pl('sigma:+3', 102, '3σ')], (v) => String(v));
+    expect(out.sigma).toEqual([pl('sigma:+2', 102, '102 2σ + 3σ')]);
+  });
+
+  test('Chart tab: no Sigma keeps every title as it is', () => {
+    expect(chartLabelsWithSigma([pl('maxPain', 100, 'Max Pain')], [], String)).toEqual({ titles: { maxPain: 'Max Pain' }, sigma: [] });
   });
 });
