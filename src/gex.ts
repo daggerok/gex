@@ -1088,6 +1088,7 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
     const gammaFlip = gammaFlipUnavailable ? null : nearestGammaFlip(crossings, spot);
     return {
         spot,
+        profile,
         gammaFlip,
         gammaFlipPos,
         gammaFlipNeg,

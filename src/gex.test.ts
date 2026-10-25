@@ -570,9 +570,16 @@ describe('computeGexLevels (7.7)', () => {
     expect(levels.totalNetGex).toBeCloseTo(210000, 6);
   });
 
+  test('the profile it returns is the one its levels come from (GEX-M3: the view draws it, no second profile)', () => {
+    const levels = computeGexLevels(FIXTURE, SPOT);
+    expect(levels.profile).toEqual(computeGexProfile(FIXTURE, SPOT));
+    expect(levels.maxNetGex).toBe(levels.profile.reduce((best, p) => (p.netGex > best.netGex ? p : best)).strike);
+  });
+
   test('empty chain slice', () => {
     expect(computeGexLevels([], SPOT)).toEqual({
       spot: SPOT,
+      profile: [],
       gammaFlip: null,
       gammaFlipPos: null,
       gammaFlipNeg: null,
