@@ -14,6 +14,11 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t12 - HTTP errors fail the ticker instead of writing a partial chain or a false "no options" (review GEX-C1, GEX-H3): a
+ *        rate limit, an HTTP >= 400 answer (not 404), a timeout or a non-JSON page on any expiration fails the ticker, so its
+ *        old file stays and RATE_LIMIT_HITS can halt the run. Only an answer of the wrong shape skips that one date, and the
+ *        date is left out of `expirations`. "No options" (skiplist) only when the chain is really empty. A failed crumb request
+ *        is no longer used as the crumb, and a 404 (a spelling Yahoo does not know) is not retried with a new session.
  *   t11 - The default list is always fetched. TICKERS no longer replaces it, it ADDS tickers on top of it (a workflow can
  *        hardcode the tickers being traded and they get refreshed with the defaults); the new env DEFAULT_TICKERS replaces the
  *        default list itself (rarely needed; DEFAULT_TICKERS="SPY" TICKERS= runs SPY alone). `all` still discovers the auto-universe,
@@ -656,6 +661,16 @@ export class YahooRateLimitError extends Error {
     }
 }
 
+/** Yahoo answered an options request with HTTP >= 400 (not 404): the ticker fails and its old file stays (GEX-H3). */
+export class YahooHttpError extends Error {
+    constructor(readonly status: number, url: string) {
+        super(`HTTP ${status} from Yahoo for ${url}`);
+    }
+}
+
+/** A 200 answer of the wrong shape for one expiration (yfinance-style messages): only that date is skipped (GEX-C1). */
+export class YahooShapeError extends Error {}
+
 interface YahooSession {
     cookie: string;
     crumb: string | null;
@@ -692,7 +707,8 @@ async function newYahooSession(): Promise<YahooSession> {
     });
     const text = await res.text();
     if (res.status === 429 || text.includes("Too Many Requests")) throw new YahooRateLimitError();
-    const crumb = text && !text.includes("<html>") ? text : null;
+    // an error answer (401 JSON, 5xx page) is never a crumb: sending it would fail every request of the session
+    const crumb = res.ok && text && !text.includes("<html>") ? text : null;
     return { cookie, crumb };
 }
 
@@ -722,7 +738,7 @@ async function ensureYahooSession(stale: YahooSession | null, onRateLimit: (old:
     return yahooSessionFlight;
 }
 
-/** yfinance YfData.get: crumb + cookie, one retry with a fresh session on HTTP >= 400, 429 -> error. */
+/** yfinance YfData.get: crumb + cookie, one retry with a fresh session on HTTP >= 400 except 404 (a definite "no such symbol"), 429 -> error. */
 export async function yahooGet(url: string, timeoutMs = 30000): Promise<{ status: number; text: string }> {
     const first = await ensureYahooSession(null, () => ({ cookie: "", crumb: null }));
     const withCrumb = (s: YahooSession) =>
@@ -735,7 +751,7 @@ export async function yahooGet(url: string, timeoutMs = 30000): Promise<{ status
         return { status: res.status, text: await res.text() };
     };
     let r = await doGet(first);
-    if (r.status >= 400) {
+    if (r.status >= 400 && r.status !== 404) {
         const fresh = await ensureYahooSession(first, (old) => ({ cookie: old?.cookie ?? "", crumb: null }));
         r = await doGet(fresh);
         if (r.status === 429) throw new YahooRateLimitError();
@@ -770,11 +786,13 @@ export class YahooTicker {
             ? `${YAHOO_BASE}/v7/finance/options/${this.ticker}`
             : `${YAHOO_BASE}/v7/finance/options/${this.ticker}?date=${date}`;
         const r = await yahooGet(url);
+        // a 401 or 5xx JSON body has no optionChain and read as "no options" (GEX-H3); 404 stays "not this spelling"
+        if (r.status >= 400 && r.status !== 404) throw new YahooHttpError(r.status, url);
         const j = JSON.parse(r.text) as YahooOptionsResponse;
         const oc = j.optionChain === undefined ? {} : j.optionChain;
-        if (oc === null) throw new TypeError("'NoneType' object has no attribute 'get'");
+        if (oc === null) throw new YahooShapeError("'NoneType' object has no attribute 'get'");
         const result = oc.result === undefined ? [] : oc.result;
-        if (result === null) throw new TypeError("object of type 'NoneType' has no len()");
+        if (result === null) throw new YahooShapeError("object of type 'NoneType' has no len()");
         if (result.length > 0) {
             const first = result[0];
             for (const exp of first.expirationDates as number[]) this.expirations.set(expirationLabel(exp), exp);
@@ -795,7 +813,7 @@ export class YahooTicker {
     async optionChain(date: string): Promise<{ calls: Array<Record<string, unknown>> | null; puts: Array<Record<string, unknown>> | null }> {
         if (this.expirations.size === 0) await this.downloadOptions();
         if (!this.expirations.has(date)) {
-            throw new Error(
+            throw new YahooShapeError(
                 `Expiration \`${date}\` cannot be found. Available expirations are: [${Array.from(this.expirations.keys()).join(", ")}]`,
             );
         }
@@ -803,8 +821,8 @@ export class YahooTicker {
         if (Object.keys(options).length === 0) return { calls: null, puts: null };
         const calls = options.calls as Array<Record<string, unknown>> | undefined;
         const puts = options.puts as Array<Record<string, unknown>> | undefined;
-        if (calls === undefined) throw new Error("'calls'");
-        if (puts === undefined) throw new Error("'puts'");
+        if (calls === undefined) throw new YahooShapeError("'calls'");
+        if (puts === undefined) throw new YahooShapeError("'puts'");
         return { calls, puts };
     }
 
@@ -1354,29 +1372,41 @@ export async function fetchTicker(symbolIn: string): Promise<Payload | null> {
     const exps = resolved.exps.slice(0, cfg.MAX_EXPIRATIONS);
 
     const quotes: Quote[] = [];
+    const fetched: string[] = [];
+    const skipped: string[] = [];
     for (const exp of exps) {
         let ch;
         try {
             ch = await t.optionChain(exp);
         } catch (e) {
-            logErr(`SKIP_EXPIRATION ${symbol} ${exp}: ${e instanceof Error ? e.message : e}`);
+            // Only an answer of the wrong shape skips the date. A rate limit, an HTTP error, a timeout or a page that is not
+            // JSON fails the whole ticker, so its previous file stays instead of a partial chain (GEX-C1)
+            if (!(e instanceof YahooShapeError)) throw e;
+            logErr(`SKIP_EXPIRATION ${symbol} ${exp}: ${e.message}`);
+            skipped.push(exp);
             continue;
         }
         if (!ch.calls) throw new Error("'NoneType' object has no attribute 'iterrows'");
         quotes.push(...rowsFromChain(ch.calls, exp, "call"));
         quotes.push(...rowsFromChain(ch.puts!, exp, "put"));
+        fetched.push(exp);
     }
-    if (!quotes.length) return null;
+    // "no options" (skiplist) only when the chain really is empty, never because every date failed
+    if (!quotes.length) {
+        if (skipped.length) throw new Error(`no expiration of ${symbol} could be read (${skipped.length} skipped)`);
+        return null;
+    }
 
     const spot = await t.lastClose();
     const cboeRows = await fetchCboeGreeks(symbol, matched);
     // Later expirations of the previous file are kept as they were, except that the Cboe overlay of this request also
     // reaches them (it covers the whole chain). Without Cboe rows they are left exactly as stored.
-    const kept = cfg.KEEP_EXPIRATIONS ? keepLaterExpirations(exps, readPreviousChain(symbol)) : { expirations: [], quotes: [] };
+    // a skipped date is left out of the expirations (it has no quotes), the later ones stay
+    const kept = cfg.KEEP_EXPIRATIONS ? keepLaterExpirations(fetched, readPreviousChain(symbol)) : { expirations: [], quotes: [] };
     const all = [...quotes, ...kept.quotes];
     const greeks = applyCboeRows(cboeRows.size ? all : quotes, cboeRows, cfg.CBOE_GREEKS);
 
-    return { symbol, updated: nowIso(), date: marketDay(), underlyingPrice: spot, greeks, expirations: [...exps, ...kept.expirations], quotes: all };
+    return { symbol, updated: nowIso(), date: marketDay(), underlyingPrice: spot, greeks, expirations: [...fetched, ...kept.expirations], quotes: all };
 }
 
 // ---- Cache files, freshness and skiplist ------------------------------------------
