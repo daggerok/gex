@@ -3,6 +3,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   CONTRACT_MULTIPLIER,
+  CONTRACT_MULTIPLIER_BY_FUTURES_ROOT,
+  contractMultiplier,
+  futuresRoot,
   GAMMA_FLIP_GRID_POINTS,
   GAMMA_FLIP_RANGE_PCT,
   NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT,
@@ -1309,5 +1312,54 @@ describe('boardPeakMarks (Desk scroll marks: the peaks and runner-ups of one exp
     }
     for (const m of Array.from(marks.values())) for (const c of m.peaks) expect(m.seconds).not.toContain(c);
     expect(boardPeakMarks([], 100, ['netGex']).size).toBe(0);
+  });
+});
+
+describe('contract multiplier per symbol (futures options, LOCAL-ONLY TradingView files)', () => {
+  test('the table: E-mini / Micro point values, every other symbol 100', () => {
+    expect(CONTRACT_MULTIPLIER_BY_FUTURES_ROOT).toEqual({ ES: 50, MES: 5, NQ: 20, MNQ: 2, YM: 5, MYM: 0.5, RTY: 50, M2K: 5 });
+    expect(['/ES', 'ES1!', ' /mes ', 'mes1!', '/NQ', 'MNQ1!', '/YM', 'MYM1!', '/RTY', 'M2K1!'].map(contractMultiplier)).toEqual([50, 50, 5, 5, 20, 2, 5, 0.5, 50, 5]);
+    expect(['SPX', 'SPY', 'AAPL', null, undefined, ''].map(contractMultiplier)).toEqual([100, 100, 100, 100, 100, 100]);
+  });
+
+  test('only the futures forms are futures: a bare ES is the Eversource stock (100 shares), unknown roots stay 100', () => {
+    expect(futuresRoot('ES')).toBeNull();
+    expect(contractMultiplier('ES')).toBe(100);
+    expect(futuresRoot('/CL')).toBeNull();
+    expect(futuresRoot('ESZ2026')).toBeNull();
+    expect(futuresRoot('M2K1!')).toBe('M2K');
+    expect(futuresRoot('/ES')).toBe('ES');
+  });
+
+  test('gexCall / gexPut take the multiplier, 100 by default', () => {
+    // 0.02 * 10 * 50 * 50^2 * 0.01 = 250
+    expect(gexCall(0.02, 10, 50, 50)).toBeCloseTo(250, 9);
+    expect(gexPut(0.02, 10, 50, 50)).toBeCloseTo(-250, 9);
+    expect(gexCall(0.02, 10, 50)).toBeCloseTo(500, 9);
+  });
+
+  test('levels unchanged, every $ value scaled by multiplier / 100 (ES 0.5, NQ 0.2, YM 0.05)', () => {
+    const base = computeGexLevels(FIXTURE, SPOT, 'SPX');
+    for (const [sym, f] of [['/ES', 0.5], ['NQ1!', 0.2], ['/YM', 0.05]] as const) {
+      const lv = computeGexLevels(FIXTURE, SPOT, sym);
+      expect([lv.maxNetGex, lv.minNetGex, lv.netGexPlus, lv.netGexMinus, lv.sumNetGexPlus, lv.sumNetGexMinus, lv.maxPain, lv.maxAbsGamma, lv.zeroGex, lv.pcRatioOi])
+        .toEqual([base.maxNetGex, base.minNetGex, base.netGexPlus, base.netGexMinus, base.sumNetGexPlus, base.sumNetGexMinus, base.maxPain, base.maxAbsGamma, base.zeroGex, base.pcRatioOi]);
+      // 210000 at 100 per point (computeGexLevels (7.7) above)
+      expect(lv.totalNetGex).toBeCloseTo(210000 * f, 6);
+      lv.profile.forEach((p, i) => expect(p.absGamma).toBeCloseTo(base.profile[i].absGamma * f, 6));
+    }
+    expect(computeGexLevels(FIXTURE, SPOT, 'ES').totalNetGex).toBeCloseTo(210000, 6);
+  });
+
+  test('the Board scales its money columns, not its counts', () => {
+    const one = [{ ...q(EXP_A, 'call', 100, 10), delta: 0.5 }];
+    const b100 = computeBoard(one, SPOT);
+    const b50 = computeBoard(one, SPOT, contractMultiplier('/ES'));
+    // gex 0.01 * 10 * 50 * 100^2 * 0.01 = 500 (1000 at 100); delta 0.5 * 10 * 50 * 100 = 25000
+    expect(b50.rows[0].netGex).toBeCloseTo(500, 9);
+    expect(b100.rows[0].netGex).toBeCloseTo(1000, 9);
+    expect(b50.rows[0].notionalDelta).toBeCloseTo(25000, 9);
+    expect(b50.rows[0].totalOi).toBe(10);
+    expect(b50.rows[0].absGexShare).toBe(1);
   });
 });
