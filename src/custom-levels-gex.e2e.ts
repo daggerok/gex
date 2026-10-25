@@ -106,20 +106,26 @@ try {
         await page.mouse.move(p.x + 260, p.y + 10, { steps: 6 });
         assert.equal(await page.locator('.recharts-reference-area').count(), 0, 'no range selection after a right click');
         await page.mouse.move(p.x, p.y);
-        // the proposed colour follows the price: a strike above the spot (778.57 for SPY) is greenish, below it reddish
+        // the proposed colour follows the price: a strike above the spot is greenish, below it reddish. Which side the
+        // middle of the plot is on depends on the cached SPY file, so the side is read from the default name (checked
+        // against SPOT above), and the second click goes to the other edge of the plot so both colours are covered
         const swatchHex = () => page.locator('button[aria-label="Level colour"]').evaluate((e: HTMLElement) => {
             const m = /(\d+), (\d+), (\d+)/.exec(getComputedStyle(e).backgroundColor)!;
             return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
         });
-        assert.ok(ABOVE.includes(await swatchHex()), 'a level above the price starts greenish');
+        const sideColours = async () => ((await editor(page).inputValue()) === NAMES.above ? { palette: ABOVE, what: 'a level above the price starts greenish' } : { palette: BELOW, what: 'a level below the price starts reddish' });
+        const firstSide = await sideColours();
+        assert.ok(firstSide.palette.includes(await swatchHex()), firstSide.what);
         await page.keyboard.press('Escape');
         const box = (await page.locator('.recharts-wrapper').first().boundingBox())!;
-        const low = { x: box.x + box.width * 0.3, y: p.y };
-        await page.mouse.move(low.x - 20, low.y);
-        await page.mouse.move(low.x, low.y, { steps: 6 });
+        const other = { x: box.x + box.width * (firstSide.palette === ABOVE ? 0.15 : 0.85), y: p.y };
+        await page.mouse.move(other.x - 20, other.y);
+        await page.mouse.move(other.x, other.y, { steps: 6 });
         await page.waitForTimeout(250);
-        await page.mouse.click(low.x, low.y, { button: 'right' });
-        assert.ok(BELOW.includes(await swatchHex()), 'a level below the price starts reddish');
+        await page.mouse.click(other.x, other.y, { button: 'right' });
+        const secondSide = await sideColours();
+        assert.notEqual(secondSide.palette, firstSide.palette, 'the other edge of the plot is on the other side of the price');
+        assert.ok(secondSide.palette.includes(await swatchHex()), secondSide.what);
         await page.keyboard.press('Escape');
         await gexPoint(page);
         await page.mouse.click(p.x, p.y, { button: 'right' });
