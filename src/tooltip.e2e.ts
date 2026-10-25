@@ -50,7 +50,7 @@ async function main(): Promise<void> {
         const tip = page.locator(`[id="${tipId}"]`);
         assert.equal(await tip.evaluate((e) => getComputedStyle(e).opacity), '1', 'the Zero GEX tooltip is shown on hover');
         const text = await tip.innerText();
-        assert.ok(/LEFT \(lower\) strike/.test(text) && /RIGHT \(upper\)/.test(text) && /switch on the left/.test(text), `Zero GEX tooltip: ${text}`);
+        assert.ok(/LEFT \(lower\) strike/.test(text) && /RIGHT \(upper\)/.test(text) && /switch on the left/.test(text) && /highest average Absolute Gamma/.test(text), `Zero GEX tooltip: ${text}`);
         assert.equal(await chip.getAttribute('title'), null, 'no native title on the chip');
         assert.deepEqual(errors, [], 'no page errors');
         console.log('tooltip e2e: ok');

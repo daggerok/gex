@@ -837,6 +837,39 @@ describe('findZeroGex (Zero GEX, the owner\'s method)', () => {
     expect(down.zeroGex).toBe(110);
   });
 
+  // several sign changes (owner 2026-10-25): the zone with the highest average AG of its two strikes
+  const pa = (strike: number, netGex: number, absGamma: number) => ({ strike, netGex, absGamma } as unknown as Parameters<typeof findZeroGex>[0][number]);
+
+  test('one candidate between the walls: the same zone as before, whatever its AG', () => {
+    const profile = [pa(90, -30, 1), pa(95, -5, 1), pa(100, 4, 1), pa(105, 10, 1)];
+    expect(findZeroGex(profile, -21)).toEqual({ zeroGex: 100, zeroGexZone: { low: 95, high: 100 } });
+  });
+
+  test('several candidates walking up (negative total): the highest average AG wins, the line on its right strike', () => {
+    // Min Net GEX 95 (-30), Max Net GEX 130 (+20). Candidates: 100->105 avg AG (2+4)/2 = 3, 110->115 (9+7)/2 = 8,
+    // 120->125 (1+1)/2 = 1 -> 110/115, line 115. (The SPX case of 2026-10-23 had the same shape: 7750/7755 won.)
+    const profile = [pa(95, -30, 5), pa(100, -2, 2), pa(105, 1, 4), pa(110, -6, 9), pa(115, 2, 7), pa(120, -1, 1), pa(125, 1, 1), pa(130, 20, 3)];
+    expect(findZeroGex(profile, -15)).toEqual({ zeroGex: 115, zeroGexZone: { low: 110, high: 115 } });
+  });
+
+  test('several candidates walking down (positive total): the highest average AG wins, the line on its left strike', () => {
+    // Max Net GEX 130 (+30), Min Net GEX 95 (-8). Walking down: 120->115 avg (2+2)/2 = 2, 110->105 (6+8)/2 = 7 -> 105/110
+    const profile = [pa(95, -8, 1), pa(100, -1, 1), pa(105, -2, 8), pa(110, 3, 6), pa(115, -1, 2), pa(120, 4, 2), pa(130, 30, 9)];
+    expect(findZeroGex(profile, 25)).toEqual({ zeroGex: 105, zeroGexZone: { low: 105, high: 110 } });
+  });
+
+  test('equal average AG: the candidate nearest to the starting wall', () => {
+    // walking up from 95: 100->105 avg 3 and 110->115 avg 3 -> the first one met
+    const profile = [pa(95, -30, 5), pa(100, -2, 2), pa(105, 1, 4), pa(110, -6, 4), pa(115, 2, 2), pa(130, 20, 3)];
+    expect(findZeroGex(profile, -15)).toEqual({ zeroGex: 105, zeroGexZone: { low: 100, high: 105 } });
+  });
+
+  test('the walk stops at the opposite wall: a sign change beyond it is not a candidate', () => {
+    // walking up from 95 to the Max Net GEX at 110; the change 115->120 lies beyond it
+    const profile = [pa(95, -30, 1), pa(100, -1, 1), pa(110, 20, 1), pa(115, -1, 50), pa(120, 5, 50)];
+    expect(findZeroGex(profile, -7)).toEqual({ zeroGex: 110, zeroGexZone: { low: 100, high: 110 } });
+  });
+
   test('no sign change in the walking direction -> null', () => {
     expect(findZeroGex([pt(90, 1), pt(95, 2), pt(100, 3)], 6)).toEqual({ zeroGex: null, zeroGexZone: null });
     // positive total, the only negative strike is ABOVE the max: walking down never meets it

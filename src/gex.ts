@@ -700,39 +700,56 @@ export interface ZeroGexLevel {
  * the per-strike Net GEX profile at the real spot. Both are shown, side by side, as separate levels.
  *
  *  - Total Net GEX > 0: start at the Max Net GEX strike (largest positive netGex, ties to the lowest strike) and walk DOWN
- *    the strikes; the first strike with netGex < 0 marks the flip
- *  - Total Net GEX < 0: start at the Min Net GEX strike (most negative netGex, ties to the lowest strike) and walk UP; the
- *    first strike with netGex > 0 marks the flip
+ *    towards the Min Net GEX strike; every step from a positive strike to a negative one is a candidate
+ *  - Total Net GEX < 0: start at the Min Net GEX strike (most negative netGex, ties to the lowest strike) and walk UP
+ *    towards the Max Net GEX strike; every step from a negative strike to a positive one is a candidate
+ *  - the walk ends at that opposite wall (inclusive); when the opposite wall is not in the walking direction (or there is
+ *    none) it runs to the end of the chain
  *  - no noise threshold (owner: "first bar of the other sign"); a strike with netGex exactly 0 is neither sign and is
  *    walked over
+ *  - one candidate: that one. Several (owner 2026-10-25): the one whose two strikes have the highest AVERAGE Absolute
+ *    Gamma (absGamma, the strongest hedging zone); a tie goes to the one nearest to the starting wall (met first). SPX
+ *    2026-10-23, first 5 expirations: 7710/7715 (0.50B), 7750/7755 (1.58B), 7760/7765 (0.43B) -> 7750/7755
  *
- * `zeroGex` (the LINE) is that first strike of the other sign: a real strike, the one the owner's rule names. The ZONE
- * (the AREA) spans from it to the last strike of the starting sign met before it (the neighbouring strike, or further when
- * zero strikes sit between them). Null when the total is 0, the profile is empty, or the walk reaches the end of the
- * chain without a sign change. `profile` must be sorted ascending by strike (computeGexProfile's order).
+ * `zeroGex` (the LINE) is the candidate's strike of the other sign: a real strike, the one the owner's rule names, so the
+ * LEFT (lower) strike of the zone with a positive total and the RIGHT (upper) one with a negative total. The ZONE (the
+ * AREA) spans from it to the last strike of the starting sign met before it (the neighbouring strike, or further when
+ * zero strikes sit between them). Null when the total is 0, the profile is empty, or the walk finds no sign change.
+ * `profile` must be sorted ascending by strike (computeGexProfile's order).
  */
 export function findZeroGex(profile: readonly GexPoint[], totalNetGex: number): ZeroGexLevel {
     const none: ZeroGexLevel = { zeroGex: null, zeroGexZone: null };
     if (!(totalNetGex > 0) && !(totalNetGex < 0)) return none;
     const sign = totalNetGex > 0 ? 1 : -1;
-    // the starting strike: the largest sign * netGex, ties to the lowest strike (the first in ascending order)
+    // the starting wall: the largest sign * netGex; the opposite wall: the largest -sign * netGex (ties to the lowest strike)
     let start = -1;
+    let opposite = -1;
     for (let i = 0; i < profile.length; i++) {
         const v = sign * profile[i].netGex;
         if (v > 0 && (start < 0 || v > sign * profile[start].netGex)) start = i;
+        if (v < 0 && (opposite < 0 || v < sign * profile[opposite].netGex)) opposite = i;
     }
     if (start < 0) return none;
     const step = sign > 0 ? -1 : 1; // positive total walks down, negative total walks up
-    let lastSame = profile[start].strike;
-    for (let i = start + step; i >= 0 && i < profile.length; i += step) {
+    const end = opposite >= 0 && (opposite - start) * step > 0 ? opposite : step > 0 ? profile.length - 1 : 0;
+    let best: { other: number; same: number; ag: number } | null = null;
+    let lastSame = start;
+    let inSame = true; // the last signed strike met was of the starting sign
+    for (let i = start + step; step > 0 ? i <= end : i >= end; i += step) {
         const v = sign * profile[i].netGex;
-        if (v > 0) { lastSame = profile[i].strike; continue; }
+        if (v > 0) { lastSame = i; inSame = true; continue; }
         if (v < 0) {
-            const other = profile[i].strike;
-            return { zeroGex: other, zeroGexZone: { low: Math.min(other, lastSame), high: Math.max(other, lastSame) } };
+            if (inSame) {
+                const ag = (profile[i].absGamma + profile[lastSame].absGamma) / 2;
+                if (best === null || ag > best.ag) best = { other: i, same: lastSame, ag };
+            }
+            inSame = false;
         }
     }
-    return none;
+    if (!best) return none;
+    const other = profile[best.other].strike;
+    const same = profile[best.same].strike;
+    return { zeroGex: other, zeroGexZone: { low: Math.min(other, same), high: Math.max(other, same) } };
 }
 
 /** Steps of the Sigma levels: 1, 2 and 3 sigma (or 1%, 2%, 3% in the % mode), above and below spot. */
