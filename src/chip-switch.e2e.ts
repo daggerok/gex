@@ -47,7 +47,8 @@ async function main(): Promise<void> {
             assert.equal(await sw.getAttribute('aria-checked'), 'false', 'Net GEX view by default');
             assert.equal(await chip.getAttribute('aria-pressed'), 'true', 'Net GEX metric on by default');
             const legend = () => page.locator('.recharts-legend-wrapper').first().innerText();
-            assert.match(await legend(), /Net GEX \(\+\)/, 'legend in the net view');
+            const netLegend = await legend();
+            assert.match(netLegend, /Net GEX \(\+\)/, 'legend in the net view');
             const before = await width(chip);
             await sw.click();
             await page.waitForTimeout(400);
@@ -58,6 +59,10 @@ async function main(): Promise<void> {
             assert.match(text, /Abs GEX \(\+\)/, 'legend Abs GEX (+)');
             assert.match(await chip.innerText(), /Abs GEX/, 'the chip reads Abs GEX');
             assert.ok(!/Net GEX/.test(text), `no "Net GEX" in the split legend: ${text}`);
+            // the same positions in both views (Absolute Gamma, (+), (−)), only the words change
+            assert.equal(text, netLegend.replace(/Net GEX/g, 'Abs GEX'), `the split legend keeps the net order:\n${netLegend}\nvs\n${text}`);
+            const at = (t: string, s: string) => t.indexOf(s);
+            assert.ok(at(text, 'Absolute Gamma') >= 0 && at(text, 'Absolute Gamma') < at(text, 'Abs GEX (+)') && at(text, 'Abs GEX (+)') < at(text, 'Abs GEX (−)'), `legend order: ${text}`);
             await page.reload();
             await loadSpy(page);
             await page.getByRole('button', { name: 'GEX' }).first().click();
