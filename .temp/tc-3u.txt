@@ -1,0 +1,101 @@
+[ide] scripts/backtest-backup.ts(135,5): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] scripts/backtest-backup.ts(43,27): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] scripts/backtest-backup.ts(62,23): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/history-archive.ts(135,41): error TS2802: Type 'Map<string, Uint8Array<ArrayBufferLike>>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/history-archive.ts(83,16): error TS2802: Type 'MapIterator<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/options-data.test.ts(61,19): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] scripts/options-data.test.ts(805,115): error TS7006: Parameter 't' implicitly has an 'any' type.
+[ide] scripts/options-data.test.ts(805,23): error TS2802: Type 'RegExpStringIterator<RegExpExecArray>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/options-data.ts(1305,29): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/options-data.ts(1408,40): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/options-data.ts(1464,26): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/options-data.ts(1514,24): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/options-data.ts(2075,5): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] scripts/options-data.ts(372,27): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] scripts/options-data.ts(376,31): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] scripts/options-data.ts(785,20): error TS2802: Type 'MapIterator<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] scripts/options-data.ts(793,92): error TS2802: Type 'MapIterator<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/api-paths.test.ts(7,19): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/backtest.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/backtest/archive.ts(112,37): error TS2802: Type 'Map<string, RawZipEntry[]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/archive.ts(84,22): error TS2802: Type 'MapIterator<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/backup.test.ts(93,61): error TS2802: Type 'Uint8Array<ArrayBufferLike>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/controller.test.ts(191,16): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/controller.ts(185,32): error TS2802: Type 'MapIterator<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/entries.test.ts(15,16): error TS2802: Type 'Map<string, string[]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/entries.ts(47,33): error TS2802: Type 'ReadonlyMap<string, readonly string[]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/entries.ts(54,16): error TS2802: Type 'MapIterator<HistoryEntry>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/prefs.ts(39,33): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/prefs.ts(52,159): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/backtest/store.ts(52,35): error TS2802: Type 'MapIterator<StoredDay>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/chart-view.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/chart-zoom.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/components/ChainTable.tsx(49,37): error TS2322: Type '"lambda"' is not assignable to type 'DeskColumnKey'.
+[ide] src/components/ChainTable.tsx(50,36): error TS2322: Type '"vanna"' is not assignable to type 'DeskColumnKey'.
+[ide] src/components/ChainTable.tsx(51,36): error TS2322: Type '"vomma"' is not assignable to type 'DeskColumnKey'.
+[ide] src/components/ChainTable.tsx(52,36): error TS2322: Type '"charm"' is not assignable to type 'DeskColumnKey'.
+[ide] src/components/ChainTable.tsx(53,36): error TS2322: Type '"speed"' is not assignable to type 'DeskColumnKey'.
+[ide] src/components/ChainTable.tsx(54,36): error TS2322: Type '"zomma"' is not assignable to type 'DeskColumnKey'.
+[ide] src/components/ChainTable.tsx(55,36): error TS2322: Type '"color"' is not assignable to type 'DeskColumnKey'.
+[ide] src/custom-levels-gex.e2e.ts(12,43): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/custom-levels-gex.e2e.ts(29,63): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/custom-levels-gex.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/custom-levels-gex.e2e.ts(95,30): error TS2802: Type 'Set<number>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/custom-levels.e2e.ts(12,43): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/custom-levels.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/e2e-run.ts(15,22): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/e2e-site.ts(16,19): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/fullscreen.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/gex.test.ts(364,5): error TS2542: Index signature in type 'Readonly<Record<string, NetGexPlusMinusDistance>>' only permits reading.
+[ide] src/gex.ts(127,25): error TS2802: Type 'MapIterator<GexPoint>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/gex.ts(465,25): error TS2802: Type 'Set<number>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/greeks.test.ts(126,16): error TS2802: Type 'ReadonlySet<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/greeks.test.ts(23,19): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/greeks.test.ts(30,14): error TS2802: Type 'RegExpStringIterator<RegExpExecArray>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/greeks.test.ts(35,16): error TS2802: Type 'ReadonlySet<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/greeks.test.ts(39,16): error TS2802: Type 'ReadonlySet<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/greeks.test.ts(49,31): error TS2802: Type 'ReadonlySet<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/greeks.test.ts(53,26): error TS2802: Type 'ReadonlySet<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/header-parity.test.ts(12,35): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/header-parity.test.ts(14,30): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/header-parity.test.ts(15,42): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/header-parity.test.ts(49,38): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/header-parity.test.ts(59,38): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/header-parity.test.ts(8,26): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+[ide] src/history-zip.test.ts(97,129): error TS2802: Type 'Uint8Array<ArrayBuffer>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/history-zip.test.ts(97,138): error TS2802: Type 'Uint8Array<ArrayBuffer>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/history-zip.test.ts(97,36): error TS2802: Type 'Uint8Array<ArrayBuffer>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/history-zip.test.ts(97,69): error TS2802: Type 'Uint8Array<ArrayBuffer>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/history-zip.test.ts(97,90): error TS2802: Type 'Uint8Array<ArrayBuffer>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/history-zip.test.ts(97,99): error TS2802: Type 'Uint8Array<ArrayBuffer>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/history-zip.ts(262,25): error TS2802: Type 'MapIterator<RawZipEntry>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/layout.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/layout.e2e.ts(61,27): error TS2461: Type 'NodeListOf<HTMLElement>' is not an array type.
+[ide] src/main.tsx(1515,44): error TS2802: Type 'Set<number>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/main.tsx(1752,21): error TS2322: Type '(symbol: string, credsOverride?: { token?: string; secret?: string; }) => Promise<ChainMeta | null>' is not assignable to type '(symbol: string, credsOverride?: { token?: string | undefined; secret?: string | undefined; } | undefined) => Promise<void>'.
+[ide] src/main.tsx(1819,25): error TS2322: Type '{ settings: Settings; symbol: string; levels: GexLevels | null; isFuturesPriced: boolean; levelExpCount: number; range: ChartRange; setRange: (r: ChartRange) => void; ... 4 more ...; asOfDate: string | null; }' is not assignable to type 'IntrinsicAttributes & ChartViewProps'.
+[ide] src/providers/cboe.ts(21,68): error TS2802: Type 'ReadonlySet<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/providers/chart.ts(87,16): error TS2802: Type 'MapIterator<OhlcBar>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+[ide] src/settings-source.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/ticker-hint.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/touch.e2e.ts(3,8): error TS1259: Module '"node:assert/strict"' can only be default-imported using the 'esModuleInterop' flag
+[ide] src/views/GexView.tsx(1611,41): error TS2322: Type 'false | ((props: { x?: number | undefined; y?: number | undefined; payload?: { value: number; } | undefined; textAnchor?: string | undefined; }) => Element)' is not assignable to type 'TickProp<YAxisTickContentProps> | undefined'.
+[ide] src/views/GexView.tsx(1644,124): error TS2345: Argument of type 'MetricColorSet' is not assignable to parameter of type 'Readonly<Record<string, string>>'.
+[ide] src/views/GexView.tsx(1644,41): error TS2322: Type 'false | ((props: { x?: number | undefined; y?: number | undefined; payload?: { value: number; } | undefined; textAnchor?: string | undefined; }) => Element)' is not assignable to type 'TickProp<YAxisTickContentProps> | undefined'.
+[ide] src/views/GexView.tsx(1657,120): error TS2345: Argument of type 'MetricColorSet' is not assignable to parameter of type 'Readonly<Record<string, string>>'.
+[ide] src/views/GexView.tsx(1657,41): error TS2322: Type 'false | ((props: { x?: number | undefined; y?: number | undefined; payload?: { value: number; } | undefined; textAnchor?: string | undefined; }) => Element)' is not assignable to type 'TickProp<YAxisTickContentProps> | undefined'.
+src/components/ChainTable.tsx(49,37): error TS2322: Type '"lambda"' is not assignable to type 'DeskColumnKey'.
+src/components/ChainTable.tsx(50,36): error TS2322: Type '"vanna"' is not assignable to type 'DeskColumnKey'.
+src/components/ChainTable.tsx(51,36): error TS2322: Type '"vomma"' is not assignable to type 'DeskColumnKey'.
+src/components/ChainTable.tsx(52,36): error TS2322: Type '"charm"' is not assignable to type 'DeskColumnKey'.
+src/components/ChainTable.tsx(53,36): error TS2322: Type '"speed"' is not assignable to type 'DeskColumnKey'.
+src/components/ChainTable.tsx(54,36): error TS2322: Type '"zomma"' is not assignable to type 'DeskColumnKey'.
+src/components/ChainTable.tsx(55,36): error TS2322: Type '"color"' is not assignable to type 'DeskColumnKey'.
+src/gex.test.ts(364,5): error TS2542: Index signature in type 'Readonly<Record<string, NetGexPlusMinusDistance>>' only permits reading.
+src/main.tsx(1752,21): error TS2322: Type '(symbol: string, credsOverride?: { token?: string; secret?: string; }) => Promise<ChainMeta | null>' is not assignable to type '(symbol: string, credsOverride?: { token?: string | undefined; secret?: string | undefined; } | undefined) => Promise<void>'.
+src/main.tsx(1819,25): error TS2322: Type '{ settings: Settings; symbol: string; levels: GexLevels | null; isFuturesPriced: boolean; levelExpCount: number; range: ChartRange; setRange: (r: ChartRange) => void; ... 4 more ...; asOfDate: string | null; }' is not assignable to type 'IntrinsicAttributes & ChartViewProps'.
+src/views/GexView.tsx(1611,41): error TS2322: Type 'false | ((props: { x?: number | undefined; y?: number | undefined; payload?: { value: number; } | undefined; textAnchor?: string | undefined; }) => Element)' is not assignable to type 'TickProp<YAxisTickContentProps> | undefined'.
+src/views/GexView.tsx(1644,124): error TS2345: Argument of type 'MetricColorSet' is not assignable to parameter of type 'Readonly<Record<string, string>>'.
+src/views/GexView.tsx(1644,41): error TS2322: Type 'false | ((props: { x?: number | undefined; y?: number | undefined; payload?: { value: number; } | undefined; textAnchor?: string | undefined; }) => Element)' is not assignable to type 'TickProp<YAxisTickContentProps> | undefined'.
+src/views/GexView.tsx(1657,120): error TS2345: Argument of type 'MetricColorSet' is not assignable to parameter of type 'Readonly<Record<string, string>>'.
+src/views/GexView.tsx(1657,41): error TS2322: Type 'false | ((props: { x?: number | undefined; y?: number | undefined; payload?: { value: number; } | undefined; textAnchor?: string | undefined; }) => Element)' is not assignable to type 'TickProp<YAxisTickContentProps> | undefined'.
