@@ -135,7 +135,7 @@ export const QuoteCells: React.FC<{ q?: OptionQuote; columns: DeskColumnDef[] }>
  *                 section is active (in view), just below the pile.
  *   - rows      : one grid row per strike.
  */
-export const ExpirationSection: React.FC<{
+export const ExpirationSection = React.memo(function ExpirationSection({ section, index, spot, callColumns, putColumns, collapsed, active, onToggle, registerBar, registerAtm, colorTheme = DEFAULT_COLOR_THEME }: {
     section: ChainSection;
     index: number;
     spot: number | null;
@@ -144,18 +144,21 @@ export const ExpirationSection: React.FC<{
     colorTheme?: ColorThemeId;
     collapsed: boolean;
     active: boolean;
-    onToggle: () => void;
+    /** Toggles the section of this expiration; must be stable (memo, GEX-H11). */
+    onToggle: (expiration: string) => void;
     /** Registers this section's sticky expiration BAR element (a real box we can
      *  measure; the .od-sec wrapper is `display: contents` and has no box). Used
-     *  for active-section tracking. */
-    innerRef: (el: HTMLButtonElement | null) => void;
+     *  for active-section tracking. Stable. */
+    registerBar: (expiration: string, el: HTMLButtonElement | null) => void;
     /** Registers this section's ATM (at-the-money) row element so the desk can
-     *  scroll it to the vertical center on load / expand (center-strike view). */
-    atmRef: (el: HTMLDivElement | null) => void;
-}> = ({ section, index, spot, callColumns, putColumns, collapsed, active, onToggle, innerRef, atmRef, colorTheme = DEFAULT_COLOR_THEME }) => {
+     *  scroll it to the vertical center on load / expand (center-strike view). Stable. */
+    registerAtm: (expiration: string, el: HTMLDivElement | null) => void;
+}) {
     const ax = accentOf(colorTheme);
     const { t } = useI18n();
     const { expiration, calls, puts, strikes } = section;
+    const innerRef = useCallback((el: HTMLButtonElement | null) => registerBar(expiration, el), [registerBar, expiration]);
+    const atmRef = useCallback((el: HTMLDivElement | null) => registerAtm(expiration, el), [registerAtm, expiration]);
     const atmStrike = useMemo(() => {
         if (spot == null || strikes.length === 0) return null;
         return strikes.reduce((best, s) => (Math.abs(s - spot) < Math.abs(best - spot) ? s : best), strikes[0]);
@@ -193,7 +196,7 @@ export const ExpirationSection: React.FC<{
             <button
                 ref={innerRef}
                 type="button"
-                onClick={onToggle}
+                onClick={() => onToggle(expiration)}
                 aria-expanded={!collapsed}
                 title={collapsed ? 'Expand this expiration' : 'Collapse this expiration'}
                 style={barTop}
@@ -274,7 +277,7 @@ export const ExpirationSection: React.FC<{
             )}
         </div>
     );
-};
+});
 
 /**
  * The scrolling desk: renders ALL selected expirations as sibling DIV sections
@@ -430,6 +433,17 @@ export const ChainTable: React.FC<{
             window.setTimeout(() => scrollBarToPinned(exp), 200);
         }
     }, [activeExp, collapsed, sections, centerStrike, scrollBarToPinned]);
+    // Stable callbacks for the memoized sections (GEX-H11): a keystroke in the ticker box, a proxy health check or a toast
+    // re-renders App and this table, but no section whose own props did not change
+    const toggleOneRef = useRef(toggleOne);
+    toggleOneRef.current = toggleOne;
+    const onToggleSection = useCallback((exp: string) => toggleOneRef.current(exp), []);
+    const registerBar = useCallback((exp: string, el: HTMLButtonElement | null) => {
+        if (el) barRefs.current.set(exp, el); else barRefs.current.delete(exp);
+    }, []);
+    const registerAtm = useCallback((exp: string, el: HTMLDivElement | null) => {
+        if (el) atmRefs.current.set(exp, el); else atmRefs.current.delete(exp);
+    }, []);
     // Expand all brings the FIRST expiration's ATM row to the middle of the desk (owner 2026-10-25), like a fresh load
     const toggleAll = useCallback(() => {
         const expandAll = sections.every((s) => collapsed.has(s.expiration));
@@ -558,9 +572,9 @@ export const ChainTable: React.FC<{
                             colorTheme={colorTheme}
                             collapsed={collapsed.has(s.expiration)}
                             active={activeExp === s.expiration}
-                            onToggle={() => toggleOne(s.expiration)}
-                            innerRef={(el) => { if (el) barRefs.current.set(s.expiration, el); else barRefs.current.delete(s.expiration); }}
-                            atmRef={(el) => { if (el) atmRefs.current.set(s.expiration, el); else atmRefs.current.delete(s.expiration); }}
+                            onToggle={onToggleSection}
+                            registerBar={registerBar}
+                            registerAtm={registerAtm}
                         />
                     ))}
                 </div>
