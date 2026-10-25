@@ -313,6 +313,14 @@ export interface GexPoint {
     putVolume: number;
 }
 
+/** The Zero GEX band: the two strikes between which the per-strike Net GEX changes sign (src/gex.ts findZeroGex). */
+export interface ZeroGexZone {
+    /** lower strike of the band */
+    low: number;
+    /** upper strike of the band */
+    high: number;
+}
+
 /** Key levels derived from a chain slice (output of computeGexLevels). */
 export interface GexLevels {
     spot: number;
@@ -365,6 +373,14 @@ export interface GexLevels {
     maxPain: number | null;
     /** "Max AG": the strike with the largest absolute gamma exposure (src/gex.ts findMaxAbsGamma). Shown only while the AG metric is on. */
     maxAbsGamma: number | null;
+    /**
+     * "Zero GEX" (src/gex.ts findZeroGex): the owner's own method, NOT the Gamma Flip and not a published standard. From the
+     * Max Net GEX strike walking down (positive total) or the Min Net GEX strike walking up (negative total), the first strike
+     * whose netGex has the other sign. Drawn as a line here, or as the band `zeroGexZone`. Null when there is no sign change.
+     */
+    zeroGex: number | null;
+    /** The Zero GEX band: from the last strike of the starting sign to the first strike of the other sign. Null with zeroGex. */
+    zeroGexZone: ZeroGexZone | null;
     pcRatioOi: number | null;
     pcRatioVolume: number | null;
     totalNetGex: number;

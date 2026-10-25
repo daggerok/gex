@@ -26,7 +26,7 @@
  * comment, and the corresponding math/field removal in src/gex.ts/
  * src/types.ts, done in a separate PR).
  */
-export type GexLevelKey = 'maxNetGex' | 'netGexPlus' | 'gammaFlip' | 'minNetGex' | 'netGexMinus' | 'sumNetGexPlus' | 'sumNetGexMinus' | 'maxPain' | 'maxAbsGamma' | 'spot';
+export type GexLevelKey = 'maxNetGex' | 'netGexPlus' | 'gammaFlip' | 'zeroGex' | 'minNetGex' | 'netGexMinus' | 'sumNetGexPlus' | 'sumNetGexMinus' | 'maxPain' | 'maxAbsGamma' | 'spot';
 
 export interface GexLevelColor {
     hex: string;
@@ -37,6 +37,7 @@ export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
     maxNetGex: { hex: '#22c55e', dot: 'bg-green-500' },   // green-500
     netGexPlus: { hex: '#86efac', dot: 'bg-green-300' },  // green-300 (Net GEX+)
     gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400
+    zeroGex: { hex: '#d946ef', dot: 'bg-fuchsia-500' }, // fuchsia-500 (Zero GEX, the owner's per-strike sign change; violet is the Gamma Flip)
     minNetGex: { hex: '#ef4444', dot: 'bg-red-500' },      // red-500
     netGexMinus: { hex: '#fca5a5', dot: 'bg-red-300' },     // red-300 (Net GEX-)
     sumNetGexPlus: { hex: '#22d3ee', dot: 'bg-cyan-400' },  // cyan-400
@@ -158,6 +159,7 @@ export const DEFAULT_LEVEL_COLORS: LevelColorSet = {
     maxNetGex: GEX_LEVEL_COLORS.maxNetGex.hex,
     netGexPlus: GEX_LEVEL_COLORS.netGexPlus.hex,
     gammaFlip: GEX_LEVEL_COLORS.gammaFlip.hex,
+    zeroGex: GEX_LEVEL_COLORS.zeroGex.hex,
     minNetGex: GEX_LEVEL_COLORS.minNetGex.hex,
     netGexMinus: GEX_LEVEL_COLORS.netGexMinus.hex,
     sumNetGexPlus: GEX_LEVEL_COLORS.sumNetGexPlus.hex,

@@ -2,6 +2,7 @@
 import { useSyncExternalStore } from 'react';
 import type { CustomLevel } from './custom-levels';
 import { DEFAULT_LEVEL_COLORS, loadLevelColors, saveLevelColors, type GexLevelKey, type LevelColorSet } from './gex-colors';
+import { persistedChoice } from './persisted-choice';
 import type { GexLevels } from './types';
 
 // ============================================================================
@@ -26,7 +27,7 @@ export type ToggleableLevelKey = GexLevelKey;
  *  here - its actual rendered position (toggle panel AND sidebar card) is
  *  decided by each one's own by-strike sort (see `levelPanelKeys`/
  *  `keyLevels` below), this array is just the base/reset order. */
-export const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma', 'spot'];
+export const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'zeroGex', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma', 'spot'];
 
 /** Levels that start OFF: the four outer levels (Net GEX+ / Net GEX- and 75% Sum Net GEX+ /
  *  75% Sum Net GEX-). They stay one click away in the Levels panel like every other level. */
@@ -41,6 +42,7 @@ export const LEVEL_LABEL_KEY: Record<ToggleableLevelKey, string> = {
     maxNetGex: 'gex.level.maxNetGex',
     netGexPlus: 'gex.level.netGexPlus',
     gammaFlip: 'gex.level.gammaFlip',
+    zeroGex: 'gex.level.zeroGex',
     minNetGex: 'gex.level.minNetGex',
     netGexMinus: 'gex.level.netGexMinus',
     sumNetGexPlus: 'gex.level.sumNetGexPlus',
@@ -61,6 +63,7 @@ export const LEVEL_CHART_LABEL_KEY: Record<ToggleableLevelKey, string> = {
     maxNetGex: 'gex.chart.maxNetGex',
     netGexPlus: 'gex.chart.netGexPlus',
     gammaFlip: 'gex.chart.gammaFlip',
+    zeroGex: 'gex.chart.zeroGex',
     minNetGex: 'gex.chart.minNetGex',
     netGexMinus: 'gex.chart.netGexMinus',
     sumNetGexPlus: 'gex.chart.sumNetGexPlus',
@@ -81,6 +84,7 @@ export const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
     maxNetGex: 'gex.level.tooltip.maxNetGex',
     netGexPlus: 'gex.level.tooltip.netGexPlus',
     gammaFlip: 'gex.level.tooltip.gammaFlip',
+    zeroGex: 'gex.level.tooltip.zeroGex',
     minNetGex: 'gex.level.tooltip.minNetGex',
     netGexMinus: 'gex.level.tooltip.netGexMinus',
     sumNetGexPlus: 'gex.level.tooltip.sumNetGexPlus',
@@ -94,7 +98,7 @@ export const LEVEL_TOOLTIP_KEY: Record<ToggleableLevelKey, string> = {
 };
 
 /** The built-in levels in the order the panel falls back to when two have no price (see levelPanelOrder). */
-const LEVEL_PANEL_BASE: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma'];
+const LEVEL_PANEL_BASE: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 'gammaFlip', 'zeroGex', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma'];
 
 /** One chip of the Levels panel: a built-in level (`builtin`) or one of the user's own (`custom`). */
 export interface PanelEntry {
@@ -158,8 +162,14 @@ export function setLevelColor(key: ToggleableLevelKey, color: string): void {
 export function resetLevelPrefs(): void {
     saveLevelColors(DEFAULT_LEVEL_COLORS);
     publish({ selected: [...DEFAULT_SELECTED_LEVELS], colors: { ...DEFAULT_LEVEL_COLORS } });
+    zeroGexDisplay.set(zeroGexDisplay.fallback);
 }
 
 export function useLevelPrefs(): LevelPrefs {
     return useSyncExternalStore((l) => { listeners.add(l); return () => { listeners.delete(l); }; }, getLevelPrefs, getLevelPrefs);
 }
+
+/** How the Zero GEX level is drawn on both charts (the switch inside its Levels chip): `line` at `GexLevels.zeroGex` (the
+ *  first strike of the other sign, default) or `area`, the band `GexLevels.zeroGexZone`. Remembered in the browser. */
+export type ZeroGexDisplay = 'line' | 'area';
+export const zeroGexDisplay = persistedChoice<ZeroGexDisplay>('gex.zeroGexDisplay.v1', ['line', 'area'], 'line');
