@@ -184,7 +184,7 @@ bun install -E
 bun ./scripts/options-local-proxy.ts
 ```
 
-The proxy starts on `http://localhost:8787` by default.
+The proxy starts on `http://localhost:8787` by default and listens on the loopback interface only (`127.0.0.1`): it relays your own Yahoo session and IP, so other devices on the network cannot use it. `HOST=0.0.0.0` makes it reachable from the LAN, on purpose only; `PORT` changes the port.
 
 ### Configuring the app
 
