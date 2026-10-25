@@ -150,7 +150,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'onboarding.previewDemo': 'or get {{symbol}}’s dates now (no key needed)',
         'onboarding.previewCache': 'or switch to CACHE (AAPL static data)',
 
-        'controls.tickerPlaceholder': 'SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA',
+        'controls.tickerPlaceholder': 'SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA, XSP, COMP, DJIA, INDU, NYA',
         'controls.expirations': 'Expirations',
         'controls.loading': 'Loading…',
         'controls.reset': 'Reset',
@@ -549,7 +549,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'onboarding.previewDemo': 'или получить даты для {{symbol}} прямо сейчас (без ключа)',
         'onboarding.previewCache': 'или переключиться на CACHE (статичные данные AAPL)',
 
-        'controls.tickerPlaceholder': 'SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA',
+        'controls.tickerPlaceholder': 'SPX, NDX, DJX, RUT, IWM, NVDA, AAPL, MSFT, AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA, XSP, COMP, DJIA, INDU, NYA',
         'controls.expirations': 'Экспирации',
         'controls.loading': 'Загрузка…',
         'controls.reset': 'Сбросить',

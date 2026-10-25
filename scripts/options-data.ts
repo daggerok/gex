@@ -14,6 +14,11 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t11 - The default list is always fetched. TICKERS no longer replaces it, it ADDS tickers on top of it (a workflow can
+ *        hardcode the tickers being traded and they get refreshed with the defaults); the new env DEFAULT_TICKERS replaces the
+ *        default list itself (rarely needed; DEFAULT_TICKERS="SPY" TICKERS= runs SPY alone). `all` still discovers the auto-universe,
+ *        now with the default list and TICKERS first. The default list grew by XSP, COMP, DJIA, INDU and NYA (23 tickers). HISTORY
+ *        archives the default list of the run.
  *   t10 - The daily archive is written by the LAST run of the trading day, not by the first run of the next day: with HISTORY=1 the
  *        files of the DEFAULT_SYMBOLS just written replace their entries in api/history/<YYYY-MM>/<day>.zip (the last state of
  *        the day) and zips older than HISTORY_KEEP_DAYS are deleted. The hourly workflow stopped committing api/options, so the
@@ -33,7 +38,7 @@
  *        AMZN, GOOGL, TSM, META, AVGO, MU, GOOG, SPY, QQQ, DIA). A unit test keeps it equal to `controls.tickerPlaceholder`.
  *        The hourly workflow `update-partial-data.yml` runs this default set on weekdays during market hours.
  *   t6 - Without TICKERS and without the `all` argument the run only covers DEFAULT_SYMBOLS (see t7 above).
- *        `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins.
+ *        `./scripts/options-data.ts all` restores the full auto-universe run. TICKERS still wins (until t11: it adds now).
  *   t5 - Chart cache: after the options pass every cached ticker (SPY, SPX, QQQ, NDX first) gets
  *        api/charts/<SYM>.json with 1Y of daily bars from Yahoo v8 chart, so the Chart tab works
  *        without a proxy. Missing files first, then oldest, at most CHART_MAX_FETCHES per run.
@@ -55,10 +60,9 @@
  *          through, higher-order greeks are computed only by the UI.
  *
  * WHAT IT DOES
- *   1. Builds a UNIVERSE of optionable US underlyings: TICKERS override, else
- *      DEFAULT_SYMBOLS unless the `all` argument is given, else
- *      the NASDAQ screener (market-cap order) merged with the Cboe optionable
- *      directory, else Cboe alone, else the tiny built-in list.
+ *   1. Builds a UNIVERSE: the default list (DEFAULT_SYMBOLS, or the DEFAULT_TICKERS env) plus the TICKERS env on top.
+ *      With the `all` argument the discovered tickers follow: the NASDAQ screener (market-cap order) merged
+ *      with the Cboe optionable directory, else Cboe alone, else the tiny built-in list.
  *   2. Builds a WORK QUEUE: missing symbols first (universe order), then stale
  *      cached files oldest-updated first. The skiplist of no-options tickers is
  *      honored for SKIP_RECHECK_DAYS.
@@ -81,9 +85,10 @@
  *   bar, that is Yahoo's adjclose). This port does the same on purpose.
  *
  * USAGE
- *   ./scripts/options-data.ts                       # only the default set (DEFAULT_SYMBOLS: indices, ETFs, mega caps)
- *   ./scripts/options-data.ts all                   # smart auto-universe run (everything)
- *   TICKERS="AAPL MSFT" ./scripts/options-data.ts   # only these
+ *   ./scripts/options-data.ts                       # only the default list (DEFAULT_SYMBOLS: indices, ETFs, mega caps)
+ *   ./scripts/options-data.ts all                   # the default list plus the smart auto-universe (everything)
+ *   TICKERS="AAPL MSFT" ./scripts/options-data.ts   # the default list plus these
+ *   DEFAULT_TICKERS="AAPL" TICKERS= ./scripts/options-data.ts   # only AAPL (the default list replaced)
  *   MAX_FETCHES=50 MAX_EXPIRATIONS=8 ./scripts/options-data.ts
  *
  * TUNABLES (env, identical to the Python script)
@@ -112,7 +117,8 @@
  *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
  *   SOFT_DEADLINE_SECONDS default 0      stop starting new tickers after N seconds (0 = off)
  *   VERBOSE            default off       also print the legacy timestamped progress lines
- *   TICKERS / TICKER   explicit universe override (wins over the default set and over `all`)
+ *   DEFAULT_TICKERS    default ""        replaces the built-in default list (space or comma separated); blank = built-in list
+ *   TICKERS / TICKER   default ""        tickers ADDED on top of the default list (also with `all`); never replaces it
  * =============================================================================
  */
 
@@ -1199,11 +1205,14 @@ async function liveNasdaqUniverse(): Promise<string[]> {
     }
 }
 
-/** Explicit TICKERS/TICKER env override, or null when unset or empty. */
-export function tickersOverride(env: Record<string, string | undefined> = process.env): string[] | null {
-    const override = env.TICKERS || env.TICKER;
-    if (!override) return null;
-    return dedupe(override.replaceAll(",", " ").split(/\s+/).filter((t) => t.trim()).map((t) => canonical(t)));
+/** A space or comma separated ticker list -> canonical, deduped symbols (empty for blank or unset). */
+export function parseTickerList(raw: string | undefined): string[] {
+    return dedupe((raw ?? "").replaceAll(",", " ").split(/\s+/).filter((t) => t.trim()).map((t) => canonical(t)));
+}
+
+/** Tickers the TICKERS (or TICKER) env adds on top of the default list, empty when unset or blank. */
+export function extraTickers(env: Record<string, string | undefined> = process.env): string[] {
+    return parseTickerList(env.TICKERS || env.TICKER);
 }
 
 /** Merge rule of load_universe for the two live sources (pure, for tests). */
@@ -1217,8 +1226,29 @@ export function mergeUniverse(nasdaq: string[], cboe: string[], size: number): s
     return dedupe(FALLBACK_UNIVERSE.map((s) => canonical(s))).slice(0, size);
 }
 
-/** Run without args: the main indices and their ETFs plus the mega caps, exactly the tickers hinted in the ticker search field (`controls.tickerPlaceholder`). */
+/** The built-in default list: the main indices and their ETFs plus the mega caps, exactly the tickers hinted in the ticker search field (`controls.tickerPlaceholder`). */
 export const DEFAULT_SYMBOLS: string[] = [...DEFAULT_TICKERS];
+
+/** The default list of this run: the DEFAULT_TICKERS env replaces DEFAULT_SYMBOLS when it is set and not blank. Every run fetches it. */
+export function defaultSymbols(env: Record<string, string | undefined> = process.env): string[] {
+    const replaced = parseTickerList(env.DEFAULT_TICKERS);
+    return replaced.length ? replaced : [...DEFAULT_SYMBOLS];
+}
+
+/**
+ * What a run covers (pure, for tests): the default list first, then the TICKERS added on top of it, no duplicates.
+ * `discover` (the `all` argument) appends the discovered auto-universe after them.
+ */
+export function universeRequest(env: Record<string, string | undefined> = process.env, argv: string[] = process.argv.slice(2)): { fixed: string[]; discover: boolean; source: string } {
+    const defaults = defaultSymbols(env);
+    const extra = extraTickers(env);
+    const fixed = dedupe([...defaults, ...extra]);
+    const discover = wantsAll(argv);
+    const defaultsWhat = parseTickerList(env.DEFAULT_TICKERS).length ? "DEFAULT_TICKERS" : "default set";
+    const added = fixed.length - defaults.length;
+    const source = `${defaultsWhat} (${defaults.length})${added ? ` + ${added} from TICKERS` : ""}${discover ? " + auto-universe (all)" : ""}`;
+    return { fixed, discover, source };
+}
 
 /** True when the CLI asks for the full auto-universe (`all`, any case). Anything else is rejected. */
 export function wantsAll(argv: string[] = process.argv.slice(2)): boolean {
@@ -1227,25 +1257,26 @@ export function wantsAll(argv: string[] = process.argv.slice(2)): boolean {
     return argv.length > 0;
 }
 
-/** Universe is a fixed list (TICKERS override or the default set) instead of the discovered one. */
+/** Universe is a fixed list (the default list plus TICKERS) instead of the discovered one (`all`). */
 function explicitUniverse(): boolean {
-    return Boolean(tickersOverride()) || !wantsAll();
+    return !universeRequest().discover;
 }
 
 async function loadUniverse(): Promise<{ symbols: string[]; source: string }> {
-    const override = tickersOverride() ?? (wantsAll() ? null : DEFAULT_SYMBOLS);
-    if (override) {
-        const preview = override.slice(0, 20).join(", ") + (override.length > 20 ? `, ... (+${override.length - 20} more)` : "");
-        const source = tickersOverride() ? "TICKERS override" : "default set (pass `all` for everything)";
-        log(`universe/override: using ${override.length} symbols from ${source}: ${preview}`);
-        return { symbols: override, source };
+    const { fixed, discover, source: fixedSource } = universeRequest();
+    if (!discover) {
+        const preview = fixed.slice(0, 20).join(", ") + (fixed.length > 20 ? `, ... (+${fixed.length - 20} more)` : "");
+        log(`universe/fixed: using ${fixed.length} symbols from ${fixedSource}: ${preview}`);
+        return { symbols: fixed, source: fixedSource };
     }
     const cboe = await liveCboeUniverse();
     const nasdaq = await liveNasdaqUniverse();
     const full = mergeUniverse(nasdaq, cboe, Infinity);
-    const syms = full.slice(0, cfg.UNIVERSE_SIZE);
-    const source =
+    // the default list and TICKERS go first, so UNIVERSE_SIZE never cuts them off
+    const syms = dedupe([...fixed, ...full]).slice(0, Math.max(cfg.UNIVERSE_SIZE, fixed.length));
+    const discovered =
         nasdaq.length && cboe.length ? "NASDAQ market-cap order + Cboe optionable" : nasdaq.length ? "NASDAQ only" : cboe.length ? "Cboe only" : "built-in fallback";
+    const source = `${fixedSource}: ${discovered}`;
     if (nasdaq.length && cboe.length) {
         log(`universe/final: ${full.length} optionable symbols (NASDAQ market-cap ordered + Cboe append); top: ${syms.slice(0, 5).join(", ")}`);
     } else if (nasdaq.length) {
@@ -1574,6 +1605,7 @@ export function outputConfigEntries(
         ["CBOE_RETRIES", String(c.CBOE_RETRIES)],
         ["SYMBOL_ALIASES", env.SYMBOL_ALIASES ?? ""],
         ["TIMEZONE", env.TIMEZONE ?? "America/New_York"],
+        ["DEFAULT_TICKERS", env.DEFAULT_TICKERS ?? ""],
         ["TICKERS", env.TICKERS ?? env.TICKER ?? ""],
         ["VERBOSE", String(isVerbose(env))],
     ];
@@ -2008,7 +2040,7 @@ export async function main(): Promise<void> {
     // The hourly runs before it do not touch api/history (nothing is committed for them, see update-partial-data.yml).
     if (cfg.HISTORY) {
         const day = marketDay();
-        const archived = archiveDay({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: DEFAULT_SYMBOLS, day, dayOf: fileDay });
+        const archived = archiveDay({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: defaultSymbols(), day, dayOf: fileDay });
         const n = archived.added[day]?.length ?? 0;
         console.log(`${outputLabel("history")} ${day}: ${n} file(s) written to the day zip, ${archived.already} already in it`);
         const dropped = pruneArchives(HISTORY_DIR, day, cfg.HISTORY_KEEP_DAYS, cfg.HISTORY_KEEP_BACKUP_DAYS);
