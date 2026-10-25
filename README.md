@@ -32,7 +32,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 - **Ticker suggestions:** searchable ticker and company combobox for every provider. Local static suggestions use `api/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest to latest with sticky expiration headers
 - **Desk UX:** ATM row highlight, sticky Calls / Strike / Puts headers, greeks columns enabled by default, per-side and per-column desk settings, empty cells for missing data, themed scrollbars, collapse and expand controls, and automatic centering on the current strike after load or expand
-- **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Max Pain, Spot, and Max AG, the strike with the largest absolute gamma, while the AG metric is on) computed once and drawn on both tabs, plus your own custom levels
+- **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Zero GEX, Max Pain, Spot, Max AG, the strike with the largest absolute gamma, while the AG metric is on, and Sigma, off until you turn it on) computed once and drawn on both tabs, plus your own custom levels. Zero GEX is the owner's own rule (from the Max Net GEX strike walking down, or from the Min Net GEX strike walking up when the total is negative, the first strike of the other sign), a switch in its chip draws it as a line or as the band between the two strikes. Sigma marks the strikes nearest to spot +/- 1, 2, 3 %, or with the switch in its chip +/- 1, 2, 3 statistical sigma (spot x ATM IV x sqrt(days / 365) of the nearest selected expiration); grey dotted lines, on the Chart tab from the next day to the right edge
 - **Theme UX:** compact current-theme icon with an animated dropdown for the other themes
 - **Internationalization:** English and Russian UI with a language switcher in the header and in Settings
 - **Provider setup badges:** No setup, Free key, Needs proxy, plus onboarding when a token is required
@@ -76,7 +76,7 @@ Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only:
 ## Tabs: Desk, GEX, Chart
 
 - **Desk:** the options chain described above
-- **GEX:** gamma exposure by strike with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis (remembered for each ticker, the last 200 tickers, also after a reload)
+- **GEX:** gamma exposure by strike (the switch in the Net GEX chip shows "Abs GEX" instead: call GEX up and put GEX down at every strike; the AG line has a dot at every strike) with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis (remembered for each ticker, the last 200 tickers, also after a reload)
 - **Chart:** daily candles (1 year loaded, the 1M / 3M / 6M / 1Y buttons next to the symbol in the top left corner of the chart only change the visible part; above the chart the same Metrics and Levels panels as on the GEX tab, in the same place) with the same GEX levels as price lines. From the CACHE provider it reads `api/charts/<SYM>.json`, so it works without a proxy
 
 ### Custom levels
