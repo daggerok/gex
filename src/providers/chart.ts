@@ -1,4 +1,5 @@
 /// <reference lib="esnext" />
+import { futuresRoot } from '../gex';
 import { FUTURES_PRICED_SYMBOLS, INDEX_SYMBOLS } from '../greeks';
 import type { OhlcBar, ProviderContext } from '../types';
 import { dbg, num, UiError } from '../utils';
@@ -49,6 +50,10 @@ export interface ChartRequest {
  * symbol may be delisted" (same for VXN).
  */
 export function yahooChartSymbol(symbol: string): string {
+    // a futures ticker (/ES, ES1!, the micros: gex.ts futuresRoot) has its candles on Yahoo as the continuous front month
+    // ES=F, NQ=F, YM=F, RTY=F, MES=F, MNQ=F, MYM=F, M2K=F (owner 2026-10-25, futures PR answer 4)
+    const future = futuresRoot(symbol);
+    if (future) return `${future}=F`;
     const raw = symbol.toUpperCase().trim().replace(/^[.^]/, '');
     return (INDEX_SYMBOLS.has(raw) || FUTURES_PRICED_SYMBOLS.has(raw)) ? `^${raw}` : raw;
 }
@@ -127,7 +132,9 @@ export function cachedChartPath(symbol: string): string {
  * parseYahooChart stays the only place that turns candles into OhlcBar.
  */
 export async function fetchCachedOhlc(symbol: string, ctx: Pick<ProviderContext, 'signal'> = {}): Promise<OhlcBar[]> {
-    const raw = symbol.toUpperCase().trim().replace(/^[.^]/, '');
+    // a futures ticker (/ES) is cached under its Yahoo symbol (api/charts/ES=F.json)
+    const future = futuresRoot(symbol);
+    const raw = future ? `${future}=F` : symbol.toUpperCase().trim().replace(/^[.^]/, '');
     const file = await fetchStaticJson(cachedChartPath(raw), ctx.signal, `charts/${raw}`);
     const body = {
         chart: {
@@ -146,6 +153,8 @@ export async function fetchCachedOhlc(symbol: string, ctx: Pick<ProviderContext,
  * Daily candles for the Chart tab, following the data source (src/proxy-discovery.ts): the caller passes the proxy base
  * only when the source is live, so with the cache no request goes to the proxy. Live: the proxy first, the cache as the
  * fallback. `preferCache` (a backtest day) puts the static file first and the proxy, when given, after it.
+ * A futures ticker (/ES, ES1!, the micros) uses its Yahoo symbol (ES=F) for both: the proxy and the cached
+ * api/charts/ES=F.json that the fetcher writes (FUTURES_CHART_SYMBOLS, PR #214).
  */
 export async function loadOhlc(
     symbol: string,
