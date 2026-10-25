@@ -49,6 +49,9 @@ export const SettingsPanel: React.FC<{
             if (cancelled) return;
             setStats(s);
             setStatsLoading(false);
+        }).catch(() => {
+            // IndexedDB blocked or failing: show the empty stats instead of a spinner that never stops
+            if (!cancelled) setStatsLoading(false);
         });
         return () => { cancelled = true; };
     }, [statsNonce]);

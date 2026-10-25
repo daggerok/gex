@@ -1,9 +1,9 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { OptionQuote, ProviderContext } from '../types';
+import type { DataProvider, OptionQuote, ProviderContext } from '../types';
 import { chainFromCacheFile, manifestFromIndex, staticProvider, staticTickerSuggestionsFromManifest } from './cache';
-import { lazyHit, withoutExpired } from './loader';
+import { lazyHit, loadExpiration, withoutExpired } from './loader';
 
 const ctx = {} as ProviderContext;
 const realFetch = globalThis.fetch;
@@ -91,5 +91,25 @@ describe('lazy expiration cache belongs to one meta fetch (GEX-H6)', () => {
     expect(lazyHit({ fetchedAt: 1000, quotes }, null)).toBeNull();
     expect(lazyHit(null, 1000)).toBeNull();
     expect(lazyHit({ fetchedAt: 1000 }, 1000)).toBeNull();
+  });
+});
+
+describe('a lazy expiration is fetched once while a request for it runs', () => {
+  test('the prefetch and the Load of the same date share one request; a later call fetches again', async () => {
+    let calls = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const lazy = {
+      id: 'lazy-dedupe', label: 'lazy', description: '', mode: 'lazy', setup: 'none', supportsToken: false, needsProxy: false, needsKeyFor: () => false,
+      fetchMeta: async (symbol: string) => ({ symbol, underlyingPrice: 50, expirations: ['2099-10-16'] }),
+      fetchExpiration: async () => { calls++; await gate; return [] as OptionQuote[]; },
+    } as unknown as DataProvider;
+    const a = loadExpiration(lazy, 'SPY', '2099-10-16', ctx);
+    const b = loadExpiration(lazy, 'SPY', '2099-10-16', ctx);
+    release();
+    await Promise.all([a, b]);
+    expect(calls).toBe(1);
+    await loadExpiration(lazy, 'SPY', '2099-10-16', ctx);
+    expect(calls).toBe(2);
   });
 });

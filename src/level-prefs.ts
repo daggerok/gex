@@ -182,8 +182,11 @@ export function resetLevelPrefs(): void {
     sigmaMode.set(sigmaMode.fallback);
 }
 
+/** One subscribe function for every reader: an inline one made React resubscribe on every render. */
+const subscribeLevelPrefs = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
+
 export function useLevelPrefs(): LevelPrefs {
-    return useSyncExternalStore((l) => { listeners.add(l); return () => { listeners.delete(l); }; }, getLevelPrefs, getLevelPrefs);
+    return useSyncExternalStore(subscribeLevelPrefs, getLevelPrefs, getLevelPrefs);
 }
 
 /** How the Zero GEX level is drawn on both charts (the switch inside its Levels chip): `line` at `GexLevels.zeroGex` (the
