@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { attachLongPress } from '../long-press';
@@ -20,7 +20,7 @@ import { isApplePlatform, levelColorOf, nearestStrike, defaultLevelName, propose
 import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
 import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
-import { computeGexProfile, computeOiVolumeTotals, computePCRatio, gexBarHalves, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
+import { computeOiVolumeTotals, computePCRatio, gexBarHalves, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
     CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
     type GexLevelKey, type LevelColorSet, type MetricColorSet,
@@ -367,6 +367,9 @@ const Row: React.FC<{ label: string; value: string; valueClass?: string; dot?: s
 // ticker, or switching tickers mid-session) behaves exactly like today, a
 // plain reset to the default full-range/unzoomed view.
 // ---------------------------------------------------------------------------
+/** Stable empty profile while there are no levels. */
+const NO_PROFILE: GexPoint[] = [];
+
 export const GexView: React.FC<GexViewProps> = ({
     settings, provider, symbol, spot: effSpot, spotIsEstimated: effSpotIsEstimated, quotes, levels, isFuturesPriced,
     selectedExps, metrics, setMetrics,
@@ -379,12 +382,10 @@ export const GexView: React.FC<GexViewProps> = ({
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
 
     // quotes / effSpot / levels come from App's useGexLevels (computed once,
-    // shared with the Chart tab). The profile below only feeds the bar chart.
+    // shared with the Chart tab). The bars draw the profile the levels were computed from (GEX-M3): the same reference
+    // price (the forward for VIX / VXN), and no second computeGexProfile per render of a new slice.
     const totals = useMemo(() => computeOiVolumeTotals(quotes), [quotes]);
-    const profile: GexPoint[] = useMemo(
-        () => (effSpot != null && quotes.length ? computeGexProfile(quotes, effSpot) : []),
-        [quotes, effSpot],
-    );
+    const profile: GexPoint[] = levels?.profile ?? NO_PROFILE;
     const pcr = useMemo(
         () => (levels ? { byOi: levels.pcRatioOi, byVolume: levels.pcRatioVolume } : computePCRatio(quotes)),
         [levels, quotes],
@@ -695,6 +696,14 @@ export const GexView: React.FC<GexViewProps> = ({
     // DOWN zooms in, UP zooms out (a pinch, which arrives as Ctrl + wheel, zooms the natural way). The
     // listener is native and not passive so the page does not scroll while the cursor is on the chart.
     const chartBoxRef = useRef<HTMLDivElement | null>(null);
+    // The box element as state too (GEX-M9): the observers and native listeners below attach to it and are keyed on it. They
+    // were keyed on `!!chart`, which stays true across the futures-priced placeholder (no chart box rendered), so after VIX
+    // -> SPX zoom, pinch and the axis captions stayed dead until a tab switch.
+    const [chartBox, setChartBox] = useState<HTMLDivElement | null>(null);
+    const chartBoxCallbackRef = useCallback((el: HTMLDivElement | null) => {
+        chartBoxRef.current = el;
+        setChartBox(el);
+    }, []);
     // Height of the chart box in px: the Strikes caption strip is a fixed pixel height, the Net GEX domain is padded by its share of the plot
     const [chartBoxH, setChartBoxH] = useState(0);
     // Edges of the axis tick labels (px from the chart box's left edge): the Net GEX caption lines up with the RIGHT edge of
@@ -731,7 +740,7 @@ export const GexView: React.FC<GexViewProps> = ({
         const mo = new MutationObserver(measure);
         mo.observe(box, { subtree: true, childList: true, characterData: true, attributes: true });
         return () => mo.disconnect();
-    }, [!!chart]);
+    }, [chartBox]);
     const wheelAccRef = useRef(0);
     const wheelHandlerRef = useRef<(e: WheelEvent) => void>(() => {});
     wheelHandlerRef.current = (e: WheelEvent) => {
@@ -761,14 +770,14 @@ export const GexView: React.FC<GexViewProps> = ({
         ro.observe(el);
         setChartBoxH(Math.round(el.getBoundingClientRect().height));
         return () => ro.disconnect();
-    }, [!!chart]);
+    }, [chartBox]);
     useEffect(() => {
         const el = chartBoxRef.current;
         if (!el) return;
         const onWheel = (e: WheelEvent) => wheelHandlerRef.current(e);
         el.addEventListener('wheel', onWheel, { passive: false });
         return () => el.removeEventListener('wheel', onWheel);
-    }, [!!chart]);
+    }, [chartBox]);
 
     // Triple Escape (main.tsx) resets every reset button: this view resets Metrics, Levels and the zoom.
     const resetAllRef = useRef<() => void>(() => {});
@@ -874,7 +883,7 @@ export const GexView: React.FC<GexViewProps> = ({
             el.removeEventListener('touchend', end);
             el.removeEventListener('touchcancel', end);
         };
-    }, [!!chart]);
+    }, [chartBox]);
 
     const saveLevel = (name: string, color: string) => {
         if (!levelDraft) return;
@@ -1494,7 +1503,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         container, not the whole page, so text elsewhere (inputs, sidebar
                         values, etc.) stays normally selectable. */}
                     <div
-                        ref={chartBoxRef}
+                        ref={chartBoxCallbackRef}
                         className={'relative h-[360px] lg:h-auto lg:min-h-[240px] lg:flex-1 select-none touch-pan-y' + (fs.full ? ' !h-auto flex-1' : '') + (panning ? ' cursor-grabbing' : xZoom ? ' cursor-grab' : '')}
                         onPointerDownCapture={(e) => { pointerTypeRef.current = e.pointerType; }}
                         onMouseDownCapture={onChartPointerDownCapture}
@@ -1841,10 +1850,8 @@ export const GexView: React.FC<GexViewProps> = ({
                                         plain-horizontal <ReferenceLine> block (removed). Wherever
                                         this code actually runs, `levels` is guaranteed non-null and
                                         `levels.spot` is exactly `effSpot` (see use-gex-levels.ts:
-                                        the only way to reach this branch with `chart` truthy is
-                                        `effSpot != null` - computeGexProfile is gated on that - and
-                                        for a non-futures-priced symbol `levels` is non-null under
-                                        that exact same condition; a futures-priced symbol with no
+                                        `chart` is built from `levels.profile` (GEX-M3), so it is
+                                        only truthy when `levels` is non-null; a futures-priced symbol with no
                                         real levels is caught by the earlier `isFuturesPriced &&
                                         !levels` early return, before this code is reached at all) -
                                         so no special-casing is needed, `levels?.spot` alone is
