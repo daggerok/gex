@@ -221,6 +221,10 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             handleScale: { axisDoubleClickReset: { time: false, price: true } },
         });
         const series = chart.addSeries(CandlestickSeries, {
+            // no built-in last-close line and axis label: the named Spot level is the only line at the current price
+            // (owner 2026-10-25: an unnamed orange 7623.68 sat on top of "Spot 7623.68" on SPX)
+            priceLineVisible: false,
+            lastValueVisible: false,
             autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => {
                 const info = base();
                 if (!info?.priceRange) return info;
@@ -243,6 +247,9 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         segmentsRef.current = segments;
         chartRef.current = chart;
         seriesRef.current = series;
+        // for the browser checks: the library's own last-close line and label stay off (only the named Spot level shows)
+        const own = series.options();
+        el.dataset.seriesLastPrice = own.priceLineVisible || own.lastValueVisible ? 'on' : 'off';
         return () => {
             bandRef.current = null;
             segmentsRef.current = null;
