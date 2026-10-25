@@ -497,6 +497,12 @@ export const GexView: React.FC<GexViewProps> = ({
      *  title, hover-tooltip rows) - every other metric already reads fully
      *  via metricLabel; only Absolute Gamma has a distinct short ("AG") vs.
      *  full ("Absolute Gamma") form. */
+    /** Legend order key: the Net GEX bars keep the place of their Net GEX names in the split ("Abs GEX") view too. */
+    const legendSortKey = (dataKey: unknown, value: unknown): string => {
+        if (dataKey === 'pos') return `${tr('gex.metric.netGex')} (+)`;
+        if (dataKey === 'neg') return `${tr('gex.metric.netGex')} (−)`;
+        return String(value ?? '');
+    };
     const metricLabelFull = (m: GexMetric) => (m === 'absoluteGamma' ? tr('gex.metric.absoluteGammaFull') : metricLabel(m));
     /** Reads a chart row's value for a metric generically (see
      *  metricDataKey's doc comment for why AG needs this instead of
@@ -1729,7 +1735,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                         labels' way; moving the Legend to the top (clear of the
                                         bars, which only draw up to the plot's own top margin) was
                                         simpler than trying to out-position it from the bottom. */}
-                                    <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
+                                    {/* recharts sorts the legend by its text: "Abs GEX (+)" would jump before "Absolute Gamma".
+                                        The Net GEX bars sort under their Net GEX names in both views, so the switch only changes words */}
+                                    <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} itemSorter={(item) => legendSortKey(item.dataKey, item.value)} />
                                     {/* Plain horizontal zero-line label - unlike the Key Levels'
                                         diagonal below-axis labels (renderRotatedLevelLabel), this
                                         one line has nowhere else to collide: it sits on its own
