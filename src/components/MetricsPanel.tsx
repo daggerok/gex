@@ -1,9 +1,10 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
 import { useI18n } from '../i18n';
-import { DEFAULT_GEX_METRICS, GEX_METRICS, resetMetricColors, setMetricColor, useMetricColors, type GexMetric } from '../metric-prefs';
+import { DEFAULT_GEX_METRICS, GEX_METRICS, netGexView, resetMetricColors, setMetricColor, useMetricColors, type GexMetric } from '../metric-prefs';
 import { accentOf } from '../theme';
 import type { Settings } from '../types';
+import { ChipSwitch, StableLabel } from './ChipSwitch';
 import { ToggleChip } from './ToggleChip';
 
 // ============================================================================
@@ -28,10 +29,12 @@ export const MetricsPanel: React.FC<{
     const { t: tr } = useI18n();
     const ax = accentOf(colorTheme);
     const colors = useMetricColors();
+    const split = netGexView.use() === 'split';
     const labelFull = (m: GexMetric) => (m === 'absoluteGamma' ? tr('gex.metric.absoluteGammaFull') : tr('gex.metric.' + m));
     const reset = () => {
         setMetrics([...DEFAULT_GEX_METRICS]);
         resetMetricColors();
+        netGexView.set(netGexView.fallback);
     };
     return (
         <div className={BOX + ' ' + className} role="group" aria-label={tr('gex.metric.label')}>
@@ -46,24 +49,31 @@ export const MetricsPanel: React.FC<{
                             // Independently togglable (not radio buttons); the last remaining selected metric can't be turned
                             // off, so the chart is never empty.
                             onToggle={() => setMetrics(on ? (metrics.length > 1 ? metrics.filter((x) => x !== m) : metrics) : [...metrics, m])}
-                            title={tr('gex.metric.tooltip.' + m)}
+                            title={tr('gex.metric.tooltip.' + (m === 'netGex' && split ? 'netGexSplit' : m))}
                             activeClass={ax.chipActive}
                             idleClass={ax.chipIdle}
                             // Per-metric bar colour pickers: Net GEX has two (its signed positive and negative halves), the others
                             // one each. Always visible (not gated on `on`) so a colour can be set up before the metric is turned on.
+                            // Net GEX: the switch on the left of the label shows both sides of every strike ("GEX") instead
+                            // of their net; the label keeps one width in both states (StableLabel), so nothing moves
+                            leading={m === 'netGex' ? (
+                                <ChipSwitch checked={split} onChange={(on) => netGexView.set(on ? 'split' : 'net')} label={tr('gex.metric.splitSwitch')} />
+                            ) : undefined}
                             swatches={m === 'netGex' ? (
                                 <>
                                     <input type="color" value={colors.netGexPos} onChange={(e) => setMetricColor('netGexPos', e.target.value)}
-                                           title={tr('gex.metric.colorNetGexPos')} aria-label={tr('gex.metric.colorNetGexPos')} className={SWATCH} />
+                                           title={tr(split ? 'gex.metric.colorGexPos' : 'gex.metric.colorNetGexPos')} aria-label={tr(split ? 'gex.metric.colorGexPos' : 'gex.metric.colorNetGexPos')} className={SWATCH} />
                                     <input type="color" value={colors.netGexNeg} onChange={(e) => setMetricColor('netGexNeg', e.target.value)}
-                                           title={tr('gex.metric.colorNetGexNeg')} aria-label={tr('gex.metric.colorNetGexNeg')} className={SWATCH} />
+                                           title={tr(split ? 'gex.metric.colorGexNeg' : 'gex.metric.colorNetGexNeg')} aria-label={tr(split ? 'gex.metric.colorGexNeg' : 'gex.metric.colorNetGexNeg')} className={SWATCH} />
                                 </>
                             ) : (
                                 <input type="color" value={colors[m]} onChange={(e) => setMetricColor(m, e.target.value)}
                                        title={tr('gex.metric.color', { metric: labelFull(m) })} aria-label={tr('gex.metric.color', { metric: labelFull(m) })} className={SWATCH} />
                             )}
                         >
-                            {tr('gex.metric.' + m)}
+                            {m === 'netGex'
+                                ? <StableLabel value={tr(split ? 'gex.metric.netGexSplit' : 'gex.metric.netGex')} options={[tr('gex.metric.netGex'), tr('gex.metric.netGexSplit')]} />
+                                : tr('gex.metric.' + m)}
                         </ToggleChip>
                     );
                 })}
