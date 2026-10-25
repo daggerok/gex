@@ -14,6 +14,9 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t14 - Every scheduled run from 16:30 to 23:59 New York time is final (review GEX-H7, the workflow sets HISTORY=1 for it), so
+ *        several runs can archive the same day: a ticker whose new file differs from its zip entry only in the `updated` stamp
+ *        keeps the entry (archiveDay `sameData`), and a rerun with unchanged data commits nothing.
  *   t13 - The default list lives only here (DEFAULT_SYMBOLS; src/default-tickers.ts is gone) and index.json carries it as the
  *        additive field `defaults` (the built-in list, not a DEFAULT_TICKERS override of one run), so the app's ticker hint and
  *        backup preset read it from there and the list is written once. COMP, DJIA, INDU and NYA left it again (COMP is
@@ -2088,7 +2091,9 @@ export async function main(): Promise<void> {
     // The hourly runs before it do not touch api/history (nothing is committed for them, see update-partial-data.yml).
     if (cfg.HISTORY) {
         const day = marketDay();
-        const archived = archiveDay({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: defaultSymbols(), day, dayOf: fileDay });
+        // equal data with only a newer `updated` stamp keeps the zip: every run from 16:30 to 23:59 New York time is final
+        const sameData = (oldText: string, nextText: string) => classifyPayload(oldText, nextText) === "unchanged";
+        const archived = archiveDay({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: defaultSymbols(), day, dayOf: fileDay, sameData });
         const n = archived.added[day]?.length ?? 0;
         console.log(`${outputLabel("history")} ${day}: ${n} file(s) written to the day zip, ${archived.already} already in it`);
         const dropped = pruneArchives(HISTORY_DIR, day, cfg.HISTORY_KEEP_DAYS, cfg.HISTORY_KEEP_BACKUP_DAYS);

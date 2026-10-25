@@ -2,24 +2,29 @@
 # GEX - PARTIAL data update: the most important (default) tickers, every hour during US market hours
 # -----------------------------------------------------------------------------
 # Runs `bun scripts/options-data.ts` with no arguments, which covers only
-# DEFAULT_SYMBOLS (the indices, ETFs and mega caps the ticker search field hints,
-# src/default-tickers.ts), not the whole universe. The full refresh stays in update-data.yml.
+# DEFAULT_SYMBOLS (the indices, ETFs and mega caps the ticker search field hints; the list lives in
+# scripts/options-data.ts and reaches the app through api/options/index.json `defaults`), not the whole universe.
+# The full refresh stays in update-data.yml.
 #
-# WHEN: Mon-Fri at 8:45, 9:45, ..., 16:45 New York time (9 runs a day, the first one before the open). The schedule has its own time zone
-# (`timezone: America/New_York`, the owner's fix, 2026-10-12), so the summer and winter time switch needs no extra UTC
-# slots and no skipped runs. The "Market window" step below stays as a guard: it still skips a scheduled run that starts
-# outside 8:40-18:30 New York time. Scheduled runs can start many minutes late, the window allows for that. Market holidays
-# are not skipped (the data is simply refreshed with the last prices).
+# WHEN: Mon-Fri at 8:45, 9:45, ..., 16:45 New York time (9 runs, the first one before the open) plus 17:15, 18:15 and
+# 19:15 after the close (12 runs a day). The schedule has its own time zone (`timezone: America/New_York`, the owner's fix,
+# 2026-10-12), so the summer and winter time switch needs no extra UTC slots and no skipped runs. The "Market window" step
+# below stays as a guard: it skips a scheduled run that starts before 8:40 or after midnight New York time. GitHub drops
+# many scheduled runs and starts others late (review GEX-H7: no archive for 2026-10-13, 10-16 and 10-19, the runs came at
+# 16:03 and 18:59), so the three extra slots and the open end of the window make sure at least one final run happens.
+# Market holidays are not skipped (the data is simply refreshed with the last prices).
 #
 # WHAT IS COMMITTED (owner's decision, keeps the repository small): the hourly data is NOT committed. Each run fetches
 # the fresh files into its own checkout, builds the site from them and deploys it to GitHub Pages straight from this
 # workflow (the `deploy` job), so the site is fresh every hour and git history does not grow by about 2 MB per run.
-# Only the LAST run of the day (New York time 16:30 or later) commits: the day's archive zip api/history/<YYYY-MM>/<day>.zip
-# (the last state of the day, kept for 14 days) and api/latest.json. A backtest backup made here (repository variable
-# BACKTEST_TICKERS) is committed by the run that made it. Any other deploy (a code push) refreshes the default tickers
-# before it builds, see github-pages.yml, so it never shows the older committed files.
+# Only a FINAL run (any run that starts from 16:30 to 23:59 New York time, owner's decision 2026-10-25) commits: the day's
+# archive zip api/history/<YYYY-MM>/<day>.zip (the last state of the day, kept for 14 days) and api/latest.json. Several final
+# runs a day are fine: the archive is idempotent, a ticker whose data did not change keeps its zip entry (only the
+# `updated` stamp differs), so a later final run commits only what really changed after the close. A backtest backup made
+# here (repository variable BACKTEST_TICKERS) is committed by the run that made it. Any other deploy (a code push)
+# refreshes the default tickers before it builds, see github-pages.yml, so it never shows the older committed files.
 #
-# SPEED: the job is kept as short as possible, it is billed per started minute. The default 18 tickers take about
+# SPEED: the job is kept as short as possible, it is billed per started minute. The default 19 tickers take about
 # 20 s with CONCURRENCY=4 (55 s one by one), build and deploy are two more short jobs, about 2 billed minutes a run.
 # =============================================================================
 name: Update partial options data
@@ -28,6 +33,8 @@ on:
   workflow_dispatch: {} # manual run, always refreshes
   schedule:
     - cron: "45 8-16 * * 1-5" # 8:45, 9:45, ..., 16:45 in the time zone below, summer and winter alike
+      timezone: America/New_York
+    - cron: "15 17-19 * * 1-5" # 17:15, 18:15, 19:15: final runs after the close, in case GitHub drops or delays the 16:45 one
       timezone: America/New_York
 
 permissions:
@@ -67,10 +74,12 @@ jobs:
           mins=$((10#${now%:*} * 60 + 10#${now#*:}))
           run=true
           if [ -n "$SCHEDULE" ]; then
-            # accept 8:40 - 18:30: the 16:45 run writes the day's archive, so it still counts when GitHub starts it up to 1:45 late
-            if [ "$mins" -lt 520 ] || [ "$mins" -gt 1110 ]; then run=false; fi
+            # accept 8:40 - 23:59: any late start of an after-close slot still writes the day's archive. A run that GitHub
+            # starts after midnight would belong to the next day (or a Saturday) and is skipped.
+            if [ "$mins" -lt 520 ]; then run=false; fi
           fi
-          # the last run of the day: 16:30 New York time or later, it writes and commits the day's archive
+          # a final run: 16:30 New York time or later (to 23:59), it writes and commits the day's archive. Every such run is
+          # final, the archive is idempotent (owner, 2026-10-25)
           final=false
           if [ "$mins" -ge 990 ]; then final=true; fi
           echo "New York time $now, schedule '${SCHEDULE:-manual}' -> run=$run final=$final"
