@@ -344,7 +344,7 @@ export interface SigmaStatBasis {
     expiration: string;
     /** ATM IV at spot of that expiration (atmImpliedVol), as a decimal */
     iv: number;
-    /** calendar days to that expiration as greeks.ts counts them (yearsToExpiration * 365, 1 day minimum) */
+    /** days (fractional) to that expiration's 16:00 New York settlement as greeks.ts counts them (yearsToExpiration * 365, 15 minutes minimum) */
     days: number;
     /** 1 sigma in price: spot * iv * sqrt(days / 365) */
     move: number;

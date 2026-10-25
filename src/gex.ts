@@ -938,7 +938,7 @@ export function ivCoverageNearSpot(quotes: readonly OptionQuote[], spot: number)
  * owner-requested heuristics, not published levels:
  *  - % mode: strike nearest to spot * (1 + side * n * 1%), n = 1, 2, 3. A % distance, NOT a statistical sigma
  *  - statistical mode: 1σ = spot * ATM IV * sqrt(T), T = years to the NEAREST given expiration that is not expired and
- *    has a usable ATM IV (yearsToExpiration, the same calendar count the greeks use), the strike nearest to
+ *    has a usable ATM IV (yearsToExpiration: real time to the 16:00 New York settlement, 15-minute floor), the strike nearest to
  *    spot + side * n * 1σ. The textbook one-standard-deviation move of a lognormal price at that IV, approximated as
  *    linear in price (no drift, no skew)
  * Levels are ordered +1, +2, +3, -1, -2, -3. Null when there is no strike or no valid spot. `now` is for tests.
@@ -964,7 +964,7 @@ export function computeSigmaLevels(quotes: readonly OptionQuote[], spot: number,
         if (years == null) continue;
         const iv = atmImpliedVol(quotes.filter((q) => q.expiration === expiration), spot);
         if (iv == null) continue;
-        statBasis = { expiration, iv, days: Math.round(years * 365), move: spot * iv * Math.sqrt(years) };
+        statBasis = { expiration, iv, days: years * 365, move: spot * iv * Math.sqrt(years) };
         break;
     }
     return { pct: ladder(spot * SIGMA_PCT_STEP), stat: statBasis ? ladder(statBasis.move) : null, statBasis };

@@ -816,9 +816,9 @@ import { liveLabel, pickTickerForSnapshot } from './backtest/entries';
 import { makeBackup, type BackupProgress } from './backtest/maker';
 import { saveBackupChoice, type BackupChoice } from './backtest/prefs';
 import { downloadBytes, useBacktest } from './backtest/use-backtest';
-import { setValuationDay } from './greeks';
+import { setValuationTime } from './greeks';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
-import { makeAsOfProvider, valuationDayOf } from './providers/asof';
+import { asOfDayOf, makeAsOfProvider, valuationTimeOf } from './providers/asof';
 import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
 import { ctxFor, PROVIDERS, suggestTickers } from './providers';
 import { loadDefaultTickers } from './providers/cache';
@@ -940,10 +940,10 @@ const App: React.FC = () => {
         () => (asOf ? makeAsOfProvider(asOf.snapshot) : PROVIDERS.find((p) => p.id === settings.providerId) ?? PROVIDERS[0]),
         [asOf, settings.providerId],
     );
-    // The model greeks are valued on the snapshot's day, and its custom levels replace the user's own (read-only). A LAYOUT
+    // The model greeks are valued at the snapshot's time (a backup's minute, a day archive's 16:00 close), and its custom levels replace the user's own (read-only). A LAYOUT
     // effect: it runs before the effects below that load the chain, so the first load already sees the right day.
     useLayoutEffect(() => {
-        setValuationDay(asOf ? valuationDayOf(asOf.id) : null);
+        setValuationTime(asOf ? valuationTimeOf(asOf.id) : null);
         setCustomLevelsOverride(asOf ? asOf.customLevels : null);
     }, [asOf]);
     const [toast, setToast] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -1845,7 +1845,7 @@ const App: React.FC = () => {
                         metrics={gexMetrics}
                         setMetrics={changeGexMetrics}
                         strikes={chartStrikes}
-                        asOfDate={asOf ? valuationDayOf(asOf.id) : null}
+                        asOfDate={asOf ? asOfDayOf(asOf.id) : null}
                     />
                 </Suspense>
                 </div>

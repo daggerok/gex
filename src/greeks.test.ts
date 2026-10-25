@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 /// <reference types="node" />
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -20,12 +20,27 @@ import {
   enrichQuoteWithModelGreeks,
   enrichQuotesWithModelGreeks,
   isFuturesPricedSymbol,
+  MIN_MINUTES_TO_EXPIRATION,
+  setValuationTime,
   yearsToExpiration,
 } from './greeks';
+import { marketDate, zonedTimeToMs } from './backtest/snapshot';
 import type { ChainResult, OptionQuote } from './types';
 import { black76Price } from './vix-pricing';
 
 const root = join(__dirname, '..');
+
+/** Frozen pricing clock (GEX-M1: T is the real time to the 16:00 New York settlement): 16:00 New York on Monday 2026-03-09,
+ *  the day after the spring daylight saving switch (the next one is 2026-11-01). */
+const CLOCK = zonedTimeToMs(2026, 3, 9, 16, 0);
+beforeAll(() => setValuationTime(CLOCK));
+afterAll(() => setValuationTime(null));
+
+/** Expiration `days + 1` days after the frozen clock: T = (days + 1) / 365, the numbers the hand-derived fixtures were made
+ *  with under the old "+1 day" rule. */
+function expInDays(days: number): string {
+  return new Date(Date.UTC(2026, 2, 9 + days + 1)).toISOString().slice(0, 10);
+}
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
 
 /** Pull the string members out of `const SUPPORTED_INDEX_SYMBOLS = new Set([...])`. */
@@ -103,7 +118,7 @@ describe('blackScholesGreeks dividend yield', () => {
   const quote = {
     side: 'call' as const,
     strike: 30000,
-    expiration: new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10),
+    expiration: expInDays(90),
     iv: 0.18,
     last: null,
     mid: null,
@@ -151,7 +166,7 @@ describe('futures-priced symbols (VIX, VXN)', () => {
   function cboeVixQuote(overrides: Partial<OptionQuote> = {}): OptionQuote {
     return {
       symbol: 'VIX261015C00020000',
-      expiration: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+      expiration: expInDays(30),
       side: 'call',
       strike: 20,
       bid: 0.5, ask: 0.6, mid: 0.55, last: 0.55,
@@ -193,7 +208,7 @@ describe('futures-priced symbols (VIX, VXN)', () => {
   });
 
   test('enrichQuotesWithModelGreeks: a VIX quote is suppressed, a non-VIX (SPX) quote is completely unaffected', () => {
-    const exp = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const exp = expInDays(30);
     const vix = cboeVixQuote({ expiration: exp });
     const spx: OptionQuote = {
       symbol: 'SPX261015C06000000',
@@ -229,7 +244,7 @@ describe('vixFuturesPricing toggle wiring (Phase 2)', () => {
   function cboeVixQuote(overrides: Partial<OptionQuote> = {}): OptionQuote {
     return {
       symbol: 'VIX261015C00020000',
-      expiration: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+      expiration: expInDays(30),
       side: 'call',
       strike: 20,
       bid: 0.5, ask: 0.6, mid: 0.55, last: 0.55,
@@ -249,7 +264,7 @@ describe('vixFuturesPricing toggle wiring (Phase 2)', () => {
   // default.
   // -------------------------------------------------------------------------
   test('toggle OFF (explicit false): VIX quote is suppressed exactly as before this PR; non-VIX (SPX) unaffected', () => {
-    const exp = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const exp = expInDays(30);
     const vix = cboeVixQuote({ expiration: exp });
     const spx: OptionQuote = {
       symbol: 'SPX261015C06000000',
@@ -286,7 +301,7 @@ describe('vixFuturesPricing toggle wiring (Phase 2)', () => {
   });
 
   test('enrichChainResult: toggle OFF reproduces the pre-Phase-2 summary (fallbackSource black-scholes, cboeMatched counts provider 1st-order)', () => {
-    const exp = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const exp = expInDays(30);
     const result: ChainResult = {
       symbol: 'VIX',
       underlyingPrice: 15.3,
@@ -330,7 +345,7 @@ describe('vixFuturesPricing toggle wiring (Phase 2)', () => {
   }
 
   test('toggle ON: a VIX quote with a resolvable forward gets REAL Black-76 greeks, not the suppressed state', () => {
-    const exp = new Date(Date.now() + 19 * 86_400_000).toISOString().slice(0, 10);
+    const exp = expInDays(19);
     const quotes = syntheticVixChain(exp, 17.648, 0.92, [16, 17, 18, 19, 20]);
     const [sample] = enrichQuotesWithModelGreeks(quotes, 15.3, 'VIX', true);
     expect(sample.greeksSource).toBe('black-76');
@@ -346,7 +361,7 @@ describe('vixFuturesPricing toggle wiring (Phase 2)', () => {
   });
 
   test('enrichChainResult: toggle ON reports fallbackSource black-76 and counts black-76 rows as computed', () => {
-    const exp = new Date(Date.now() + 19 * 86_400_000).toISOString().slice(0, 10);
+    const exp = expInDays(19);
     const quotes = syntheticVixChain(exp, 17.648, 0.92, [16, 17, 18, 19, 20]);
     const result: ChainResult = { symbol: 'VIX', underlyingPrice: 15.3, expirations: [exp], quotes };
     const on = enrichChainResult(result, true);
@@ -356,8 +371,8 @@ describe('vixFuturesPricing toggle wiring (Phase 2)', () => {
   });
 
   test('two VIX expirations in the same enrichChainResult call get DIFFERENT forwards (section 9: no shared spot)', () => {
-    const expA = new Date(Date.now() + 19 * 86_400_000).toISOString().slice(0, 10);
-    const expB = new Date(Date.now() + 201 * 86_400_000).toISOString().slice(0, 10);
+    const expA = expInDays(19);
+    const expB = expInDays(201);
     const quotes = [
       ...syntheticVixChain(expA, 17.648, 0.92, [16, 17, 18, 19, 20]),
       ...syntheticVixChain(expB, 20.417, 0.40, [16, 17, 18, 19, 20]),
@@ -438,7 +453,7 @@ describe('blackScholesGamma / impliedVolFromGamma', () => {
   const T = 30 / 365;
 
   test('blackScholesGamma is the gamma of blackScholesGreeks', () => {
-    const exp = (() => { const d = new Date(); d.setDate(d.getDate() + 29); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+    const exp = expInDays(29); // T = 30/365
     const full = blackScholesGreeks({ side: 'call', strike: 105, expiration: exp, iv: 0.2, last: null, mid: null, bid: null, ask: null }, 100);
     expect(blackScholesGamma(100, 105, 30 / 365, 0.2) as number).toBeCloseTo(full.greeks?.gamma as number, 12);
     expect(blackScholesGamma(100, 105, 0, 0.2)).toBeNull();
@@ -475,5 +490,58 @@ describe('blackScholesGamma / impliedVolFromGamma', () => {
     const r = impliedVolFromGamma(100, 100, T, blackScholesGamma(100, 100, T, 0.06) as number) as number;
     expect(r).toBeGreaterThanOrEqual(GAMMA_INVERSION_MIN_IV);
     expect(r).toBeLessThanOrEqual(GAMMA_INVERSION_MAX_IV);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Time to expiration (GEX-M1, owner-approved 2026-10-25; New York day, GEX-L2)
+// ---------------------------------------------------------------------------
+describe('yearsToExpiration: real time to the 16:00 New York settlement', () => {
+  const HOUR = 1 / (365 * 24);
+  const ny = (y: number, m: number, d: number, h: number, min = 0) => new Date(zonedTimeToMs(y, m, d, h, min));
+
+  test('0DTE at 15:00 New York is one hour, not a day (the old "+1 day" rule gave 1/365)', () => {
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 15)) as number).toBeCloseTo(HOUR, 12);
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 9, 30)) as number).toBeCloseTo(6.5 * HOUR, 12);
+  });
+
+  test('1DTE and a week out count the real hours to the settlement', () => {
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 22, 12)) as number).toBeCloseTo(28 * HOUR, 12);
+    expect(yearsToExpiration('2026-10-30', ny(2026, 10, 23, 16)) as number).toBeCloseTo(7 / 365, 12);
+  });
+
+  test('15-minute floor near and after the settlement on the expiration day, null from the next New York day', () => {
+    expect(MIN_MINUTES_TO_EXPIRATION).toBe(15);
+    const floor = 0.25 * HOUR;
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 15, 50)) as number).toBeCloseTo(floor, 12);
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 16)) as number).toBeCloseTo(floor, 12);
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 23, 59)) as number).toBeCloseTo(floor, 12);
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 24, 0, 1))).toBeNull();
+    expect(yearsToExpiration('not-a-date', ny(2026, 10, 23, 12))).toBeNull();
+  });
+
+  test('the day is the New York one, whatever the browser time zone (GEX-L2)', () => {
+    // 2026-10-24 02:00 UTC is still 2026-10-23 22:00 in New York: the 10-23 expiration is not expired yet (floor),
+    // though a browser in Europe or UTC already shows the 24th
+    expect(yearsToExpiration('2026-10-23', new Date(Date.UTC(2026, 9, 24, 2))) as number).toBeCloseTo(0.25 * HOUR, 12);
+    // 2026-10-23 03:00 UTC is 2026-10-22 23:00 in New York: 17 hours to the 16:00 settlement of the 23rd
+    expect(yearsToExpiration('2026-10-23', new Date(Date.UTC(2026, 9, 23, 3))) as number).toBeCloseTo(17 * HOUR, 12);
+  });
+
+  test('across the autumn daylight saving switch a week is 7 days and 1 hour (16:00 EDT -> 16:00 EST)', () => {
+    expect(yearsToExpiration('2026-11-06', ny(2026, 10, 30, 16)) as number).toBeCloseTo(7 / 365 + HOUR, 12);
+  });
+});
+
+describe('market clock helpers', () => {
+  test('zonedTimeToMs: New York wall time in summer and winter', () => {
+    expect(zonedTimeToMs(2026, 10, 23, 16, 0)).toBe(Date.UTC(2026, 9, 23, 20, 0));
+    expect(zonedTimeToMs(2026, 12, 4, 16, 0)).toBe(Date.UTC(2026, 11, 4, 21, 0));
+    expect(zonedTimeToMs(2026, 11, 1, 16, 0)).toBe(Date.UTC(2026, 10, 1, 21, 0)); // the switch day itself
+  });
+
+  test('marketDate is the New York calendar date (not the trading day)', () => {
+    expect(marketDate(new Date(Date.UTC(2026, 9, 24, 2)))).toBe('2026-10-23');
+    expect(marketDate(new Date(Date.UTC(2026, 9, 24, 5)))).toBe('2026-10-24'); // a Saturday stays Saturday
   });
 });
