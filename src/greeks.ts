@@ -146,6 +146,15 @@ export function yearsToExpiration(expiration: string, now: Date = valuationNow()
     return Math.max(settle - now.getTime(), MIN_MS_TO_EXPIRATION) / YEAR_MS;
 }
 
+/**
+ * True when the expiration day is before the market (New York) calendar date of `now` (the valuation time in a backtest):
+ * the same rule as yearsToExpiration's null, so the lists the app shows and the model math agree (GEX-H4). A malformed
+ * date is not "expired" here (yearsToExpiration still refuses it).
+ */
+export function isExpired(expiration: string, now: Date = valuationNow()): boolean {
+    return /^\d{4}-\d{2}-\d{2}$/.test(expiration) && expiration < marketToday(now);
+}
+
 export type BsGreeks = {
     delta: number;
     gamma: number;

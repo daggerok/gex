@@ -26,6 +26,12 @@ describe('gexChainKey and groupByExpiration', () => {
         const c = quote('X', '2026-10-30', 3);
         expect(groupByExpiration([a, b, c])).toEqual({ '2026-10-30': [a, c], '2026-11-06': [b] });
     });
+
+    test('only the listed expirations (an expired one of a stale file is left out, GEX-H4)', () => {
+        const old = quote('X', '2026-10-16', 1);
+        const live = quote('X', '2026-10-30', 2);
+        expect(groupByExpiration([old, live], ['2026-10-30'])).toEqual({ '2026-10-30': [live] });
+    });
 });
 
 describe('pickGexQuotesByExp (GEX-H1: never the previous ticker under the new symbol)', () => {

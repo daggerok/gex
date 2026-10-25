@@ -1,4 +1,5 @@
 /// <reference lib="esnext" />
+import { backupStamp, marketDay, snapshotLabel } from './backtest/snapshot';
 import { translate, type Language } from './i18n';
 import type { DataProvider, OptionQuote } from './types';
 
@@ -121,6 +122,33 @@ export function fmtSignedCompact(v: number): string {
 export function fmtDays(days: number): string {
     if (!Number.isFinite(days)) return '';
     return days.toFixed(days < 1 ? 2 : 1);
+}
+
+/** How old the loaded cache data is (GEX-H4), from the file's `updated` stamp and trading day `date`. */
+export interface DataAge {
+    /** `YYYY-MM-DD HH:mm`, New York time, when the file was written */
+    at: string;
+    /** the trading day the data belongs to */
+    day: string;
+    /** calendar days from that trading day to the current one (0 = current) */
+    daysOld: number;
+    /** the data belongs to an earlier trading day than the current one */
+    stale: boolean;
+}
+
+/**
+ * Data age of a cache file, null without a readable `updated` (live providers). The trading day is the file's `date` (else
+ * the trading day of `updated`), "current" is the trading day of `now` (marketDay: before 9:30 and on weekends still the
+ * previous weekday, so Friday's close is not stale over the weekend).
+ */
+export function dataAge(updated: string | null | undefined, dataDate: string | null | undefined, now: Date = new Date()): DataAge | null {
+    const t = updated ? Date.parse(updated) : NaN;
+    if (!Number.isFinite(t)) return null;
+    const at = new Date(t);
+    const day = dataDate && /^\d{4}-\d{2}-\d{2}$/.test(dataDate) ? dataDate : marketDay(at);
+    const today = marketDay(now);
+    const daysOld = Math.max(0, Math.round((Date.parse(today) - Date.parse(day)) / 86_400_000));
+    return { at: snapshotLabel(backupStamp(at)), day, daysOld, stale: day < today };
 }
 
 /** Format implied volatility (decimal) as a percentage string. */
