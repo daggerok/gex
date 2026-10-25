@@ -166,6 +166,7 @@ describe('DEFAULT_SETTINGS persisted UI-state fields', () => {
 describe('sanitizeActiveTab', () => {
     test('passes through each known tab', () => {
         expect(sanitizeActiveTab('desk')).toBe('desk');
+        expect(sanitizeActiveTab('board')).toBe('board');
         expect(sanitizeActiveTab('gex')).toBe('gex');
         expect(sanitizeActiveTab('chart')).toBe('chart');
     });

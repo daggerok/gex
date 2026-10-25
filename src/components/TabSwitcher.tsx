@@ -6,8 +6,8 @@ import type { ColorThemeId } from '../types';
 import { Pill } from './TopBar';
 
 /** Content views below the TopBar (plan section 2). Order is fixed. */
-export type AppTab = 'desk' | 'gex' | 'chart';
-export const APP_TABS: AppTab[] = ['desk', 'gex', 'chart'];
+export type AppTab = 'desk' | 'board' | 'gex' | 'chart';
+export const APP_TABS: AppTab[] = ['desk', 'board', 'gex', 'chart'];
 
 /**
  * Tab switcher rendered between <TopBar/> and the active view. Reuses the
@@ -44,7 +44,9 @@ export const TabSwitcher: React.FC<{
         : 'bg-indigo-600 text-white shadow-sm';
     return (
         <nav aria-label={t('tabs.label')} className="mx-auto w-full px-4 pt-4 lg:px-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* From `lg` the row never wraps: the expiration panel (endSlot, `min-w-0`) shrinks instead and its chip strip
+                scrolls, so the four tab pills and the panel stay on one line (2026-10-25, the Board pill pushed it down) */}
+            <div className="flex flex-wrap items-center justify-between gap-2 lg:flex-nowrap">
                 {/* size="md": the shared <Pill/> (TopBar.tsx) defaults to a
                     compact 28px-tall rendering sized for TopBar's own CACHE/
                     LIVE and language switches - noticeably SHORTER than the

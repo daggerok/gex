@@ -274,7 +274,7 @@ export interface Settings {
      * the two in sync by hand. Defaults to 'desk', matching the original
      * (pre-persistence) behavior of every page load starting on Desk.
      */
-    activeTab: 'desk' | 'gex' | 'chart';
+    activeTab: 'desk' | 'board' | 'gex' | 'chart';
     /**
      * Persisted shared Desk/GEX expiration-chip selection (main.tsx's
      * `selectedExps`). Restored on boot but always intersected against the

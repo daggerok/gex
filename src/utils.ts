@@ -105,6 +105,18 @@ export function fmtInt(v: number | null | undefined): string {
     return (integerFormat ??= new Intl.NumberFormat()).format(Math.round(v));
 }
 
+/** 2140000000 -> "2.14B" (absolute value, 2 decimals, K/M/B/T suffix). Used by the GEX and Board tabs. */
+export function fmtCompact(v: number): string {
+    const a = Math.abs(v);
+    const [div, suffix] = a >= 1e12 ? [1e12, 'T'] : a >= 1e9 ? [1e9, 'B'] : a >= 1e6 ? [1e6, 'M'] : a >= 1e3 ? [1e3, 'K'] : [1, ''];
+    return (a / div).toFixed(2) + suffix;
+}
+
+/** Signed compact: +2.14B / -310.50M / 0.00. */
+export function fmtSignedCompact(v: number): string {
+    return (v > 0 ? '+' : v < 0 ? '-' : '') + fmtCompact(v);
+}
+
 /** Format implied volatility (decimal) as a percentage string. */
 export function fmtPct(v: number | null | undefined): string {
     if (v == null || !Number.isFinite(v)) return '';
