@@ -74,6 +74,34 @@ describe('select', () => {
     expect(c.getState().entries.find((e) => e.id === '2026-10-09')?.size).toBeGreaterThan(0);
   });
 
+  test('a slow snapshot that finishes after the user went back to live (or picked another) does not reopen (GEX-M8)', async () => {
+    const site = await fakeSite({ '2026-10-08': ['SPY'], '2026-10-09': ['SPY', 'QQQ'] });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const slow: SiteReader = { json: site.reader.json, bytes: async (path) => { if (path.includes('2026-10-09')) await gate; return site.reader.bytes(path); } };
+    const c = createBacktestController({ store: createMemoryStore(), site: slow, now: () => 1000 });
+    await c.refresh();
+    const a = c.select('2026-10-09'); // slow zip
+    await c.select(null); // back to live while it downloads
+    release();
+    await a;
+    expect(c.getState().active).toBeNull();
+    expect(c.getState().loading).toBe(false);
+
+    // A slow, then B fast: B stays open when A finishes
+    let releaseA: () => void = () => {};
+    const gateA = new Promise<void>((r) => { releaseA = r; });
+    const slowA: SiteReader = { json: site.reader.json, bytes: async (path) => { if (path.includes('2026-10-09')) await gateA; return site.reader.bytes(path); } };
+    const c2 = createBacktestController({ store: createMemoryStore(), site: slowA, now: () => 1000 });
+    await c2.refresh();
+    const first = c2.select('2026-10-09');
+    await c2.select('2026-10-08');
+    releaseA();
+    await first;
+    expect(c2.getState().active?.id).toBe('2026-10-08');
+    expect(c2.getState().error).toBeNull();
+  });
+
   test('null returns to live', async () => {
     const { c } = await setup();
     await c.select('2026-10-09');
