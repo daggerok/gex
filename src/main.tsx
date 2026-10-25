@@ -1733,6 +1733,7 @@ const App: React.FC = () => {
                             onToggle={toggleExpiration}
                             onSetAll={setSelectedExpsAndPersist}
                             colorTheme={settings.colorTheme}
+                            shares={gex.oiShares}
                         />
                         <Tip text={tr('controls.resetTooltip')} wrapperClassName="inline-flex shrink-0">
                         <button
@@ -1808,11 +1809,7 @@ const App: React.FC = () => {
                     <BoardView
                         symbol={meta?.symbol ?? ''}
                         board={gex.board}
-                        expirations={meta?.expirations ?? []}
                         selectedExps={selectedExps}
-                        oiShares={gex.oiShares}
-                        onToggleExpiration={toggleExpiration}
-                        colorTheme={settings.colorTheme}
                     />
                 </Suspense>
                 </div>

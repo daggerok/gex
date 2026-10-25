@@ -39,7 +39,7 @@ async function main(): Promise<void> {
             await page.waitForTimeout(2500);
             await page.getByRole('button', { name: 'Desk', exact: true }).first().click();
             // the Desk shows the nearest expiration; select a few more so there are sections to collapse and expand
-            const chips = page.locator('button[aria-pressed]').filter({ hasText: /^\d{4}-\d{2}-\d{2}$/ });
+            const chips = page.locator('[data-exp-chip]');
             if (await chips.count()) for (let i = 1; i < 4; i++) await chips.nth(i).click().catch(() => {});
             await page.waitForTimeout(2500);
             const exps = await page.locator('.od-sec').evaluateAll((els) => els.map((e) => e.getAttribute('data-exp') ?? ''));

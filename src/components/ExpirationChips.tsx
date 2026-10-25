@@ -4,6 +4,7 @@ import { Tip } from './Tip';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
 import type { ColorThemeId } from '../types';
+import { oiSharePct } from '../utils';
 
 /**
  * Multi-select expiration chips + "All"/"None" toggle. Rendered ONCE in a
@@ -31,7 +32,9 @@ export const ExpirationChips: React.FC<{
     /** Called with every expiration ("All") or an empty list ("None"). */
     onSetAll: (exps: string[]) => void;
     colorTheme: ColorThemeId;
-}> = ({ expirations, selected, onToggle, onSetAll, colorTheme }) => {
+    /** Each LOADED expiration's share (0..1) of the open interest of all loaded expirations (gex.ts expirationOiShares). */
+    shares?: Readonly<Record<string, number>>;
+}> = ({ expirations, selected, onToggle, onSetAll, colorTheme, shares }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(colorTheme);
     const allOn = selected.length === expirations.length;
@@ -49,12 +52,15 @@ export const ExpirationChips: React.FC<{
             <div className="themed-scroll flex min-w-0 max-w-[70vw] items-center gap-1 overflow-x-auto lg:max-w-none">
                 {expirations.map((exp) => {
                     const on = selected.includes(exp);
+                    const pct = oiSharePct(shares?.[exp]);
                     return (
                         <button
                             key={exp}
                             type="button"
                             onClick={() => onToggle(exp)}
                             aria-pressed={on}
+                            aria-label={pct ? tr('controls.expShare', { exp, pct }) : exp}
+                            data-exp-chip={exp}
                             className={
                                 'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' +
                                 (on
@@ -63,6 +69,9 @@ export const ExpirationChips: React.FC<{
                             }
                         >
                             {exp}
+                            {/* the OI share in a slot of fixed width: nothing moves while the shares load or for an expiration
+                                without one (not loaded yet with a lazy provider) */}
+                            <span className="ml-1 inline-block w-[2.75rem] text-right tabular-nums opacity-70" data-exp-share>{pct}</span>
                         </button>
                     );
                 })}
