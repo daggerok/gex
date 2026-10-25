@@ -138,7 +138,9 @@ export function staticTickerSuggestionsFromManifest(query: string, manifest: Sta
         out.push({ symbol, name: name || undefined, source: 'Local index', hasOptions, _rank: rank + (hasOptions ? 0 : 25) });
     };
     manifest.options.forEach((s) => add(s, true));
-    manifest.noOptions.forEach((s) => add(s, false));
+    // a ticker with a file is never also offered as "(no options)" (a failed scan could list it in both)
+    const withFile = new Set(manifest.options);
+    manifest.noOptions.forEach((s) => { if (!withFile.has(s)) add(s, false); });
     return out
         .sort((a, b) => a._rank - b._rank || a.symbol.localeCompare(b.symbol))
         .slice(0, limit)
@@ -254,7 +256,8 @@ export const staticProvider: DataProvider = {
     async fetchAll(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
         const manifest = await loadStaticTickerManifest(ctx).catch(() => null);
-        if (manifest?.noOptions.includes(raw)) {
+        // the skiplist wins only when there is no file: a valid file is served even if a failed scan listed the ticker (GEX-H3)
+        if (manifest?.noOptions.includes(raw) && !manifest.options.includes(raw)) {
             throw new Error(`"${raw}" is a valid ticker, but api/options/index.json marks it as (no options) in the latest static-cache scan.`);
         }
         // fetchStaticJson reads the body as TEXT first, so we can tell apart the
