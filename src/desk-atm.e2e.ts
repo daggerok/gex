@@ -80,6 +80,23 @@ async function main(): Promise<void> {
             assert.deepEqual(errors, [], `${scheme}: no page errors`);
             await page.context().close();
         }
+        // ---- a ticker loaded on another tab (the Desk is hidden, no height): opening the Desk shows its ATM row in the middle ----
+        {
+            const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+            await page.goto(site.url);
+            await page.getByText('💾').first().click();
+            await page.getByRole('button', { name: 'GEX', exact: true }).first().click();
+            const ticker = page.locator('input[role=combobox]');
+            await ticker.fill('SPY');
+            await ticker.press('Enter');
+            await page.waitForTimeout(2500);
+            await page.getByRole('button', { name: 'Desk', exact: true }).first().click();
+            await page.waitForTimeout(1500);
+            const exp = await page.locator('.od-sec').first().getAttribute('data-exp');
+            const place = exp ? await atmPlace(page, exp) : null;
+            assert.ok(place !== null && place > 1 / 3 && place < 2 / 3, `a chain loaded on the GEX tab: the Desk opens with its ATM row in the middle third (at ${place})`);
+            await page.close();
+        }
         console.log('desk atm e2e: ok');
     } finally {
         await browser.close();

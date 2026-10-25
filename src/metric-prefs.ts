@@ -41,8 +41,11 @@ export function resetMetricColors(): void {
     publish({ ...DEFAULT_METRIC_COLORS });
 }
 
+/** One subscribe function for every reader: an inline one made React resubscribe on every render. */
+const subscribeMetricColors = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
+
 export function useMetricColors(): MetricColorSet {
-    return useSyncExternalStore((l) => { listeners.add(l); return () => { listeners.delete(l); }; }, getMetricColors, getMetricColors);
+    return useSyncExternalStore(subscribeMetricColors, getMetricColors, getMetricColors);
 }
 
 /** How the Net GEX metric is drawn (the switch inside its chip): `net` = Net GEX per strike (default), `split` = "Abs GEX",

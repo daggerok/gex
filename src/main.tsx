@@ -991,8 +991,6 @@ const App: React.FC = () => {
     // AbortControllers so the Cancel button can stop in-flight requests.
     const metaAbort = useRef<AbortController | null>(null);
     const expAbort = useRef<AbortController | null>(null);
-    // Focused after confirming a ticker so Space/Enter triggers Expirations.
-    const getDatesBtnRef = useRef<HTMLButtonElement | null>(null);
     // Focused after picking an expiration so Enter immediately triggers Load.
     const loadBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -1134,10 +1132,13 @@ const App: React.FC = () => {
     // of its list (pickTickerForSnapshot). Leaving puts back the ticker that was open before the backtest. A ticker that is
     // not in the archive shows the error of the as-of provider. Not on the first render: the boot restore does that.
     const asOfId = asOf?.id ?? null;
-    const asOfFirst = useRef(true);
+    // the id this effect last acted on: a "first render" flag broke under StrictMode, whose second mount run then reloaded
+    // the ticker in development (review, LOW); comparing ids is the same in both modes
+    const lastAsOfId = useRef(asOfId);
     const beforeBacktestTicker = useRef<string | null>(null);
     useEffect(() => {
-        if (asOfFirst.current) { asOfFirst.current = false; return; }
+        if (lastAsOfId.current === asOfId) return;
+        lastAsOfId.current = asOfId;
         let sym: string;
         if (asOf) {
             if (beforeBacktestTicker.current === null) beforeBacktestTicker.current = settings.lastTicker;
@@ -1406,12 +1407,6 @@ const App: React.FC = () => {
         patchSettings({ selectedExps: next });
     }, [patchSettings]);
 
-    /** Move focus to Expirations (after ticker confirm) so Space/Enter activates it. */
-    const focusGetDatesButton = useCallback(() => {
-        // rAF: wait for React to commit closed dropdown / updated value.
-        requestAnimationFrame(() => loadBtnRef.current?.focus());
-    }, []);
-
     /** Once a ticker is chosen the cursor must not stay in the search box: while it does, the GEX chart's
      *  keyboard shortcuts are off (typing keys belong to the input), and the user would have to click
      *  elsewhere first. Drops focus from whatever has it (the input, or the suggestion that was clicked). */
@@ -1427,14 +1422,15 @@ const App: React.FC = () => {
         setTickerSuggestionsOpen(false);
         setActiveTickerSuggestion(-1);
         if (!s.hasOptions) {
+            // the focus is left where it is, the next step is another ticker (it used to jump to the Reset button of the
+            // expirations panel, a leftover of the removed "Get dates" button whose ref was never attached)
             setNotice(tr('notice.noOptions', { symbol: s.symbol }));
-            focusGetDatesButton();
             return;
         }
         setNotice('');
         releaseSearchFocus();
         void getDates(s.symbol);
-    }, [focusGetDatesButton, getDates, tr]);
+    }, [getDates, tr]);
 
     /** Keyboard navigation for the custom ticker suggestion popover. */
     const onTickerKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
