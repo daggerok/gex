@@ -17,7 +17,7 @@ import { type PriceLevelKey } from '../gex-colors';
 import { chartLabelsWithSigma } from '../level-labels';
 import { LevelsPanel } from '../components/LevelsPanel';
 import { MetricsPanel } from '../components/MetricsPanel';
-import type { GexMetric } from '../metric-prefs';
+import { useMetricColors, type GexMetric } from '../metric-prefs';
 import { sigmaLines, sigmaMode, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
 import { PriceBand, RightSegments } from '../chart-primitives';
 import { attachCrosshairMagnet } from '../crosshair-magnet';
@@ -267,6 +267,20 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             chart.remove();
         };
     }, [hasSymbol]);
+
+    // ---- Candles in the sign colours (owner, 2026-10-25): bull = Net GEX (+), bear = Net GEX (-), body, border and wick.
+    // The same token as the GEX bars and the Board dots, so a custom colour and a reset of the Metrics panel reach them too.
+    const signColors = useMetricColors();
+    useEffect(() => {
+        const series = seriesRef.current;
+        if (!series) return;
+        const up = signColors.netGexPos;
+        const down = signColors.netGexNeg;
+        series.applyOptions({ upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down });
+        // for the browser checks (the candles are drawn on a canvas)
+        const el = containerRef.current;
+        if (el) { el.dataset.candleUp = up; el.dataset.candleDown = down; }
+    }, [signColors.netGexPos, signColors.netGexNeg, hasSymbol]);
 
     // ---- Theme + date locale follow the app ----
     useEffect(() => {

@@ -5,7 +5,7 @@ import { centerRowInScroll } from '../center-row';
 import { HelpButton } from '../components/HelpButton';
 import type { Board, BoardColumn, BoardRow } from '../gex';
 import { useI18n } from '../i18n';
-import { useMetricColors } from '../metric-prefs';
+import { signColor, useMetricColors } from '../metric-prefs';
 import { accentOf } from '../theme';
 import type { ColorThemeId } from '../types';
 import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
@@ -13,7 +13,8 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // ============================================================================
 // BOARD TAB (owner 2026-10-25) - one row per strike of the selected expirations: Net GEX, Abs GEX, notional delta, OI and
 // volume (total, calls, puts) and each strike's share of the Abs GEX. The numbers come from src/gex.ts computeBoard
-// through useGexLevels (the view only renders). A green dot marks each column's peak and tints its row by the sign of the
+// through useGexLevels (the view only renders). A dot marks each column's peak, coloured by the sign of the value it marks
+// (the Net GEX (+) / (-) colours, metric-prefs signColor), and tints its row by the sign of the
 // row's Net GEX; the ATM row (strike nearest to spot) is grey and sits in the middle of the table on open and whenever
 // the ticker or the expiration selection changes (src/center-row.ts, like the Desk). Above the table the expirations
 // with their share of the open interest; a click toggles one in the shared selection.
@@ -31,6 +32,9 @@ const COLUMNS: ReadonlyArray<{ key: BoardColumn; label: string; format: (r: Boar
     { key: 'putVolume', label: 'board.col.putVolume', format: (r) => fmtInt(r.putVolume) },
     { key: 'absGexShare', label: 'board.col.absGexShare', format: (r) => `${(r.absGexShare * 100).toFixed(2)}%` },
 ];
+
+/** A peak dot of a zero value (no sign): grey. A positive value's dot is the Net GEX (+) colour, a negative one's (-). */
+const NEUTRAL_DOT = '#94a3b8';
 
 /** Opaque header / strike cell backgrounds (sticky cells must hide what scrolls under them). */
 const STICKY_BG = 'bg-slate-50 dark:bg-slate-900';
@@ -140,7 +144,7 @@ export const BoardView: React.FC<{
                                             const peak = peakSets[c.key].has(row.strike);
                                             return (
                                                 <td key={c.key} className="whitespace-nowrap border-b border-slate-100 px-3 py-1 text-right dark:border-slate-800" data-board-peak={peak ? c.key : undefined}>
-                                                    {peak && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: colors.netGexPos }} role="img" aria-label={tr('board.peak')} />}
+                                                    {peak && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: signColor(row[c.key], colors) ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr('board.peak')} />}
                                                     {c.format(row)}
                                                 </td>
                                             );

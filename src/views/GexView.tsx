@@ -333,8 +333,8 @@ export const GexView: React.FC<GexViewProps> = ({
     const net = levels && profile.length ? levels.totalNetGex : 0;
     const regime = net > 0 ? 'positive' : net < 0 ? 'negative' : 'neutral';
     const netClass = net > 0
-        ? 'text-green-600 dark:text-green-400'
-        : net < 0 ? 'text-red-600 dark:text-red-400' : undefined;
+        ? 'text-[var(--gex-pos)]'
+        : net < 0 ? 'text-[var(--gex-neg)]' : undefined;
 
     // ---- Chart data (display only: zero-boundary trimming + splitting sign
     // for colors). No more spot-percentage windowing (removed) - the chart
@@ -1184,7 +1184,7 @@ export const GexView: React.FC<GexViewProps> = ({
             label: tr('gex.metric.netGex'),
             value: cursorPoint ? fmtSignedCompact(cursorPoint.netGex) : '',
             color: cursorPoint && cursorPoint.netGex < 0 ? metricColors.netGexNeg : metricColors.netGexPos,
-            valueClass: cursorPoint ? (cursorPoint.netGex > 0 ? 'text-green-600 dark:text-green-400' : cursorPoint.netGex < 0 ? 'text-red-600 dark:text-red-400' : undefined) : undefined,
+            valueClass: cursorPoint ? (cursorPoint.netGex > 0 ? 'text-[var(--gex-pos)]' : cursorPoint.netGex < 0 ? 'text-[var(--gex-neg)]' : undefined) : undefined,
         },
         { label: tr('gex.metric.absoluteGamma'), value: cursorPoint ? fmtCompact(cursorPoint.absGamma) : '', color: metricColors.absoluteGamma },
         { label: tr('gex.metric.callOi'), value: cursorPoint ? fmtInt(cursorPoint.callOi) : '', color: metricColors.callOi },
@@ -1324,7 +1324,7 @@ export const GexView: React.FC<GexViewProps> = ({
                         <Row
                             label={tr('gex.sidebar.regime')}
                             value={tr('gex.regime.' + regime)}
-                            valueClass={regime === 'positive' ? 'text-green-600 dark:text-green-400' : regime === 'negative' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}
+                            valueClass={regime === 'positive' ? 'text-[var(--gex-pos)]' : regime === 'negative' ? 'text-[var(--gex-neg)]' : 'text-slate-500 dark:text-slate-400'}
                             dotColor={regime === 'negative' ? metricColors.netGexNeg : regime === 'positive' ? metricColors.netGexPos : AXIS_NEUTRAL}
                         />
                         <Row
@@ -1913,7 +1913,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                                         key={r.key}
                                                         className="group text-slate-800 dark:text-slate-100"
                                                     >
-                                                        <td className={cell + (pt && pt.netGex > 0 ? ' text-green-600 dark:text-green-400' : pt && pt.netGex < 0 ? ' text-red-600 dark:text-red-400' : '')}>
+                                                        <td className={cell + (pt && pt.netGex > 0 ? ' text-[var(--gex-pos)]' : pt && pt.netGex < 0 ? ' text-[var(--gex-neg)]' : '')}>
                                                             {pt && !r.exact
                                                                 ? <Tip text={`${tr('gex.values.nearest')}: ${fmt(pt.strike)}`} wrapperClassName="inline-flex">{`≈ ${fmtSignedCompact(pt.netGex)}`}</Tip>
                                                                 : pt ? fmtSignedCompact(pt.netGex) : na}
