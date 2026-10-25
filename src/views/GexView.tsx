@@ -612,9 +612,26 @@ export const GexView: React.FC<GexViewProps> = ({
     // effect is invoked. `symbol` is read from the surrounding closure
     // (stable for the lifetime of a single click handler), guarded the same
     // way the old effect was (skip when no ticker is loaded).
+    // The write is coalesced (review, LOW): a wheel or trackpad scroll zooms many times a second and each step parsed and
+    // wrote the whole zoom map synchronously. The last value of a burst is written 250 ms later, and at once when the
+    // ticker changes, the view unmounts or the page is hidden, so a switch or a reload never loses it.
+    const pendingZoomSave = useRef<{ symbol: string; xZoom: [number, number] | null } | null>(null);
+    const zoomSaveTimer = useRef<number | null>(null);
+    const flushZoomSave = useCallback(() => {
+        if (zoomSaveTimer.current !== null) { window.clearTimeout(zoomSaveTimer.current); zoomSaveTimer.current = null; }
+        const p = pendingZoomSave.current;
+        pendingZoomSave.current = null;
+        if (p) saveChartZooms(withZoom(loadChartZooms(), p.symbol, p.xZoom));
+    }, []);
+    useEffect(() => {
+        window.addEventListener('pagehide', flushZoomSave);
+        return () => { window.removeEventListener('pagehide', flushZoomSave); flushZoomSave(); };
+    }, [symbol, flushZoomSave]);
     const persistZoom = (next: { xZoom?: [number, number] | null }) => {
         if (!symbol) return;
-        saveChartZooms(withZoom(loadChartZooms(), symbol, next.xZoom !== undefined ? next.xZoom : xZoom));
+        pendingZoomSave.current = { symbol, xZoom: next.xZoom !== undefined ? next.xZoom : xZoom };
+        if (zoomSaveTimer.current !== null) window.clearTimeout(zoomSaveTimer.current);
+        zoomSaveTimer.current = window.setTimeout(flushZoomSave, 250);
     };
 
     // Arrow buttons move the CHART in the direction of the arrow (click right: the picture moves

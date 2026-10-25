@@ -121,9 +121,24 @@ export async function loadExpiration(provider: DataProvider, symbol: string, exp
         return (final?.quotes ?? []).filter((q) => q.expiration === expiration);
     }
     if (!provider.fetchExpiration) throw new Error('Provider misconfigured (lazy without fetchExpiration).');
+    // One request per expiration at a time: the background prefetch of every expiration and the Load of the selected one
+    // asked for the same date at once and fetched it twice (review, LOW)
+    const key = lazyKey(provider.id, symbol, expiration);
+    const running = lazyInFlight.get(key);
+    if (running) return running;
+    const run = loadLazyExpiration(provider, symbol, expiration, ctx, vixFuturesPricing, key)
+        .finally(() => { lazyInFlight.delete(key); });
+    lazyInFlight.set(key, run);
+    return run;
+}
+
+/** Lazy expirations being loaded right now, by cache key (loadExpiration shares them). */
+const lazyInFlight = new Map<string, Promise<OptionQuote[]>>();
+
+async function loadLazyExpiration(provider: DataProvider, symbol: string, expiration: string, ctx: ProviderContext, vixFuturesPricing: boolean, key: string): Promise<OptionQuote[]> {
+    if (!provider.fetchExpiration) throw new Error('Provider misconfigured (lazy without fetchExpiration).');
     // Serve a lazy expiration from the persistent cache only when it was fetched for the current meta (GEX-H6): the quotes
     // of an earlier session (Monday's bid, ask, IV and OI under Thursday's spot) are fetched again.
-    const key = lazyKey(provider.id, symbol, expiration);
     const meta = await cacheGet<ChainMeta>(lazyKey(provider.id, symbol, 'meta'));
     const fetchedAt = meta?.fetchedAt ?? null;
     const hit = lazyHit(await cacheGet<unknown>(key), fetchedAt);

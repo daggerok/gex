@@ -497,10 +497,30 @@ export const ChainTable: React.FC<{
     // on the money instead of at the top of a long chain. Keyed on symbol +
     // the joined expiration list (expKeyReset, declared above) so it re-centers
     // whenever the loaded set changes.
+    // The Desk stays mounted while another tab is shown (hidden, no height): a chain loaded there could not be centered and
+    // the Desk opened at the top (review, LOW). That centering waits until the desk has a height again.
+    const centerWhenShown = useRef<string | null>(null);
     useEffect(() => {
-        if (sections.length) centerStrike(sections[0].expiration);
+        if (!sections.length) return;
+        const exp = sections[0].expiration;
+        if ((scrollRef.current?.clientHeight ?? 0) === 0) centerWhenShown.current = exp;
+        else centerStrike(exp);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [symbol, expKeyReset]);
+    const centerStrikeRef = useRef(centerStrike);
+    centerStrikeRef.current = centerStrike;
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(() => {
+            const exp = centerWhenShown.current;
+            if (exp === null || el.clientHeight === 0) return;
+            centerWhenShown.current = null;
+            centerStrikeRef.current(exp);
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
 
     return (
         /* `flex-1 min-h-0 flex flex-col`: this root claims exactly the remaining

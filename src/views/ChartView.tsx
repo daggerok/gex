@@ -259,6 +259,8 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             bandRef.current = null;
             segmentsRef.current = null;
             priceLinesRef.current = [];
+            // the lines belong to this chart: a rebuilt chart must not try to remove them from its new series
+            customLinesRef.current = [];
             seriesRef.current = null;
             chartRef.current = null;
             chart.remove();
