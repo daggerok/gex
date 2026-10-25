@@ -1,5 +1,6 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
+import { Tip } from './Tip';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
@@ -37,9 +38,9 @@ export const ColorThemeSwitch: React.FC<{ value: ColorThemeId; onChange: (c: Col
 
     return (
         <div ref={rootRef} className="relative">
+            <Tip text={current.title} wrapperClassName="inline-flex">
             <button
                 type="button"
-                title={current.title}
                 aria-label={current.title}
                 aria-haspopup="menu"
                 aria-expanded={open}
@@ -53,6 +54,7 @@ export const ColorThemeSwitch: React.FC<{ value: ColorThemeId; onChange: (c: Col
             >
                 <span className={`h-3.5 w-3.5 rounded-full ${current.swatch} ring-2 ring-white dark:ring-slate-900`} />
             </button>
+            </Tip>
             {open && (
                 <div
                     role="menu"

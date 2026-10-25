@@ -1,5 +1,6 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
+import { Tip } from './Tip';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { DEFAULT_COLOR_THEME } from '../settings-store';
@@ -42,9 +43,9 @@ export const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMo
 
     return (
         <div ref={rootRef} className="relative">
+            <Tip text={`${current.title} theme`} wrapperClassName="inline-flex">
             <button
                 type="button"
-                title={`${current.title} theme`}
                 aria-label={`${current.title} theme`}
                 aria-haspopup="menu"
                 aria-expanded={open}
@@ -58,6 +59,7 @@ export const ThemeSwitch: React.FC<{ value: ThemeMode; onChange: (theme: ThemeMo
             >
                 <CurrentIcon className="h-4 w-4 transition-transform duration-150" />
             </button>
+            </Tip>
             {open && (
                 <div
                     role="menu"

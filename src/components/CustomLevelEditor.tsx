@@ -5,6 +5,7 @@ import { isApplePlatform, LEVEL_PALETTE } from '../custom-levels';
 import { useI18n } from '../i18n';
 import { fmt } from '../utils';
 import { Icon } from './Icon';
+import { Tip } from './Tip';
 
 // ============================================================================
 // CUSTOM LEVEL EDITOR - the small box that opens at the pointer on the Chart and
@@ -61,33 +62,40 @@ export const CustomLevelEditor: React.FC<{
             {/* Buttons on top: right on Windows and Linux, left on macOS and iOS */}
             <div className={'flex items-center gap-1 ' + (APPLE ? 'justify-start' : 'justify-end')}>
                 {/* onMouseDown keeps the focus in the input so the editor does not close before the click lands */}
+                <Tip text={tr('chart.custom.save')} wrapperClassName="inline-flex">
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={save}
-                        aria-label={tr('chart.custom.save')} title={tr('chart.custom.save')} className={BTN + ' text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-slate-800'}>
+                        aria-label={tr('chart.custom.save')} className={BTN + ' text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-slate-800'}>
                     <Icon.Check className="h-4 w-4" />
                 </button>
+                </Tip>
+                <Tip text={tr('chart.custom.cancel')} wrapperClassName="inline-flex">
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onCancel}
-                        aria-label={tr('chart.custom.cancel')} title={tr('chart.custom.cancel')} className={BTN + ' text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}>
+                        aria-label={tr('chart.custom.cancel')} className={BTN + ' text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}>
                     <Icon.PencilOff className="h-4 w-4" />
                 </button>
+                </Tip>
                 {draft.editId && onDelete && (
+                    <Tip text={tr('chart.custom.delete')} wrapperClassName="inline-flex">
                     <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onDelete}
-                            aria-label={tr('chart.custom.delete')} title={tr('chart.custom.delete')} className={BTN + ' text-red-500 hover:bg-red-50 dark:hover:bg-slate-800'}>
+                            aria-label={tr('chart.custom.delete')} className={BTN + ' text-red-500 hover:bg-red-50 dark:hover:bg-slate-800'}>
                         <Icon.X className="h-4 w-4" />
                     </button>
+                    </Tip>
                 )}
             </div>
             {/* The name with its colour square on the left. The square is the colour: a click opens the choices. */}
             <div className="flex items-center gap-1.5">
+                <Tip text={tr('chart.custom.color')} wrapperClassName="inline-flex shrink-0">
                 <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setPickerOpen((v) => !v)}
                     aria-label={tr('chart.custom.color')}
-                    title={tr('chart.custom.color')}
                     aria-expanded={pickerOpen}
                     style={{ backgroundColor: color }}
                     className="h-5 w-5 shrink-0 rounded border border-slate-300 dark:border-slate-600"
                 />
+                </Tip>
                 <input
                     ref={inputRef}
                     type="text"
@@ -117,6 +125,7 @@ export const CustomLevelEditor: React.FC<{
                             className={'h-4 w-4 shrink-0 rounded-full border ' + (c.toLowerCase() === color.toLowerCase() ? 'border-slate-900 ring-2 ring-sky-400 dark:border-white' : 'border-slate-300 dark:border-slate-600')}
                         />
                     ))}
+                    <Tip text={tr('chart.custom.colorPick')} wrapperClassName="inline-flex shrink-0">
                     <input
                         type="color"
                         value={color}
@@ -127,9 +136,9 @@ export const CustomLevelEditor: React.FC<{
                             else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
                         }}
                         aria-label={tr('chart.custom.colorPick')}
-                        title={tr('chart.custom.colorPick')}
                         className="h-4 w-5 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0 dark:border-slate-600"
                     />
+                    </Tip>
                 </div>
             )}
         </div>

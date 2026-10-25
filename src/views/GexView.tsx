@@ -5,7 +5,8 @@ import { createPortal } from 'react-dom';
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { attachLongPress } from '../long-press';
 import { FullscreenButton } from '../components/FullscreenButton';
-import { useFullscreen, usePortalHost } from '../use-fullscreen';
+import { useFullscreen } from '../use-fullscreen';
+import { Tip } from '../components/Tip';
 import { canPanRange, chartKeyAction, clickStep, panRange, panRangeBy, pinchRange, recordEscape, RESET_ALL_EVENT, strikeTicks, wheelSteps, zoomRange, zoomRangeAt, zoomStep } from '../zoom-pan';
 import { AXIS_NEUTRAL, countAxisColor, netGexAxisColor, ratioAxisColor } from '../axis-colors';
 import { FadePresence } from '../components/FadePresence';
@@ -186,69 +187,6 @@ const coloredTick = (colorOf: (v: number) => string, format: (v: number) => stri
         <text x={x + (placement?.dx ?? 0)} y={y} dy="0.355em" textAnchor={placement?.anchor ?? (props.textAnchor as 'start' | 'middle' | 'end' | 'inherit' | undefined) ?? 'end'} fill={colorOf(v)} fontSize={12}>
             {format(v)}
         </text>
-    );
-};
-
-/**
- * Hover/focus tooltip for the small icon buttons (same look as the chip tooltips): the
- * explanation is rendered through a portal to <body> with `position: fixed`, so no
- * `overflow` ancestor clips it. The hover handlers live on a wrapping span, not on the
- * button, because a disabled <button> receives no mouse events and its tooltip (what
- * the button would do once enabled) would never show. The native `title` is left off on
- * purpose, it would pop up a second, duplicate tooltip.
- */
-const Tip: React.FC<{ text: string; side?: 'below' | 'left'; wrap?: boolean; onlyWhenCut?: boolean; wrapperClassName?: string; children: React.ReactNode }> = ({ text, side = 'below', wrap = false, onlyWhenCut = false, wrapperClassName = 'inline-flex', children }) => {
-    const host = usePortalHost(); // the full screen element while the chart is full screen, else the body
-    const wrapRef = useRef<HTMLSpanElement>(null);
-    const tipRef = useRef<HTMLDivElement>(null);
-    const tooltipId = useId();
-    const [open, setOpen] = useState(false);
-    const [pos, setPos] = useState({ top: 0, left: 0, placement: 'bottom' as 'top' | 'bottom' | 'left' });
-    const show = () => {
-        const el = wrapRef.current;
-        // `onlyWhenCut`: the tooltip repeats text that is cut off, so skip it when the text fits
-        if (onlyWhenCut) {
-            const shown = el?.firstElementChild as HTMLElement | null;
-            if (!shown || shown.scrollWidth <= shown.clientWidth + 1) return;
-        }
-        if (el) {
-            const r = el.getBoundingClientRect();
-            if (side === 'left') {
-                // the vertical zoom column sits at the right edge: open to its left, centered on the button
-                setPos({ top: r.top + r.height / 2, left: r.left - 8, placement: 'left' });
-                setOpen(true);
-                return;
-            }
-            const half = (tipRef.current?.offsetWidth ?? 0) / 2;
-            const left = Math.min(Math.max(r.left + r.width / 2, half + 8), window.innerWidth - half - 8);
-            const tipH = tipRef.current?.offsetHeight ?? 0;
-            // below the button by default (they sit near the top of the chart), above when there is no room below
-            const placement: 'top' | 'bottom' = r.bottom + 8 + tipH > window.innerHeight ? 'top' : 'bottom';
-            setPos({ top: placement === 'bottom' ? r.bottom + 8 : r.top - 8, left, placement });
-        }
-        setOpen(true);
-    };
-    return (
-        <span ref={wrapRef} className={wrapperClassName} onMouseEnter={show} onMouseLeave={() => setOpen(false)} onFocus={show} onBlur={() => setOpen(false)} aria-describedby={tooltipId}>
-            {children}
-            {createPortal(
-                <div
-                    ref={tipRef}
-                    id={tooltipId}
-                    role="tooltip"
-                    style={{ top: pos.top, left: pos.left, transform: pos.placement === 'left' ? 'translate(-100%, -50%)' : `translate(-50%, ${pos.placement === 'top' ? '-100%' : '0%'})` }}
-                    className={
-                        'pointer-events-none fixed z-[70] max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-100 shadow-lg ' +
-                        (wrap ? 'w-80 whitespace-normal ' : 'w-max whitespace-nowrap ') +
-                        'transition-opacity duration-200 ease-out dark:border-slate-600 ' +
-                        (open ? 'opacity-100' : 'opacity-0')
-                    }
-                >
-                    {text}
-                </div>,
-                host,
-            )}
-        </span>
     );
 };
 
@@ -1974,10 +1912,11 @@ export const GexView: React.FC<GexViewProps> = ({
                                                     <tr
                                                         key={r.key}
                                                         className="group text-slate-800 dark:text-slate-100"
-                                                        title={pt && !r.exact ? `${tr('gex.values.nearest')}: ${fmt(pt.strike)}` : undefined}
                                                     >
                                                         <td className={cell + (pt && pt.netGex > 0 ? ' text-green-600 dark:text-green-400' : pt && pt.netGex < 0 ? ' text-red-600 dark:text-red-400' : '')}>
-                                                            {pt ? `${r.exact ? '' : '≈ '}${fmtSignedCompact(pt.netGex)}` : na}
+                                                            {pt && !r.exact
+                                                                ? <Tip text={`${tr('gex.values.nearest')}: ${fmt(pt.strike)}`} wrapperClassName="inline-flex">{`≈ ${fmtSignedCompact(pt.netGex)}`}</Tip>
+                                                                : pt ? fmtSignedCompact(pt.netGex) : na}
                                                         </td>
                                                         <td className={cell}>{pt ? fmtCompact(pt.absGamma) : na}</td>
                                                         <td className={cell}>{pt ? fmtInt(pt.callOi) : na}</td>
