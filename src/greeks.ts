@@ -234,6 +234,99 @@ export function blackScholesGreeks(
     }
 }
 
+/**
+ * Black-Scholes gamma alone (the same formula and defaults as blackScholesGreeks' `gamma`), for the IV inversion below
+ * where only gamma is needed thousands of times. Null when an input is not usable.
+ */
+export function blackScholesGamma(
+    spot: number,
+    strike: number,
+    years: number,
+    sigma: number,
+    riskFree: number = BS_RISK_FREE_RATE,
+    dividendYield: number = BS_DIVIDEND_YIELD,
+): number | null {
+    if (!(spot > 0) || !(strike > 0) || !(years > 0) || !(sigma > 0)) return null;
+    const sqrtT = Math.sqrt(years);
+    const d1 = (Math.log(spot / strike) + (riskFree - dividendYield + 0.5 * sigma * sigma) * years) / (sigma * sqrtT);
+    const g = Math.exp(-dividendYield * years) * normPdf(d1) / (spot * sigma * sqrtT);
+    return Number.isFinite(g) ? g : null;
+}
+
+/** Bounds of the IV that gamma inversion may return (5% .. 300%): below 5% is the failed-solve range the repair replaces. */
+export const GAMMA_INVERSION_MIN_IV = 0.05;
+export const GAMMA_INVERSION_MAX_IV = 3;
+/** Without an exact root, the closest volatility counts when its gamma is within this share of the target (25%). */
+export const GAMMA_INVERSION_TOLERANCE = 0.25;
+/** Log-spaced volatilities scanned for sign changes before each root is refined by bisection. */
+const GAMMA_INVERSION_GRID = 64;
+
+/**
+ * The volatility whose Black-Scholes gamma at `spot` equals `gamma` (the provider's own gamma of the quote), within
+ * GAMMA_INVERSION_MIN_IV .. GAMMA_INVERSION_MAX_IV. Our own repair for a quote whose provider IV is a failed solve while
+ * its provider gamma is sane (CBOE, see gex.ts repairImpliedVols), not a published method.
+ *
+ * Gamma is not monotone in sigma: it rises to a peak at sigma * sqrt(T) ~ |ln(S/K)| and falls after it, so an
+ * out-of-the-money strike can have TWO volatilities with the same gamma (a low one where the strike is far in standard
+ * deviations, a high one where it is close). With `refVol` (the expiration's ATM IV) the root nearest to it in log terms
+ * wins, since a smile stays far closer to the ATM level than the other root; without it the higher root wins (near the
+ * money there is only that one).
+ *
+ * No exact root: the provider may value with its own underlying price or time (CBOE's SPX gamma of 2026-10-23 peaked at
+ * 7650 with spot 7623.68), so a gamma a little above the Black-Scholes maximum for that strike happens. Then the volatility
+ * that comes CLOSEST (the peak) is returned when it is within GAMMA_INVERSION_TOLERANCE of the target, else null.
+ */
+export function impliedVolFromGamma(spot: number, strike: number, years: number, gamma: number, refVol?: number | null): number | null {
+    if (!(gamma > 0) || !(spot > 0) || !(strike > 0) || !(years > 0)) return null;
+    const lnMin = Math.log(GAMMA_INVERSION_MIN_IV);
+    const lnMax = Math.log(GAMMA_INVERSION_MAX_IV);
+    const f = (lnSigma: number) => (blackScholesGamma(spot, strike, years, Math.exp(lnSigma)) ?? 0) - gamma;
+    const roots: number[] = [];
+    let prevX = lnMin;
+    let prevF = f(prevX);
+    if (prevF === 0) roots.push(prevX);
+    for (let i = 1; i < GAMMA_INVERSION_GRID; i++) {
+        const x = lnMin + ((lnMax - lnMin) * i) / (GAMMA_INVERSION_GRID - 1);
+        const fx = f(x);
+        if (fx === 0) roots.push(x);
+        else if (prevF !== 0 && Math.sign(fx) !== Math.sign(prevF)) {
+            let a = prevX;
+            let b = x;
+            let fa = prevF;
+            for (let k = 0; k < 50; k++) {
+                const m = (a + b) / 2;
+                const fm = f(m);
+                if (Math.sign(fm) === Math.sign(fa)) { a = m; fa = fm; } else b = m;
+            }
+            roots.push((a + b) / 2);
+        }
+        prevX = x;
+        prevF = fx;
+    }
+    if (roots.length === 0) {
+        // the closest volatility: the best grid point, refined by a ternary search between its neighbours
+        const step = (lnMax - lnMin) / (GAMMA_INVERSION_GRID - 1);
+        let bestX = lnMin;
+        for (let i = 0; i < GAMMA_INVERSION_GRID; i++) {
+            const x = lnMin + step * i;
+            if (Math.abs(f(x)) < Math.abs(f(bestX))) bestX = x;
+        }
+        let a = Math.max(lnMin, bestX - step);
+        let b = Math.min(lnMax, bestX + step);
+        for (let k = 0; k < 60; k++) {
+            const m1 = a + (b - a) / 3;
+            const m2 = b - (b - a) / 3;
+            if (Math.abs(f(m1)) <= Math.abs(f(m2))) b = m2; else a = m1;
+        }
+        const x = (a + b) / 2;
+        return Math.abs(f(x)) <= GAMMA_INVERSION_TOLERANCE * gamma ? Math.exp(x) : null;
+    }
+    const ref = refVol != null && refVol > 0 ? Math.log(refVol) : null;
+    let best = roots[roots.length - 1];
+    if (ref !== null) for (const r of roots) if (Math.abs(r - ref) < Math.abs(best - ref)) best = r;
+    return Math.exp(best);
+}
+
 export function hasFirstOrderGreeks(q: OptionQuote): boolean {
     return num(q.delta) != null && num(q.gamma) != null;
 }
