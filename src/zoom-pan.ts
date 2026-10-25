@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // Pure helpers for panning the GEX chart while it is zoomed. No React, no DOM,
 // unit-tested in zoom-pan.test.ts.
 

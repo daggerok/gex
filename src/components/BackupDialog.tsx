@@ -1,5 +1,6 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadBackupChoice, parseTickerInput, type BackupChoice } from '../backtest/prefs';
 import { DEFAULT_TICKERS } from '../default-tickers';
 import { useI18n } from '../i18n';

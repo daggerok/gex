@@ -12,7 +12,7 @@ describe('siteZipPath', () => {
 describe('parseSiteIndex', () => {
   test('reads the snapshots, sorts the tickers, drops bad ids and bad values', () => {
     const m = parseSiteIndex({ version: 1, snapshots: { '2026-10-09': ['SPY', 'NDX'], 'bad': ['A'], '2026-10-10': 'x', '2026-10-11-09-45': ['SPY', 3] } });
-    expect([...m]).toEqual([['2026-10-09', ['NDX', 'SPY']], ['2026-10-11-09-45', ['SPY']]]);
+    expect(Array.from(m)).toEqual([['2026-10-09', ['NDX', 'SPY']], ['2026-10-11-09-45', ['SPY']]]);
   });
 
   test('a missing, wrong-version or garbage index is an empty list, not an error', () => {

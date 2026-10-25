@@ -1,5 +1,6 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useEffect, useRef, useState } from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     CandlestickSeries,
     ColorType,
@@ -11,7 +12,6 @@ import {
     type IPriceLine,
     type ISeriesApi,
     type UTCTimestamp,
-    // @ts-ignore -- resolved by the Parcel/Bun build toolchain
 } from 'lightweight-charts';
 import { type GexLevelKey } from '../gex-colors';
 import { LevelsPanel } from '../components/LevelsPanel';

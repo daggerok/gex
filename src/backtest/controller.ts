@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { CustomLevel } from '../custom-levels';
 import { mergeZips, ZipError } from '../history-zip';
 import { importArchive, openSnapshot, type Snapshot } from './archive';
@@ -181,7 +182,7 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
             return { filename: `gex-history-${sorted[0]}_${sorted[sorted.length - 1]}.zip`, bytes: mergeZips(zips) };
         },
         takenIds() {
-            return new Set([...siteIndex.keys(), ...state.entries.map((e) => e.id)]);
+            return new Set(Array.from(siteIndex.keys()).concat(state.entries.map((e) => e.id)));
         },
         clearError() {
             if (state.error) set({ error: null });

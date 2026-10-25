@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { ProviderContext, TickerSuggestion } from '../types';
 import { looksLikeTicker, normalizeTickerSymbol } from './cache';
 

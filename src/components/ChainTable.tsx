@@ -1,5 +1,6 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { DEFAULT_COLOR_THEME } from '../settings-store';
 import { accentOf } from '../theme';
@@ -25,7 +26,8 @@ export interface ChainSection {
     strikes: number[];
 }
 
-export type DeskColumnKey = 'openInterest' | 'volume' | 'iv' | 'delta' | 'gamma' | 'theta' | 'vega' | 'rho' | 'bid' | 'mid' | 'ask';
+/** Every toggleable side column of Settings → Desk columns plus the always-shown price columns (was a hand list that missed lambda..color). */
+export type DeskColumnKey = keyof SideColumnSettings | 'bid' | 'mid' | 'ask';
 export interface DeskColumnDef {
     key: DeskColumnKey;
     label: string;

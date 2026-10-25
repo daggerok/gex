@@ -40,7 +40,7 @@ import { backupStamp, isTickerName, manifestEntryName, manifestText, nextBackupI
 export { backupStamp, nextBackupId };
 import { snapshotsOnDisk, syncHistoryIndex, zipPathFor } from "./history-archive";
 
-const REPO_ROOT = dirname(import.meta.dirname);
+const REPO_ROOT = dirname(__dirname);
 const OPTIONS_DIR = join(REPO_ROOT, "api", "options");
 const HISTORY_DIR = join(REPO_ROOT, "api", "history");
 const TICKER_FILE = /^([A-Z0-9][A-Z0-9._-]{0,15})\.json$/;
@@ -59,7 +59,7 @@ export interface BackupArgs {
  */
 export function parseArgs(argv: readonly string[]): BackupArgs {
     const help = argv.some((a) => a === "--help" || a === "-h");
-    const words = [...new Set(argv.filter((a) => !a.startsWith("-")).flatMap((a) => a.split(",")).map((t) => t.trim().toUpperCase()).filter(Boolean))];
+    const words = Array.from(new Set(argv.filter((a) => !a.startsWith("-")).flatMap((a) => a.split(",")).map((t) => t.trim().toUpperCase()).filter(Boolean)));
     const bad = words.filter((w) => w !== "ALL" && !isTickerName(w));
     if (bad.length) throw new Error(`not a ticker name: ${bad.join(", ")}`);
     const tickers = words.filter((w) => w !== "ALL");
@@ -132,7 +132,7 @@ function main(): void {
     console.log(`[ backup   ] ${relative(REPO_ROOT, r.path)}  ${mb(r.zipBytes)} MB zipped (${mb(r.sourceBytes)} MB of data)`);
 }
 
-if (import.meta.main) {
+if (require.main === module) {
     try {
         main();
     } catch (e) {

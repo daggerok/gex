@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { parseCustomLevelsFile, type CustomLevel } from '../custom-levels';
 import { customLevelsEntryName, isSnapshotId, isTickerName, snapshotDate, snapshotLabel } from './snapshot';
 import {
@@ -80,7 +81,7 @@ export function openSnapshot(id: string, bytes: Uint8Array, limits: ZipLimits = 
     return {
         id,
         bytes,
-        tickers: [...byTicker.keys()].sort(),
+        tickers: Array.from(byTicker.keys()).sort(),
         async read(symbol) {
             const e = byTicker.get(symbol.toUpperCase());
             return e ? decoder.decode(await readEntry(bytes, e)) : null;
@@ -108,7 +109,7 @@ export async function importArchive(bytes: Uint8Array, limits: ZipLimits = ZIP_L
     const snapshots = splitBySnapshot(rawEntries(bytes, limits));
     if (!snapshots.size) throw new ZipError('no <date>/<ticker>.json entries found in this file');
     const out: ImportedSnapshot[] = [];
-    for (const [id, entries] of [...snapshots].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    for (const [id, entries] of Array.from(snapshots).sort(([a], [b]) => (a < b ? -1 : 1))) {
         const snapshotBytes = buildZipFromRaw(entries, id);
         const snapshot = openSnapshot(id, snapshotBytes, limits);
         if (!snapshot.tickers.length) continue;

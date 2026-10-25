@@ -1,6 +1,6 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
-import React, { useId, useRef, useState } from 'react';
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
+import * as React from 'react';
+import { useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /**

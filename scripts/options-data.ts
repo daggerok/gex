@@ -369,11 +369,11 @@ function logErr(message: string): void {
 
 // ---- Configuration -----------------------------------------------------------
 
-const REPO_ROOT = dirname(import.meta.dirname);
+const REPO_ROOT = dirname(__dirname);
 export const DATA_DIR = join(REPO_ROOT, "api", "options");
 export const INDEX_PATH = join(DATA_DIR, "index.json");
 export const HISTORY_DIR = join(REPO_ROOT, "api", "history");
-const LEGACY_SKIP_PATH = join(import.meta.dirname, "no_options.json");
+const LEGACY_SKIP_PATH = join(__dirname, "no_options.json");
 
 const cfg = {
     MAX_FETCHES: envInt("MAX_FETCHES", "500"),
@@ -782,7 +782,7 @@ export class YahooTicker {
     /** Ticker.options */
     async options(): Promise<string[]> {
         if (this.expirations.size === 0) await this.downloadOptions();
-        return [...this.expirations.keys()];
+        return Array.from(this.expirations.keys());
     }
 
     /** Ticker.option_chain(date): raw contract rows, or null frames like yfinance when Yahoo returns nothing. */
@@ -790,7 +790,7 @@ export class YahooTicker {
         if (this.expirations.size === 0) await this.downloadOptions();
         if (!this.expirations.has(date)) {
             throw new Error(
-                `Expiration \`${date}\` cannot be found. Available expirations are: [${[...this.expirations.keys()].join(", ")}]`,
+                `Expiration \`${date}\` cannot be found. Available expirations are: [${Array.from(this.expirations.keys()).join(", ")}]`,
             );
         }
         const options = await this.downloadOptions(this.expirations.get(date));
@@ -1302,7 +1302,7 @@ export function keepLaterExpirations(freshExps: readonly string[], previous: unk
         // A strike of exactly 0 is the one value written as a Python int, restore it so the bytes stay the same.
         quotes.push({ ...(q as Quote), strike: q.strike === 0 ? new PyInt(0) : (q.strike as number) });
     }
-    const expirations = [...new Set(quotes.map((q) => q.expiration))].sort();
+    const expirations = Array.from(new Set(quotes.map((q) => q.expiration))).sort();
     return { expirations, quotes };
 }
 
@@ -1405,7 +1405,7 @@ function loadSkiplist(): Record<string, string> {
 /** Accept legacy {TICKER: updatedISO} maps or plain ticker lists -> sorted list. */
 export function normalizeFilesList(raw: unknown): string[] {
     if (raw && typeof raw === "object" && !Array.isArray(raw)) return Object.keys(raw).filter(Boolean).sort();
-    if (Array.isArray(raw)) return [...new Set(raw.filter(Boolean).map(String))].sort();
+    if (Array.isArray(raw)) return Array.from(new Set(raw.filter(Boolean).map(String))).sort();
     return [];
 }
 
@@ -1461,7 +1461,7 @@ export function buildQueue(universe: string[], d: QueueDeps): WorkQueue {
         stale.push([sym, d.updatedOf(sym)]);
     }
     stale.sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)); // stable, plain string order
-    const priority = [...prioritySet].filter((s) => !d.isFresh(s));
+    const priority = Array.from(prioritySet).filter((s) => !d.isFresh(s));
     return { queue: [...priority, ...missing, ...stale.map(([s]) => s)], nPriority: priority.length, nMissing: missing.length, nStale: stale.length, nFresh: freshSkipped };
 }
 
@@ -1511,7 +1511,7 @@ export function planIndex(
     const prevNames = prevNamesRaw && typeof prevNamesRaw === "object" && !Array.isArray(prevNamesRaw)
         ? (prevNamesRaw as Record<string, unknown>)
         : {};
-    const wanted = [...new Set([...sortedFiles, ...Object.keys(noOptions)])].sort();
+    const wanted = Array.from(new Set([...sortedFiles, ...Object.keys(noOptions)])).sort();
     const names: Record<string, string> = {};
     for (const sym of wanted) {
         const name = cleanCompanyName(symbolNames.get(sym) || (prevNames[sym] as string | undefined));
@@ -2072,6 +2072,11 @@ export async function main(): Promise<void> {
     }
 }
 
-if (import.meta.main) {
-    await main();
+// `require.main === module` and the `.catch` instead of `import.meta.main` and a top-level await: the owner's
+// IDE checks files without a tsconfig as module commonjs (TS1343, TS1378), see .claude/rules/ts-ide-errors.md
+if (require.main === module) {
+    main().catch((err: unknown) => {
+        console.error(err);
+        process.exitCode = 1;
+    });
 }

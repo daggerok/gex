@@ -1,4 +1,4 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
 import { useSyncExternalStore } from 'react';
 import { DEFAULT_METRIC_COLORS, loadMetricColors, saveMetricColors, type MetricColorSet } from './gex-colors';
 

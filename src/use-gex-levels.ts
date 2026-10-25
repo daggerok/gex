@@ -1,4 +1,4 @@
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain
+/// <reference lib="esnext" />
 import { useMemo } from 'react';
 import { computeGexLevels } from './gex';
 import { isFuturesPricedSymbol } from './greeks';

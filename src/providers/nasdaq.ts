@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import { INDEX_SYMBOLS } from '../greeks';
 import type { DataProvider, OptionQuote } from '../types';
 import { computeMid, dbg, num, parseOccSymbol, proxied } from '../utils';

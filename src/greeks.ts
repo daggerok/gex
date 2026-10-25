@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 import type { ChainResult, GreeksSummary, OptionQuote } from './types';
 import { estimateSpot, num } from './utils';
 // Lazily-bound to avoid a hard circular-import ordering requirement at module

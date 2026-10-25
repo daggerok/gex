@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // ============================================================================
 // The required tickers: the preset the partial data refresh updates every hour and the
 // default of every backup (the ticker search hint shows the same list, a unit test in

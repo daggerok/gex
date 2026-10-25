@@ -1,3 +1,4 @@
+/// <reference lib="esnext" />
 // main.tsx
 /**
  * ============================================================================
@@ -798,9 +799,8 @@
  * ============================================================================
  */
 
-// @ts-ignore -- resolved by the Parcel/Bun build toolchain (see ENVIRONMENT above)
-import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-// @ts-ignore
+import * as React from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { pickExpirations } from './expiration-select';
 import { recordEscape, RESET_ALL_EVENT } from './zoom-pan';
@@ -1512,7 +1512,7 @@ const App: React.FC = () => {
     // the GEX and Chart tabs (plan 7.7 / 8.2) - no view recomputes them.
     const gex = useGexLevels(spot, spotIsEstimated, gexQuotesByExp, selectedExps, meta?.symbol ?? '', settings.vixFuturesPricing);
     // Strikes of the chain the levels come from, for the Chart tab: a custom level is put on the nearest strike
-    const chartStrikes = useMemo(() => [...new Set(gex.quotes.map((q) => q.strike))].sort((a, b) => a - b), [gex.quotes]);
+    const chartStrikes = useMemo(() => Array.from(new Set(gex.quotes.map((q) => q.strike))).sort((a, b) => a - b), [gex.quotes]);
     // Chart tab range (plan 8.2), held here so it survives tab switches.
     // the range button chosen last stays after a refresh
     const [chartRange, setChartRangeState] = useState<ChartRange>(() => loadChartRange(CHART_RANGES, DEFAULT_RANGE));
@@ -1816,7 +1816,6 @@ const App: React.FC = () => {
                         metrics={gexMetrics}
                         setMetrics={changeGexMetrics}
                         strikes={chartStrikes}
-                        agEnabled={gexMetrics.includes('absoluteGamma')}
                         asOfDate={asOf ? valuationDayOf(asOf.id) : null}
                     />
                 </Suspense>
