@@ -61,12 +61,13 @@ const APPLE = isApplePlatform();
 
 /** Price-line order and labels match the GEX tab's Key Levels card. */
 /**
- * Every level line here is 1 px (owner 2026-10-25, Chart tab only; the GEX tab keeps its widths), only Sigma stays
- * `SIGMA_LINE_WIDTH`. With one width the dash tells the kinds apart: the main levels are long dashes, the secondary ones
- * dots, the custom levels solid.
+ * The built-in level lines here are 1 px (owner 2026-10-25, Chart tab only; the GEX tab keeps its widths); Sigma
+ * (`SIGMA_LINE_WIDTH`) and the user's custom levels (`CUSTOM_LINE_WIDTH`, owner: back to 2 px) are 2 px. The dash tells
+ * the kinds apart too: the main levels are long dashes, the secondary ones dots, the custom levels solid.
  */
 const LEVEL_LINE_WIDTH = 1;
 const SIGMA_LINE_WIDTH = 2;
+const CUSTOM_LINE_WIDTH = 2;
 const LEVEL_LINES: Array<{ key: PriceLevelKey; label: string; secondary?: boolean }> = [
     { key: 'maxNetGex', label: 'gex.level.maxNetGex' },
     { key: 'netGexPlus', label: 'gex.level.netGexPlus', secondary: true },
@@ -411,7 +412,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         customLinesRef.current = shown.map((c) => series.createPriceLine({
             price: c.price,
             color: levelColorOf(c),
-            lineWidth: LEVEL_LINE_WIDTH,
+            lineWidth: CUSTOM_LINE_WIDTH,
             lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
             title: c.name,
