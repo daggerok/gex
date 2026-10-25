@@ -15,11 +15,9 @@ import * as React from 'react';
 export const ChipSwitch: React.FC<{
     checked: boolean;
     onChange: (checked: boolean) => void;
-    /** accessible name, e.g. "Show GEX split" */
+    /** accessible name, e.g. "Show GEX split"; no native `title`: the chip's own animated tooltip explains the switch */
     label: string;
-    /** hover text, defaults to the label */
-    title?: string;
-}> = ({ checked, onChange, label, title }) => {
+}> = ({ checked, onChange, label }) => {
     const stop = (e: React.SyntheticEvent) => e.stopPropagation();
     return (
         <button
@@ -27,7 +25,6 @@ export const ChipSwitch: React.FC<{
             role="switch"
             aria-checked={checked}
             aria-label={label}
-            title={title ?? label}
             data-chip-switch=""
             onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
             onMouseDown={stop}

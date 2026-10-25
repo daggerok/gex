@@ -20,11 +20,12 @@ import { createPortal } from 'react-dom';
  * wrapped in its own span that stops click/mousedown propagation, so
  * interacting with the swatch never bubbles up to the outer toggle handler.
  *
- * CUSTOM HOVER/FOCUS TOOLTIP (replaces the native `title` popup as the
- * visible-on-desktop affordance; `title` itself is KEPT on the chip - see
- * below). `title`'s explanatory text is often a full sentence or two (see
- * LEVEL_TOOLTIP_KEY's i18n strings), and the OS-rendered native `title`
- * tooltip can't be animated - there is no CSS hook into it at all - so a
+ * CUSTOM HOVER/FOCUS TOOLTIP (instead of a native `title` popup, which the chip
+ * does NOT carry: owner 2026-10-25, two tooltips at once - the native one with no
+ * delay or animation plus this one - read as a bug). `title`'s explanatory text
+ * is often a full sentence or two (see LEVEL_TOOLTIP_KEY's i18n strings), and
+ * the OS-rendered native tooltip can't be animated - there is no CSS hook into
+ * it at all - so a
  * small custom tooltip renders the same text with a fade-in/fade-out transition
  * instead.
  *
@@ -62,12 +63,9 @@ import { createPortal } from 'react-dom';
  * isn't enough room above (e.g. a chip very close to the top of the
  * viewport) - checked against the tooltip's own measured height via `tipRef`.
  *
- * `title` is kept on the chip IN ADDITION to the custom tooltip (not
- * replaced) - touch devices with no hover state, and any assistive tech that
- * specifically keys off the native `title` attribute rather than (or
- * alongside) `aria-describedby`, still get it; it's a cheap, harmless safety
- * net under the custom one, not redundant effort. `aria-describedby` links
- * the chip to the custom tooltip node by id (via `useId`) so screen readers
+ * No native `title` on the chip or anything inside it (the swatches and the
+ * ChipSwitch carry only an aria-label): `aria-describedby` links the chip to the
+ * custom tooltip node by id (via `useId`) so screen readers
  * announce the same explanatory text the visible tooltip shows.
  */
 export const ToggleChip: React.FC<{
@@ -125,7 +123,6 @@ export const ToggleChip: React.FC<{
             tabIndex={0}
             aria-pressed={on}
             aria-describedby={tooltipId}
-            title={title}
             onClick={onToggle}
             onKeyDown={onKeyDown}
             onMouseEnter={show}
