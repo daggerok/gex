@@ -69,6 +69,8 @@ export interface BacktestController {
 export function createBacktestController(deps: { store: BacktestStore; site: SiteReader; now?: () => number }): BacktestController {
     const { store, site } = deps;
     const now = deps.now ?? (() => Date.now());
+    /** Bumped by every select (null too), see select. */
+    let selectSeq = 0;
     let state: BacktestState = { entries: [], latestDate: null, active: null, loading: false, error: null };
     let siteIndex = new Map<string, string[]>();
     const listeners = new Set<() => void>();
@@ -110,8 +112,11 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
             }
         },
         async select(id) {
+            // GEX-M8: each call supersedes the one before; a slow zip that finishes later must not reopen its snapshot
+            const seq = ++selectSeq;
+            const current = () => seq === selectSeq;
             if (id === null) {
-                set({ active: null, error: null });
+                set({ active: null, error: null, loading: false });
                 return;
             }
             set({ loading: true, error: null });
@@ -131,8 +136,10 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
                     await store.put({ day: id, source: 'site', size: bytes.length, tickers: snapshot.tickers, addedAt: now(), bytes }).catch(() => undefined);
                     await rebuildEntries().catch(() => undefined);
                 }
+                if (!current()) return; // kept in the browser above, but the user has moved on
                 set({ active: { id, label: snapshotLabel(id), snapshot, customLevels }, loading: false });
             } catch (e) {
+                if (!current()) return;
                 set({ loading: false, error: `Could not open ${snapshotLabel(id)}: ${errorText(e)}` });
             }
         },
