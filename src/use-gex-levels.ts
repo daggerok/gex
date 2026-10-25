@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
 import { useMemo } from 'react';
-import { computeGexLevels } from './gex';
+import { computeBoard, computeGexLevels, expirationOiShares, type Board } from './gex';
 import { isFuturesPricedSymbol } from './greeks';
 import type { GexLevels, OptionQuote } from './types';
 import { estimateSpot } from './utils';
@@ -73,6 +73,10 @@ export interface GexSlice {
      *  futures-priced symbol's real levels, or to explain why `levels` is
      *  null for one. */
     isFuturesPriced: boolean;
+    /** The Board tab's rows, peaks and ATM strike for the same slice; null with no quotes or no spot. */
+    board: Board | null;
+    /** Each LOADED expiration's share (0..1) of the OI of all loaded expirations (the Board's expiration chips). */
+    oiShares: Record<string, number>;
 }
 
 export function useGexLevels(
@@ -120,5 +124,13 @@ export function useGexLevels(
         return spot != null ? computeGexLevels(quotes, spot, symbol) : null;
     }, [quotes, spot, symbol, isFuturesPriced, futuresPricingAvailable, referenceForward]);
 
-    return { quotes, spot, spotIsEstimated, levels, isFuturesPriced };
+    // The Board tab's per-strike table and its expiration chips (src/gex.ts computeBoard / expirationOiShares): one pass
+    // each, memoized here like the levels so the view only renders. A futures-priced quote uses its own forward there.
+    const board = useMemo(() => {
+        const ref = isFuturesPriced ? referenceForward ?? spot : spot;
+        return quotes.length && ref != null ? computeBoard(quotes, ref) : null;
+    }, [quotes, spot, isFuturesPriced, referenceForward]);
+    const oiShares = useMemo(() => expirationOiShares(quotesByExp), [quotesByExp]);
+
+    return { quotes, spot, spotIsEstimated, levels, isFuturesPriced, board, oiShares };
 }

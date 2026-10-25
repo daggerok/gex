@@ -28,7 +28,7 @@ import {
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
 import type { DataProvider, GexLevels, GexPoint, OptionQuote, Settings } from '../types';
-import { fmt, fmtInt } from '../utils';
+import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 
 // ============================================================================
 // GEX VIEW (Tab 2) - plan section 8.1 (`agentic-workspace docs/repos/gex/spec-gex-app.md`). A pure consumer of chain data App already holds: it never
@@ -79,18 +79,6 @@ export interface GexViewProps {
     /** Non-empty; defaults to ['netGex'] (main.tsx), matching the old single-select default. */
     metrics: GexMetric[];
     setMetrics: (metrics: GexMetric[]) => void;
-}
-
-/** 2140000000 -> "2.14B" (absolute value, 2 decimals, K/M/B/T suffix). */
-function fmtCompact(v: number): string {
-    const a = Math.abs(v);
-    const [div, suffix] = a >= 1e12 ? [1e12, 'T'] : a >= 1e9 ? [1e9, 'B'] : a >= 1e6 ? [1e6, 'M'] : a >= 1e3 ? [1e3, 'K'] : [1, ''];
-    return (a / div).toFixed(2) + suffix;
-}
-
-/** Signed compact: +2.14B / -310.50M / 0.00. */
-function fmtSignedCompact(v: number): string {
-    return (v > 0 ? '+' : v < 0 ? '-' : '') + fmtCompact(v);
 }
 
 /**

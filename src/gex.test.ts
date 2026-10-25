@@ -26,6 +26,8 @@ import {
   SUM_NET_GEX_SHARE,
   findGammaFlipHypotheticalSpot,
   gammaFlipSweepCrossings,
+  computeBoard,
+  expirationOiShares,
   ivCoverageNearSpot,
   repairImpliedVols,
   GAMMA_FLIP_MIN_IV_COVERAGE,
@@ -1149,5 +1151,80 @@ describe('computeGexLevels: Gamma Flip on repaired IVs and the coverage gate', (
     const g = blackScholesGamma(100, 100, T, 0.25) as number;
     const levels = computeGexLevels([{ ...bsQuote('call', 100, 10, 0.00001, exp), gamma: g }, { ...bsQuote('put', 100, 10, 0.00001, exp), gamma: g }], 100);
     expect(levels.sigma?.statBasis?.iv as number).toBeCloseTo(0.25, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Board (owner 2026-10-25): per-strike table of the selected expirations
+// ---------------------------------------------------------------------------
+describe('computeBoard', () => {
+  const b = (side: 'call' | 'put', strike: number, o: Partial<OptionQuote> = {}): OptionQuote => ({
+    symbol: `B${side}${strike}`, expiration: '2026-11-20', side, strike, bid: null, ask: null, mid: null, last: null,
+    volume: null, openInterest: null, iv: null, delta: null, gamma: null, theta: null, vega: null, ...o,
+  });
+  // spot 100: gex per contract unit = gamma * OI * 100 * 100^2 * 0.01 = gamma * OI * 10_000
+  const quotes = [
+    b('call', 95, { gamma: 0.01, openInterest: 10, delta: 0.7, volume: 5 }),   // callGex +1000
+    b('put', 95, { gamma: 0.02, openInterest: 30, delta: -0.3, volume: 7 }),   // putGex -6000 -> net -5000, abs 7000
+    b('call', 100, { gamma: 0.03, openInterest: 20, delta: 0.5, volume: 40 }), // +6000
+    b('put', 100, { gamma: 0.03, openInterest: 10, delta: -0.5, volume: 2 }),  // -3000 -> net +3000, abs 9000
+    b('call', 105, { gamma: null, openInterest: 50, delta: null, volume: 1 }), // no greeks: counts only in OI / volume
+    b('put', 105, { gamma: 0.01, openInterest: 5, delta: -0.8 }),               // -500 -> net -500, abs 500
+  ];
+  const board = computeBoard(quotes, 100);
+  const row = (k: number) => board.rows.find((r) => r.strike === k)!;
+
+  test('per strike: net and abs GEX by the gexCall / gexPut convention, null greeks left out, OI and volume of every quote', () => {
+    expect(board.rows.map((r) => r.strike)).toEqual([95, 100, 105]);
+    expect(row(95).netGex).toBeCloseTo(-5000, 9);
+    expect(row(95).absGex).toBeCloseTo(7000, 9);
+    expect(row(100).netGex).toBeCloseTo(3000, 9);
+    expect(row(105).netGex).toBeCloseTo(-500, 9);
+    expect(row(105).absGex).toBeCloseTo(500, 9);
+    expect(row(105).callOi).toBe(50);
+    expect(row(105).totalOi).toBe(55);
+    expect(row(95).totalVolume).toBe(12);
+    expect(row(105).putVolume).toBe(0); // null volume is 0 contracts traded
+  });
+
+  test('notional delta: dealer long calls, short puts: calls delta x OI x 100 x spot minus puts the same', () => {
+    // 95: 0.7*10*100*100 - (-0.3)*30*100*100 = 70_000 + 90_000
+    expect(row(95).notionalDelta).toBeCloseTo(160000, 6);
+    // 105: the call has no delta (left out), the put -(-0.8)*5*100*100 = 40_000
+    expect(row(105).notionalDelta).toBeCloseTo(40000, 6);
+  });
+
+  test('% is the strike Abs GEX over the total Abs GEX', () => {
+    expect(row(100).absGexShare).toBeCloseTo(9000 / 16500, 12);
+    expect(board.rows.reduce((s, r) => s + r.absGexShare, 0)).toBeCloseTo(1, 12);
+  });
+
+  test('peaks: Net GEX marks its largest positive and most negative strike, the others their largest; ATM nearest spot', () => {
+    expect(board.peaks.netGex).toEqual([100, 95]);
+    expect(board.peaks.absGex).toEqual([100]);
+    expect(board.peaks.absGexShare).toEqual([100]);
+    expect(board.peaks.totalOi).toEqual([105]);
+    expect(board.peaks.callVolume).toEqual([100]);
+    expect(board.peaks.notionalDelta).toEqual([95]);
+    expect(board.atmStrike).toBe(100);
+    expect(computeBoard(quotes, 102.5).atmStrike).toBe(100); // tie between 100 and 105 -> the lower
+  });
+
+  test('ties go to the lowest strike; no positive value -> no peak; an empty chain is empty', () => {
+    const tie = computeBoard([b('call', 90, { openInterest: 7 }), b('call', 110, { openInterest: 7 })], 100);
+    expect(tie.peaks.totalOi).toEqual([90]);
+    expect(tie.peaks.netGex).toEqual([]); // no gamma at all
+    expect(tie.peaks.putOi).toEqual([]);
+    const empty = computeBoard([], 100);
+    expect(empty.rows).toEqual([]);
+    expect(empty.atmStrike).toBeNull();
+  });
+});
+
+describe('expirationOiShares', () => {
+  test('each expiration\'s share of the OI of all loaded expirations', () => {
+    const q = (oi: number | null): OptionQuote => ({ symbol: 'x', expiration: 'e', side: 'call', strike: 1, bid: null, ask: null, mid: null, last: null, volume: null, openInterest: oi, iv: null, delta: null, gamma: null, theta: null, vega: null });
+    expect(expirationOiShares({ a: [q(30), q(10)], b: [q(60)], c: [q(null)] })).toEqual({ a: 0.4, b: 0.6, c: 0 });
+    expect(expirationOiShares({ a: [q(0)] })).toEqual({ a: 0 });
   });
 });

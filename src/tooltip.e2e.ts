@@ -24,7 +24,7 @@ async function main(): Promise<void> {
         await ticker.fill('SPY');
         await ticker.press('Enter');
         await page.waitForTimeout(2500);
-        for (const tab of ['Desk', 'GEX', 'Chart']) {
+        for (const tab of ['Desk', 'Board', 'GEX', 'Chart']) {
             await page.getByRole('button', { name: tab, exact: true }).first().click();
             await page.waitForTimeout(1200);
             const doubled = await page.evaluate(() => {

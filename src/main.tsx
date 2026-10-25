@@ -838,6 +838,7 @@ import type { GexMetric } from './views/GexView';
 const GexView = lazy(() => import('./views/GexView').then((m) => ({ default: m.GexView })));
 // Chart tab is code-split the same way: lightweight-charts loads on first open.
 const ChartView = lazy(() => import('./views/ChartView').then((m) => ({ default: m.ChartView })));
+const BoardView = lazy(() => import('./views/BoardView').then((m) => ({ default: m.BoardView })));
 
 // ============================================================================
 // MAIN APPLICATION COMPONENT
@@ -1690,7 +1691,7 @@ const App: React.FC = () => {
                 actually wants to be shrinkable. */}
             {/* GEX and Chart also fit the window from `lg` up (no page scroll, the footer stays in view), so `min-h-0` applies to them too
                 from `lg`; below `lg` they keep their natural height and the page scrolls. */}
-            <div className={`flex-1 flex flex-col ${activeTab === 'desk' ? 'min-h-0' : 'lg:min-h-0'}`}>
+            <div className={`flex-1 flex flex-col ${activeTab === 'desk' || activeTab === 'board' ? 'min-h-0' : 'lg:min-h-0'}`}>
             <div className="shrink-0">
             <TabSwitcher
                 value={activeTab}
@@ -1721,7 +1722,7 @@ const App: React.FC = () => {
                     see ExpirationChips.tsx's doc comment for the measured
                     root cause). ---- */
                 endSlot={meta ? (
-                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 lg:flex-nowrap">
                         <ExpirationChips
                             expirations={meta.expirations}
                             selected={selectedExps}
@@ -1794,6 +1795,22 @@ const App: React.FC = () => {
                 nav wrapper for the bug this fixes (confirmed live: without
                 shrink-0, GEX's own content was squeezed by the flex layout and
                 rendered past/behind the footer instead of pushing it down). */}
+            {/* Board (owner 2026-10-25): like the Desk, the table scrolls inside itself and the page never does, at every width */}
+            {activeTab === 'board' && (
+                <div className="flex flex-1 min-h-0 flex-col">
+                <Suspense fallback={null}>
+                    <BoardView
+                        symbol={meta?.symbol ?? ''}
+                        board={gex.board}
+                        expirations={meta?.expirations ?? []}
+                        selectedExps={selectedExps}
+                        oiShares={gex.oiShares}
+                        onToggleExpiration={toggleExpiration}
+                        colorTheme={settings.colorTheme}
+                    />
+                </Suspense>
+                </div>
+            )}
             {activeTab === 'gex' && (
                 <div className="flex shrink-0 grow flex-col lg:min-h-0 lg:shrink">
                 <Suspense fallback={null}>
