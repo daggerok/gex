@@ -370,6 +370,11 @@ export interface SigmaLevels {
 export interface GexLevels {
     spot: number;
     /**
+     * The per-strike profile every level here was computed from (the same reference price: the forward for VIX / VXN),
+     * so the GEX tab draws exactly these bars instead of computing a second profile with the true spot (review GEX-M3).
+     */
+    profile: GexPoint[];
+    /**
      * The Gamma Flip shown in the app (GEX-M2, 2026-10-25): the only zero crossing of the hypothetical-spot sweep
      * (src/gex.ts gammaFlipSweepCrossings) when there is one, the one nearest to spot when there are more, null when the
      * sweep never changes sign. Until 2026-10-25 it was picked by the sign of the total net GEX, which hid a lone
