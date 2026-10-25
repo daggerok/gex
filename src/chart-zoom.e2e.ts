@@ -40,6 +40,11 @@ async function main(): Promise<void> {
     async function load(page: Page, symbol: string) {
         const ticker = page.locator('input[role=combobox]');
         await ticker.fill(symbol);
+        // close the suggestions first: on a slow machine they open under the resting mouse pointer, the hover highlights
+        // one (SPYD, QQQE) and Enter loads it instead of the typed ticker (the CI failures "after a reload the other ticker
+        // keeps its zoom too", reproduced with a 5x CPU throttle)
+        await page.waitForTimeout(300);
+        await ticker.press('Escape');
         await ticker.press('Enter');
         await page.waitForTimeout(2500);
     }
