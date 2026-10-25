@@ -1,5 +1,6 @@
 /// <reference lib="esnext" />
 import { useEffect, useMemo, useState } from 'react';
+import { isQuoteExpired } from './greeks';
 import { getBulk } from './providers/loader';
 import type { ChainMeta, DataProvider, OptionQuote } from './types';
 import { dbg } from './utils';
@@ -23,13 +24,15 @@ export function gexChainKey(providerId: string, symbol: string, vixFuturesPricin
 }
 
 /**
- * Quotes grouped by expiration, in their original order. With `only`, just those expirations: the meta's list, which leaves
- * out the expired ones of a stale cache file (GEX-H4), so the Board's OI shares do not count them either.
+ * Quotes grouped by expiration, in their original order, without the quotes that are already over (greeks.ts
+ * isQuoteExpired: after the 16:00 settlement of their day, AM-settled SPX monthlies after 9:30, batch 4). With `only`, just
+ * those expirations: the meta's list, which leaves out the expired ones of a stale cache file (GEX-H4), so the Board's OI
+ * shares do not count them either.
  */
-export function groupByExpiration(quotes: readonly OptionQuote[], only?: readonly string[]): QuotesByExp {
+export function groupByExpiration(quotes: readonly OptionQuote[], only?: readonly string[], now?: Date): QuotesByExp {
     const keep = only ? new Set(only) : null;
     const byExp: QuotesByExp = {};
-    for (const q of quotes) if (!keep || keep.has(q.expiration)) (byExp[q.expiration] ??= []).push(q);
+    for (const q of quotes) if ((!keep || keep.has(q.expiration)) && !(now ? isQuoteExpired(q, now) : isQuoteExpired(q))) (byExp[q.expiration] ??= []).push(q);
     return byExp;
 }
 

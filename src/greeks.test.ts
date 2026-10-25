@@ -22,6 +22,13 @@ import {
   isFuturesPricedSymbol,
   MIN_MINUTES_TO_EXPIRATION,
   setValuationTime,
+  AM_SETTLEMENT_ET,
+  isAmSettled,
+  isExpired,
+  isQuoteExpired,
+  optionRoot,
+  quoteYearsToExpiration,
+  withoutExpiredQuotes,
   yearsToExpiration,
 } from './greeks';
 import { marketDate, zonedTimeToMs } from './backtest/snapshot';
@@ -513,26 +520,90 @@ describe('yearsToExpiration: real time to the 16:00 New York settlement', () => 
     expect(yearsToExpiration('2026-10-30', ny(2026, 10, 23, 16)) as number).toBeCloseTo(7 / 365, 12);
   });
 
-  test('15-minute floor near and after the settlement on the expiration day, null from the next New York day', () => {
+  test('15-minute floor up to the settlement, null after 16:00 on the expiration day (batch 4) and from the next day', () => {
     expect(MIN_MINUTES_TO_EXPIRATION).toBe(15);
     const floor = 0.25 * HOUR;
     expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 15, 50)) as number).toBeCloseTo(floor, 12);
+    // exactly at the settlement (a day archive valued at the 16:00 close) the floor still holds
     expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 16)) as number).toBeCloseTo(floor, 12);
-    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 23, 59)) as number).toBeCloseTo(floor, 12);
+    // after it the options expiring today are over, no floor for them
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 16, 1))).toBeNull();
+    expect(yearsToExpiration('2026-10-23', ny(2026, 10, 23, 23, 59))).toBeNull();
     expect(yearsToExpiration('2026-10-23', ny(2026, 10, 24, 0, 1))).toBeNull();
     expect(yearsToExpiration('not-a-date', ny(2026, 10, 23, 12))).toBeNull();
   });
 
   test('the day is the New York one, whatever the browser time zone (GEX-L2)', () => {
-    // 2026-10-24 02:00 UTC is still 2026-10-23 22:00 in New York: the 10-23 expiration is not expired yet (floor),
-    // though a browser in Europe or UTC already shows the 24th
-    expect(yearsToExpiration('2026-10-23', new Date(Date.UTC(2026, 9, 24, 2))) as number).toBeCloseTo(0.25 * HOUR, 12);
+    // 2026-10-23 19:45 UTC is 15:45 in New York: the 10-23 expiration has 15 minutes left, though a browser in Europe
+    // already shows the evening
+    expect(yearsToExpiration('2026-10-23', new Date(Date.UTC(2026, 9, 23, 19, 45))) as number).toBeCloseTo(0.25 * HOUR, 12);
     // 2026-10-23 03:00 UTC is 2026-10-22 23:00 in New York: 17 hours to the 16:00 settlement of the 23rd
     expect(yearsToExpiration('2026-10-23', new Date(Date.UTC(2026, 9, 23, 3))) as number).toBeCloseTo(17 * HOUR, 12);
   });
 
   test('across the autumn daylight saving switch a week is 7 days and 1 hour (16:00 EDT -> 16:00 EST)', () => {
     expect(yearsToExpiration('2026-11-06', ny(2026, 10, 30, 16)) as number).toBeCloseTo(7 / 365 + HOUR, 12);
+  });
+});
+
+describe('AM-settled SPX monthlies and expired quotes (batch 4, owner 2026-10-25)', () => {
+  const HOUR = 1 / (365 * 24);
+  const ny = (y: number, m: number, d: number, h: number, min = 0) => new Date(zonedTimeToMs(y, m, d, h, min));
+  // 2026-11-20 is the 3rd Friday of November
+  const spx = { expiration: '2026-11-20', symbol: 'SPX261120C06000000' };
+  const spxw = { expiration: '2026-11-20', symbol: 'SPXW261120C06000000' };
+
+  test('the option root tells SPX (AM) from SPXW (PM)', () => {
+    expect(optionRoot('SPXW261026C06000000')).toBe('SPXW');
+    expect(optionRoot('SPX261120P05500000')).toBe('SPX');
+    expect(optionRoot('BRK.B261120C00500000')).toBe('BRK.B');
+    expect(optionRoot('garbage')).toBe('');
+    expect(isAmSettled(spx.symbol)).toBe(true);
+    expect(isAmSettled(spxw.symbol)).toBe(false);
+    expect(isAmSettled('SPY261120C00600000')).toBe(false);
+    expect(isAmSettled(undefined)).toBe(false);
+    expect(AM_SETTLEMENT_ET).toEqual({ hour: 9, minute: 30 });
+  });
+
+  test('an AM-settled quote counts to 9:30 New York and is over after it, its SPXW twin to 16:00', () => {
+    expect(quoteYearsToExpiration(spx, ny(2026, 11, 19, 16)) as number).toBeCloseTo(17.5 * HOUR, 12);
+    expect(quoteYearsToExpiration(spx, ny(2026, 11, 20, 9, 20)) as number).toBeCloseTo(0.25 * HOUR, 12);
+    expect(quoteYearsToExpiration(spx, ny(2026, 11, 20, 9, 31))).toBeNull();
+    expect(quoteYearsToExpiration(spxw, ny(2026, 11, 20, 9, 31)) as number).toBeCloseTo((6.5 * 60 - 1) / 60 * HOUR, 12);
+    // no symbol: PM settlement
+    expect(quoteYearsToExpiration({ expiration: '2026-11-20' }, ny(2026, 11, 20, 15)) as number).toBeCloseTo(HOUR, 12);
+  });
+
+  test('isExpired (a date) uses 16:00; isQuoteExpired also drops an AM quote after 9:30', () => {
+    expect(isExpired('2026-11-20', ny(2026, 11, 20, 12))).toBe(false);
+    expect(isExpired('2026-11-20', ny(2026, 11, 20, 16))).toBe(false);
+    expect(isExpired('2026-11-20', ny(2026, 11, 20, 16, 1))).toBe(true);
+    expect(isExpired('2026-11-19', ny(2026, 11, 20, 1))).toBe(true);
+    expect(isExpired('bad', ny(2026, 11, 20, 1))).toBe(false);
+    expect(isQuoteExpired(spx, ny(2026, 11, 20, 9, 30))).toBe(false);
+    expect(isQuoteExpired(spx, ny(2026, 11, 20, 9, 31))).toBe(true);
+    expect(isQuoteExpired(spxw, ny(2026, 11, 20, 9, 31))).toBe(false);
+    expect(isQuoteExpired(spxw, ny(2026, 11, 20, 16, 1))).toBe(true);
+    // an SPX quote of a later expiration is not touched on another day's morning
+    expect(isQuoteExpired({ expiration: '2026-12-18', symbol: 'SPX261218C06000000' }, ny(2026, 11, 20, 10))).toBe(false);
+  });
+
+  test('withoutExpiredQuotes keeps the live quotes in order', () => {
+    const later = { expiration: '2026-11-27', symbol: 'SPXW261127C06000000' };
+    expect(withoutExpiredQuotes([spx, spxw, later], ny(2026, 11, 20, 10))).toEqual([spxw, later]);
+    expect(withoutExpiredQuotes([spx, spxw, later], ny(2026, 11, 20, 16, 30))).toEqual([later]);
+    expect(withoutExpiredQuotes([spx, spxw, later], ny(2026, 11, 20, 9))).toEqual([spx, spxw, later]);
+  });
+
+  test('blackScholesGreeks says expired for an AM quote after 9:30 (valuation time of a backtest)', () => {
+    setValuationTime(zonedTimeToMs(2026, 11, 20, 10, 0));
+    try {
+      const base = { side: 'call' as const, strike: 6000, expiration: '2026-11-20', iv: 0.2, last: null, mid: null, bid: null, ask: null };
+      expect(blackScholesGreeks({ ...base, symbol: spx.symbol }, 6000).reason).toBe('expired');
+      expect(blackScholesGreeks({ ...base, symbol: spxw.symbol }, 6000).reason).toBeNull();
+    } finally {
+      setValuationTime(CLOCK);
+    }
   });
 });
 
