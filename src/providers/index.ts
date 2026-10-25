@@ -1,7 +1,7 @@
 /// <reference lib="esnext" />
 import type { DataProvider, ProviderContext, Settings, TickerSuggestion } from '../types';
 import { dbg, isAbortError } from '../utils';
-import { dedupeTickerSuggestions, staticProvider, staticTickerSuggestions } from './cache';
+import { dedupeTickerSuggestions, futuresFile, staticProvider, staticTickerSuggestions } from './cache';
 import { cboeProvider } from './cboe';
 import { nasdaqProvider } from './nasdaq';
 import { yahooProvider } from './yahoo';
@@ -27,6 +27,22 @@ export const PROVIDERS: DataProvider[] = [
 /** The provider of an id; CACHE for an unknown one. */
 export function providerById(id: string): DataProvider {
     return PROVIDERS.find((p) => p.id === id) ?? staticProvider;
+}
+
+/** True for a futures ticker (`/ES`, `ES1!`, the micros): its options come from api/futures/<ROOT>.json (cache.ts futuresFile). */
+export function isFuturesTicker(symbol: string | null | undefined): boolean {
+    return Boolean(symbol && futuresFile(symbol.trim().toUpperCase()));
+}
+
+/**
+ * The provider that serves `symbol` (futures PR, owner 2026-10-25: "futures tickers auto-route to the local cache provider,
+ * no manual switch"): a futures ticker (`/ES`, `ES1!`, cache.ts futuresFile) is read by the CACHE provider from the
+ * LOCAL-ONLY api/futures/<ROOT>.json that `bun run tv:futures` writes, whatever provider is selected; every other ticker
+ * keeps the selected one. The list and order of PROVIDERS are unchanged (R2). On a host without the file (the public site)
+ * the CACHE provider answers with the clear "run bun run tv:futures" message instead of a live provider's confusing error.
+ */
+export function providerForSymbol(selected: DataProvider, symbol: string | null | undefined): DataProvider {
+    return isFuturesTicker(symbol) ? staticProvider : selected;
 }
 
 /** Curated public CORS proxies for CBOE. "{url}" = encoded target URL. */

@@ -829,7 +829,7 @@ import { setValuationTime, withoutExpiredQuotes } from './greeks';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { asOfDayOf, makeAsOfProvider, valuationTimeOf } from './providers/asof';
 import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
-import { ctxFor, providerById, suggestTickers } from './providers';
+import { ctxFor, isFuturesTicker, providerById, suggestTickers } from './providers';
 import { isLoopbackHost, sourceChain, sourceLabel, type SourceProviderId, useProxyDiscovery } from './proxy-discovery';
 import { loadDefaultTickers } from './providers/cache';
 import { loadExpiration, loadMeta } from './providers/loader';
@@ -1115,8 +1115,9 @@ const App: React.FC = () => {
         setExpData({});
         setChainSymbol('');
         // the providers to try: the backtest's own, or the source chain (per ticker CBOE -> YAHOO -> NASDAQ -> CACHE when
-        // the proxy is up); the first one that knows the ticker serves it, the error shown is the first provider's
-        const tries = asOf ? [provider] : chain.map(providerById);
+        // the proxy is up); the first one that knows the ticker serves it, the error shown is the first provider's. A futures
+        // ticker (/ES, ES1!) is read only from its api/futures file through CACHE, whatever the source (owner 2026-10-25)
+        const tries = asOf ? [provider] : isFuturesTicker(sym) ? [providerById('static')] : chain.map(providerById);
         let firstError: unknown = null;
         let errorProvider = tries[0];
         try {
