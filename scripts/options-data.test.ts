@@ -56,6 +56,8 @@ import {
   symbolVariants,
   extraTickers,
   defaultSymbols,
+  fetchTicker,
+  YahooRateLimitError,
   universeRequest,
 } from './options-data';
 
@@ -739,6 +741,99 @@ describe('worker pool', () => {
     });
     expect(started).toEqual(['S1', 'S2', 'S3']);
     expect(r.stopped).toBe('deadline');
+  });
+});
+
+describe('fetchTicker fails on HTTP errors instead of writing a partial chain (GEX-C1, GEX-H3)', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    resetYahooSession();
+  });
+
+  const D1 = 1791417600; // 2026-10-08
+  const D2 = 1791504000; // 2026-10-09
+  const D3 = 1791590400; // 2026-10-10
+  const row = (sym: string, strike: number) => ({ contractSymbol: sym, strike, lastPrice: 1, bid: 1, ask: 1.1, volume: 1, openInterest: 10, impliedVolatility: 0.2 });
+  const chain = (date: number) => ({
+    optionChain: {
+      result: [{ expirationDates: [D1, D2, D3], quote: { regularMarketPrice: 100 }, options: [{ expirationDate: date, calls: [row(`C${date}`, 100)], puts: [row(`P${date}`, 100)] }] }],
+      error: null,
+    },
+  });
+  const unauthorized = { finance: { result: null, error: { code: 'Unauthorized', description: 'Invalid Crumb' } } };
+
+  /** Yahoo, Cboe and the crumb mocked; `perDate(unix)` answers the per-expiration requests, `base` the first options request. */
+  function mockChain(o: { perDate?: (date: number) => { status: number; body: unknown }; base?: (url: string) => { status: number; body: unknown }; crumb?: { status: number; body: string } }): string[] {
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=x; Path=/' } });
+      if (url.includes('getcrumb')) return new Response(o.crumb?.body ?? 'CRUMB', { status: o.crumb?.status ?? 200 });
+      if (url.includes('cdn.cboe.com')) return new Response('', { status: 404 });
+      if (url.includes('/v8/finance/chart/')) return new Response(JSON.stringify({ chart: { result: [{ indicators: { quote: [{ close: [100] }] } }] } }));
+      seen.push(url);
+      const date = /[?&]date=(\d+)/.exec(url);
+      const r = date ? (o.perDate ?? ((d: number) => ({ status: 200, body: chain(d) })))(Number(date[1])) : (o.base ?? (() => ({ status: 200, body: chain(D1) })))(url);
+      return new Response(typeof r.body === 'string' ? r.body : JSON.stringify(r.body), { status: r.status });
+    }) as typeof fetch;
+    return seen;
+  }
+
+  test('all dates answer: every expiration is written with its quotes (unchanged)', async () => {
+    mockChain({});
+    const p = await fetchTicker('SPY');
+    expect(p?.expirations).toEqual(['2026-10-08', '2026-10-09', '2026-10-10']);
+    expect(p?.quotes.length).toBe(6);
+  });
+
+  test('a 429 on the 2nd date fails the ticker (it was written with the 2nd date listed but no quotes for it)', async () => {
+    mockChain({ perDate: (d) => (d === D2 ? { status: 429, body: 'Too Many Requests' } : { status: 200, body: chain(d) }) });
+    await expect(fetchTicker('SPY')).rejects.toBeInstanceOf(YahooRateLimitError);
+  });
+
+  test('an HTML 503 page on one date fails the ticker instead of skipping the date', async () => {
+    mockChain({ perDate: (d) => (d === D3 ? { status: 503, body: '<html>busy</html>' } : { status: 200, body: chain(d) }) });
+    await expect(fetchTicker('SPY')).rejects.toThrow('503');
+  });
+
+  test('429 on every date fails the ticker instead of reporting "no options" (which put a valid ticker on the skiplist)', async () => {
+    mockChain({ perDate: () => ({ status: 429, body: 'Too Many Requests' }) });
+    await expect(fetchTicker('SPY')).rejects.toBeInstanceOf(YahooRateLimitError);
+  });
+
+  test('a 401 JSON body on the options request fails the ticker instead of reading as "no options"', async () => {
+    mockChain({ base: () => ({ status: 401, body: unauthorized }) });
+    await expect(fetchTicker('SPY')).rejects.toThrow('401');
+  });
+
+  test('a real "no options" answer (200, empty result) is still null, a 404 on a spelling tries the next one', async () => {
+    mockChain({ base: () => ({ status: 200, body: { optionChain: { result: [], error: null } } }) });
+    expect(await fetchTicker('ZZZZ')).toBeNull();
+    resetYahooSession();
+    const seen = mockChain({ base: (url) => (url.includes('/options/%5ESPX') || url.includes('/options/^SPX') ? { status: 200, body: chain(D1) } : { status: 404, body: { finance: { result: null, error: { code: 'Not Found' } } } }) });
+    const p = await fetchTicker('SPX');
+    expect(p?.expirations.length).toBe(3);
+    expect(seen.some((u) => u.includes('/options/SPX?'))).toBe(true);
+  });
+
+  test('a date whose answer has the wrong shape is skipped AND left out of the expirations', async () => {
+    mockChain({ perDate: (d) => (d === D2 ? { status: 200, body: { optionChain: null } } : { status: 200, body: chain(d) }) });
+    const p = await fetchTicker('SPY');
+    expect(p?.expirations).toEqual(['2026-10-08', '2026-10-10']);
+    expect(new Set(p?.quotes.map((q) => q.expiration))).toEqual(new Set(['2026-10-08', '2026-10-10']));
+  });
+
+  test('every date with the wrong shape fails the ticker instead of reporting "no options"', async () => {
+    mockChain({ perDate: () => ({ status: 200, body: { optionChain: null } }) });
+    await expect(fetchTicker('SPY')).rejects.toThrow();
+  });
+
+  test('a failed crumb request (401 JSON) is not used as the crumb', async () => {
+    const seen = mockChain({ crumb: { status: 401, body: '{"finance":{"error":{"code":"Unauthorized"}}}' } });
+    await fetchTicker('SPY');
+    expect(seen.length).toBeGreaterThan(0);
+    for (const u of seen) expect(u).not.toContain('crumb=');
   });
 });
 
