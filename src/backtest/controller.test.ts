@@ -5,6 +5,7 @@ import { createBacktestController, type SiteReader } from './controller';
 import { siteZipPath } from './entries';
 import { openSnapshot } from './archive';
 import { createMemoryStore } from './store';
+import { errorText } from '../utils';
 import type { ChainResult } from '../types';
 
 const chain = (symbol: string, spot = 100): ChainResult => ({ symbol, underlyingPrice: spot, expirations: ['2026-10-16'], quotes: [{ symbol: `${symbol}C`, expiration: '2026-10-16', side: 'call', strike: 100, bid: 1, ask: 2, mid: 1.5, last: 1.5, volume: 1, openInterest: 2, iv: 0.2, delta: 0.5, gamma: 0.01, theta: -0.1, vega: 0.1, rho: 0.01, greeksSource: 'cboe', greeksMissingReason: null }] });
@@ -113,11 +114,11 @@ describe('select', () => {
     const { c, site } = await setup();
     await c.select('2026-10-08');
     await c.select('2020-01-01');
-    expect(c.getState().error).toMatch(/not in the archive/);
+    expect(c.getState().error?.message).toMatch(/not in the archive/);
     expect(c.getState().active?.id).toBe('2026-10-08');
     site.bytes.set(siteZipPath('2026-10-09'), new TextEncoder().encode('<!doctype html><html></html>')); // an SPA fallback page with 200
     await c.select('2026-10-09');
-    expect(c.getState().error).toMatch(/Could not open 2026-10-09/);
+    expect(c.getState().error?.message).toMatch(/Could not open 2026-10-09/);
     expect(c.getState().active?.id).toBe('2026-10-08');
     expect(c.getState().loading).toBe(false);
   });
@@ -208,7 +209,7 @@ describe('download', () => {
     const one = await c.download(['2026-10-08']);
     expect(openSnapshot('2026-10-08', one.bytes).tickers).toEqual(['SPY']);
     expect(site.downloads).toEqual(['api/history/2026-10/2026-10-08.zip']);
-    await expect(c.download([])).rejects.toThrow(/nothing selected/);
+    await expect(c.download([])).rejects.toThrow(/Nothing selected/);
   });
 });
 
@@ -217,5 +218,15 @@ describe('takenIds', () => {
     const { c } = await setup();
     await c.saveBackup('2026-10-09-15-42', await zip('2026-10-09-15-42', ['SPY']), ['SPY']);
     expect(Array.from(c.takenIds()).sort()).toEqual(['2026-10-08', '2026-10-09', '2026-10-09-15-42']);
+  });
+});
+
+describe('backtest errors follow the app language (UiError)', () => {
+  test('the open error and its inner reason in Russian, the English message for logs', async () => {
+    const { c } = await setup();
+    await c.select('2099-01-01');
+    const e = c.getState().error;
+    expect(e?.message).toBe('Could not open 2099-01-01: 2099-01-01 is not in the archive');
+    expect(errorText(e, 'ru')).toBe('Не удалось открыть 2099-01-01: 2099-01-01 нет в архиве');
   });
 });

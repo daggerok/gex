@@ -1,9 +1,10 @@
 /// <reference lib="esnext" />
 import type { CustomLevel } from '../custom-levels';
-import { mergeZips, ZipError } from '../history-zip';
+import { mergeZips } from '../history-zip';
 import { importArchive, openSnapshot, type Snapshot } from './archive';
 import { mergeEntries, parseLatest, parseSiteIndex, siteZipPath, type HistoryEntry } from './entries';
 import { snapshotLabel } from './snapshot';
+import { UiError } from '../utils';
 import type { BacktestStore } from './store';
 import { daysOlderThan } from './store';
 
@@ -31,7 +32,8 @@ export interface BacktestState {
     active: ActiveSnapshot | null;
     /** a snapshot is being opened (a site zip is being fetched) */
     loading: boolean;
-    error: string | null;
+    /** what went wrong, shown in the app language (utils errorText) */
+    error: UiError | null;
 }
 
 export interface SiteReader {
@@ -87,7 +89,7 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
     async function bytesOf(id: string): Promise<Uint8Array> {
         const held = await store.get(id);
         if (held) return held.bytes;
-        if (!siteIndex.has(id)) throw new Error(`${id} is not available`);
+        if (!siteIndex.has(id)) throw new UiError('bt.error.notAvailable', { id });
         return site.bytes(siteZipPath(id));
     }
 
@@ -108,7 +110,7 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
                 await rebuildEntries();
             } catch (e) {
                 // blocked storage: the site list still works
-                set({ entries: mergeEntries(siteIndex, []), error: `The browser storage is not available: ${errorText(e)}` });
+                set({ entries: mergeEntries(siteIndex, []), error: new UiError('bt.error.storage', {}, e) });
             }
         },
         async select(id) {
@@ -125,11 +127,11 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
                 let bytes: Uint8Array;
                 if (held) bytes = held.bytes;
                 else {
-                    if (!siteIndex.has(id)) throw new Error(`${snapshotLabel(id)} is not in the archive`);
+                    if (!siteIndex.has(id)) throw new UiError('bt.error.notInArchive', { label: snapshotLabel(id) });
                     bytes = await site.bytes(siteZipPath(id));
                 }
                 const snapshot = openSnapshot(id, bytes);
-                if (!snapshot.tickers.length) throw new ZipError(`${snapshotLabel(id)} has no tickers`);
+                if (!snapshot.tickers.length) throw new UiError('bt.error.noTickers', { label: snapshotLabel(id) });
                 const customLevels = await snapshot.customLevels();
                 if (!held) {
                     // kept in the browser so it works offline and shows in the manager until the owner cleans it up
@@ -140,7 +142,7 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
                 set({ active: { id, label: snapshotLabel(id), snapshot, customLevels }, loading: false });
             } catch (e) {
                 if (!current()) return;
-                set({ loading: false, error: `Could not open ${snapshotLabel(id)}: ${errorText(e)}` });
+                set({ loading: false, error: new UiError('bt.error.open', { label: snapshotLabel(id) }, e) });
             }
         },
         async importFiles(files) {
@@ -181,7 +183,7 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
             if (state.active && !siteIndex.has(state.active.id)) set({ active: null });
         },
         async download(ids) {
-            if (!ids.length) throw new Error('nothing selected');
+            if (!ids.length) throw new UiError('bt.error.nothingSelected');
             if (ids.length === 1) return { filename: `${ids[0]}.zip`, bytes: await bytesOf(ids[0]) };
             const sorted = [...ids].sort();
             const zips: Uint8Array[] = [];

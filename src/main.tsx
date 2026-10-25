@@ -1158,9 +1158,9 @@ const App: React.FC = () => {
     // ---- Backtest handlers -----------------------------------------------------
     useEffect(() => {
         if (!bt.error) return;
-        setToast({ kind: 'error', text: bt.error });
+        setToast({ kind: 'error', text: errorText(bt.error, lang) });
         btc.clearError();
-    }, [bt.error, btc]);
+    }, [bt.error, btc, lang]);
     const onImportFiles = useCallback(async (files: File[]) => {
         const report = await btc.importFiles(files.map((f) => ({ name: f.name, bytes: async () => new Uint8Array(await f.arrayBuffer()) })));
         if (report.errors.length) setToast({ kind: 'error', text: tr('bt.import.failed', { list: report.errors.join('; ') }) });
