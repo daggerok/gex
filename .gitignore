@@ -43,3 +43,6 @@ package-lock.json
 
 # local work files of agents and probes (never committed)
 .temp/
+
+# half-written files of an interrupted fetcher run (scripts write <file>.tmp, then rename it)
+*.tmp
