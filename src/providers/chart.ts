@@ -1,7 +1,7 @@
 /// <reference lib="esnext" />
 import { FUTURES_PRICED_SYMBOLS, INDEX_SYMBOLS } from '../greeks';
 import type { OhlcBar, ProviderContext } from '../types';
-import { dbg, num } from '../utils';
+import { dbg, num, UiError } from '../utils';
 import { fetchStaticJson } from './cache';
 
 /**
@@ -65,7 +65,7 @@ export function parseYahooChart(body: any, interval: string = DEFAULT_CHART_INTE
         throw new Error(`Yahoo chart: ${e.description || e.code || 'unknown error'}`);
     }
     const result = chart?.result?.[0];
-    if (!result) throw new Error('Yahoo chart: empty response');
+    if (!result) throw new UiError('error.chart.empty');
 
     const timestamps: unknown[] = Array.isArray(result.timestamp) ? result.timestamp : [];
     const q = result.indicators?.quote?.[0] ?? {};
@@ -94,7 +94,7 @@ export async function fetchOhlc(
     req: ChartRequest = {},
 ): Promise<OhlcBar[]> {
     const base = (ctx.proxyBase || '').replace(/\/$/, '');
-    if (!base) throw new Error('Set a Proxy base URL in Settings (e.g. http://localhost:8787).');
+    if (!base) throw new UiError('error.proxy.baseMissing');
     const ySym = yahooChartSymbol(symbol);
     const range = req.range ?? DEFAULT_CHART_RANGE;
     const interval = req.interval ?? DEFAULT_CHART_INTERVAL;
@@ -103,12 +103,12 @@ export async function fetchOhlc(
     dbg('chart fetchOhlc', { symbol, ySym, range, interval, url });
 
     const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
-    if (res.status === 429) throw new Error('Yahoo chart: rate limited (HTTP 429), try again later.');
+    if (res.status === 429) throw new UiError('error.chart.rateLimited');
     const body: any = await res.json().catch(() => null);
     if (body?.chart) return parseYahooChart(body, interval);
     // Proxy-level errors ({ error: "..." }) or a non-JSON upstream body.
     const err = typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`;
-    throw new Error(`Chart proxy failed for "${symbol}": ${err}`);
+    throw new UiError('error.chart.proxy', { symbol, detail: err });
 }
 
 /**

@@ -1,7 +1,11 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { dataAge, fmt, fmtCompact, fmtDays, fmtInt, fmtSignedCompact } from './utils';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { translations } from './i18n';
+import type { DataProvider } from './types';
+import { dataAge, errorText, fmt, fmtCompact, fmtDays, fmtInt, fmtSignedCompact, friendlyError, UiError } from './utils';
 
 // The number formatters are cached for speed, they must give exactly what toLocaleString gave.
 describe('fmt and fmtInt keep their output', () => {
@@ -72,5 +76,30 @@ describe('dataAge (GEX-H4)', () => {
     expect(dataAge('2026-10-23T08:00:00-04:00', null, ny('2026-10-23T12:00:00-04:00'))).toEqual({ at: '2026-10-23 08:00', day: '2026-10-22', daysOld: 1, stale: true });
     expect(dataAge(null, '2026-10-23')).toBeNull();
     expect(dataAge('garbage', null)).toBeNull();
+  });
+});
+
+describe('UiError (GEX-H8): errors the user reads follow the app language', () => {
+  test('English message for logs, the Russian text through errorText and friendlyError', () => {
+    const e = new UiError('error.noOptionData', { symbol: 'ZZZ' });
+    expect(e.message).toBe('No option data for "ZZZ". Check the ticker symbol.');
+    expect(errorText(e, 'ru')).toBe('Нет данных об опционах для «ZZZ». Проверьте тикер.');
+    expect(friendlyError(e, { needsProxy: false } as unknown as DataProvider, 'ru')).toBe(errorText(e, 'ru'));
+    expect(errorText(new Error('plain'), 'ru')).toBe('plain');
+  });
+
+  test('every UiError key thrown in src/ exists in en and ru', () => {
+    const files = readdirSync(join(__dirname), { recursive: true })
+      .map(String)
+      .filter((f) => /\.(ts|tsx)$/.test(f) && !/\.(test|e2e)\.ts$/.test(f));
+    const keys = new Set<string>();
+    for (const f of files) {
+      for (const m of Array.from(readFileSync(join(__dirname, f), 'utf8').matchAll(/new UiError\('([^']+)'/g))) keys.add(m[1]);
+    }
+    expect(keys.size).toBeGreaterThan(15);
+    keys.forEach((k) => {
+      expect({ k, en: k in translations.en }).toEqual({ k, en: true });
+      expect({ k, ru: k in translations.ru }).toEqual({ k, ru: true });
+    });
   });
 });
