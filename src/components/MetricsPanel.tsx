@@ -54,7 +54,7 @@ export const MetricsPanel: React.FC<{
                             idleClass={ax.chipIdle}
                             // Per-metric bar colour pickers: Net GEX has two (its signed positive and negative halves), the others
                             // one each. Always visible (not gated on `on`) so a colour can be set up before the metric is turned on.
-                            // Net GEX: the switch on the left of the label shows both sides of every strike ("GEX") instead
+                            // Net GEX: the switch on the left of the label shows both sides of every strike ("Abs GEX") instead
                             // of their net; the label keeps one width in both states (StableLabel), so nothing moves
                             leading={m === 'netGex' ? (
                                 <ChipSwitch checked={split} onChange={(on) => netGexView.set(on ? 'split' : 'net')} label={tr('gex.metric.splitSwitch')} />

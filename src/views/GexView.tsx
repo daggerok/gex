@@ -416,7 +416,7 @@ export const GexView: React.FC<GexViewProps> = ({
     // single boundary marker on each side (trimZeroBoundaries, src/gex.ts),
     // evaluated against whichever metrics are currently selected - a strike
     // only counts as zero when every one of `metrics`'s fields reads 0 there.
-    // Net GEX view (the switch inside the Net GEX chip): 'net' draws netGex per strike, 'split' ("GEX") draws call GEX up and
+    // Net GEX view (the switch inside the Net GEX chip): 'net' draws netGex per strike, 'split' ("Abs GEX") draws call GEX up and
     // put GEX down at every strike (gexBarHalves, src/gex.ts)
     const gexView = netGexView.use();
     const split = gexView === 'split';
@@ -1748,7 +1748,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     )}
                                     {hasNetGex && (
                                         <>
-                                            {/* "Net GEX (+)" / "Net GEX (−)", or "GEX (+)" / "GEX (−)" in the split view (metricLabel) */}
+                                            {/* "Net GEX (+)" / "Net GEX (−)", or "Abs GEX (+)" / "Abs GEX (−)" in the split view (metricLabel) */}
                                             <Bar dataKey="pos" stackId="net" name={`${metricLabel('netGex')} (+)`} fill={metricColors.netGexPos} isAnimationActive={false} />
                                             <Bar dataKey="neg" stackId="net" name={`${metricLabel('netGex')} (−)`} fill={metricColors.netGexNeg} isAnimationActive={false} />
                                         </>

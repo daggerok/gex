@@ -45,6 +45,6 @@ export function useMetricColors(): MetricColorSet {
     return useSyncExternalStore((l) => { listeners.add(l); return () => { listeners.delete(l); }; }, getMetricColors, getMetricColors);
 }
 
-/** How the Net GEX metric is drawn (the switch inside its chip): `net` = Net GEX per strike (default), `split` = "GEX",
+/** How the Net GEX metric is drawn (the switch inside its chip): `net` = Net GEX per strike (default), `split` = "Abs GEX",
  *  call GEX up and put GEX down at every strike (gexBarHalves in gex.ts). Remembered in the browser like the colours. */
 export const netGexView = persistedChoice<NetGexView>('gex.netGexView.v1', ['net', 'split'], 'net');
