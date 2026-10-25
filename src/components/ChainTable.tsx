@@ -202,10 +202,14 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
                 aria-label={`${collapsed ? t('chain.expandExp') : t('chain.collapseExp')}: ${expiration}`}
                 style={barTop}
                 className={
-                    'od-bar sticky flex w-full items-center justify-center gap-2 px-2 text-[11px] font-semibold ' +
+                    'od-bar sticky flex w-full items-center justify-start gap-2 px-2 text-[11px] font-semibold ' +
                     (active ? 'od-current' : '')
                 }
             >
+                {/* The label is centered in the VISIBLE part of the desk, not in the whole (wider) table: a sticky box as wide
+                    as the scroll area (100cqw, the scroll container is an inline-size container) pinned to its left edge, so
+                    on a phone the date stays in view while the table scrolls sideways (batch 4 item 6, owner 2026-10-25). */}
+                <span className="sticky left-2 flex w-[calc(100cqw-1rem)] shrink-0 justify-center" data-desk-bar-label>
                 <Tip text={collapsed ? t('chain.expandExp') : t('chain.collapseExp')} wrapperClassName="inline-flex items-center gap-2">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
                      strokeLinecap="round" strokeLinejoin="round"
@@ -214,6 +218,7 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
                 </svg>
                 <span className="tabular-nums">{expiration}&nbsp; {t('chain.strikes', { count: strikes.length })}</span>
                 </Tip>
+                </span>
             </button>
 
             {rendered && (
@@ -581,7 +586,7 @@ export const ChainTable: React.FC<{
                 hand-maintained constant), so it can never again under- or
                 over-estimate at any breakpoint, and the footer stays correctly
                 anchored in both the short- and tall-content cases. */}
-            <div ref={scrollRef} className="table-container w-full flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <div ref={scrollRef} className="table-container @container w-full flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 <div className="od-desk" style={{ minWidth: odMinWidth }}>
                     {sections.map((s, i) => (
                         <ExpirationSection
