@@ -139,7 +139,7 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
 /**
  * How the GEX chart draws the Net GEX metric (owner request 2026-10-25):
  *  - `net`: one value per strike, netGex = callGex + putGex (the default, as before)
- *  - `split`: both sides at every strike without netting, callGex up and putGex down
+ *  - `split` ("Abs GEX"): both sides at every strike without netting, callGex up and putGex down
  *    (the "Gamma Split" view: call gamma exposure above zero, put gamma exposure below it)
  */
 export type NetGexView = 'net' | 'split';

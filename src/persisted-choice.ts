@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 // ============================================================================
 // PERSISTED CHOICE - one small remembered UI choice (a string out of a fixed list) kept in
 // localStorage under its own key, shared by every component that reads it. Used by the mode
-// switches inside the panel chips (ChipSwitch): the Net GEX / GEX view of the Net GEX metric,
+// switches inside the panel chips (ChipSwitch): the Net GEX / Abs GEX view of the Net GEX metric,
 // the line / area display of the Zero GEX level and the % / sigma mode of the Chart tab's Sigma
 // levels. Every storage access is wrapped in try/catch like the colour stores (gex-colors.ts):
 // a private window or a blocked storage just falls back to the default.

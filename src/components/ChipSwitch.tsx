@@ -4,7 +4,7 @@ import * as React from 'react';
 // ============================================================================
 // CHIP SWITCH - a small on/off switch that sits INSIDE a panel chip (ToggleChip's `leading` slot), on the left of the
 // chip's label, while the colour swatches stay on the right. It switches a mode of what the chip shows, not whether it
-// is shown: the Net GEX / GEX view of the Net GEX metric, the line / area display of the Zero GEX level, the % / sigma
+// is shown: the Net GEX / Abs GEX view of the Net GEX metric, the line / area display of the Zero GEX level, the % / sigma
 // mode of the Chart tab's Sigma levels. Its own click and keys never reach the chip (they would toggle the metric or
 // level). It draws in `currentColor`, so it reads on an active (accent) chip and on an idle (white or dark) one alike.
 //
