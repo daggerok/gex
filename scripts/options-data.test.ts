@@ -54,7 +54,9 @@ import {
   skipIsActive,
   sortedNoOptions,
   symbolVariants,
-  tickersOverride,
+  extraTickers,
+  defaultSymbols,
+  universeRequest,
 } from './options-data';
 
 const NY = 'America/New_York';
@@ -167,11 +169,49 @@ describe('symbols', () => {
     expect(pyQuote("a b!'()*")).toBe('a%20b%21%27%28%29%2A');
   });
 
-  test('tickersOverride splits commas and spaces, canonicalizes and dedupes', () => {
-    expect(tickersOverride({ TICKERS: 'aapl, brk.b  AAPL' })).toEqual(['AAPL', 'BRK-B']);
-    expect(tickersOverride({ TICKER: 'spy' })).toEqual(['SPY']);
-    expect(tickersOverride({ TICKERS: '' })).toBeNull();
-    expect(tickersOverride({})).toBeNull();
+  test('extraTickers splits commas and spaces, canonicalizes and dedupes', () => {
+    expect(extraTickers({ TICKERS: 'aapl, brk.b  AAPL' })).toEqual(['AAPL', 'BRK-B']);
+    expect(extraTickers({ TICKER: 'spy' })).toEqual(['SPY']);
+    expect(extraTickers({ TICKERS: '' })).toEqual([]);
+    expect(extraTickers({ TICKERS: ' , ' })).toEqual([]);
+    expect(extraTickers({})).toEqual([]);
+  });
+});
+
+describe('which tickers a run covers (default list, DEFAULT_TICKERS, TICKERS, all)', () => {
+  test('no env: the built-in default list, nothing discovered', () => {
+    expect(defaultSymbols({})).toEqual(DEFAULT_SYMBOLS);
+    expect(universeRequest({}, [])).toEqual({ fixed: DEFAULT_SYMBOLS, discover: false, source: `default set (${DEFAULT_SYMBOLS.length})` });
+  });
+
+  test('TICKERS adds on top of the default list instead of replacing it; a ticker already in it is not repeated', () => {
+    const r = universeRequest({ TICKERS: 'aapl, PLTR spy hood' }, []);
+    expect(r.fixed).toEqual([...DEFAULT_SYMBOLS, 'PLTR', 'HOOD']);
+    expect(r.discover).toBe(false);
+    expect(r.source).toBe(`default set (${DEFAULT_SYMBOLS.length}) + 2 from TICKERS`);
+  });
+
+  test('DEFAULT_TICKERS replaces the default list, TICKERS still adds to it, a blank DEFAULT_TICKERS keeps the built-in list', () => {
+    expect(defaultSymbols({ DEFAULT_TICKERS: 'spy,qqq' })).toEqual(['SPY', 'QQQ']);
+    expect(universeRequest({ DEFAULT_TICKERS: 'SPY QQQ', TICKERS: 'AAPL QQQ' }, []).fixed).toEqual(['SPY', 'QQQ', 'AAPL']);
+    expect(universeRequest({ DEFAULT_TICKERS: 'SPY', TICKERS: '' }, []).fixed).toEqual(['SPY']);
+    expect(defaultSymbols({ DEFAULT_TICKERS: '  ' })).toEqual(DEFAULT_SYMBOLS);
+    expect(universeRequest({ DEFAULT_TICKERS: 'SPY' }, []).source).toBe('DEFAULT_TICKERS (1)');
+  });
+
+  test('`all` keeps the default list and TICKERS and asks for the auto-universe after them; other arguments are rejected', () => {
+    const r = universeRequest({ TICKERS: 'PLTR' }, ['all']);
+    expect(r.fixed).toEqual([...DEFAULT_SYMBOLS, 'PLTR']);
+    expect(r.discover).toBe(true);
+    expect(r.source).toBe(`default set (${DEFAULT_SYMBOLS.length}) + 1 from TICKERS + auto-universe (all)`);
+    expect(universeRequest({}, ['ALL']).discover).toBe(true);
+    expect(() => universeRequest({}, ['SPY'])).toThrow('unknown argument: SPY');
+  });
+
+  test('the returned default list is a copy: changing it never changes DEFAULT_SYMBOLS', () => {
+    const d = defaultSymbols({});
+    d.push('X');
+    expect(DEFAULT_SYMBOLS).not.toContain('X');
   });
 });
 
@@ -547,7 +587,7 @@ describe('console output', () => {
   test('config block lists every knob and redacts secrets', () => {
     const entries = outputConfigEntries();
     const names = entries.map(([k]) => k);
-    for (const k of ['MAX_FETCHES', 'REQUEST_SLEEP', 'CONCURRENCY', 'SOFT_DEADLINE_SECONDS', 'RATE_LIMIT_HITS', 'TICKERS', 'VERBOSE']) expect(names).toContain(k);
+    for (const k of ['MAX_FETCHES', 'REQUEST_SLEEP', 'CONCURRENCY', 'SOFT_DEADLINE_SECONDS', 'RATE_LIMIT_HITS', 'DEFAULT_TICKERS', 'TICKERS', 'VERBOSE']) expect(names).toContain(k);
     const block = outputConfigBlock([...entries, ['API_TOKEN', 'hunter2'], ['SEC_UA', 'me me@x.y'], ['COOKIE', 'abc']]);
     expect(block.startsWith('[ config   ] GEX updater:\n')).toBe(true);
     expect(block).toContain('              API_TOKEN=<redacted>');
@@ -810,6 +850,10 @@ describe('DEFAULT_SYMBOLS', () => {
   test('has no duplicates and the priority symbols are inside it', () => {
     expect(new Set(DEFAULT_SYMBOLS).size).toBe(DEFAULT_SYMBOLS.length);
     for (const s of PRIORITY_SYMBOLS) expect(DEFAULT_SYMBOLS).toContain(s);
+  });
+
+  test('holds the indices, index ETFs and index proxies the owner trades (2026-10-25)', () => {
+    for (const s of ['SPX', 'SPY', 'NDX', 'QQQ', 'COMP', 'IWM', 'RUT', 'DJIA', 'INDU', 'NYA', 'XSP']) expect(DEFAULT_SYMBOLS).toContain(s);
   });
 });
 
