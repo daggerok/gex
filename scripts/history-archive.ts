@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /// <reference types="bun" />
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { buildZip, extractEntry, parseZipDirectory } from "../src/history-zip";
@@ -37,6 +37,8 @@ export interface ArchiveReport {
     added: Record<string, string[]>;
     /** files that were already in the zip with the same content (nothing to do) */
     already: number;
+    /** why the day's existing zip was replaced instead of updated (it was damaged, `replaceDamaged`), else absent */
+    replacedDamaged?: string;
 }
 
 /** `api/history/<YYYY-MM>/<snapshot id>.zip` */
@@ -69,12 +71,35 @@ export function snapshotsOnDisk(historyDir: string): string[] {
     return ids.sort();
 }
 
-/** Entries of a day zip as name -> bytes, or an empty map when there is none yet. */
+/**
+ * Writes a file so that no reader (the site build, git, a deploy) ever sees half of it: the bytes go to `<path>.tmp` next to
+ * it first, then a rename replaces the file in one step (atomic on one file system). A failed write leaves the old file and
+ * no `.tmp` behind (`*.tmp` is gitignored as well). Used for every file the fetcher and the archive write.
+ */
+export function writeFileAtomic(path: string, data: string | Uint8Array): void {
+    const tmp = `${path}.tmp`;
+    try {
+        writeFileSync(tmp, data);
+        renameSync(tmp, path);
+    } catch (e) {
+        rmSync(tmp, { force: true });
+        throw e;
+    }
+}
+
+/** The existing zip of a day cannot be read (truncated, not a zip, a broken entry); archiveDay's `replaceDamaged` replaces it. */
+export class DamagedZipError extends Error {}
+
+/** Entries of a day zip as name -> bytes, or an empty map when there is none yet. Throws DamagedZipError for a broken zip. */
 function readDayZip(path: string): Map<string, Uint8Array> {
     const out = new Map<string, Uint8Array>();
     if (!existsSync(path)) return out;
     const bytes = new Uint8Array(readFileSync(path));
-    for (const e of parseZipDirectory(bytes)) out.set(e.name, extractEntry(bytes, e, inflate));
+    try {
+        for (const e of parseZipDirectory(bytes)) out.set(e.name, extractEntry(bytes, e, inflate));
+    } catch (e) {
+        throw new DamagedZipError(`${path} is damaged: ${e instanceof Error ? e.message : String(e)}`);
+    }
     return out;
 }
 
@@ -112,9 +137,19 @@ export function archiveDay(opts: {
     day: string;
     dayOf: (text: string) => string | null;
     sameData?: (oldText: string, nextText: string) => boolean;
+    /** a damaged zip of the day is started afresh instead of failing the run (GEX-M5; git history still has the old one) */
+    replaceDamaged?: boolean;
 }): ArchiveReport {
     const path = zipPathFor(opts.day, opts.historyDir);
-    const entries = readDayZip(path);
+    let entries: Map<string, Uint8Array>;
+    let replacedDamaged: string | undefined;
+    try {
+        entries = readDayZip(path);
+    } catch (e) {
+        if (!(e instanceof DamagedZipError) || !opts.replaceDamaged) throw e;
+        entries = new Map();
+        replacedDamaged = e.message;
+    }
     const written: string[] = [];
     let already = 0;
     for (const symbol of opts.symbols) {
@@ -133,12 +168,13 @@ export function archiveDay(opts: {
         entries.set(name, data);
         written.push(symbol);
     }
-    const report: ArchiveReport = { added: {}, already };
+    const report: ArchiveReport = replacedDamaged ? { added: {}, already, replacedDamaged } : { added: {}, already };
+    if (!written.length && replacedDamaged) rmSync(path, { force: true }); // nothing of the day to put in a new one
     if (written.length) {
         entries.set(manifestEntryName(opts.day), enc.encode(manifestText(opts.day, tickersOf(opts.day, entries))));
         const ordered = sortEntries(Array.from(entries).map(([name, data]) => ({ name, data })));
         mkdirSync(dirname(path), { recursive: true });
-        writeFileSync(path, buildZip(ordered, opts.day, deflate));
+        writeFileAtomic(path, buildZip(ordered, opts.day, deflate));
         report.added[opts.day] = written.sort();
     }
     // the index follows the disk on every run, also when nothing was written (a deleted zip is dropped from it)
@@ -186,7 +222,7 @@ export function syncHistoryIndex(historyDir: string, touched: readonly string[] 
     }
     if (current === next) return false;
     mkdirSync(historyDir, { recursive: true });
-    writeFileSync(join(historyDir, "index.json"), next);
+    writeFileAtomic(join(historyDir, "index.json"), next);
     return true;
 }
 

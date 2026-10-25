@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { extractEntry, parseZipDirectory } from '../src/history-zip';
-import { archiveDay, pruneArchives, snapshotsOnDisk, readArchived, readHistoryIndex, syncHistoryIndex, zipPathFor } from './history-archive';
-import { classifyPayload, fileDay } from './options-data';
+import { archiveDay, DamagedZipError, pruneArchives, snapshotsOnDisk, readArchived, readHistoryIndex, syncHistoryIndex, writeFileAtomic, zipPathFor } from './history-archive';
+import { archiveHistory, classifyPayload, fileDay } from './options-data';
 
 const setup = () => {
   const root = mkdtempSync(join(tmpdir(), 'gex-archive-'));
@@ -243,5 +243,61 @@ describe('pruneArchives rotates the archive', () => {
     mkdirSync(join(d.historyDir, '2026-10'), { recursive: true });
     for (const id of ['2026-10-07-23-59', '2026-10-08-00-00']) writeFileSync(join(d.historyDir, '2026-10', `${id}.zip`), new Uint8Array([1]));
     expect(pruneArchives(d.historyDir, '2026-10-14', 0, 7)).toEqual(['2026-10-07-23-59']);
+  });
+});
+
+describe('a damaged day zip (review GEX-M5) and atomic writes (F7)', () => {
+  const damage = (d: ReturnType<typeof setup>, day: string) => {
+    const zip = zipPathFor(day, d.historyDir);
+    mkdirSync(join(zip, '..'), { recursive: true });
+    writeFileSync(zip, 'PK\u0003\u0004 truncated');
+    return zip;
+  };
+
+  test('archiveDay throws DamagedZipError by default, and starts the zip afresh with replaceDamaged', () => {
+    const d = setup();
+    const zip = damage(d, '2026-10-09');
+    const spy = put(d.optionsDir, 'SPY', '2026-10-09');
+    expect(() => run(d, ['SPY'], '2026-10-09')).toThrow(DamagedZipError);
+    const r = archiveDay({ optionsDir: d.optionsDir, historyDir: d.historyDir, symbols: ['SPY'], day: '2026-10-09', dayOf: fileDay, replaceDamaged: true });
+    expect(r.replacedDamaged).toContain('is damaged');
+    expect(r.added).toEqual({ '2026-10-09': ['SPY'] });
+    expect(readArchived(d.historyDir, '2026-10-09', 'SPY')).toBe(spy);
+    expect(names(zip)).toEqual(['2026-10-09/SPY.json', '2026-10-09/manifest.json']);
+    expect(readHistoryIndex(d.historyDir).snapshots['2026-10-09']).toEqual(['SPY']);
+  });
+
+  test('a damaged zip with nothing of that day to write is removed, not listed', () => {
+    const d = setup();
+    const zip = damage(d, '2026-10-09');
+    put(d.optionsDir, 'SPY', '2026-10-08');
+    const r = archiveDay({ optionsDir: d.optionsDir, historyDir: d.historyDir, symbols: ['SPY'], day: '2026-10-09', dayOf: fileDay, replaceDamaged: true });
+    expect(r.replacedDamaged).toBeDefined();
+    expect(existsSync(zip)).toBe(false);
+  });
+
+  test('archiveHistory never throws: a damaged zip is a warning, any other failure an ERROR line', () => {
+    const d = setup();
+    damage(d, '2026-10-09');
+    put(d.optionsDir, 'SPY', '2026-10-09');
+    const lines = archiveHistory({ optionsDir: d.optionsDir, historyDir: d.historyDir, symbols: ['SPY'], day: '2026-10-09', keepDays: 14, keepBackupDays: 14 });
+    expect(lines[0]).toStartWith('WARNING ');
+    expect(lines[1]).toBe('2026-10-09: 1 file(s) written to the day zip, 0 already in it');
+    // a history "folder" that is a file: every step fails, nothing throws
+    const file = join(d.optionsDir, 'not-a-folder');
+    writeFileSync(file, 'x');
+    const bad = archiveHistory({ optionsDir: d.optionsDir, historyDir: file, symbols: ['SPY'], day: '2026-10-09', keepDays: 14, keepBackupDays: 14 });
+    expect(bad.some((l) => l.startsWith('ERROR the day zip of 2026-10-09 was not written'))).toBe(true);
+  });
+
+  test('writeFileAtomic replaces the whole file and leaves no .tmp; a failed write keeps the old file', () => {
+    const d = setup();
+    const path = join(d.optionsDir, 'X.json');
+    writeFileSync(path, 'old');
+    writeFileAtomic(path, 'new');
+    expect(readFileSync(path, 'utf8')).toBe('new');
+    expect(existsSync(`${path}.tmp`)).toBe(false);
+    expect(() => writeFileAtomic(join(d.optionsDir, 'missing-dir', 'Y.json'), 'x')).toThrow();
+    expect(existsSync(join(d.optionsDir, 'missing-dir', 'Y.json.tmp'))).toBe(false);
   });
 });

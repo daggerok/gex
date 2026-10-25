@@ -14,6 +14,9 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t15 - Every file is written atomically (writeFileAtomic: `<file>.tmp`, then a rename), so a killed run never leaves a
+ *        truncated chain, index, chart or zip (review F7). The HISTORY step never throws (archiveHistory, review GEX-M5): a
+ *        damaged day zip is started afresh and any other error is printed, so index.json and the charts are still written.
  *   t14 - Every scheduled run from 16:30 to 23:59 New York time is final (review GEX-H7, the workflow sets HISTORY=1 for it), so
  *        several runs can archive the same day: a ticker whose new file differs from its zip entry only in the `updated` stamp
  *        keeps the entry (archiveDay `sameData`), and a rerun with unchanged data commits nothing.
@@ -135,9 +138,9 @@
  */
 
 /// <reference types="node" />
-import { archiveDay, pruneArchives } from "./history-archive";
+import { archiveDay, pruneArchives, writeFileAtomic } from "./history-archive";
 import { marketDay as sharedMarketDay } from "../src/backtest/snapshot";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
 // ---- Python-compatible number and JSON formatting ---------------------------
@@ -602,6 +605,34 @@ export function marketDay(now: Date = new Date(), tz: string = MARKET_TZ): strin
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * The HISTORY=1 step of a final run (GEX-M5): the files of the default tickers just written go into the zip of the day and
+ * old zips rotate out. It never throws: a damaged day zip is started afresh (archiveDay `replaceDamaged`, git history keeps
+ * the old one) and any other error is reported, so the run still writes index.json and the charts and the site still
+ * deploys (it used to throw before writeIndex, failing every final run until someone fixed the zip by hand). Returns the
+ * lines to print.
+ */
+export function archiveHistory(opts: { optionsDir: string; historyDir: string; symbols: readonly string[]; day: string; keepDays: number; keepBackupDays: number }): string[] {
+    const lines: string[] = [];
+    try {
+        // equal data with only a newer `updated` stamp keeps the zip: every run from 16:30 to 23:59 New York time is final
+        const sameData = (oldText: string, nextText: string) => classifyPayload(oldText, nextText) === "unchanged";
+        const archived = archiveDay({ optionsDir: opts.optionsDir, historyDir: opts.historyDir, symbols: opts.symbols, day: opts.day, dayOf: fileDay, sameData, replaceDamaged: true });
+        if (archived.replacedDamaged) lines.push(`WARNING ${archived.replacedDamaged}; it was replaced by a new zip of this run (the old one stays in git history)`);
+        const n = archived.added[opts.day]?.length ?? 0;
+        lines.push(`${opts.day}: ${n} file(s) written to the day zip, ${archived.already} already in it`);
+    } catch (e) {
+        lines.push(`ERROR the day zip of ${opts.day} was not written: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    try {
+        const dropped = pruneArchives(opts.historyDir, opts.day, opts.keepDays, opts.keepBackupDays);
+        if (dropped.length) lines.push(`${dropped.length} zip(s) rotated out (daily older than ${opts.keepDays} days, backups older than ${opts.keepBackupDays}): ${dropped.join(", ")}`);
+    } catch (e) {
+        lines.push(`ERROR old zips were not rotated: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return lines;
+}
+
+/**
  * api/latest.json, `{ "version": 1, "date": "YYYY-MM-DD" }`: the trading day of the newest data in the cache. The app shows it as
  * "As of <date>" in the selector when no live provider is reachable. Only the date, so it changes at most once a day. Returns
  * true when the file was written.
@@ -616,7 +647,7 @@ export function writeLatest(apiDir: string, date: string): boolean {
         // none yet
     }
     mkdirSync(apiDir, { recursive: true });
-    writeFileSync(path, text);
+    writeFileAtomic(path, text);
     return true;
 }
 
@@ -1620,7 +1651,7 @@ function writeIndex(skip: Record<string, string> | null): boolean {
     const payload = planIndex(cachedSymbols(), readIndexDoc(), skip, SYMBOL_NAMES);
     if (!payload) return false;
     mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(INDEX_PATH, pyJsonDumps(payload, 2) + "\n");
+    writeFileAtomic(INDEX_PATH, pyJsonDumps(payload, 2) + "\n");
     return true;
 }
 
@@ -1975,7 +2006,7 @@ async function runChartPass(queue: string[]): Promise<{ written: number; failed:
             const secs = pyFixed1((performance.now() - started) / 1000);
             const pos = `${String(index + 1).padStart(4)}/${queue.length}`;
             if (file) {
-                writeFileSync(join(CHARTS_DIR, `${sym}.json`), JSON.stringify(file));
+                writeFileAtomic(join(CHARTS_DIR, `${sym}.json`), JSON.stringify(file));
                 written++;
                 streak = 0;
                 console.log(`${outputLabel("chart")} ${pos} ${sym.padEnd(5)} written    bars=${file.timestamp.length} in=${secs}s`);
@@ -2044,7 +2075,7 @@ export async function main(): Promise<void> {
         // The file is written on every successful fetch even when nothing but `updated` moved: freshness reads it.
         const text = pyJsonDumps(payload);
         const status = classifyPayload(previousText, text);
-        writeFileSync(path, text);
+        writeFileAtomic(path, text);
         return { kind: "written", status, payload, elapsed, path };
     };
 
@@ -2086,18 +2117,13 @@ export async function main(): Promise<void> {
     // Queue order whatever the finish order was.
     const updatedFiles: string[] = pool.results.flatMap((r) => (r?.kind === "written" && r.path ? [rel(r.path)] : []));
     if (updatedFiles.length) writeLatest(dirname(DATA_DIR), marketDay());
-    // HISTORY=1 (the last run of the trading day in CI): the files of the default tickers just written go into the zip of the
+    // HISTORY=1 (a final run of the trading day in CI, archiveHistory): the files of the default tickers just written go into the zip of the
     // day, api/history/<YYYY-MM>/<day>.zip, the last state of that day, and zips older than HISTORY_KEEP_DAYS are deleted.
     // The hourly runs before it do not touch api/history (nothing is committed for them, see update-partial-data.yml).
     if (cfg.HISTORY) {
-        const day = marketDay();
-        // equal data with only a newer `updated` stamp keeps the zip: every run from 16:30 to 23:59 New York time is final
-        const sameData = (oldText: string, nextText: string) => classifyPayload(oldText, nextText) === "unchanged";
-        const archived = archiveDay({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: defaultSymbols(), day, dayOf: fileDay, sameData });
-        const n = archived.added[day]?.length ?? 0;
-        console.log(`${outputLabel("history")} ${day}: ${n} file(s) written to the day zip, ${archived.already} already in it`);
-        const dropped = pruneArchives(HISTORY_DIR, day, cfg.HISTORY_KEEP_DAYS, cfg.HISTORY_KEEP_BACKUP_DAYS);
-        if (dropped.length) console.log(`${outputLabel("history")} ${dropped.length} zip(s) rotated out (daily older than ${cfg.HISTORY_KEEP_DAYS} days, backups older than ${cfg.HISTORY_KEEP_BACKUP_DAYS}): ${dropped.join(", ")}`);
+        for (const line of archiveHistory({ optionsDir: DATA_DIR, historyDir: HISTORY_DIR, symbols: defaultSymbols(), day: marketDay(), keepDays: cfg.HISTORY_KEEP_DAYS, keepBackupDays: cfg.HISTORY_KEEP_BACKUP_DAYS })) {
+            console.log(`${outputLabel("history")} ${line}`);
+        }
     }
 
     log(`skiplist: saving ${Object.keys(skip).length} entries to api/options/index.json (no_options)`);
