@@ -59,12 +59,18 @@ const PRICE_SCALE_MARGINS = { top: 0.04, bottom: 0.04 };
 const APPLE = isApplePlatform();
 
 /** Price-line order and labels match the GEX tab's Key Levels card. */
-/** `width` overrides the line width (Zero GEX is thin, 1 px: owner 2026-10-25); otherwise secondary levels are 1 px dotted, the others 2 px dashed. */
-const LEVEL_LINES: Array<{ key: PriceLevelKey; label: string; secondary?: boolean; width?: 1 | 2 }> = [
+/**
+ * Every level line here is 1 px (owner 2026-10-25, Chart tab only; the GEX tab keeps its widths), only Sigma stays
+ * `SIGMA_LINE_WIDTH`. With one width the dash tells the kinds apart: the main levels are long dashes, the secondary ones
+ * dots, the custom levels solid.
+ */
+const LEVEL_LINE_WIDTH = 1;
+const SIGMA_LINE_WIDTH = 2;
+const LEVEL_LINES: Array<{ key: PriceLevelKey; label: string; secondary?: boolean }> = [
     { key: 'maxNetGex', label: 'gex.level.maxNetGex' },
     { key: 'netGexPlus', label: 'gex.level.netGexPlus', secondary: true },
     { key: 'gammaFlip', label: 'gex.level.gammaFlip' },
-    { key: 'zeroGex', label: 'gex.level.zeroGex', width: 1 },
+    { key: 'zeroGex', label: 'gex.level.zeroGex' },
     { key: 'minNetGex', label: 'gex.level.minNetGex' },
     { key: 'netGexMinus', label: 'gex.level.netGexMinus', secondary: true },
     { key: 'sumNetGexPlus', label: 'gex.level.sumNetGexPlus', secondary: true },
@@ -359,18 +365,18 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         const sigmaLabelLines = labels.sigma.map((l) => series.createPriceLine({
             price: l.value,
             color: levelColors.sigma,
-            lineWidth: 2,
+            lineWidth: SIGMA_LINE_WIDTH,
             lineStyle: LineStyle.Dotted,
             lineVisible: false, // the line itself is the segment from the next day on
             axisLabelVisible: true,
             title: l.text,
         }));
-        segmentsRef.current?.set(sigma.length ? { prices: sigma.map((l) => l.strike), color: levelColors.sigma, width: 2, fromLogical: barCount } : null);
+        segmentsRef.current?.set(sigma.length ? { prices: sigma.map((l) => l.strike), color: levelColors.sigma, width: SIGMA_LINE_WIDTH, fromLogical: barCount } : null);
         priceLinesRef.current = [...sigmaLabelLines, ...entries.map((l) => series.createPriceLine({
             price: l.price,
             color: levelColors[l.key],
-            lineWidth: l.width ?? (l.secondary ? 1 : 2),
-            lineStyle: l.secondary ? LineStyle.Dotted : LineStyle.Dashed,
+            lineWidth: LEVEL_LINE_WIDTH,
+            lineStyle: l.secondary ? LineStyle.Dotted : LineStyle.LargeDashed,
             // Zero GEX drawn as a band: no line of its own, its title and axis label stay
             lineVisible: !(l.key === 'zeroGex' && zone),
             axisLabelVisible: true,
@@ -391,7 +397,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         customLinesRef.current = shown.map((c) => series.createPriceLine({
             price: c.price,
             color: levelColorOf(c),
-            lineWidth: 2,
+            lineWidth: LEVEL_LINE_WIDTH,
             lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
             title: c.name,
