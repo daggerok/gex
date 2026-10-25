@@ -16,6 +16,7 @@ import {
   findMaxAbsGamma,
   findNetGexLevels,
   findSumNetGexLevels,
+  findZeroGex,
   pcRatioByStrike,
   pointAtPrice,
   sumAbsGamma,
@@ -574,6 +575,8 @@ describe('computeGexLevels (7.7)', () => {
       sumNetGexMinus: null,
       maxPain: null,
       maxAbsGamma: null,
+      zeroGex: null,
+      zeroGexZone: null,
       pcRatioOi: null,
       pcRatioVolume: null,
       totalNetGex: 0,
@@ -791,5 +794,61 @@ describe('gexBarHalves (Net GEX view toggle)', () => {
     const k100 = { callGex: 20000, putGex: -20000, netGex: 0 };
     expect(gexBarHalves(k100, 'net')).toEqual({ pos: 0, neg: 0 });
     expect(gexBarHalves(k100, 'split')).toEqual({ pos: 20000, neg: -20000 });
+  });
+});
+
+describe('findZeroGex (Zero GEX, the owner\'s method)', () => {
+  // only strike and netGex matter here
+  const pt = (strike: number, netGex: number) => ({ strike, netGex } as unknown as Parameters<typeof findZeroGex>[0][number]);
+  const total = (p: ReturnType<typeof pt>[]) => p.reduce((s, x) => s + x.netGex, 0);
+
+  test('positive total: from the Max Net GEX strike down to the first negative strike', () => {
+    // max +20 at 105; walking down: 100 (+3) is still positive, 95 (-5) is the first negative strike
+    const profile = [pt(90, -10), pt(95, -5), pt(100, 3), pt(105, 20), pt(110, 5)];
+    expect(total(profile)).toBe(13);
+    expect(findZeroGex(profile, 13)).toEqual({ zeroGex: 95, zeroGexZone: { low: 95, high: 100 } });
+  });
+
+  test('negative total: from the Min Net GEX strike up to the first positive strike, zero strikes are walked over', () => {
+    // min -30 at 95; walking up: 100 (-5) still negative, 105 (0) neither sign, 110 (+4) the first positive strike
+    const profile = [pt(90, 2), pt(95, -30), pt(100, -5), pt(105, 0), pt(110, 4), pt(115, -1)];
+    expect(total(profile)).toBe(-30);
+    expect(findZeroGex(profile, -30)).toEqual({ zeroGex: 110, zeroGexZone: { low: 100, high: 110 } });
+  });
+
+  test('no sign change in the walking direction -> null', () => {
+    expect(findZeroGex([pt(90, 1), pt(95, 2), pt(100, 3)], 6)).toEqual({ zeroGex: null, zeroGexZone: null });
+    // positive total, the only negative strike is ABOVE the max: walking down never meets it
+    expect(findZeroGex([pt(90, 1), pt(95, 9), pt(100, -2)], 8)).toEqual({ zeroGex: null, zeroGexZone: null });
+    // negative total, the only positive strike is BELOW the min
+    expect(findZeroGex([pt(90, 2), pt(95, -9), pt(100, -1)], -8)).toEqual({ zeroGex: null, zeroGexZone: null });
+  });
+
+  test('a tie for the starting strike goes to the lowest strike', () => {
+    // +20 at 100 and at 110: starting at 100 gives 90 (zone 90..95); starting at 110 would give 105
+    const profile = [pt(90, -5), pt(95, 1), pt(100, 20), pt(105, -1), pt(110, 20)];
+    expect(findZeroGex(profile, total(profile))).toEqual({ zeroGex: 90, zeroGexZone: { low: 90, high: 95 } });
+    // the mirror case for a negative total: -20 at 100 and at 110, walking up from 100 meets 105 (+1)
+    const neg = [pt(100, -20), pt(105, 1), pt(110, -20), pt(115, 3)];
+    expect(findZeroGex(neg, total(neg))).toEqual({ zeroGex: 105, zeroGexZone: { low: 100, high: 105 } });
+  });
+
+  test('zero total or an empty profile -> null', () => {
+    expect(findZeroGex([pt(90, -5), pt(95, 5)], 0)).toEqual({ zeroGex: null, zeroGexZone: null });
+    expect(findZeroGex([], 10)).toEqual({ zeroGex: null, zeroGexZone: null });
+    expect(findZeroGex([pt(90, 1)], NaN)).toEqual({ zeroGex: null, zeroGexZone: null });
+  });
+
+  test('computeGexLevels carries it next to the Gamma Flip, from the real-spot profile', () => {
+    // same gamma everywhere, so netGex(K) is proportional to callOi(K) - putOi(K):
+    //   95: -100 (puts), 100: +50, 105: +400 (max), total > 0 -> walk down from 105: 100 positive, 95 the first negative
+    const q = (strike: number, side: 'call' | 'put', openInterest: number): OptionQuote => ({
+      symbol: `X${strike}${side}`, expiration: '2099-01-15', side, strike, bid: 1, ask: 1, mid: 1, last: 1, volume: 0, openInterest, iv: 0.2,
+      delta: side === 'call' ? 0.5 : -0.5, gamma: 0.01, theta: 0, vega: 0, rho: 0, greeksSource: 'cboe', greeksMissingReason: null,
+    } as unknown as OptionQuote);
+    const levels = computeGexLevels([q(95, 'put', 100), q(100, 'call', 50), q(105, 'call', 400)], 100);
+    expect(levels.totalNetGex).toBeGreaterThan(0);
+    expect(levels.zeroGex).toBe(95);
+    expect(levels.zeroGexZone).toEqual({ low: 95, high: 100 });
   });
 });

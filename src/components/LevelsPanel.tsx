@@ -2,11 +2,12 @@
 import * as React from 'react';
 import { levelColorOf } from '../custom-levels';
 import { useI18n } from '../i18n';
-import { LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs } from '../level-prefs';
+import { LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPanelOrder, resetLevelPrefs, setLevelColor, toggleLevel, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
 import { accentOf } from '../theme';
 import type { GexLevels, Settings } from '../types';
 import { fmt } from '../utils';
 import { useCustomLevels } from '../use-custom-levels';
+import { ChipSwitch } from './ChipSwitch';
 import { ToggleChip } from './ToggleChip';
 
 // ============================================================================
@@ -32,6 +33,7 @@ export const LevelsPanel: React.FC<{
     const { t: tr } = useI18n();
     const ax = accentOf(colorTheme);
     const { selected, colors } = useLevelPrefs();
+    const zeroArea = zeroGexDisplay.use() === 'area';
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
     const entries = levelPanelOrder(levels, customLevels, showMaxAg ? [] : ['maxAbsGamma']);
 
@@ -62,6 +64,10 @@ export const LevelsPanel: React.FC<{
                                 title={tooltip}
                                 activeClass={ax.chipActive}
                                 idleClass={ax.chipIdle}
+                                // Zero GEX: the switch on the left of the label draws it as a band (area) instead of a line
+                                leading={key === 'zeroGex' ? (
+                                    <ChipSwitch checked={zeroArea} onChange={(on) => zeroGexDisplay.set(on ? 'area' : 'line')} label={tr('gex.level.zeroGexSwitch')} />
+                                ) : undefined}
                                 swatches={
                                     <input
                                         type="color"

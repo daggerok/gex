@@ -17,7 +17,8 @@ import { type GexLevelKey } from '../gex-colors';
 import { LevelsPanel } from '../components/LevelsPanel';
 import { MetricsPanel } from '../components/MetricsPanel';
 import type { GexMetric } from '../metric-prefs';
-import { useLevelPrefs } from '../level-prefs';
+import { useLevelPrefs, zeroGexDisplay } from '../level-prefs';
+import { PriceBand } from '../chart-primitives';
 import { defaultLevelName, isApplePlatform, levelColorOf, nearestStrike, proposeLevelColor, roundPrice } from '../custom-levels';
 import { cutBarsAfter } from '../backtest/bars';
 import { attachLongPress } from '../long-press';
@@ -57,10 +58,12 @@ const PRICE_SCALE_MARGINS = { top: 0.04, bottom: 0.04 };
 const APPLE = isApplePlatform();
 
 /** Price-line order and labels match the GEX tab's Key Levels card. */
-const LEVEL_LINES: Array<{ key: GexLevelKey; label: string; secondary?: boolean }> = [
+/** `width` overrides the line width (Zero GEX is thin, 1 px: owner 2026-10-25); otherwise secondary levels are 1 px dotted, the others 2 px dashed. */
+const LEVEL_LINES: Array<{ key: GexLevelKey; label: string; secondary?: boolean; width?: 1 | 2 }> = [
     { key: 'maxNetGex', label: 'gex.level.maxNetGex' },
     { key: 'netGexPlus', label: 'gex.level.netGexPlus', secondary: true },
     { key: 'gammaFlip', label: 'gex.level.gammaFlip' },
+    { key: 'zeroGex', label: 'gex.level.zeroGex', width: 1 },
     { key: 'minNetGex', label: 'gex.level.minNetGex' },
     { key: 'netGexMinus', label: 'gex.level.netGexMinus', secondary: true },
     { key: 'sumNetGexPlus', label: 'gex.level.sumNetGexPlus', secondary: true },
@@ -147,6 +150,9 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
 
     // Which levels are on and their colours: the Levels panel above the chart, shared with the GEX tab
     const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
+    // Zero GEX as an area (the switch in its Levels chip): a band from the zone's low to its high strike (PriceBand)
+    const zeroArea = zeroGexDisplay.use() === 'area';
+    const bandRef = useRef<PriceBand | null>(null);
 
     // ---- Custom levels (right click adds, drag moves, shared with the GEX tab) ----
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
@@ -216,9 +222,13 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
                 return { ...info, priceRange: { minValue, maxValue } };
             },
         });
+        const band = new PriceBand();
+        series.attachPrimitive(band);
+        bandRef.current = band;
         chartRef.current = chart;
         seriesRef.current = series;
         return () => {
+            bandRef.current = null;
             priceLinesRef.current = [];
             seriesRef.current = null;
             chartRef.current = null;
@@ -327,18 +337,22 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         if (!series) return;
         for (const line of priceLinesRef.current) series.removePriceLine(line);
         const entries = levelEntries(levels).filter((l) => selectedLevels.includes(l.key) && (l.key !== 'maxAbsGamma' || agEnabled));
+        const zone = zeroArea && selectedLevels.includes('zeroGex') ? levels?.zeroGexZone ?? null : null;
         priceLinesRef.current = entries.map((l) => series.createPriceLine({
             price: l.price,
             color: levelColors[l.key],
-            lineWidth: l.secondary ? 1 : 2,
+            lineWidth: l.width ?? (l.secondary ? 1 : 2),
             lineStyle: l.secondary ? LineStyle.Dotted : LineStyle.Dashed,
+            // Zero GEX drawn as a band: no line of its own, its title and axis label stay
+            lineVisible: !(l.key === 'zeroGex' && zone),
             axisLabelVisible: true,
             title: tr(l.label),
         }));
-        levelPricesRef.current = entries.map((l) => l.price);
+        bandRef.current?.set(zone ? { low: zone.low, high: zone.high, color: levelColors.zeroGex } : null);
+        levelPricesRef.current = [...entries.map((l) => l.price), ...(zone ? [zone.low, zone.high] : [])];
         // Re-run autoscale so newly in-range levels are pulled into view.
         chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-    }, [levels, tr, hasSymbol, selectedLevels, levelColors, agEnabled]);
+    }, [levels, tr, hasSymbol, selectedLevels, levelColors, agEnabled, zeroArea]);
 
     // ---- Custom level price lines ----
     useEffect(() => {

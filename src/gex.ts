@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
 import { blackScholesGreeks } from './greeks';
-import type { GexLevels, GexPoint, OptionQuote } from './types';
+import type { GexLevels, GexPoint, OptionQuote, ZeroGexZone } from './types';
 
 // ---------------------------------------------------------------------------
 // Gamma exposure (GEX) math - SINGLE SOURCE OF TRUTH for GEX-derived levels
@@ -642,6 +642,54 @@ export function findMaxAbsGamma(profile: readonly GexPoint[]): number | null {
     return best ? best.strike : null;
 }
 
+export interface ZeroGexLevel {
+    /** The first strike of the other sign (the line of the Zero GEX level). Null when there is no sign change. */
+    zeroGex: number | null;
+    /** The band between the last strike of the starting sign and the first strike of the other sign. Null with zeroGex. */
+    zeroGexZone: ZeroGexZone | null;
+}
+
+/**
+ * "Zero GEX" - the OWNER'S OWN METHOD (2026-10-25), not a published standard and NOT the Gamma Flip: Gamma Flip
+ * (findGammaFlipHypotheticalSpot) re-prices the whole book at hypothetical spots, this one only reads the sign pattern of
+ * the per-strike Net GEX profile at the real spot. Both are shown, side by side, as separate levels.
+ *
+ *  - Total Net GEX > 0: start at the Max Net GEX strike (largest positive netGex, ties to the lowest strike) and walk DOWN
+ *    the strikes; the first strike with netGex < 0 marks the flip
+ *  - Total Net GEX < 0: start at the Min Net GEX strike (most negative netGex, ties to the lowest strike) and walk UP; the
+ *    first strike with netGex > 0 marks the flip
+ *  - no noise threshold (owner: "first bar of the other sign"); a strike with netGex exactly 0 is neither sign and is
+ *    walked over
+ *
+ * `zeroGex` (the LINE) is that first strike of the other sign: a real strike, the one the owner's rule names. The ZONE
+ * (the AREA) spans from it to the last strike of the starting sign met before it (the neighbouring strike, or further when
+ * zero strikes sit between them). Null when the total is 0, the profile is empty, or the walk reaches the end of the
+ * chain without a sign change. `profile` must be sorted ascending by strike (computeGexProfile's order).
+ */
+export function findZeroGex(profile: readonly GexPoint[], totalNetGex: number): ZeroGexLevel {
+    const none: ZeroGexLevel = { zeroGex: null, zeroGexZone: null };
+    if (!(totalNetGex > 0) && !(totalNetGex < 0)) return none;
+    const sign = totalNetGex > 0 ? 1 : -1;
+    // the starting strike: the largest sign * netGex, ties to the lowest strike (the first in ascending order)
+    let start = -1;
+    for (let i = 0; i < profile.length; i++) {
+        const v = sign * profile[i].netGex;
+        if (v > 0 && (start < 0 || v > sign * profile[start].netGex)) start = i;
+    }
+    if (start < 0) return none;
+    const step = sign > 0 ? -1 : 1; // positive total walks down, negative total walks up
+    let lastSame = profile[start].strike;
+    for (let i = start + step; i >= 0 && i < profile.length; i += step) {
+        const v = sign * profile[i].netGex;
+        if (v > 0) { lastSame = profile[i].strike; continue; }
+        if (v < 0) {
+            const other = profile[i].strike;
+            return { zeroGex: other, zeroGexZone: { low: Math.min(other, lastSame), high: Math.max(other, lastSame) } };
+        }
+    }
+    return none;
+}
+
 export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, symbol?: string | null): GexLevels {
     const profile = computeGexProfile(quotes, spot);
     const walls = findNetGexLevels(profile, spot, netGexPlusMinusMinDistance(symbol, spot));
@@ -664,6 +712,8 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
         ...findSumNetGexLevels(profile, spot),
         maxPain: computeMaxPain(quotes),
         maxAbsGamma: findMaxAbsGamma(profile),
+        // Zero GEX: the owner's own per-strike sign-change method, an ADDITIONAL level next to the Gamma Flip above
+        ...findZeroGex(profile, totalNetGex),
         pcRatioOi: pcr.byOi,
         pcRatioVolume: pcr.byVolume,
         totalNetGex,

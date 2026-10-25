@@ -2,17 +2,17 @@
 /// <reference types="node" />
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { CustomLevel } from './custom-levels';
-import { DEFAULT_SELECTED_LEVELS, getLevelPrefs, levelPanelOrder, resetLevelPrefs, setLevelColor, toggleLevel } from './level-prefs';
+import { DEFAULT_SELECTED_LEVELS, getLevelPrefs, levelPanelOrder, resetLevelPrefs, setLevelColor, toggleLevel, zeroGexDisplay } from './level-prefs';
 import type { GexLevels } from './types';
 
 const levels = (over: Partial<GexLevels> = {}): GexLevels => ({
-  maxNetGex: 780, netGexPlus: 785, gammaFlip: 773.22, minNetGex: 770, netGexMinus: 765, sumNetGexPlus: 784, sumNetGexMinus: 764, maxPain: 774, maxAbsGamma: 777, spot: 778.57, ...over,
+  maxNetGex: 780, netGexPlus: 785, gammaFlip: 773.22, minNetGex: 770, netGexMinus: 765, sumNetGexPlus: 784, sumNetGexMinus: 764, maxPain: 774, maxAbsGamma: 777, zeroGex: 771, spot: 778.57, ...over,
 } as GexLevels);
 const own = (id: string, price: number): CustomLevel => ({ id, name: id, price });
 
 describe('levelPanelOrder', () => {
   test('built-in levels run from the lowest price to the highest (Net GEX- and 75% Sum Net GEX- swapped, see below)', () => {
-    expect(levelPanelOrder(levels()).map((e) => e.key)).toEqual(['netGexMinus', 'sumNetGexMinus', 'minNetGex', 'gammaFlip', 'maxPain', 'maxAbsGamma', 'spot', 'maxNetGex', 'sumNetGexPlus', 'netGexPlus']);
+    expect(levelPanelOrder(levels()).map((e) => e.key)).toEqual(['netGexMinus', 'sumNetGexMinus', 'minNetGex', 'zeroGex', 'gammaFlip', 'maxPain', 'maxAbsGamma', 'spot', 'maxNetGex', 'sumNetGexPlus', 'netGexPlus']);
   });
 
   test('Net GEX- stays before 75% Sum Net GEX- even when the 75% level has the lower price', () => {
@@ -26,7 +26,7 @@ describe('levelPanelOrder', () => {
   });
 
   test('no levels at all keeps the base order', () => {
-    expect(levelPanelOrder(null).map((e) => e.key)).toEqual(['maxNetGex', 'netGexPlus', 'gammaFlip', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma']);
+    expect(levelPanelOrder(null).map((e) => e.key)).toEqual(['maxNetGex', 'netGexPlus', 'gammaFlip', 'zeroGex', 'spot', 'minNetGex', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'maxPain', 'maxAbsGamma']);
   });
 
   test("the user's own levels come first, by price, so they are never out of sight at the end of a scrolling row", () => {
@@ -35,7 +35,7 @@ describe('levelPanelOrder', () => {
     expect(entries[0].custom?.price).toBe(750);
     expect(entries[0].builtin).toBeNull();
     expect(entries[2].builtin).toBe('netGexMinus');
-    expect(entries).toHaveLength(12);
+    expect(entries).toHaveLength(13);
   });
 });
 
@@ -44,7 +44,7 @@ describe('Max AG chip', () => {
     expect(levelPanelOrder(levels()).map((e) => e.key)).toContain('maxAbsGamma');
     const without = levelPanelOrder(levels(), [], ['maxAbsGamma']).map((e) => e.key);
     expect(without).not.toContain('maxAbsGamma');
-    expect(without).toHaveLength(9);
+    expect(without).toHaveLength(10);
   });
 
   test('it sits among the others by its price', () => {
@@ -78,5 +78,21 @@ describe('shared level preferences', () => {
     expect(getLevelPrefs().colors.maxPain).toBe('#123456');
     resetLevelPrefs();
     expect(getLevelPrefs().colors.maxPain).not.toBe('#123456');
+  });
+});
+
+describe('Zero GEX chip', () => {
+  test('it is a level like the others: on by default and placed by its price', () => {
+    expect(DEFAULT_SELECTED_LEVELS).toContain('zeroGex');
+    const keys = levelPanelOrder(levels()).map((e) => e.key);
+    expect(keys.indexOf('zeroGex')).toBe(keys.indexOf('minNetGex') + 1); // 771 is between Min Net GEX 770 and Gamma Flip 773.22
+  });
+
+  test('its line / area switch starts as a line and Reset of the Levels panel brings the line back', () => {
+    expect(zeroGexDisplay.get()).toBe('line');
+    zeroGexDisplay.set('area');
+    expect(zeroGexDisplay.get()).toBe('area');
+    resetLevelPrefs();
+    expect(zeroGexDisplay.get()).toBe('line');
   });
 });
