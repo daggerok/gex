@@ -12,7 +12,7 @@ import { FadePresence } from '../components/FadePresence';
 import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEditor';
 import { LevelsPanel } from '../components/LevelsPanel';
 import { ToggleChip } from '../components/ToggleChip';
-import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPrice, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay, type ToggleableLevelKey } from '../level-prefs';
+import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPrice, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, netGexView, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
@@ -376,7 +376,6 @@ export const GexView: React.FC<GexViewProps> = ({
     const ax = accentOf(settings.colorTheme);
     const na = tr('gex.na');
     /** Why the Gamma Flip is not shown: too little IV coverage near spot (computeGexLevels' gate). */
-    const gammaFlipNoIvText = (l: GexLevels): string => tr('gex.level.tooltip.gammaFlipNoIv', { pct: `${Math.round((l.gammaFlipIvCoverage ?? 0) * 100)}%` });
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
 
     // quotes / effSpot / levels come from App's useGexLevels (computed once,
@@ -1414,8 +1413,8 @@ export const GexView: React.FC<GexViewProps> = ({
                                         {l.label}
                                     </span>
                                     {l.key === 'gammaFlip' && levels?.gammaFlipUnavailable ? (
-                                        // no flip: the sweep sees too little of the gamma near spot through usable IVs
-                                        <Tip text={gammaFlipNoIvText(levels)} wrap>
+                                        // no flip: too little usable IV near spot, or a futures-priced symbol (no sweep)
+                                        <Tip text={gammaFlipUnavailableText(levels, tr)} wrap>
                                             <span className="font-medium tabular-nums text-slate-400 dark:text-slate-500" data-gamma-flip-no-iv>{na}</span>
                                         </Tip>
                                     ) : (

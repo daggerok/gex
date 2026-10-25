@@ -1,5 +1,5 @@
 /// <reference lib="esnext" />
-import { blackScholesGreeks, impliedVolFromGamma, yearsToExpiration } from './greeks';
+import { blackScholesGreeks, impliedVolFromGamma, isFuturesPricedSymbol, yearsToExpiration } from './greeks';
 import type { GexLevels, GexPoint, IvRepair, OptionQuote, SigmaLevel, SigmaLevels, SigmaStatBasis, ZeroGexZone } from './types';
 
 // ---------------------------------------------------------------------------
@@ -980,12 +980,18 @@ export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, s
     // failed-solve IVs repaired first (repairImpliedVols), for the sweep and the ATM IV of Sigma; the provider gamma of
     // every other level is untouched
     const repaired = repairImpliedVols(quotes, spot);
-    const crossings = gammaFlipSweepCrossings(repaired, spot);
+    // GEX-H5: no sweep at all for a futures-priced symbol (VIX, VXN). The sweep is Black-Scholes around one spot and skips
+    // every quote with a `forward`, so it only ever saw the quotes of expirations whose forward did NOT resolve, with the
+    // provider's spot-model IVs: a flip from those alone is wrong, and a flip from Black-76 forwards is not implemented
+    const futuresPriced = isFuturesPricedSymbol(symbol);
+    const crossings = futuresPriced ? [] : gammaFlipSweepCrossings(repaired, spot);
     const { pos: gammaFlipPos, neg: gammaFlipNeg } = crossingsByDirection(crossings);
     const totalNetGex = profile.reduce((sum, point) => sum + point.netGex, 0);
     // the sweep must see most of the real gamma near spot, else no flip (ivCoverageNearSpot)
-    const gammaFlipIvCoverage = ivCoverageNearSpot(repaired, spot);
-    const gammaFlipUnavailable = gammaFlipIvCoverage !== null && gammaFlipIvCoverage < GAMMA_FLIP_MIN_IV_COVERAGE ? 'ivCoverage' : null;
+    const gammaFlipIvCoverage = futuresPriced ? null : ivCoverageNearSpot(repaired, spot);
+    const gammaFlipUnavailable: GexLevels['gammaFlipUnavailable'] = futuresPriced
+        ? 'futuresPriced'
+        : gammaFlipIvCoverage !== null && gammaFlipIvCoverage < GAMMA_FLIP_MIN_IV_COVERAGE ? 'ivCoverage' : null;
     // GEX-M2: the only crossing, or the one nearest to spot (see nearestGammaFlip)
     const gammaFlip = gammaFlipUnavailable ? null : nearestGammaFlip(crossings, spot);
     return {

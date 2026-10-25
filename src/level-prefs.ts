@@ -213,3 +213,13 @@ export function sigmaLines(levels: GexLevels | null, mode: SigmaMode): SigmaLine
         .map((l) => ({ key: `sigma:${l.side > 0 ? '+' : '-'}${l.n}`, strike: l.strike, text: `${l.n}σ`, level: l }))
         .sort((a, b) => b.strike - a.strike || a.level.n - b.level.n);
 }
+
+/**
+ * Why the Gamma Flip is not shown, for its tooltips in the Levels panel and the Levels table: too little usable IV near
+ * spot, or a futures-priced symbol with no sweep (GEX-H5). Empty when it is shown.
+ */
+export function gammaFlipUnavailableText(levels: GexLevels | null | undefined, tr: (key: string, params?: Record<string, string | number>) => string): string {
+    if (levels?.gammaFlipUnavailable === 'futuresPriced') return tr('gex.level.tooltip.gammaFlipFutures');
+    if (levels?.gammaFlipUnavailable === 'ivCoverage') return tr('gex.level.tooltip.gammaFlipNoIv', { pct: `${Math.round((levels.gammaFlipIvCoverage ?? 0) * 100)}%` });
+    return '';
+}
