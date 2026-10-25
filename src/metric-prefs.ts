@@ -22,9 +22,32 @@ export const GEX_METRICS: GexMetric[] = ['netGex', 'absoluteGamma', 'callOi', 'p
 /** What the Metrics panel's Reset goes back to: Net GEX and AG. */
 export const DEFAULT_GEX_METRICS: GexMetric[] = ['netGex', 'absoluteGamma'];
 
+// ---- ONE source of truth for the sign colours (owner, 2026-10-25) --------------------------------------------------------
+// `netGexPos` / `netGexNeg` (the Net GEX bar colours, user-customizable, back to green / red on Reset) colour everything
+// that is coloured by sign: the Net GEX and Abs GEX bars and legend, the Chart tab candles (bull / bear), the Board peak
+// dots and row tints, the sign-coloured values of the side panels. React code reads them with useMetricColors /
+// signColor; class-based styles read the CSS variables below, which follow every change and every reset at once.
+
+/** CSS variables of the sign colours on <html>: `text-[var(--gex-pos)]`, `bg-[var(--gex-neg)]`, `color-mix(...)`. */
+export const SIGN_COLOR_VARS = { pos: '--gex-pos', neg: '--gex-neg' } as const;
+
+/** Writes the sign colour variables (no document: nothing to do). */
+export function applySignColorVars(set: Pick<MetricColorSet, 'netGexPos' | 'netGexNeg'>, root: { style: { setProperty(name: string, value: string): void } } | null = typeof document === 'undefined' ? null : document.documentElement): void {
+    if (!root) return;
+    root.style.setProperty(SIGN_COLOR_VARS.pos, set.netGexPos);
+    root.style.setProperty(SIGN_COLOR_VARS.neg, set.netGexNeg);
+}
+
+/** The sign colour of a value: positive -> `netGexPos`, negative -> `netGexNeg`, 0 or not a number -> null. */
+export function signColor(value: number | null | undefined, set: Pick<MetricColorSet, 'netGexPos' | 'netGexNeg'>): string | null {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) return null;
+    return value > 0 ? set.netGexPos : set.netGexNeg;
+}
+
 let colors: MetricColorSet = loadMetricColors();
+applySignColorVars(colors);
 const listeners = new Set<() => void>();
-const publish = (next: MetricColorSet) => { colors = next; listeners.forEach((l) => l()); };
+const publish = (next: MetricColorSet) => { colors = next; applySignColorVars(next); listeners.forEach((l) => l()); };
 
 export const getMetricColors = (): MetricColorSet => colors;
 
