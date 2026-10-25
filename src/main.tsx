@@ -1810,6 +1810,11 @@ const App: React.FC = () => {
                         symbol={meta?.symbol ?? ''}
                         board={gex.board}
                         selectedExps={selectedExps}
+                        levels={gex.levels}
+                        metrics={gexMetrics}
+                        setMetrics={changeGexMetrics}
+                        colorTheme={settings.colorTheme}
+                        spotEstimated={gex.spotIsEstimated}
                     />
                 </Suspense>
                 </div>

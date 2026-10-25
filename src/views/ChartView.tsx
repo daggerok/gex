@@ -15,8 +15,7 @@ import {
 } from 'lightweight-charts';
 import { type PriceLevelKey } from '../gex-colors';
 import { chartLabelsWithSigma } from '../level-labels';
-import { LevelsPanel } from '../components/LevelsPanel';
-import { MetricsPanel } from '../components/MetricsPanel';
+import { ToolbarRow } from '../components/ToolbarRow';
 import { useMetricColors, type GexMetric } from '../metric-prefs';
 import { sigmaLines, sigmaMode, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
 import { PriceBand, RightSegments } from '../chart-primitives';
@@ -580,12 +579,9 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
 
     return (
         <main className="mx-auto flex w-full flex-1 flex-col px-4 pt-4 lg:min-h-0 lg:px-6">
-            {/* ---- The Metrics and Levels panels: the same row as on the GEX tab (the symbol and the range selector are on the
-                chart itself, top left, see ChartHeader) ---- */}
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <MetricsPanel metrics={metrics} setMetrics={setMetrics} colorTheme={settings.colorTheme} />
-                <LevelsPanel levels={levels} symbol={symbol} colorTheme={settings.colorTheme} showMaxAg={agEnabled} />
-            </div>
+            {/* ---- The Metrics and Levels panels: the toolbar row shared with the Board and GEX tabs (the symbol and the range
+                selector are on the chart itself, top left, see ChartHeader) ---- */}
+            <ToolbarRow metrics={metrics} setMetrics={setMetrics} levels={levels} symbol={symbol} colorTheme={settings.colorTheme} />
             {entries.length === 0 && (
                 <p className="mb-3 text-xs text-slate-400">{isFuturesPriced ? tr('chart.levels.futuresPriced', { symbol }) : tr('chart.levels.none')}</p>
             )}
