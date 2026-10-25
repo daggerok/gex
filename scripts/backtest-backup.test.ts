@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { extractEntry, parseZipDirectory } from '../src/history-zip';
-import { DEFAULT_TICKERS } from '../src/default-tickers';
+import { DEFAULT_SYMBOLS } from './options-data';
 import { availableTickers, backupStamp, createBackup, nextBackupId, parseArgs } from './backtest-backup';
 import { readHistoryIndex } from './history-archive';
 
@@ -33,7 +33,7 @@ const unpack = (path: string, name: string) => {
 
 describe('parseArgs', () => {
   test('no tickers means the preset of required tickers', () => {
-    expect(parseArgs([])).toEqual({ tickers: [...DEFAULT_TICKERS], preset: true, help: false });
+    expect(parseArgs([])).toEqual({ tickers: [...DEFAULT_SYMBOLS], preset: true, help: false });
   });
   test('tickers: space or comma separated, any case, no duplicates', () => {
     expect(parseArgs(['spy', 'NDX,qqq', 'SPY']).tickers).toEqual(['SPY', 'NDX', 'QQQ']);

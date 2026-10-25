@@ -2,7 +2,7 @@
 // ============================================================================
 // BACKUP PREFERENCES - what the last backup was made of, remembered in the browser so
 // the next "Create backup" dialog opens with it selected. Nothing remembered = the
-// preset of required tickers (DEFAULT_TICKERS).
+// preset of required tickers (the fetcher's default list, api/options/index.json `defaults`).
 // ============================================================================
 
 const KEY = 'gex.backup.choice.v2';
@@ -10,7 +10,7 @@ const KEY = 'gex.backup.choice.v2';
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 /**
- * What the backup dialog backs up: the preset of required tickers (DEFAULT_TICKERS, the default), the ticker on screen, all
+ * What the backup dialog backs up: the preset of required tickers (the fetcher's default list from api/options/index.json, the default), the ticker on screen, all
  * available data, or a list of tickers typed by the user.
  */
 export type BackupChoice = { mode: 'preset' } | { mode: 'current' } | { mode: 'all' } | { mode: 'custom'; tickers: string[] };

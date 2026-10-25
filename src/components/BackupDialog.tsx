@@ -2,7 +2,6 @@
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadBackupChoice, parseTickerInput, type BackupChoice } from '../backtest/prefs';
-import { DEFAULT_TICKERS } from '../default-tickers';
 import { useI18n } from '../i18n';
 import { Modal } from './Modal';
 
@@ -16,13 +15,15 @@ export const BackupDialog: React.FC<{
     /** how many tickers "all data" means for the provider in use, null while unknown */
     /** the ticker on screen, '' when none is loaded */
     currentTicker: string;
+    /** the preset of required tickers (the fetcher's default list from api/options/index.json), [] while unknown */
+    presetTickers: readonly string[];
     allCount: number | null;
     progress: { done: number; total: number; symbol: string } | null;
     error: string;
     onCreate: (choice: BackupChoice) => void;
     /** cancels a run in progress, or closes the dialog when idle */
     onCancel: () => void;
-}> = ({ currentTicker, allCount, progress, error, onCreate, onCancel }) => {
+}> = ({ currentTicker, presetTickers, allCount, progress, error, onCreate, onCancel }) => {
     const { t } = useI18n();
     const [initial] = useState(() => loadBackupChoice());
     // the last choice was the current ticker but none is loaded now: fall back to the preset
@@ -32,7 +33,7 @@ export const BackupDialog: React.FC<{
     useEffect(() => { if (mode === 'custom') { inputRef.current?.focus(); inputRef.current?.select(); } }, [mode]);
     const parsed = useMemo(() => parseTickerInput(text), [text]);
     const busy = progress !== null;
-    const canCreate = !busy && (mode !== 'custom' || (parsed.rejected.length === 0 && parsed.tickers.length > 0));
+    const canCreate = !busy && (mode !== 'custom' || (parsed.rejected.length === 0 && parsed.tickers.length > 0)) && (mode !== 'preset' || presetTickers.length > 0);
     const submit = () => {
         if (!canCreate) return;
         onCreate(mode === 'custom' ? { mode, tickers: parsed.tickers } : { mode });
@@ -45,11 +46,13 @@ export const BackupDialog: React.FC<{
         <Modal title={t('bt.backup.title')} onClose={onCancel} widthClass="max-w-md" closeLabel={t('bt.backup.cancel')}>
             <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{t('bt.backup.help')}</p>
             <div className="space-y-2" onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'BUTTON') { e.preventDefault(); submit(); } }}>
-                <label className={row}>
-                    {radio('preset')}
+                <label className={row + (presetTickers.length ? '' : ' opacity-50')}>
+                    <input type="radio" name="backup-mode" checked={mode === 'preset'} disabled={busy || !presetTickers.length} onChange={() => setMode('preset')} className="mt-0.5" data-backup-mode="preset" />
                     <span>
                         <span className="font-semibold">{t('bt.backup.preset')}</span>
-                        <span className="block font-mono text-[11px] text-slate-500 dark:text-slate-400">{DEFAULT_TICKERS.join(', ')}</span>
+                        {presetTickers.length
+                            ? <span className="block font-mono text-[11px] text-slate-500 dark:text-slate-400" data-backup-preset-list>{presetTickers.join(', ')}</span>
+                            : <span className="block text-[11px] text-slate-500 dark:text-slate-400">{t('bt.backup.presetUnknown')}</span>}
                     </span>
                 </label>
                 <label className={row + (currentTicker ? '' : ' opacity-50')}>
