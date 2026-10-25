@@ -1,7 +1,7 @@
 /// <reference lib="esnext" />
 import { INDEX_SYMBOLS } from '../greeks';
 import type { DataProvider, OptionQuote } from '../types';
-import { computeMid, num, parseOccSymbol, proxied } from '../utils';
+import { computeMid, num, parseOccSymbol, proxied, UiError } from '../utils';
 import { proxyTickerSuggestions } from './proxy-search';
 
 /**
@@ -48,17 +48,17 @@ export const cboeProvider: DataProvider = {
             ? `${base}/api/cboe?symbol=${encodeURIComponent(cboeSym)}`
             : proxied(target, ctx.proxyTemplate);
         if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
-            throw new Error('CBOE needs a proxy. Set the Proxy base URL in Settings (run scripts/options-local-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
+            throw new UiError('error.proxy.needed', { provider: 'CBOE' });
         }
 
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
-        if (!res.ok) throw new Error(`CBOE proxy request failed (HTTP ${res.status}). Check the Proxy base URL / CORS proxy in Settings, or switch provider.`);
+        if (!res.ok) throw new UiError('error.proxy.http', { provider: 'CBOE', status: res.status });
         const text = await res.text();
         let json: any;
         try { json = JSON.parse(text); }
-        catch { throw new Error('The proxy returned a non-JSON page. Check the Proxy base URL / CORS proxy in Settings, or use CACHE (static data).'); }
+        catch { throw new UiError('error.proxy.notJson', { provider: 'CBOE' }); }
         const data = json?.data;
-        if (!data || !Array.isArray(data.options)) throw new Error(`No option data for "${raw}". Check the ticker symbol.`);
+        if (!data || !Array.isArray(data.options)) throw new UiError('error.noOptionData', { symbol: raw });
         const quotes: OptionQuote[] = [];
         for (const o of data.options) {
             const parsed = parseOccSymbol(String(o.option ?? ''));

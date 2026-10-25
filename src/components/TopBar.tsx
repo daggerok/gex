@@ -496,11 +496,11 @@ export const TopBar: React.FC<{
                                             </span>
                                         </div>
                                         <div className="flex items-start justify-between gap-3 px-3 py-2">
-                                            <span className={`text-xs ${mt}`}>Provider</span>
+                                            <span className={`text-xs ${mt}`}>{t('topBar.provider')}</span>
                                             <span className={`text-xs font-mono text-right ${t1}`}>{provider.label}</span>
                                         </div>
                                         <div className="flex items-start justify-between gap-3 px-3 py-2">
-                                            <span className={`text-xs ${mt}`}>Mode</span>
+                                            <span className={`text-xs ${mt}`}>{t('topBar.mode')}</span>
                                             <span className={`text-xs font-mono font-semibold ${t1}`}>{isCache ? 'CACHE' : 'LIVE'}</span>
                                         </div>
                                         <div className="px-3 py-2">

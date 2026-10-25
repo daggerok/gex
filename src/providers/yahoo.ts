@@ -1,7 +1,7 @@
 /// <reference lib="esnext" />
 import { INDEX_SYMBOLS } from '../greeks';
 import type { DataProvider, OptionQuote } from '../types';
-import { asArray, computeMid, dbg, isoToUnix, num } from '../utils';
+import { asArray, computeMid, dbg, isoToUnix, num, UiError } from '../utils';
 import { proxyTickerSuggestions } from './proxy-search';
 
 /**
@@ -35,7 +35,7 @@ export const yahooProvider: DataProvider = {
         // silently returns an empty result.
         const ySym = INDEX_SYMBOLS.has(raw) ? `^${raw}` : raw;
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
-        if (!base) throw new Error('Set a Proxy base URL in Settings (e.g. http://localhost:8787).');
+        if (!base) throw new UiError('error.proxy.baseMissing');
         const url = `${base}/api/options?symbol=${encodeURIComponent(ySym)}`;
         dbg('yahoo fetchMeta', { raw, ySym, url });
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
@@ -43,7 +43,7 @@ export const yahooProvider: DataProvider = {
         const result = j?.optionChain?.result?.[0];
         if (!result) {
             const err = j?.optionChain?.error?.description || j?.error;
-            throw new Error(err ? `Yahoo: ${err}` : `No option data for "${raw}". Check the symbol / proxy.`);
+            throw err ? new Error(`Yahoo: ${err}`) : new UiError('error.noOptionData', { symbol: raw });
         }
         const expirations = asArray<number>(result.expirationDates)
             .map((ts) => new Date(ts * 1000).toISOString().slice(0, 10))
@@ -55,13 +55,13 @@ export const yahooProvider: DataProvider = {
         const raw = symbol.toUpperCase().replace(/^[.]/, '');
         const ySym = INDEX_SYMBOLS.has(raw) ? `^${raw}` : raw;
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
-        if (!base) throw new Error('Set a Proxy base URL in Settings (e.g. http://localhost:8787).');
+        if (!base) throw new UiError('error.proxy.baseMissing');
         const url = `${base}/api/options?symbol=${encodeURIComponent(ySym)}&date=${isoToUnix(expiration)}`;
         dbg('yahoo fetchExpiration', { raw, ySym, expiration, url });
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
         const j: any = await res.json().catch(() => null);
         const opt = j?.optionChain?.result?.[0]?.options?.[0];
-        if (!opt) throw new Error('Yahoo returned no contracts for this expiration.');
+        if (!opt) throw new UiError('error.yahoo.noContracts');
 
         const map = (row: any, side: 'call' | 'put'): OptionQuote => {
             const bid = num(row.bid);

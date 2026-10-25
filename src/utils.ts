@@ -213,11 +213,33 @@ export function estimateSpot(quotes: OptionQuote[], expiration: string): number 
 }
 
 /**
+ * An error the user reads: its text is an i18n key with params (GEX-H8), so it shows in the app language wherever it is
+ * displayed (friendlyError, errorText). `message` is the English text, for logs and tests.
+ */
+export class UiError extends Error {
+    readonly key: string;
+    readonly params?: Record<string, string | number>;
+    constructor(key: string, params?: Record<string, string | number>) {
+        super(translate(key, 'en', params));
+        this.name = 'UiError';
+        this.key = key;
+        this.params = params;
+    }
+}
+
+/** The text of any error in `lang`: a UiError translated, anything else its message. */
+export function errorText(e: unknown, lang: Language): string {
+    if (e instanceof UiError) return translate(e.key, lang, e.params);
+    return e instanceof Error ? e.message : String(e);
+}
+
+/**
  * Map raw fetch/parse failures to a friendly, actionable message.
  * Keeps the UI human-readable instead of leaking stack traces or JSON parse
  * errors like "Unexpected token '<'".
  */
 export function friendlyError(e: unknown, provider: DataProvider, lang: Language): string {
+    if (e instanceof UiError) return errorText(e, lang);
     const msg = (e instanceof Error ? e.message : String(e)) || '';
     if (/^[A-Z].*[.?!]$/.test(msg) && msg.length < 240 && !msg.includes('Unexpected token')) {
         return msg;

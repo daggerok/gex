@@ -1,7 +1,7 @@
 /// <reference lib="esnext" />
 import { INDEX_SYMBOLS } from '../greeks';
 import type { DataProvider, OptionQuote } from '../types';
-import { computeMid, dbg, num, parseOccSymbol, proxied } from '../utils';
+import { computeMid, dbg, num, parseOccSymbol, proxied, UiError } from '../utils';
 import { proxyTickerSuggestions } from './proxy-search';
 
 /**
@@ -50,7 +50,7 @@ export const nasdaqProvider: DataProvider = {
         // NASDAQ has no index option-chain endpoint at all ("Symbol not exists."
         // for every assetclass), so fail early with an actionable message.
         if (INDEX_SYMBOLS.has(raw)) {
-            throw new Error(`NASDAQ does not support index options (${raw}). Switch to CBOE, YAHOO, or CACHE.`);
+            throw new UiError('error.nasdaq.index', { symbol: raw });
         }
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
         // Direct NASDAQ URL (used only if routed via a generic {url} CORS proxy).
@@ -59,22 +59,22 @@ export const nasdaqProvider: DataProvider = {
             ? `${base}/api/nasdaq?symbol=${encodeURIComponent(raw)}`
             : proxied(direct, ctx.proxyTemplate);
         if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
-            throw new Error('NASDAQ needs a proxy. Set the Proxy base URL in Settings (run scripts/options-local-proxy.ts, default http://localhost:8787), or pick a CORS proxy.');
+            throw new UiError('error.proxy.needed', { provider: 'NASDAQ' });
         }
         dbg('nasdaq fetchAll', { raw, url });
 
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
-        if (!res.ok) throw new Error(`NASDAQ proxy request failed (HTTP ${res.status}). Check the Proxy base URL in Settings, or switch provider.`);
+        if (!res.ok) throw new UiError('error.proxy.http', { provider: 'NASDAQ', status: res.status });
         const text = await res.text();
         let json: any;
         try { json = JSON.parse(text); }
-        catch { throw new Error('The proxy returned a non-JSON page for NASDAQ. Check the Proxy base URL / CORS proxy in Settings.'); }
+        catch { throw new UiError('error.proxy.notJson', { provider: 'NASDAQ' }); }
 
         const data = json?.data;
         const rows: any[] = data?.table?.rows;
         if (!data || !Array.isArray(rows)) {
             const em = json?.status?.bCodeMessage?.[0]?.errorMessage || json?.message;
-            throw new Error(em ? `NASDAQ: ${em}` : `No option data for "${raw}". Check the ticker symbol.`);
+            throw em ? new Error(`NASDAQ: ${em}`) : new UiError('error.noOptionData', { symbol: raw });
         }
 
         const quotes: OptionQuote[] = [];
@@ -102,7 +102,7 @@ export const nasdaqProvider: DataProvider = {
                 iv: null, delta: null, gamma: null, theta: null, vega: null,
             });
         }
-        if (quotes.length === 0) throw new Error(`No option data for "${raw}". Check the ticker symbol.`);
+        if (quotes.length === 0) throw new UiError('error.noOptionData', { symbol: raw });
         const expirations = Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
         return { symbol: raw, underlyingPrice: parseNasdaqSpot(data.lastTrade), expirations, quotes };
     },

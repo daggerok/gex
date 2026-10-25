@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
 import type { ChainResult, DataProvider, GreeksSummary, OptionQuote, ProviderContext, TickerSuggestion } from '../types';
-import { asArray, computeMid, num } from '../utils';
+import { asArray, computeMid, num, UiError } from '../utils';
 
 // ============================================================================
 // DATA PROVIDERS
@@ -28,34 +28,24 @@ export async function fetchStaticJson(url: string, signal?: AbortSignal, label?:
         res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
     } catch (e: any) {
         if (e?.name === 'AbortError') throw e;
-        throw new Error(`Could not load ${url} (network error). Is the site served over http(s), not file://?`);
+        throw new UiError('error.cache.network', { url });
     }
     if (res.status === 404) {
-        throw new Error(
-            `"${name}" is not in the static cache (api/options/${name}.json → 404). ` +
-            `Pick a cached ticker from the list, or run scripts/options-data.ts to add it.`,
-        );
+        throw new UiError('error.cache.notCached', { symbol: name });
     }
     if (!res.ok) {
-        throw new Error(`Static file ${url} failed to load (HTTP ${res.status}).`);
+        throw new UiError('error.cache.http', { url, status: res.status });
     }
     const text = await res.text();
     const trimmed = text.trimStart();
     // A server that falls back to the SPA shell returns HTML, not JSON.
     if (trimmed.startsWith('<')) {
-        throw new Error(
-            `Expected JSON at ${url} but got an HTML page. The server is likely ` +
-            `serving index.html for missing files (SPA fallback) — make sure the ` +
-            `api/ folder is deployed alongside the app and reachable at this path.`,
-        );
+        throw new UiError('error.cache.html', { url });
     }
     try {
         return JSON.parse(text);
     } catch {
-        throw new Error(
-            `Static file ${url} is not valid JSON (it may be truncated or contain ` +
-            `NaN/Infinity). Re-run scripts/options-data.ts to rebuild it.`,
-        );
+        throw new UiError('error.cache.badJson', { url });
     }
 }
 
@@ -193,10 +183,7 @@ export function dedupeTickerSuggestions(items: TickerSuggestion[], limit = 24): 
  */
 export function chainFromCacheFile(raw: string, j: any, where: string): ChainResult {
     if (!j || !Array.isArray(j.quotes)) {
-        throw new Error(
-            `Static file ${where} loaded but has no "quotes" array. ` +
-            `The file may be truncated or in an old format — re-run scripts/options-data.ts to rebuild it.`,
-        );
+        throw new UiError('error.cache.noQuotes', { url: where });
     }
     const quotes: OptionQuote[] = j.quotes.map((q: any) => ({
         symbol: String(q.symbol ?? ''),
@@ -282,7 +269,7 @@ export const staticProvider: DataProvider = {
         const manifest = await loadStaticTickerManifest(ctx).catch(() => null);
         // the skiplist wins only when there is no file: a valid file is served even if a failed scan listed the ticker (GEX-H3)
         if (manifest?.noOptions.includes(raw) && !manifest.options.includes(raw)) {
-            throw new Error(`"${raw}" is a valid ticker, but api/options/index.json marks it as (no options) in the latest static-cache scan.`);
+            throw new UiError('error.cache.noOptions', { symbol: raw });
         }
         // fetchStaticJson reads the body as TEXT first, so we can tell apart the
         // real failure modes (404, HTML SPA fallback, malformed JSON) and report

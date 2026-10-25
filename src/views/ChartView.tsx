@@ -33,7 +33,7 @@ import { useI18n } from '../i18n';
 import { DEFAULT_CHART_INTERVAL, loadOhlc } from '../providers/chart';
 import { accentOf } from '../theme';
 import type { GexLevels, OhlcBar, Settings } from '../types';
-import { fmt } from '../utils';
+import { errorText, fmt } from '../utils';
 import { loadChartViews, saveChartViews, withZoom, zoomFor, type ZoomMap } from '../chart-zoom-store';
 import { fromStoredView, loadRangeFor, toStoredView, visibleRangeFor, type ChartRange } from './chart-range';
 
@@ -111,7 +111,7 @@ export interface ChartViewProps {
 type FetchState =
     | { key: string; status: 'loading' }
     | { key: string; status: 'ok'; bars: OhlcBar[] }
-    | { key: string; status: 'error'; error: string };
+    | { key: string; status: 'error'; error: unknown };
 
 /** Follow the `.dark` class useThemeController toggles on <html> (same as TabSwitcher). */
 function useDarkClass(): boolean {
@@ -192,7 +192,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             .then((bars) => { if (!ac.signal.aborted) setState({ key: fetchKey, status: 'ok', bars: asOfDate ? cutBarsAfter(bars, asOfDate) : bars }); })
             .catch((e: unknown) => {
                 if (ac.signal.aborted) return;
-                setState({ key: fetchKey, status: 'error', error: e instanceof Error ? e.message : String(e) });
+                setState({ key: fetchKey, status: 'error', error: e });
             });
         return () => ac.abort();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -558,7 +558,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     const overlay = current.status === 'loading'
         ? tr('chart.loading')
         : current.status === 'error'
-            ? `${tr('chart.error', { error: current.error })}\n\n${tr('chart.proxyHint')}`
+            ? `${tr('chart.error', { error: errorText(current.error, lang) })}\n\n${tr('chart.proxyHint')}`
             : bars && bars.length === 0 ? tr('chart.empty.noBars', { symbol }) : null;
 
     return (

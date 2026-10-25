@@ -198,7 +198,7 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
                 type="button"
                 onClick={() => onToggle(expiration)}
                 aria-expanded={!collapsed}
-                title={collapsed ? 'Expand this expiration' : 'Collapse this expiration'}
+                title={collapsed ? t('chain.expandExp') : t('chain.collapseExp')}
                 style={barTop}
                 className={
                     'od-bar sticky flex w-full items-center justify-center gap-2 px-2 text-[11px] font-semibold ' +

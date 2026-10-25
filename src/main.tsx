@@ -829,7 +829,7 @@ import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
 import { useGexQuotesByExp } from './gex-chain';
 import { useGexLevels } from './use-gex-levels';
-import { dataAge, dbg, estimateSpot, friendlyError, isAbortError } from './utils';
+import { dataAge, dbg, errorText, estimateSpot, friendlyError, isAbortError } from './utils';
 import { DeskView } from './views/DeskView';
 import { CHART_RANGES, type ChartRange, DEFAULT_RANGE } from './views/chart-range';
 import { loadChartRange, saveChartRange } from './chart-zoom-store';
@@ -1004,9 +1004,9 @@ const App: React.FC = () => {
         expAbort.current?.abort();
         setMetaLoading(false);
         setExpLoading(false);
-        setNotice('Request cancelled.');
+        setNotice(tr('notice.cancelled'));
         dbg('cancelAll');
-    }, []);
+    }, [tr]);
 
     /** Reset the loaded view when provider or ticker context changes. */
     const resetView = useCallback(() => {
@@ -1169,9 +1169,9 @@ const App: React.FC = () => {
             const { filename, bytes } = await btc.download(ids);
             downloadBytes(filename, bytes);
         } catch (e) {
-            setToast({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+            setToast({ kind: 'error', text: errorText(e, lang) });
         }
-    }, [btc]);
+    }, [btc, lang]);
     const onRemoveOlderThan = useCallback(async (date: string) => {
         const removed = await btc.removeOlderThan(date);
         setToast({ kind: 'ok', text: removed.length ? tr('bt.manager.removedOlder', { n: removed.length, date }) : tr('bt.manager.noneOlder', { date }) });
@@ -1213,12 +1213,12 @@ const App: React.FC = () => {
             const left = out.failed.length ? ` ${tr('bt.backup.failed', { list: out.failed.map((f) => f.symbol).join(', ') })}` : '';
             setToast({ kind: out.failed.length ? 'error' : 'ok', text: tr('bt.backup.done', { id: out.id, n: out.tickers.length }) + left });
         } catch (e) {
-            if (!isAbortError(e)) setBackupError(e instanceof Error ? e.message : String(e));
+            if (!isAbortError(e)) setBackupError(errorText(e, lang));
         } finally {
             setBackupProgress(null);
             backupAbort.current = null;
         }
-    }, [provider, settings, btc, asOf, tr, meta, defaultTickers]);
+    }, [provider, settings, btc, asOf, tr, lang, meta, defaultTickers]);
     const cancelBackup = useCallback(() => {
         if (backupAbort.current) backupAbort.current.abort();
         else setShowBackup(false);
