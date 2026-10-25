@@ -13,12 +13,13 @@ import {
     type ISeriesApi,
     type UTCTimestamp,
 } from 'lightweight-charts';
-import { type GexLevelKey } from '../gex-colors';
+import { type PriceLevelKey } from '../gex-colors';
+import { chartLabelsWithSigma } from '../level-labels';
 import { LevelsPanel } from '../components/LevelsPanel';
 import { MetricsPanel } from '../components/MetricsPanel';
 import type { GexMetric } from '../metric-prefs';
-import { useLevelPrefs, zeroGexDisplay } from '../level-prefs';
-import { PriceBand } from '../chart-primitives';
+import { sigmaLines, sigmaMode, useLevelPrefs, zeroGexDisplay } from '../level-prefs';
+import { PriceBand, RightSegments } from '../chart-primitives';
 import { defaultLevelName, isApplePlatform, levelColorOf, nearestStrike, proposeLevelColor, roundPrice } from '../custom-levels';
 import { cutBarsAfter } from '../backtest/bars';
 import { attachLongPress } from '../long-press';
@@ -59,7 +60,7 @@ const APPLE = isApplePlatform();
 
 /** Price-line order and labels match the GEX tab's Key Levels card. */
 /** `width` overrides the line width (Zero GEX is thin, 1 px: owner 2026-10-25); otherwise secondary levels are 1 px dotted, the others 2 px dashed. */
-const LEVEL_LINES: Array<{ key: GexLevelKey; label: string; secondary?: boolean; width?: 1 | 2 }> = [
+const LEVEL_LINES: Array<{ key: PriceLevelKey; label: string; secondary?: boolean; width?: 1 | 2 }> = [
     { key: 'maxNetGex', label: 'gex.level.maxNetGex' },
     { key: 'netGexPlus', label: 'gex.level.netGexPlus', secondary: true },
     { key: 'gammaFlip', label: 'gex.level.gammaFlip' },
@@ -153,6 +154,10 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     // Zero GEX as an area (the switch in its Levels chip): a band from the zone's low to its high strike (PriceBand)
     const zeroArea = zeroGexDisplay.use() === 'area';
     const bandRef = useRef<PriceBand | null>(null);
+    // Sigma levels (off by default): dotted grey segments from the next day to the right edge (RightSegments), labels as
+    // price lines without a line, so they stack with the other level labels
+    const sigmaView = sigmaMode.use();
+    const segmentsRef = useRef<RightSegments | null>(null);
 
     // ---- Custom levels (right click adds, drag moves, shared with the GEX tab) ----
     const [customLevels, setCustomLevels] = useCustomLevels(symbol);
@@ -187,6 +192,8 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     }, [fetchKey]);
     const current = state.key === fetchKey ? state : { key: fetchKey, status: 'loading' as const };
     const bars = current.status === 'ok' ? current.bars : null;
+    // the Sigma segments start at the slot after the last candle: logical index = number of bars
+    const barCount = bars?.length ?? 0;
 
     // ---- Chart instance: created when the container mounts (first symbol), removed on unmount ----
     // The container only exists once a symbol is loaded, so the instance is
@@ -225,10 +232,14 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         const band = new PriceBand();
         series.attachPrimitive(band);
         bandRef.current = band;
+        const segments = new RightSegments();
+        series.attachPrimitive(segments);
+        segmentsRef.current = segments;
         chartRef.current = chart;
         seriesRef.current = series;
         return () => {
             bandRef.current = null;
+            segmentsRef.current = null;
             priceLinesRef.current = [];
             seriesRef.current = null;
             chartRef.current = null;
@@ -338,7 +349,24 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         for (const line of priceLinesRef.current) series.removePriceLine(line);
         const entries = levelEntries(levels).filter((l) => selectedLevels.includes(l.key) && (l.key !== 'maxAbsGamma' || agEnabled));
         const zone = zeroArea && selectedLevels.includes('zeroGex') ? levels?.zeroGexZone ?? null : null;
-        priceLinesRef.current = entries.map((l) => series.createPriceLine({
+        const sigma = selectedLevels.includes('sigma') ? sigmaLines(levels, sigmaView) : [];
+        // a Sigma strike on a shown level joins its title ("Max Net GEX + 1σ"), the others get "7770 1σ" (level-labels.ts)
+        const labels = chartLabelsWithSigma(
+            entries.map((l) => ({ key: l.key, value: l.price, text: tr(l.label) })),
+            sigma.map((l) => ({ key: l.key, value: l.strike, text: l.text })),
+            (v) => String(Number(v.toFixed(2))),
+        );
+        const sigmaLabelLines = labels.sigma.map((l) => series.createPriceLine({
+            price: l.value,
+            color: levelColors.sigma,
+            lineWidth: 2,
+            lineStyle: LineStyle.Dotted,
+            lineVisible: false, // the line itself is the segment from the next day on
+            axisLabelVisible: true,
+            title: l.text,
+        }));
+        segmentsRef.current?.set(sigma.length ? { prices: sigma.map((l) => l.strike), color: levelColors.sigma, width: 2, fromLogical: barCount } : null);
+        priceLinesRef.current = [...sigmaLabelLines, ...entries.map((l) => series.createPriceLine({
             price: l.price,
             color: levelColors[l.key],
             lineWidth: l.width ?? (l.secondary ? 1 : 2),
@@ -346,13 +374,13 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
             // Zero GEX drawn as a band: no line of its own, its title and axis label stay
             lineVisible: !(l.key === 'zeroGex' && zone),
             axisLabelVisible: true,
-            title: tr(l.label),
-        }));
+            title: labels.titles[l.key] ?? tr(l.label),
+        }))];
         bandRef.current?.set(zone ? { low: zone.low, high: zone.high, color: levelColors.zeroGex } : null);
-        levelPricesRef.current = [...entries.map((l) => l.price), ...(zone ? [zone.low, zone.high] : [])];
+        levelPricesRef.current = [...entries.map((l) => l.price), ...(zone ? [zone.low, zone.high] : []), ...sigma.map((l) => l.strike)];
         // Re-run autoscale so newly in-range levels are pulled into view.
         chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-    }, [levels, tr, hasSymbol, selectedLevels, levelColors, agEnabled, zeroArea]);
+    }, [levels, tr, hasSymbol, selectedLevels, levelColors, agEnabled, zeroArea, sigmaView, barCount]);
 
     // ---- Custom level price lines ----
     useEffect(() => {

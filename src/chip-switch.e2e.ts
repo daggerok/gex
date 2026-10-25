@@ -10,6 +10,7 @@ import { startTestSite } from './e2e-site';
 // chart shows the new mode, and the choice comes back after a reload.
 //  - Net GEX metric: "Net GEX" <-> "GEX" (call GEX up, put GEX down), legend "Net GEX (+)" <-> "GEX (+)"
 //  - Zero GEX level: line <-> area (a band over the two strikes of the zone on the GEX chart)
+//  - Sigma level: off by default (no lines, no table rows), % <-> statistical sigma, label "Sigma %" <-> "Sigma σ"
 // Run: `bun run test:e2e`.
 // ============================================================================
 
@@ -91,6 +92,34 @@ async function main(): Promise<void> {
             await page.getByRole('button', { name: 'GEX' }).first().click();
             await page.waitForTimeout(1200);
             assert.equal(await page.getByRole('switch', { name: /Zero GEX/ }).first().getAttribute('aria-checked'), 'true', 'the area display is remembered');
+
+            // ---- Sigma % / statistical (a level chip, OFF by default) ----
+            const ssw = page.getByRole('switch', { name: /Statistical sigma/ }).first();
+            const schip = chipOf(ssw);
+            const sigmaRows = () => page.evaluate(() => Array.from(document.querySelectorAll('aside span')).filter((s) => /^Sigma [+−]\dσ$/.test(s.textContent?.trim() ?? '')).length);
+            const sigmaLines = page.locator('.recharts-reference-line line[stroke="#64748b"]');
+            assert.equal(await schip.getAttribute('aria-pressed'), 'false', 'Sigma is off by default');
+            assert.equal(await sigmaRows(), 0, 'no Sigma rows in the Levels table while it is off');
+            assert.equal(await sigmaLines.count(), 0, 'no Sigma lines on the GEX chart while it is off');
+            await schip.scrollIntoViewIfNeeded();
+            await schip.click();
+            await page.waitForTimeout(400);
+            assert.equal(await schip.getAttribute('aria-pressed'), 'true', 'a click on the chip turns Sigma on');
+            assert.equal(await sigmaRows(), 6, 'six Sigma rows in the Levels table');
+            assert.ok((await sigmaLines.count()) >= 1, 'Sigma lines on the GEX chart');
+            assert.match(await schip.innerText(), /Sigma %/, 'the % mode first');
+            const sBefore = await width(schip);
+            await ssw.click();
+            await page.waitForTimeout(400);
+            assert.equal(await ssw.getAttribute('aria-checked'), 'true', 'statistical mode on');
+            assert.equal(await schip.getAttribute('aria-pressed'), 'true', 'the switch does not hide Sigma');
+            assert.equal(await width(schip), sBefore, `the Sigma chip keeps its width at ${vw}px`);
+            assert.match(await schip.innerText(), /Sigma σ/, 'the label names the statistical mode');
+            await page.reload();
+            await loadSpy(page);
+            await page.getByRole('button', { name: 'GEX' }).first().click();
+            await page.waitForTimeout(1200);
+            assert.equal(await page.getByRole('switch', { name: /Statistical sigma/ }).first().getAttribute('aria-checked'), 'true', 'the Sigma mode is remembered');
             await page.close();
         }
         console.log('chip switch e2e: ok');
