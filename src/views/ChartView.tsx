@@ -30,7 +30,7 @@ import { ChartHeader } from '../components/ChartHeader';
 import { FadePresence } from '../components/FadePresence';
 import { useI18n } from '../i18n';
 import { DEFAULT_CHART_INTERVAL, loadOhlc } from '../providers/chart';
-import { accentOf } from '../theme';
+import { accentOf, useDarkClass } from '../theme';
 import type { GexLevels, OhlcBar, Settings } from '../types';
 import { errorText, fmt } from '../utils';
 import { loadChartViews, saveChartViews, withZoom, zoomFor, type ZoomMap } from '../chart-zoom-store';
@@ -112,20 +112,6 @@ type FetchState =
     | { key: string; status: 'loading' }
     | { key: string; status: 'ok'; bars: OhlcBar[] }
     | { key: string; status: 'error'; error: unknown };
-
-/** Follow the `.dark` class useThemeController toggles on <html> (same as TabSwitcher). */
-function useDarkClass(): boolean {
-    const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
-    useEffect(() => {
-        const root = document.documentElement;
-        const sync = () => setDark(root.classList.contains('dark'));
-        sync();
-        const obs = new MutationObserver(sync);
-        obs.observe(root, { attributes: true, attributeFilter: ['class'] });
-        return () => obs.disconnect();
-    }, []);
-    return dark;
-}
 
 /** Non-null level prices, in LEVEL_LINES order. */
 function levelEntries(levels: GexLevels | null) {

@@ -1,8 +1,22 @@
 /// <reference lib="esnext" />
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { DEFAULT_COLOR_THEME } from './settings-store';
 import type { ColorThemeId, ThemeMode } from './types';
 import { dbg } from './utils';
+
+/** Follows the `.dark` class useThemeController toggles on <html>: true while the dark theme is on. */
+export function useDarkClass(): boolean {
+    const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+    useEffect(() => {
+        const root = document.documentElement;
+        const sync = () => setDark(root.classList.contains('dark'));
+        sync();
+        const obs = new MutationObserver(sync);
+        obs.observe(root, { attributes: true, attributeFilter: ['class'] });
+        return () => obs.disconnect();
+    }, []);
+    return dark;
+}
 
 // ============================================================================
 // THEME CONTROLLER (hook)

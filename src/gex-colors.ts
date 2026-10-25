@@ -54,6 +54,30 @@ export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
     spot: { hex: '#f59e0b', dot: 'bg-amber-500' },       // amber-500
 };
 
+/**
+ * Absolute Gamma dots on the GEX chart (owner 2026-10-25, "AG dots v2"): one dot per strike on the AG line, BLUE in two
+ * shades that carry the sign of the strike's Net GEX the unsigned AG line cannot show - light blue where Net GEX < 0,
+ * dark blue where it is >= 0 (zero counts as positive). Deliberately not the red Net GEX (-) colour. One value per
+ * theme, each readable on that theme's card (white / slate-800): the light theme needs a deeper "light blue" than the dark
+ * one. `hover` is the ring of the active (hovered) dot, contrasting with the card.
+ */
+export interface AgDotColors {
+    pos: string;
+    neg: string;
+    hover: string;
+}
+
+export const AG_DOT_COLORS: Readonly<Record<'light' | 'dark', AgDotColors>> = {
+    light: { pos: '#1e3a8a', neg: '#38bdf8', hover: '#0f172a' }, // blue-900, sky-400, slate-900 ring
+    dark: { pos: '#1d4ed8', neg: '#7dd3fc', hover: '#f8fafc' },  // blue-700, sky-300, slate-50 ring
+};
+
+/** The AG dot colour of a strike: dark blue for Net GEX >= 0, light blue for Net GEX < 0. */
+export function agDotColor(netGex: number, dark: boolean): string {
+    const set = AG_DOT_COLORS[dark ? 'dark' : 'light'];
+    return netGex < 0 ? set.neg : set.pos;
+}
+
 /** Lines the user adds to the Chart tab with a right click (not a GEX level, so it has no GexLevelKey). */
 export const CUSTOM_LEVEL_COLOR: GexLevelColor = { hex: '#38bdf8', dot: 'bg-sky-400' }; // sky-400
 

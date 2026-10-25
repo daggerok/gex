@@ -22,11 +22,11 @@ import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeOiVolumeTotals, computePCRatio, gexBarHalves, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
-    CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
+    AG_DOT_COLORS, agDotColor, CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
     type GexLevelKey, type LevelColorSet, type MetricColorSet,
 } from '../gex-colors';
 import { useI18n } from '../i18n';
-import { accentOf } from '../theme';
+import { accentOf, useDarkClass } from '../theme';
 import type { DataProvider, GexLevels, GexPoint, OptionQuote, Settings } from '../types';
 import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 
@@ -44,6 +44,9 @@ type CountMetric = 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
 type RatioMetric = 'pcRatioOi' | 'pcRatioVolume';
 /** Per-strike ratios above this are drawn at the cap (the hover shows the real value). */
 const RATIO_PLOT_CAP = 5;
+/** Radius of the Absolute Gamma dot at every strike and of the hovered one (owner 2026-10-25: bolder than the 2 / 3.5 of v1). */
+const AG_DOT_RADIUS = 3.5;
+const AG_DOT_ACTIVE_RADIUS = 5.5;
 
 /** The GexPoint (src/gex.ts/src/types.ts) field a metric plots. Identical to
  *  the metric's own name for every metric except 'absoluteGamma', whose
@@ -443,13 +446,16 @@ export const GexView: React.FC<GexViewProps> = ({
     // ---- Per-metric bar colors (user-customizable, persisted) --------------
     // The colours are shared with the Chart tab (metric-prefs.ts)
     const metricColors = useMetricColors();
-    // AG dots (owner 2026-10-25): the AG colour, red (the Net GEX (-) colour) where the strike's Net GEX is negative - AG
-    // itself is never negative, so the dot carries the sign the line cannot show
+    // AG dots v2 (owner 2026-10-25): a bold dot at every strike, blue by the sign of the strike's Net GEX (light blue < 0,
+    // dark blue >= 0, gex-colors.ts AG_DOT_COLORS per theme) - AG itself is never negative, so the dot carries the sign
+    // the line cannot show; the hovered dot gets a ring in the theme's hover token
+    const dark = useDarkClass();
+    const agDotTokens = AG_DOT_COLORS[dark ? 'dark' : 'light'];
     const agDot = (r: number, active: boolean) => (props: { cx?: number; cy?: number; index?: number; payload?: { netGex?: number } }) => {
-        const neg = (props.payload?.netGex ?? 0) < 0;
-        const color = neg ? metricColors.netGexNeg : metricColors.absoluteGamma;
+        const net = props.payload?.netGex ?? 0;
+        const color = agDotColor(net, dark);
         if (props.cx == null || props.cy == null) return <g key={`ag-dot-${props.index}`} />;
-        return <circle key={`ag-dot-${props.index}`} cx={props.cx} cy={props.cy} r={r} fill={color} stroke={active ? '#fff' : color} strokeWidth={active ? 2 : 1} data-ag-dot={neg ? 'neg' : 'pos'} />;
+        return <circle key={`ag-dot-${props.index}`} cx={props.cx} cy={props.cy} r={r} fill={color} stroke={active ? agDotTokens.hover : color} strokeWidth={active ? 2 : 1} data-ag-dot={net < 0 ? 'neg' : 'pos'} />;
     };
     const colorFor = (m: GexMetric, sign?: 'pos' | 'neg'): string => {
         if (m === 'netGex') return sign === 'neg' ? metricColors.netGexNeg : metricColors.netGexPos;
@@ -1743,9 +1749,9 @@ export const GexView: React.FC<GexViewProps> = ({
                                             fill={metricColors.absoluteGamma}
                                             fillOpacity={0.18}
                                             strokeWidth={2}
-                                            // a dot at every strike makes the line easier to read (owner request 2026-10-25), red on a negative Net GEX
-                                            dot={agDot(2, false)}
-                                            activeDot={agDot(3.5, true)}
+                                            // a bold dot at every strike makes the line easier to read (owner 2026-10-25), blue by the strike's Net GEX sign
+                                            dot={agDot(AG_DOT_RADIUS, false)}
+                                            activeDot={agDot(AG_DOT_ACTIVE_RADIUS, true)}
                                             // recharts layers: Area 100 < Bar 300 < Line/ReferenceLine
                                             // 400. 350 draws AG on top of the GEX bars but below the
                                             // level lines.

@@ -569,6 +569,9 @@ body {
 .board-row:nth-child(even) > th { background-color: #fbfcfd; }
 .dark .board-row:nth-child(odd) > th  { background-color: #0f172a; }
 .dark .board-row:nth-child(even) > th { background-color: #070d1f; }
+/* The opaque base the peak row and runner-up cell tints mix into (BoardView signTint): the odd zebra colour, as the ATM tint */
+[data-board-scroll] { --board-base: #ffffff; }
+.dark [data-board-scroll] { --board-base: #0f172a; }
 .board-head > th { background-color: #f1f5f9; } /* slate-100, as .od-sub */
 .dark .board-head > th { background-color: #1e293b; } /* slate-800 */
 
