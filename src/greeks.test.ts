@@ -5,6 +5,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   BS_DIVIDEND_YIELD,
+  GAMMA_INVERSION_MAX_IV,
+  GAMMA_INVERSION_MIN_IV,
+  GAMMA_INVERSION_TOLERANCE,
+  blackScholesGamma,
+  impliedVolFromGamma,
   FUTURES_PRICED_SYMBOLS,
   INDEX_DIVIDEND_YIELDS,
   INDEX_SYMBOLS,
@@ -423,5 +428,52 @@ describe('vixFuturesPricing call-site parity', () => {
     const prefetchLine = codeLines.filter((l) => /\bloadExpiration\(/.test(l) && l.includes('settings.vixFuturesPricing'));
     expect(prefetchLine.length).toBe(2);
     expect(countCalls(/\bgetBulk\(/)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// IV from the provider gamma (repair of failed-solve IVs, owner-approved 2026-10-25)
+// ---------------------------------------------------------------------------
+describe('blackScholesGamma / impliedVolFromGamma', () => {
+  const T = 30 / 365;
+
+  test('blackScholesGamma is the gamma of blackScholesGreeks', () => {
+    const exp = (() => { const d = new Date(); d.setDate(d.getDate() + 29); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+    const full = blackScholesGreeks({ side: 'call', strike: 105, expiration: exp, iv: 0.2, last: null, mid: null, bid: null, ask: null }, 100);
+    expect(blackScholesGamma(100, 105, 30 / 365, 0.2) as number).toBeCloseTo(full.greeks?.gamma as number, 12);
+    expect(blackScholesGamma(100, 105, 0, 0.2)).toBeNull();
+    expect(blackScholesGamma(100, 105, T, 0)).toBeNull();
+  });
+
+  test('at the money there is one root: the gamma of 20% gives back 20%', () => {
+    const g = blackScholesGamma(100, 100, T, 0.2) as number;
+    expect(impliedVolFromGamma(100, 100, T, g) as number).toBeCloseTo(0.2, 6);
+  });
+
+  test('out of the money two vols share a gamma: the one nearest to the reference wins, else the higher one', () => {
+    // strike 110, T 30 days: gamma peaks near sigma * sqrt(T) = ln(110/100) -> sigma ~ 0.33; 0.15 sits on the rising side
+    const g = blackScholesGamma(100, 110, T, 0.15) as number;
+    expect(impliedVolFromGamma(100, 110, T, g, 0.16) as number).toBeCloseTo(0.15, 6);
+    const high = impliedVolFromGamma(100, 110, T, g) as number;
+    expect(high).toBeGreaterThan(0.4);
+    expect(blackScholesGamma(100, 110, T, high) as number).toBeCloseTo(g, 9);
+  });
+
+  test('a gamma a little above any Black-Scholes gamma gives the closest vol, far above it gives null', () => {
+    let peak = 0;
+    for (let s = 0.05; s < 3; s *= 1.01) peak = Math.max(peak, blackScholesGamma(100, 110, T, s) as number);
+    const near = impliedVolFromGamma(100, 110, T, peak * 1.1) as number;
+    expect(near).not.toBeNull();
+    expect(blackScholesGamma(100, 110, T, near) as number).toBeCloseTo(peak, 6);
+    expect(impliedVolFromGamma(100, 110, T, peak * (1 + GAMMA_INVERSION_TOLERANCE) * 1.5)).toBeNull();
+    expect(impliedVolFromGamma(100, 110, T, 0)).toBeNull();
+  });
+
+  test('the result stays within 5% .. 300%', () => {
+    const g = blackScholesGamma(100, 100, T, 0.01) as number; // a 1% vol: far more gamma than 5% can give
+    expect(impliedVolFromGamma(100, 100, T, g)).toBeNull();
+    const r = impliedVolFromGamma(100, 100, T, blackScholesGamma(100, 100, T, 0.06) as number) as number;
+    expect(r).toBeGreaterThanOrEqual(GAMMA_INVERSION_MIN_IV);
+    expect(r).toBeLessThanOrEqual(GAMMA_INVERSION_MAX_IV);
   });
 });

@@ -26,12 +26,16 @@ import {
   SUM_NET_GEX_SHARE,
   findGammaFlipHypotheticalSpot,
   gammaFlipSweepCrossings,
+  ivCoverageNearSpot,
+  repairImpliedVols,
+  GAMMA_FLIP_MIN_IV_COVERAGE,
   nearestGammaFlip,
   gexCall,
   gexBarHalves,
   gexPut,
   trimZeroBoundaries,
 } from './gex';
+import { blackScholesGamma } from './greeks';
 import type { OptionQuote } from './types';
 
 // Hand-built synthetic fixture (plan section 11). Every expected number below
@@ -572,6 +576,8 @@ describe('computeGexLevels (7.7)', () => {
       gammaFlip: null,
       gammaFlipPos: null,
       gammaFlipNeg: null,
+      gammaFlipIvCoverage: null,
+      gammaFlipUnavailable: null,
       maxNetGex: null,
       minNetGex: null,
       netGexPlus: null,
@@ -1006,5 +1012,109 @@ describe('computeGexLevels: Gamma Flip by the GEX-M2 rule', () => {
   test('no crossing -> no Gamma Flip', () => {
     const exp = futureIsoDate(T_DAYS);
     expect(computeGexLevels([withGamma(bsQuote('put', 90, 500, 0.2, exp), 0.03)], 100).gammaFlip).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Failed-solve IV repair + coverage gate of the Gamma Flip (owner-approved 2026-10-25)
+// ---------------------------------------------------------------------------
+describe('repairImpliedVols', () => {
+  const exp = futureIsoDate(29); // T = 30/365
+  const T = 30 / 365;
+  const q = (side: 'call' | 'put', strike: number, iv: number | null, gamma: number | null = null, oi = 100): OptionQuote => ({ ...bsQuote(side, strike, oi, iv as number, exp), iv, gamma });
+
+  test('a broken IV between two valid IVs of the same side is interpolated in strike (smile)', () => {
+    const out = repairImpliedVols([q('call', 90, 0.3), q('call', 100, 0.00001), q('call', 110, 0.2)], 100);
+    expect(out[1].iv as number).toBeCloseTo(0.25, 12);
+    expect(out[1].ivRepair).toBe('smile');
+    expect(out[0]).toEqual(q('call', 90, 0.3)); // valid IVs untouched
+  });
+
+  test('no bracket on its side: the valid IV of the other side at the same strike', () => {
+    const out = repairImpliedVols([q('call', 100, 0.0002), q('call', 110, 0.2), q('put', 100, 0.22)], 100);
+    expect(out[0].iv).toBe(0.22);
+    expect(out[0].ivRepair).toBe('otherSide');
+  });
+
+  test('nothing to interpolate: the IV whose gamma is the provider gamma', () => {
+    const g = blackScholesGamma(100, 100, T, 0.18) as number;
+    const out = repairImpliedVols([q('call', 100, 0.00001, g), q('put', 100, null, g)], 100);
+    for (const r of out) {
+      expect(r.iv as number).toBeCloseTo(0.18, 5);
+      expect(r.ivRepair).toBe('gamma');
+    }
+  });
+
+  test('the gamma inversion takes the root nearest to the expiration ATM IV', () => {
+    // ATM IV 15% from a valid pair at strike 100; strike 110 has a broken IV and the gamma of 15% (two roots)
+    const g = blackScholesGamma(100, 110, T, 0.15) as number;
+    const out = repairImpliedVols([q('call', 100, 0.15), q('put', 100, 0.15), q('call', 110, 0.001, g)], 100);
+    expect(out[2].iv as number).toBeCloseTo(0.15, 5);
+  });
+
+  test('left alone: no gamma and nothing to interpolate, futures-priced quotes, and the input is never mutated', () => {
+    const lone = q('call', 100, 0.00001, null);
+    const fut = { ...q('call', 100, 0.00001, 0.05), forward: 101 };
+    const input = [lone, fut];
+    const out = repairImpliedVols(input, 100);
+    expect(out[0]).toBe(lone);
+    expect(out[1]).toBe(fut);
+    expect(input[0].iv).toBe(0.00001);
+    expect(repairImpliedVols(input, NaN)).toEqual(input);
+  });
+});
+
+describe('ivCoverageNearSpot', () => {
+  const exp = futureIsoDate(29);
+  const q = (strike: number, iv: number | null, gamma: number | null, oi: number): OptionQuote => ({ ...bsQuote('call', strike, oi, iv as number, exp), iv, gamma });
+
+  test('share of the provider |GEX| within 2% of spot that has a usable IV', () => {
+    // in the window (98..102): gamma*OI 0.01*300 = 3 usable, 0.01*100 = 1 broken -> 3 / 4; 105 is outside
+    expect(ivCoverageNearSpot([q(100, 0.2, 0.01, 300), q(101, 0.001, 0.01, 100), q(105, 0.001, 0.5, 1000)], 100)).toBeCloseTo(0.75, 12);
+  });
+
+  test('null when nothing near spot has a provider gamma and OI', () => {
+    expect(ivCoverageNearSpot([q(100, 0.2, null, 300), q(101, 0.2, 0.01, 0)], 100)).toBeNull();
+    expect(ivCoverageNearSpot([], 100)).toBeNull();
+  });
+});
+
+describe('computeGexLevels: Gamma Flip on repaired IVs and the coverage gate', () => {
+  const exp = futureIsoDate(29);
+  const T = 30 / 365;
+
+  test('broken IVs with a sane provider gamma: repaired from the gamma, the flip is the same as with the true IVs', () => {
+    // the fixture of findGammaFlipHypotheticalSpot (put 90 / call 110, 20%, flip ~98.97) plus a small at-the-money pair
+    // (it gives the inversion its reference: one root at the money), every IV replaced by a CBOE-style failed solve while
+    // the provider gamma is the 20% gamma. Out of the money the 20% root is the LOW one of two, so the reference matters.
+    const good = [bsQuote('put', 90, 500, 0.2, exp), bsQuote('call', 110, 500, 0.2, exp), bsQuote('call', 100, 1, 0.2, exp), bsQuote('put', 100, 1, 0.2, exp)]
+      .map((x) => ({ ...x, gamma: blackScholesGamma(100, x.strike, T, 0.2) }));
+    const broken = good.map((x) => ({ ...x, iv: 0.00001 }));
+    expect(findGammaFlipHypotheticalSpot(broken, 100)).toEqual({ pos: null, neg: null }); // without the repair the sweep is blind
+    for (const r of repairImpliedVols(broken, 100)) expect(r.iv as number).toBeCloseTo(0.2, 5);
+    const levels = computeGexLevels(broken, 100);
+    const expected = computeGexLevels(good, 100).gammaFlip as number;
+    expect(expected).toBeGreaterThan(97);
+    expect(expected).toBeLessThan(101);
+    expect(levels.gammaFlip as number).toBeCloseTo(expected, 4);
+    expect(levels.gammaFlipUnavailable).toBeNull();
+  });
+
+  test('too little of the gamma near spot has a usable IV: no flip, the reason and the coverage are exposed', () => {
+    // two crossing legs far from spot with valid IVs, and a large near-spot call with no IV and no gamma inversion
+    // possible (gamma far above any Black-Scholes gamma): coverage 0 near spot
+    const legs = [bsQuote('put', 90, 500, 0.2, exp), bsQuote('call', 110, 500, 0.2, exp)].map((x) => ({ ...x, gamma: 0.0001 }));
+    const nearSpot = { ...bsQuote('call', 100, 5000, 0.00001, exp), gamma: 50 };
+    const levels = computeGexLevels([...legs, nearSpot], 100);
+    expect(levels.gammaFlipIvCoverage as number).toBeLessThan(GAMMA_FLIP_MIN_IV_COVERAGE);
+    expect(levels.gammaFlipUnavailable).toBe('ivCoverage');
+    expect(levels.gammaFlip).toBeNull();
+    expect(levels.gammaFlipPos).not.toBeNull(); // the sweep itself still ran
+  });
+
+  test('the statistical Sigma reads the repaired ATM IV', () => {
+    const g = blackScholesGamma(100, 100, T, 0.25) as number;
+    const levels = computeGexLevels([{ ...bsQuote('call', 100, 10, 0.00001, exp), gamma: g }, { ...bsQuote('put', 100, 10, 0.00001, exp), gamma: g }], 100);
+    expect(levels.sigma?.statBasis?.iv as number).toBeCloseTo(0.25, 5);
   });
 });
