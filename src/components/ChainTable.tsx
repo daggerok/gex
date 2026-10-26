@@ -2,20 +2,19 @@
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { centerRowInScroll, scrollRowToMiddle } from '../center-row';
-import { netGexByStrike, nearestStrikeTo } from '../gex';
+import { BOARD_COLUMNS, boardPeakMarks, nearestStrikeTo, type BoardColumn, type StrikePeakMarks } from '../gex';
 import { HelpButton } from './HelpButton';
 import { ScrollMarks } from './ScrollMarks';
 import { Tip } from './Tip';
 import { useI18n } from '../i18n';
-import { LEVEL_LABEL_SEPARATOR, levelMarksByStrike } from '../level-labels';
-import { LEVEL_CHART_LABEL_KEY, levelLabelItems, sigmaMode, useLevelPrefs } from '../level-prefs';
-import { useMetricColors } from '../metric-prefs';
+import { useLevelPrefs } from '../level-prefs';
+import { DEFAULT_GEX_METRICS, netGexView, useMetricColors, type GexMetric } from '../metric-prefs';
 import type { ScrollMarkRow } from '../scroll-marks';
 import { DEFAULT_COLOR_THEME } from '../settings-store';
 import { accentOf } from '../theme';
-import type { ColorThemeId, DeskColumnSettings, GexLevels, OptionQuote, SideColumnSettings } from '../types';
-import { useCustomLevels } from '../use-custom-levels';
+import type { ColorThemeId, DeskColumnSettings, OptionQuote, SideColumnSettings } from '../types';
 import { fmt, fmtGreek, fmtInt, fmtPct, fmtSignedCompact } from '../utils';
+import { BOARD_COLUMN_LABEL_KEY, boardColumns } from '../views/BoardView';
 
 // ============================================================================
 // OPTION CHAIN TABLE
@@ -105,7 +104,7 @@ function barPxOf(container: HTMLElement | null): number {
 
 /** The scroll marks tick of a section header with no Net GEX (the expiration bar): neutral slate, like the bar's text. */
 const SECTION_TICK = '#64748b';
-/** A row whose Net GEX is 0 or unknown (no gamma): grey, like the Board's neutral scroll mark. */
+/** A marked row whose Net GEX is 0 (no gamma): grey, like the Board's neutral scroll mark. */
 const NEUTRAL_TICK = '#94a3b8';
 
 export function gridCols(callCount: number, putCount: number): string {
@@ -316,11 +315,9 @@ export const ChainTable: React.FC<{
     colorTheme?: ColorThemeId;
     /** Shown in the middle of the toolbar row, between the expirations count and the Collapse all button (the symbol, its spot and the provider). */
     summary?: React.ReactNode;
-    /** The levels of the selected expirations (useGexLevels), marked on their strikes in the scroll marks strip */
-    levels?: GexLevels | null;
-    /** The Max AG level shows only while the Absolute Gamma metric is on, like on the charts */
-    showMaxAg?: boolean;
-}> = ({ symbol, sections, spot, columns, colorTheme = DEFAULT_COLOR_THEME, summary, levels = null, showMaxAg = false }) => {
+    /** The chosen metrics (shared with the Board and the GEX tab): their Board columns' peaks and runner-ups are marked */
+    metrics?: readonly GexMetric[];
+}> = ({ symbol, sections, spot, columns, colorTheme = DEFAULT_COLOR_THEME, summary, metrics = DEFAULT_GEX_METRICS }) => {
     const { t } = useI18n();
     const ax = accentOf(colorTheme);
     const visibleColumns = useMemo(() => deskColumns(columns, t, colorTheme), [columns, t, colorTheme]);
@@ -333,7 +330,7 @@ export const ChainTable: React.FC<{
     // removal for the rationale.)
     const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
     // the ATM row is tinted with the Spot level colour (index.css .od-atm), a custom Spot colour included
-    const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
+    const { colors: levelColors } = useLevelPrefs();
     const atmColor = levelColors.spot;
 
     // A fresh chain (new symbol OR a different set of loaded expirations) resets
@@ -543,37 +540,34 @@ export const ChainTable: React.FC<{
         return () => ro.disconnect();
     }, []);
 
-    // ---- Scroll marks (owner 2026-10-25): the Board's minimap strip (components/ScrollMarks.tsx) right of the desk ----
-    // One tick per row on screen, top to bottom: each section's expiration bar, then (expanded) its strikes in the colour
-    // of their Net GEX sign (that expiration's call + put at the strike, gex.ts netGexByStrike), its ATM row in the Spot
-    // colour and the enabled and custom levels on their nearest strike inside the section's strike range.
+    // ---- Scroll marks (owner 2026-10-25, simplified like the Board 2026-10-26, #219): the Board's minimap strip
+    // (components/ScrollMarks.tsx, markedOnly) right of the desk. Top to bottom over the rows on screen: each section's
+    // expiration bar (a grey tick), then, for an expanded section, only its ATM row (Spot colour) and the rows the Board
+    // would mark if it showed that one expiration: the peaks and runner-ups of the Board columns of the chosen metrics
+    // (gex.ts boardPeakMarks on that expiration's quotes), in the Net GEX sign colour of the row. No levels, no plain rows.
     const metricColors = useMetricColors();
-    const sigmaView = sigmaMode.use();
-    const [customLevels] = useCustomLevels(symbol);
-    const netBySection = useMemo(
-        () => sections.map((s) => (spot == null ? new Map<number, number>() : netGexByStrike(Array.from(s.calls.values()).concat(Array.from(s.puts.values())), spot))),
-        [sections, spot],
+    const netView = netGexView.use();
+    const peakColumns = useMemo(
+        () => boardColumns(metrics, netView).filter((c): c is BoardColumn => (BOARD_COLUMNS as readonly string[]).includes(c)),
+        [metrics, netView],
     );
-    const levelItems = useMemo(
-        () => levelLabelItems({ levels, selected: selectedLevels, colors: levelColors, showMaxAg, sigma: sigmaView, label: (k) => t(LEVEL_CHART_LABEL_KEY[k]), customLevels }),
-        [levels, selectedLevels, levelColors, showMaxAg, sigmaView, t, customLevels],
+    const marksBySection = useMemo(
+        () => sections.map((s) => (spot == null ? new Map<number, StrikePeakMarks>() : boardPeakMarks(Array.from(s.calls.values()).concat(Array.from(s.puts.values())), spot, peakColumns))),
+        [sections, spot, peakColumns],
     );
     const markRows = useMemo<ScrollMarkRow[]>(() => {
         const out: ScrollMarkRow[] = [];
         sections.forEach((s, i) => {
             out.push({ key: `${s.expiration}|`, strike: Number.NaN, netGex: Number.NaN, header: s.expiration });
             if (collapsed.has(s.expiration) || !s.strikes.length) return;
-            const lo = s.strikes[0];
-            const hi = s.strikes[s.strikes.length - 1];
-            // a level outside this expiration's strikes is not on any of its rows (no clamping onto the edge strike)
-            const marks = levelMarksByStrike(levelItems.filter((l) => l.value >= lo && l.value <= hi), s.strikes);
             const atm = spot == null ? null : nearestStrikeTo(s.strikes, spot);
             for (const strike of s.strikes) {
-                out.push({ key: `${s.expiration}|${strike}`, strike, netGex: netBySection[i].get(strike) ?? Number.NaN, atm: strike === atm, levels: marks.get(strike) });
+                const m = marksBySection[i].get(strike);
+                out.push({ key: `${s.expiration}|${strike}`, strike, netGex: m?.netGex ?? Number.NaN, atm: strike === atm, peaks: m?.peaks, seconds: m?.seconds });
             }
         });
         return out;
-    }, [sections, collapsed, levelItems, spot, netBySection]);
+    }, [sections, collapsed, spot, marksBySection]);
     const markColors = useMemo(() => ({ pos: metricColors.netGexPos, neg: metricColors.netGexNeg, zero: NEUTRAL_TICK, atm: atmColor, section: SECTION_TICK }), [metricColors.netGexPos, metricColors.netGexNeg, atmColor]);
     // which section and strike a mark row is (its key is `expiration|strike`, a header has no strike)
     const markOf = useCallback((r: ScrollMarkRow) => {
@@ -595,7 +589,8 @@ export const ChainTable: React.FC<{
         }
         const parts = [`${markOf(r).exp}   ${fmt(r.strike)}   ${t('board.col.netGex')} ${Number.isFinite(r.netGex) ? fmtSignedCompact(r.netGex) : '-'}`];
         if (r.atm) parts.push(t('board.atm'));
-        if (r.levels?.length) parts.push(r.levels.map((l) => l.text).join(LEVEL_LABEL_SEPARATOR));
+        if (r.peaks?.length) parts.push(`${t('board.peak')}: ${r.peaks.map((k) => t(BOARD_COLUMN_LABEL_KEY[k])).join(', ')}`);
+        if (r.seconds?.length) parts.push(`${t('board.second')}: ${r.seconds.map((k) => t(BOARD_COLUMN_LABEL_KEY[k])).join(', ')}`);
         return parts.join(' · ');
     }, [sections, collapsed, markOf, t]);
 
@@ -679,7 +674,7 @@ export const ChainTable: React.FC<{
                     ))}
                 </div>
             </div>
-            <ScrollMarks scrollRef={scrollRef} rows={markRows} colors={markColors} onPick={pickMark} describe={describeMark} label={t('desk.marks.label')} />
+            <ScrollMarks scrollRef={scrollRef} rows={markRows} colors={markColors} onPick={pickMark} describe={describeMark} label={t('desk.marks.label')} markedOnly />
             </div>
         </div>
     );

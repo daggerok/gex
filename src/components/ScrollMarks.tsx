@@ -97,7 +97,11 @@ export const ScrollMarks: React.FC<{
             role="group"
             aria-label={label}
             className="absolute inset-y-0"
-            style={{ left: `calc(100% + ${STRIP_GAP}px)`, width: STRIP_WIDTH }}
+            // its own compositing layer: Chrome otherwise re-layerized the strip's hundreds of ticks (paint chunks) with the
+            // rest of the page on every repaint, so a keystroke in the ticker box cost 2 ms before the Desk got its strip and
+            // 10 ms after (8 -> 21 ms with every SPY expiration, 19 -> 66 ms at 4x CPU throttling); with the layer it is back
+            // to the old cost (desk-memo e2e, 2026-10-26)
+            style={{ left: `calc(100% + ${STRIP_GAP}px)`, width: STRIP_WIDTH, willChange: 'transform' }}
             data-scroll-marks
         >
             {ticks}

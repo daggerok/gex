@@ -137,16 +137,6 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
 }
 
 /**
- * Net GEX per strike of `quotes` (the Desk's scroll marks, owner 2026-10-25: one Desk section is ONE expiration, so a row's
- * Net GEX is gexCall + gexPut of that expiration's call and put at the strike). The same numbers as computeGexProfile's
- * netGex (same dealer signs, same per-quote forward), keyed by strike; a strike whose quotes all lack gamma is ABSENT,
- * never 0 (section 7.1).
- */
-export function netGexByStrike(quotes: readonly OptionQuote[], spot: number): Map<number, number> {
-    return new Map(computeGexProfile(quotes, spot).map((p) => [p.strike, p.netGex]));
-}
-
-/**
  * How the GEX chart draws the Net GEX metric (owner request 2026-10-25):
  *  - `net`: one value per strike, netGex = callGex + putGex (the default, as before)
  *  - `split` ("Abs GEX"): both sides at every strike without netting, callGex up and putGex down
@@ -1270,6 +1260,32 @@ export function computeBoard(quotes: readonly OptionQuote[], spot: number): Boar
     if (putMin) peaks.putGex.push(putMin.strike);
     if (putMin2) seconds.putGex.push(putMin2.strike);
     return { rows, peaks, seconds, atmStrike: Number.isFinite(spot) ? nearestStrikeTo(rows.map((r) => r.strike), spot) : null };
+}
+
+/** What one strike of a Board marks: its Net GEX (the sign colours the mark) and the columns whose peak / runner-up it is. */
+export interface StrikePeakMarks {
+    netGex: number;
+    peaks: BoardColumn[];
+    seconds: BoardColumn[];
+}
+
+/**
+ * The peak and runner-up strikes of `quotes` for the given columns (the Desk's scroll marks, owner 2026-10-26: "what the
+ * Desk would mark if it had peaks", one Desk section is ONE expiration, so the caller passes that expiration's quotes):
+ * computeBoard's peaks and seconds, the same rules as the Board's dots (Net GEX: max positive and min negative, put GEX:
+ * min negative, others: max > 0, ties to the lowest strike), keyed by strike. A strike that is a column's peak is not
+ * also that column's runner-up (like the Board's cells). Only the marked strikes are in the map, in ascending order.
+ */
+export function boardPeakMarks(quotes: readonly OptionQuote[], spot: number, columns: readonly BoardColumn[]): Map<number, StrikePeakMarks> {
+    const board = computeBoard(quotes, spot);
+    const peakSets = new Map(columns.map((c) => [c, new Set(board.peaks[c])] as const));
+    const out = new Map<number, StrikePeakMarks>();
+    for (const row of board.rows) {
+        const peaks = columns.filter((c) => peakSets.get(c)!.has(row.strike));
+        const seconds = columns.filter((c) => !peakSets.get(c)!.has(row.strike) && board.seconds[c].includes(row.strike));
+        if (peaks.length || seconds.length) out.set(row.strike, { netGex: row.netGex, peaks, seconds });
+    }
+    return out;
 }
 
 /**

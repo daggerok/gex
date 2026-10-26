@@ -7,11 +7,12 @@ import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the Desk's scroll marks strip (the Board's strip, components/ScrollMarks.tsx, inside ChainTable): it sits
-// right of the desk card, as tall as it, outside the card (the desk keeps its width, the page does not scroll); its ticks
-// are every row on screen in order (each expiration bar, then the strikes of an expanded expiration), a collapsed
-// expiration is only its bar's tick; each expanded expiration's ATM row is a marked tick; a click on the tick of a row out
-// of view glides that row to the middle of the desk below the pile of bars; hovering a tick shows the app's tooltip.
-// Desktop light and phone dark. Run: `bun run test:e2e`; SHOTS_DIR=<dir> also saves screenshots there.
+// right of the desk card, as tall as it, outside the card (the desk keeps its width, the page does not scroll); simplified
+// like the Board (owner 2026-10-26, #219) its ticks are, in row order, each expiration bar (grey) and, of an expanded
+// expiration, only its ATM row (Spot colour) and its peak and runner-up rows (Net GEX sign colours): no plain rows, no
+// levels; a collapsed expiration is only its bar's tick; a click on the tick of a row out of view glides that row to the
+// middle of the desk below the pile of bars; hovering a tick shows the app's tooltip. Every wait is on a condition, never
+// a fixed sleep. Desktop light and phone dark. Run: `bun run test:e2e`; SHOTS_DIR=<dir> also saves screenshots there.
 // ============================================================================
 
 interface Tick { kind: string; keys: string[] }
@@ -27,6 +28,23 @@ const rowKeysOf = (page: Page): Promise<string[]> =>
         const strikes = open ? Array.from(sec.querySelectorAll('[data-desk-row]')).map((r) => `${exp}|${r.getAttribute('data-desk-row')}`) : [];
         return [`${exp}|`, ...strikes];
     }));
+
+/** Waits until the desk stops scrolling (the glide of a click is done): its scrollTop stays the same for 10 frames. */
+function deskScrollStill(page: Page): Promise<unknown> {
+    return page.waitForFunction(() => new Promise<boolean>((done) => {
+        const box = document.querySelector('[data-desk-scroll]');
+        if (!box) { done(false); return; }
+        let last = box.scrollTop;
+        let still = 0;
+        const step = () => {
+            if (box.scrollTop === last) still++;
+            else { still = 0; last = box.scrollTop; }
+            if (still >= 10) done(true);
+            else requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+    }), undefined, { timeout: 10_000 });
+}
 
 /** Where a strike row sits in the visible part of the desk below the pile of bars above its section: 0 = top, 1 = bottom. */
 function rowPlace(page: Page, key: string): Promise<number | null> {
@@ -60,12 +78,13 @@ async function main(): Promise<void> {
             const ticker = page.locator('input[role=combobox]');
             await ticker.fill('SPY');
             await ticker.press('Enter');
-            await page.waitForTimeout(2500);
             await page.getByRole('button', { name: 'Desk', exact: true }).first().click();
             // the Desk shows the nearest expiration; select a few more so there are several sections
             const chips = page.locator('[data-exp-chip]');
-            if (await chips.count()) for (let i = 1; i < 4; i++) await chips.nth(i).click().catch(() => {});
-            await page.waitForTimeout(2500);
+            await chips.nth(3).waitFor({ state: 'attached', timeout: 20_000 });
+            await page.locator('.od-sec').first().waitFor({ timeout: 20_000 });
+            for (let i = 1; i < 4; i++) await chips.nth(i).click();
+            await page.waitForFunction(() => document.querySelectorAll('.od-sec').length >= 4 && document.querySelectorAll('.od-scroll-wrap [data-scroll-tick="atm"]').length >= 4, undefined, { timeout: 20_000 });
             const at = `${width}px ${scheme}`;
             const exps = await page.locator('.od-sec').evaluateAll((els) => els.map((e) => e.getAttribute('data-exp') ?? ''));
             assert.ok(exps.length >= 2, `${at}: several expirations on the desk (${exps.join(', ')})`);
@@ -89,12 +108,15 @@ async function main(): Promise<void> {
             assert.ok(fit.page <= fit.inner + 1, `${at}: the page does not scroll (${fit.page} in ${fit.inner})`);
             assert.ok(Math.abs(fit.footer - fit.inner) <= 1, `${at}: the footer is at the bottom of the window`);
 
-            // ---- every row on screen is on the strip once, in order, across the expanded sections ----
+            // ---- only the bars, the ATM rows and the peak and runner-up rows are on the strip, once each, in row order ----
             let rows = await rowKeysOf(page);
             let ticks = await ticksOf(page);
-            assert.ok(ticks.length > 0 && ticks.length <= rows.length, `${at}: ${ticks.length} ticks for ${rows.length} rows`);
-            assert.deepEqual(ticks.flatMap((t) => t.keys), rows, `${at}: the ticks cover every row once, in order`);
+            const tickKeys = ticks.flatMap((t) => t.keys);
             assert.ok(rows.length > exps.length * 2, `${at}: the sections are expanded (${rows.length} rows)`);
+            assert.ok(tickKeys.length > exps.length * 2 && tickKeys.length < rows.length / 2, `${at}: ${tickKeys.length} marked of ${rows.length} rows`);
+            assert.deepEqual(tickKeys, rows.filter((k) => tickKeys.includes(k)), `${at}: the ticks are rows of the desk, once each, in order`);
+            for (const e of exps) assert.ok(tickKeys.includes(`${e}|`), `${at}: the bar of ${e} has a tick`);
+            assert.ok(ticks.every((t) => ['section', 'atm', 'peak', 'second'].includes(t.kind)), `${at}: no plain or level ticks (${Array.from(new Set(ticks.map((t) => t.kind))).join(', ')})`);
             const atmKeys = await page.evaluate(() => Array.from(document.querySelectorAll('.od-sec')).flatMap((sec) => {
                 const atm = sec.querySelector('.od-drow.od-atm');
                 return atm ? [`${sec.getAttribute('data-exp')}|${atm.getAttribute('data-desk-row')}`] : [];
@@ -102,50 +124,63 @@ async function main(): Promise<void> {
             assert.equal(atmKeys.length, exps.length, `${at}: an ATM row in every section`);
             for (const k of atmKeys) {
                 const tick = ticks.find((t) => t.keys.includes(k));
-                assert.ok(tick && tick.kind !== 'row', `${at}: the ATM row ${k} has a marked tick (${tick?.kind})`);
+                assert.ok(tick && tick.kind === 'atm', `${at}: the ATM row ${k} has an ATM tick (${tick?.kind})`);
             }
-            const signed = await page.locator('.od-scroll-wrap [data-scroll-tick="row"]').count();
-            assert.ok(signed > 0, `${at}: plain strike ticks in their Net GEX colour`);
-            console.log(`desk scroll marks ${at}: ${ticks.length} ticks for ${rows.length} rows in ${exps.length} expirations`);
+            // every expanded expiration has at least its Net GEX walls (peaks) besides the ATM row
+            for (const e of exps) assert.ok(ticks.some((t) => t.kind === 'peak' && t.keys.some((k) => k.startsWith(`${e}|`) && !k.endsWith('|'))), `${at}: ${e} has peak ticks`);
+            // peak and runner-up ticks use only the Net GEX sign colours (a zero Net GEX: the neutral grey)
+            const allowed = await page.evaluate(() => {
+                const probe = document.createElement('span');
+                document.body.appendChild(probe);
+                const css = (v: string) => { probe.style.backgroundColor = ''; probe.style.backgroundColor = v; return getComputedStyle(probe).backgroundColor; };
+                const root = getComputedStyle(document.documentElement);
+                const out = [css(root.getPropertyValue('--gex-pos').trim()), css(root.getPropertyValue('--gex-neg').trim()), css('#94a3b8')];
+                probe.remove();
+                return out;
+            });
+            const signColors = await page.locator('.od-scroll-wrap [data-scroll-tick="peak"], .od-scroll-wrap [data-scroll-tick="second"]').evaluateAll((els) => els.map((e) => getComputedStyle(e.querySelector('span') as HTMLElement).backgroundColor));
+            assert.ok(signColors.length > 0 && signColors.every((c) => allowed.includes(c)), `${at}: peak and runner-up ticks in the Net GEX sign colours ${allowed.join(' / ')} (${Array.from(new Set(signColors)).join(', ')})`);
+            console.log(`desk scroll marks ${at}: ${ticks.length} ticks (${tickKeys.length} rows) of ${rows.length} rows in ${exps.length} expirations`);
             if (shots) await page.screenshot({ path: join(shots, `desk-scroll-marks-${width}-${scheme}.png`) });
 
             // ---- no frame over the rows in view (owner 2026-10-25: less overwhelming) ----
             assert.equal(await page.locator('.od-scroll-wrap [data-scroll-frame]').count(), 0, `${at}: the strip has no visible window frame`);
 
-            // ---- a click on a tick of a strike far below the view glides that row to the middle ----
-            const plainIdx = ticks.map((t, i) => (t.keys.every((k) => !k.endsWith('|')) ? i : -1)).filter((i) => i >= 0);
-            const pick = plainIdx[Math.floor(plainIdx.length * 0.6)];
+            // ---- a click on a tick of a strike far below the view (in the last expiration) glides that row to the middle ----
+            const lastExp = exps[exps.length - 1];
+            const pick = ticks.findIndex((t) => t.keys.every((k) => k.startsWith(`${lastExp}|`) && !k.endsWith('|')));
+            assert.ok(pick >= 0, `${at}: a strike tick in the last expiration ${lastExp}`);
             const tick = page.locator('.od-scroll-wrap [data-scroll-tick]').nth(pick);
             const keys = ticks[pick].keys;
             const before = await Promise.all(keys.map((k) => rowPlace(page, k)));
             assert.ok(before.every((p) => p !== null && p > 1), `${at}: the target rows ${keys.join(',')} are out of view below (${before.join(', ')})`);
             await tick.click();
-            await page.waitForTimeout(1200);
+            await deskScrollStill(page);
             const after = await Promise.all(keys.map((k) => rowPlace(page, k)));
             assert.ok(after.some((p) => p !== null && p > 1 / 3 && p < 2 / 3), `${at}: after the click the row is in the middle third (${after.join(', ')})`);
             if (shots) await page.screenshot({ path: join(shots, `desk-scroll-marks-${width}-${scheme}-clicked.png`) });
 
             // ---- hover: the app's tooltip with the expiration and strike ----
             await tick.hover();
-            await page.waitForTimeout(500);
             const tip = page.locator('[role=tooltip]').filter({ hasText: 'Net GEX' }).last();
-            assert.ok(await tip.isVisible(), `${at}: hovering a tick shows a tooltip`);
+            await tip.waitFor({ state: 'visible', timeout: 5000 });
             const tipText = await tip.innerText();
             assert.ok(tipText.includes(keys[0].split('|')[0]), `${at}: the tooltip names the expiration (${tipText})`);
 
             // ---- collapsed sections: one tick each (their bar), the expanded ones keep every row ----
             await page.mouse.move(0, 0);
             await page.getByRole('button', { name: 'Collapse all' }).click();
-            await page.waitForTimeout(800);
+            await page.waitForFunction((n) => document.querySelectorAll('.od-scroll-wrap [data-scroll-tick]').length === n && document.querySelectorAll('.od-scroll-wrap [data-scroll-tick="section"]').length === n, exps.length, { timeout: 10_000 });
             ticks = await ticksOf(page);
             assert.deepEqual(ticks.flatMap((t) => t.keys), exps.map((e) => `${e}|`), `${at}: all collapsed: one tick per expiration bar`);
             assert.ok(ticks.every((t) => t.kind === 'section'), `${at}: the bar ticks are section ticks`);
             await page.locator(`.od-sec[data-exp="${exps[1]}"] > button.od-bar`).click();
-            await page.waitForTimeout(1500);
+            await page.waitForFunction((n) => document.querySelectorAll('.od-scroll-wrap [data-scroll-tick]').length > n && document.querySelectorAll('.od-scroll-wrap [data-scroll-tick="atm"]').length === 1, exps.length, { timeout: 10_000 });
             rows = await rowKeysOf(page);
             ticks = await ticksOf(page);
-            assert.deepEqual(ticks.flatMap((t) => t.keys), rows, `${at}: one expanded among collapsed: the ticks follow the rows`);
-            assert.ok(rows.filter((k) => k.startsWith(`${exps[1]}|`)).length > 1 && rows.filter((k) => !k.startsWith(`${exps[1]}|`)).every((k) => k.endsWith('|')), `${at}: only ${exps[1]} has strike ticks`);
+            const oneKeys = ticks.flatMap((t) => t.keys);
+            assert.deepEqual(oneKeys, rows.filter((k) => oneKeys.includes(k)), `${at}: one expanded among collapsed: the ticks follow the rows`);
+            assert.ok(oneKeys.filter((k) => !k.endsWith('|')).length > 1 && oneKeys.filter((k) => !k.startsWith(`${exps[1]}|`)).every((k) => k.endsWith('|')), `${at}: only ${exps[1]} has strike ticks`);
             if (shots) await page.screenshot({ path: join(shots, `desk-scroll-marks-${width}-${scheme}-one-expanded.png`) });
 
             assert.deepEqual(errors, [], `${at}: no page errors`);
