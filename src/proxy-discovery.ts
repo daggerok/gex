@@ -139,6 +139,8 @@ export type SourceLabel =
     /** `at`: the New York time (hh:mm:ss) of the last live update, for the TradingView live mode (LIVE TV 10:05:07) */
     | { kind: 'live'; provider: string | null; at?: string; delayedMin?: number }
     | { kind: 'cache'; date: string | null }
+    /** an "As of" day of the backtest is open (owner 2026-10-26): its saved data is shown and live is off on purpose */
+    | { kind: 'archive'; date: string }
     /** the TradingView live mode cannot stream (session, rate limit, reconnect): the file of `date` is shown meanwhile */
     | { kind: 'tv'; state: string; message: string; until: number | null; date: string | null; progress?: string };
 
@@ -170,7 +172,10 @@ export function sourceLabel(opts: {
     futuresAt?: string | null;
     /** a futures ticker with the proxy found: the TradingView live stream (null without one) */
     tvLive?: TvLiveLabelInput | null;
+    /** the label of the open "As of" snapshot (2026-10-23, or 2026-10-23 16:00 for an own backup); it wins over all else */
+    archive?: string | null;
 }): SourceLabel {
+    if (opts.archive) return { kind: 'archive', date: opts.archive };
     if (opts.tvLive?.hybrid && opts.servedBy) {
         const { streaming, at, status } = opts.tvLive;
         if (streaming && (!status || status.state === 'live')) return { kind: 'live', provider: 'TV', ...(at ? { at } : {}), delayedMin: 15 };
