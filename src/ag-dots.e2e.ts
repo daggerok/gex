@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 import { AG_DOT_COLORS } from './gex-colors';
 
 // ============================================================================
@@ -19,8 +19,8 @@ async function main(): Promise<void> {
         for (const scheme of ['light', 'dark'] as const) {
             const tokens = AG_DOT_COLORS[scheme];
             const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme })).newPage();
+            await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
             await page.goto(site.url);
-            await page.getByText('💾').first().click(); // CACHE provider
             const ticker = page.locator('input[role=combobox]');
             await ticker.fill('SPY');
             await ticker.press('Enter');

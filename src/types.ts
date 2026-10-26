@@ -1,5 +1,6 @@
 /// <reference lib="esnext" />
 import type { Language } from './i18n';
+import type { SourceOverride } from './proxy-discovery';
 
 // ============================================================================
 // DOMAIN TYPES
@@ -248,7 +249,14 @@ export interface DeskColumnSettings {
 }
 
 export interface Settings {
-    providerId: string;
+    /**
+     * Data source (owner, 2026-10-25): 'auto' (default) finds the local proxy by itself (src/proxy-discovery.ts);
+     * 'static' = always the cache, or one fixed live provider. Set only in the advanced settings. Replaces the old
+     * `providerId` menu; a saved `providerId` is dropped on load.
+     */
+    source: SourceOverride;
+    /** "Proxy auto-discovery": OFF (default) probes the proxy once on page load, ON every 30 s and on tab focus. */
+    proxyAutoPoll: boolean;
     language: Language;
     theme: ThemeMode;
     /** Shared product color palette (Emerald Ledger / Indigo Desk). */

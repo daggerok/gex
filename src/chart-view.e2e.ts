@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the Chart tab: the panel (symbol, Interval) sits flush in the top left corner of the chart,
@@ -19,8 +19,8 @@ async function main(): Promise<void> {
     page.on('pageerror', (e) => errors.push(e.message));
 
     async function openChart() {
+        await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);
-        await page.getByText('💾').first().click();
         const ticker = page.locator('input[role=combobox]');
         await ticker.fill('SPY');
         await ticker.press('Enter');

@@ -14,7 +14,7 @@ const main = readdirSync(__dirname, { recursive: true })
 const ci = readFileSync(join(__dirname, '../.github/workflows/ci.yaml'), 'utf8');
 const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
 
-describe('header parity + CACHE-muted proxies (gex)', () => {
+describe('header parity + auto proxy controls (gex)', () => {
   test('uses fundamentals surface tokens on sticky header', () => {
     expect(main).toContain('bg-slate-950/95 text-slate-100');
     expect(main).toContain('bg-white/95 text-slate-900');
@@ -55,37 +55,32 @@ describe('header parity + CACHE-muted proxies (gex)', () => {
     expect(menu.indexOf('data-debug-info')).toBeGreaterThan(menu.indexOf('data-data-source'));
   });
 
-  test('the provider select lives in the settings menu (Online data / Cached data buttons), not in the header', () => {
+  test('auto proxy: the header shows only the source label, the menu the auto-discovery with the override under Advanced', () => {
     const topBar = readFileSync(join(__dirname, 'components/TopBar.tsx'), 'utf8');
     const header = topBar.slice(0, topBar.indexOf('{openSettings && ('));
     const menu = topBar.slice(topBar.indexOf('{openSettings && ('));
     expect(header).not.toContain('<select');
+    expect(header).toContain('data-source-label=');
+    // no CACHE / LIVE switch and no provider menu anywhere
+    expect(main).not.toContain("{ k: 'cache', l: '💾' }");
+    expect(main).not.toContain('data-provider-select');
+    expect(main).not.toContain('LIVE_PROVIDERS');
+    // one select in the menu: the source override, inside the Advanced block, after the nested SettingsPanel
     expect(menu.match(/<select/g)?.length).toBe(1);
-    expect(menu).toContain('data-data-source={b.k}');
-    expect(menu).toContain('w-[7.25rem]');
-    // at the bottom of the menu: after the nested SettingsPanel
+    expect(menu.indexOf('data-source-override')).toBeGreaterThan(menu.indexOf('data-source-advanced'));
     expect(menu.indexOf('data-data-source')).toBeGreaterThan(menu.indexOf('<SettingsPanel'));
+    expect(menu).toContain('data-proxy-autopoll=');
   });
 
-  test('provider select: CACHE locks to CACHE; LIVE lists only 3 proxies', () => {
-    expect(main).toContain('LIVE_PROVIDERS');
-    // CACHE → only static option; LIVE → LIVE_PROVIDERS (CBOE/NASDAQ/YAHOO, no CACHE)
-    expect(main).toContain("PROVIDERS.filter((p) => p.id === 'static')");
-    expect(main).toContain('LIVE_PROVIDERS).map');
-    expect(main).toContain("p.id !== 'static'");
-  });
-
-  test('CACHE mode disables provider select and mutes proxy dots', () => {
+  test('the proxy status is muted when the proxy is not probed', () => {
     expect(main).toContain('data-proxy-indicators=');
-    expect(main).toContain('data-provider-select=');
     expect(main).toContain('bg-slate-400/50 dark:bg-slate-600/50');
-    expect(main).toContain('cursor-not-allowed');
-    expect(main).toContain('disabled={isCache}');
   });
 
-  test('LIVE mode probes proxyBase /health', () => {
-    expect(main).toContain('fetch(`${base}/health`');
-    expect(main).toContain('proxyOk');
+  test('auto discovery probes proxyBase /health with a short timeout', () => {
+    const discovery = readFileSync(join(__dirname, 'proxy-discovery.ts'), 'utf8');
+    expect(discovery).toContain('fetchImpl(`${b}/health`');
+    expect(discovery).toContain('PROXY_PROBE_TIMEOUT_MS = 500');
   });
 
   test('CI runs unit tests before build', () => {

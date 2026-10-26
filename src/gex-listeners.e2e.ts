@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of review GEX-M9: the GEX chart's wheel zoom (a native listener on the chart box) must work after the
@@ -34,8 +34,8 @@ async function main(): Promise<void> {
         const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
         const qqq = JSON.parse(readFileSync(join(__dirname, '..', 'api', 'options', 'QQQ.json'), 'utf8')) as Record<string, unknown>;
         await page.route('**/api/options/VIX.json', (route) => route.fulfill({ json: { ...qqq, symbol: 'VIX' } }));
+        await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);
-        await page.getByText('💾').first().click(); // CACHE provider
         await page.getByRole('button', { name: 'GEX' }).first().click();
         await load(page, 'VIX');
         assert.equal(await page.locator('.recharts-wrapper').count(), 0, 'VIX without futures pricing shows the placeholder, no chart');

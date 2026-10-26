@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Locator, type Page } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the mode switches inside the panel chips (src/components/ChipSwitch.tsx). For each switch: a click on it
@@ -23,7 +23,6 @@ async function width(l: Locator): Promise<number> {
 }
 
 async function loadSpy(page: Page): Promise<void> {
-    await page.getByText('💾').first().click(); // CACHE provider
     const ticker = page.locator('input[role=combobox]');
     await ticker.fill('SPY');
     await ticker.press('Enter');
@@ -36,6 +35,7 @@ async function main(): Promise<void> {
     try {
         for (const vw of [1440, 390]) {
             const page = await browser.newPage({ viewport: { width: vw, height: 900 } });
+            await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
             await page.goto(site.url);
             await loadSpy(page);
             await page.getByRole('button', { name: 'GEX' }).first().click();

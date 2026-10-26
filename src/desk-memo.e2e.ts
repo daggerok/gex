@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of review GEX-H11: the Desk's expiration sections are memoized, so typing in the ticker box (each
@@ -41,8 +41,8 @@ async function main(): Promise<void> {
     const browser = await chromium.launch({ args: ['--mute-audio'] });
     try {
         const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+        await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);
-        await page.getByText('💾').first().click(); // CACHE provider
         const ticker = page.locator('input[role=combobox]');
         await ticker.fill('SPY');
         await ticker.press('Enter');

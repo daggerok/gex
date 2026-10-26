@@ -822,7 +822,8 @@ import { setValuationTime, withoutExpiredQuotes } from './greeks';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { asOfDayOf, makeAsOfProvider, valuationTimeOf } from './providers/asof';
 import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
-import { ctxFor, PROVIDERS, suggestTickers } from './providers';
+import { ctxFor, providerById, suggestTickers } from './providers';
+import { isLoopbackHost, sourceChain, sourceLabel, type SourceProviderId, useProxyDiscovery } from './proxy-discovery';
 import { loadDefaultTickers } from './providers/cache';
 import { loadExpiration, loadMeta } from './providers/loader';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
@@ -905,31 +906,19 @@ const App: React.FC = () => {
         patchSettings({ activeTab: tab });
     }, [patchSettings]);
 
-    // Proxy health probe (LIVE providers only; CACHE mutes indicators).
-    const [proxyOk, setProxyOk] = useState<boolean | null>(null);
-    const [proxyChecking, setProxyChecking] = useState(false);
-    useEffect(() => {
-        if (settings.providerId === 'static') {
-            setProxyOk(null);
-            setProxyChecking(false);
-            return;
-        }
-        const base = (settings.proxyBase || '').replace(/\/$/, '');
-        if (!base) { setProxyOk(false); return; }
-        let cancelled = false;
-        setProxyChecking(true);
-        const ac = new AbortController();
-        const timer = window.setTimeout(() => ac.abort(), 4000);
-        fetch(`${base}/health`, { signal: ac.signal })
-            .then((r) => { if (!cancelled) setProxyOk(r.ok); })
-            .catch(() => { if (!cancelled) setProxyOk(false); })
-            .finally(() => {
-                window.clearTimeout(timer);
-                if (!cancelled) setProxyChecking(false);
-            });
-        return () => { cancelled = true; ac.abort(); window.clearTimeout(timer); };
-    }, [settings.providerId, settings.proxyBase]);
-
+    // ---- Data source: auto proxy discovery (src/proxy-discovery.ts, owner 2026-10-25) -------------------------------
+    // Only a page served from this machine probes the proxy; elsewhere (GitHub Pages) no request goes to it.
+    const proxyAllowed = useMemo(() => isLoopbackHost(window.location.hostname), []);
+    // the "always cache" override needs no probe; the probe runs once on load, or periodically with auto-discovery ON
+    const probeEnabled = proxyAllowed && settings.source !== 'static';
+    const proxy = useProxyDiscovery(settings.proxyBase, probeEnabled, settings.proxyAutoPoll);
+    // providers to try for a ticker, first to last (Auto + proxy up: CBOE, YAHOO, NASDAQ, CACHE; no proxy: CACHE)
+    const chain = useMemo(() => sourceChain(settings.source, proxy.up, proxyAllowed), [settings.source, proxy.up, proxyAllowed]);
+    const chainKey = chain.join('>');
+    // Auto waits for the first probe before it loads anything, so a reload does not load the cache and then live
+    const sourceReady = !probeEnabled || settings.source !== 'auto' || proxy.up !== null;
+    // the provider that served the loaded ticker (null: none loaded); reset when the chain changes
+    const [servedBy, setServedBy] = useState<SourceProviderId | null>(null);
 
     // Sync the i18n context with persisted language changes (and vice versa).
     const { setLang } = useI18n();
@@ -939,10 +928,13 @@ const App: React.FC = () => {
     const [bt, btc] = useBacktest();
     const asOf = bt.active;
     // In backtest mode the provider is the CACHE provider reading the chosen snapshot, live providers are off
+    // Otherwise the provider that served the current ticker, or the first one of the chain before a ticker is loaded
     const provider = useMemo(
-        () => (asOf ? makeAsOfProvider(asOf.snapshot) : PROVIDERS.find((p) => p.id === settings.providerId) ?? PROVIDERS[0]),
-        [asOf, settings.providerId],
+        () => (asOf ? makeAsOfProvider(asOf.snapshot) : providerById(servedBy && chain.includes(servedBy) ? servedBy : chain[0])),
+        [asOf, servedBy, chain],
     );
+    // ticker search goes to the first provider of the chain (its suggestions fall back to the cache index)
+    const searchProvider = useMemo(() => (asOf ? provider : providerById(chain[0])), [asOf, provider, chain]);
     // The model greeks are valued at the snapshot's time (a backup's minute, a day archive's 16:00 close), and its custom levels replace the user's own (read-only). A LAYOUT
     // effect: it runs before the effects below that load the chain, so the first load already sees the right day.
     useLayoutEffect(() => {
@@ -1028,7 +1020,7 @@ const App: React.FC = () => {
         setActiveTickerSuggestion(-1);
         const timer = window.setTimeout(() => {
             setTickerSuggestionsLoading(true);
-            suggestTickers(provider, query, ctxFor(settings, provider, ac.signal))
+            suggestTickers(searchProvider, query, ctxFor(settings, searchProvider, ac.signal))
                 .then((items) => {
                     if (cancelled) return;
                     setTickerSuggestions(items);
@@ -1042,25 +1034,34 @@ const App: React.FC = () => {
         }, delay);
         return () => { cancelled = true; ac.abort(); window.clearTimeout(timer); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [provider.id, tickerInput, settings.proxyBase, settings.proxyTemplate]);
+    }, [searchProvider.id, tickerInput, settings.proxyBase, settings.proxyTemplate]);
 
-    // Reset the view whenever the provider changes (deferred: no auto-fetch). Requests of the old provider are dropped
-    // (GEX-H2): a late answer would otherwise show its meta and load it through the new provider. Only on a real switch:
-    // StrictMode runs the mount effects twice in development, that must not abort the boot restore's request.
-    const lastProviderId = useRef(provider.id);
+    // When the source changes (the proxy appears or goes away with auto-discovery ON, an override, a backtest), requests of
+    // the old source are dropped (GEX-H2): a late answer would otherwise show its meta and load it through the new one.
+    // A loaded ticker is then loaded again from the new source, keeping the selection (getDates below); the backtest
+    // effect further down reloads by itself. Only on a real switch: StrictMode runs the mount effects twice in
+    // development, that must not abort the boot restore's request.
+    const sourceKey = asOf ? `asof:${asOf.id}` : chainKey;
+    const lastSourceKey = useRef(sourceKey);
+    const loadedSymbolRef = useRef<string>('');
+    loadedSymbolRef.current = meta?.symbol ?? '';
+    const reloadOnSourceChange = useRef<(symbol: string) => void>(() => {});
     useEffect(() => {
-        if (lastProviderId.current !== provider.id) {
-            lastProviderId.current = provider.id;
-            metaAbort.current?.abort();
-            expAbort.current?.abort();
-            metaAbort.current = null;
-            expAbort.current = null;
-            setMetaLoading(false);
-            setExpLoading(false);
-        }
-        resetView();
+        if (lastSourceKey.current === sourceKey) return;
+        const fromBacktest = lastSourceKey.current.startsWith('asof:');
+        lastSourceKey.current = sourceKey;
+        metaAbort.current?.abort();
+        expAbort.current?.abort();
+        metaAbort.current = null;
+        expAbort.current = null;
+        setMetaLoading(false);
+        setExpLoading(false);
+        setServedBy(null);
+        const symbol = loadedSymbolRef.current;
+        if (symbol && !asOf && !fromBacktest) reloadOnSourceChange.current(symbol);
+        else resetView();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [provider.id]);
+    }, [sourceKey]);
 
     /**
      * STEP 1 — "Expirations": load ONLY expirations (+ spot). No chain yet.
@@ -1097,12 +1098,35 @@ const App: React.FC = () => {
         // Clear any previous chain so the UI reflects the new symbol cleanly.
         setExpData({});
         setChainSymbol('');
+        // the providers to try: the backtest's own, or the source chain (per ticker CBOE -> YAHOO -> NASDAQ -> CACHE when
+        // the proxy is up); the first one that knows the ticker serves it, the error shown is the first provider's
+        const tries = asOf ? [provider] : chain.map(providerById);
+        let firstError: unknown = null;
+        let errorProvider = tries[0];
         try {
-            const ctx = ctxFor(settings, provider, ac.signal);
-            if (credsOverride?.token != null) ctx.token = credsOverride.token;
-            if (credsOverride?.secret != null) ctx.secret = credsOverride.secret;
-            const m = await loadMeta(provider, sym, ctx, settings.vixFuturesPricing);
+            let m: ChainMeta | null = null;
+            let empty: { meta: ChainMeta; provider: typeof tries[number] } | null = null;
+            let served = tries[0];
+            for (const p of tries) {
+                const ctx = ctxFor(settings, p, ac.signal);
+                if (credsOverride?.token != null) ctx.token = credsOverride.token;
+                if (credsOverride?.secret != null) ctx.secret = credsOverride.secret;
+                try {
+                    m = await loadMeta(p, sym, ctx, settings.vixFuturesPricing);
+                    // no live expiration here (e.g. a stale cache file): try the next one, keep it for the message
+                    if (m.expirations.length === 0) { empty ??= { meta: m, provider: p }; m = null; continue; }
+                    served = p;
+                    break;
+                } catch (e: unknown) {
+                    if (isAbortError(e) || ac.signal.aborted) throw e;
+                    if (firstError === null) { firstError = e; errorProvider = p; }
+                    dbg('getDates: provider failed, trying the next one', { provider: p.id, error: String(e) });
+                }
+            }
             if (ac.signal.aborted) return null;
+            if (!m && empty) { m = empty.meta; served = empty.provider; }
+            if (!m) throw firstError;
+            if (!asOf) setServedBy(served.id as SourceProviderId);
             if (m.expirations.length === 0) {
                 // every expiration of a stale cache file is over (GEX-H4): say so instead of "no contracts"
                 throw new Error(m.expiredDropped ? tr('error.allExpired', { symbol: sym, day: m.dataDate ?? '?' }) : tr('error.noContracts', { symbol: sym }));
@@ -1119,14 +1143,15 @@ const App: React.FC = () => {
             if (metaAbort.current !== ac) return null; // superseded by a newer ticker or a provider switch: say nothing
             if (isAbortError(e)) { setNotice(tr('notice.cancelled')); return null; }
             setMeta(null);
-            setError(friendlyError(e, provider, lang));
+            setError(friendlyError(e, errorProvider, lang));
             setErrorNonce((n) => n + 1);
             dbg('getDates error', e);
             return null;
         } finally {
             if (metaAbort.current === ac) { setMetaLoading(false); metaAbort.current = null; }
         }
-    }, [provider, settings, patchSettings, tr, lang]);
+    }, [provider, asOf, chain, settings, patchSettings, tr, lang]);
+    reloadOnSourceChange.current = (symbol: string) => { void getDates(symbol); };
 
     // Entering, changing or leaving a backtest reloads a ticker from the new source. Opening a snapshot picks the ticker: the
     // only one of a single-ticker backup; with two or more, the stored last ticker when the snapshot has it, else the first one
@@ -1225,7 +1250,8 @@ const App: React.FC = () => {
         if (backupAbort.current) backupAbort.current.abort();
         else setShowBackup(false);
     }, []);
-    const live = liveLabel({ liveReachable: settings.providerId !== 'static' && proxyOk === true, latestDate: bt.latestDate });
+    const live = liveLabel({ liveReachable: chain[0] !== 'static', latestDate: bt.latestDate });
+    const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null });
     const liveText = live.kind === 'today' ? tr('bt.asOfToday') : live.date ? tr('bt.asOfLatest', { date: live.date }) : tr('bt.asOfUnknown');
 
     /**
@@ -1272,14 +1298,16 @@ const App: React.FC = () => {
         // set in state and persisted inside getDates itself.
     }, [getDates, settings.lastTicker, settings.selectedExps, patchSettings]);
 
+    const restored = useRef(false);
     useEffect(() => {
+        if (restored.current || !sourceReady) return;
+        restored.current = true;
         if (hasPersistedState) void restoreSession();
-        // Intentionally run exactly ONCE, right after mount. Not depending on
-        // `restoreSession` (which is recreated whenever settings/getDates
-        // change) is deliberate — this must never re-fire later in the
-        // session, only at boot.
+        // Intentionally run exactly ONCE, at boot, as soon as the source is known (Auto waits for the first proxy probe,
+        // at most PROXY_PROBE_TIMEOUT_MS). Not depending on `restoreSession` (which is recreated whenever settings/getDates
+        // change) is deliberate: this must never re-fire later in the session.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [sourceReady]);
 
     /**
      * STEP 2 — "Load": fetch ALL selected expirations (earliest→latest) and
@@ -1540,7 +1568,7 @@ const App: React.FC = () => {
             setTickerInput(provider.demoSymbol);
             getDates(provider.demoSymbol);
         } else {
-            patchSettings({ providerId: 'static', lastTicker: 'AAPL' });
+            patchSettings({ source: 'static', lastTicker: 'AAPL' });
             setTickerInput('AAPL');
         }
     }, [provider, getDates, patchSettings]);
@@ -1594,8 +1622,8 @@ const App: React.FC = () => {
                         onManage={() => setShowManager(true)}
                     />
                 )}
-                // switching between CACHE and LIVE leaves the backtest, a live provider cannot show an archived day
-                onChange={(patch) => { if (asOf && 'providerId' in patch) void btc.select(null); patchSettings(patch); }}
+                // changing the source override leaves the backtest, a live provider cannot show an archived day
+                onChange={(patch) => { if (asOf && 'source' in patch) void btc.select(null); patchSettings(patch); }}
                 onSetToken={setToken}
                 onSetSecret={setSecret}
                 onClearData={async () => { await clearCacheData(); resetView(); }}
@@ -1633,8 +1661,11 @@ const App: React.FC = () => {
                 onChooseSuggestion={chooseTickerSuggestion}
                 setActiveTickerSuggestion={setActiveTickerSuggestion}
                 setTickerSuggestionsOpen={setTickerSuggestionsOpen}
-                proxyOk={proxyOk}
-                proxyChecking={proxyChecking}
+                proxy={proxy}
+                proxyAllowed={proxyAllowed}
+                live={chain[0] !== 'static'}
+                source={asOf ? null : source}
+                sourceStale={!asOf && servedBy === 'static' && !!metaAge?.stale}
             />
 
             {asOf && (
@@ -1855,6 +1886,7 @@ const App: React.FC = () => {
                         setMetrics={changeGexMetrics}
                         strikes={chartStrikes}
                         asOfDate={asOf ? asOfDayOf(asOf.id) : null}
+                        liveCandles={chain[0] !== 'static'}
                     />
                 </Suspense>
                 </div>

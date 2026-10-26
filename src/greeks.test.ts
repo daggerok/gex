@@ -433,7 +433,7 @@ describe('vixFuturesPricing call-site parity', () => {
 
   test('main.tsx (and gex-chain.ts for the bulk read) pass settings.vixFuturesPricing to every loadMeta/loadExpiration/getBulk call site', () => {
     for (const snippet of [
-      'await loadMeta(provider, sym, ctx, settings.vixFuturesPricing)',
+      'await loadMeta(p, sym, ctx, settings.vixFuturesPricing)',
       'await loadExpiration(provider, meta.symbol, exp, ctxFor(settings, provider, ac.signal), settings.vixFuturesPricing)',
       'useGexQuotesByExp(meta, provider, settings.vixFuturesPricing, expData, chainSymbol)',
     ]) {

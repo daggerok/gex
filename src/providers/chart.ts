@@ -133,9 +133,9 @@ export async function fetchCachedOhlc(symbol: string, ctx: Pick<ProviderContext,
 }
 
 /**
- * Daily candles for the Chart tab. With the CACHE provider (`preferCache`) the static file comes first and the proxy
- * is the fallback for tickers outside the cache; with a live provider the proxy comes first and the cache is the
- * fallback, so the tab also works when the proxy is down or not set.
+ * Daily candles for the Chart tab, following the data source (src/proxy-discovery.ts): the caller passes the proxy base
+ * only when the source is live, so with the cache no request goes to the proxy. Live: the proxy first, the cache as the
+ * fallback. `preferCache` (a backtest day) puts the static file first and the proxy, when given, after it.
  */
 export async function loadOhlc(
     symbol: string,

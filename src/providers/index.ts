@@ -7,16 +7,15 @@ import { nasdaqProvider } from './nasdaq';
 import { yahooProvider } from './yahoo';
 
 /**
- * Provider registry — only four sources, fixed dropdown order everywhere:
+ * Provider registry: exactly four sources (R2), listed in this order wherever they are listed:
  *   CACHE  = same-origin static api/options/*.json (no proxy)
  *   CBOE   = delayed options via proxy /api/cboe
  *   NASDAQ = full chain via proxy /api/nasdaq
  *   YAHOO  = option chain via proxy /api/options (lazy)
  *
- * Order never changes: CACHE, CBOE, NASDAQ, YAHOO.
- * Host only picks the DEFAULT selection:
- *   - localhost / LAN              -> CBOE (proxy expected)
- *   - GitHub Pages / hosted static -> CACHE (no proxy required)
+ * There is no provider menu: the source is picked automatically (src/proxy-discovery.ts). Proxy found -> per ticker
+ * CBOE, then YAHOO, then NASDAQ, then CACHE (AUTO_LIVE_ORDER); no proxy -> CACHE. The advanced settings may fix the
+ * source to CACHE or one live provider.
  */
 export const PROVIDERS: DataProvider[] = [
     staticProvider,  // CACHE
@@ -25,27 +24,9 @@ export const PROVIDERS: DataProvider[] = [
     yahooProvider,   // YAHOO
 ];
 
-/** Live proxy providers only (no CACHE). Used when CACHE/LIVE toggle is LIVE. */
-export const LIVE_PROVIDERS: DataProvider[] = PROVIDERS.filter((p) => p.id !== 'static');
-
-/**
- * Are we running locally (localhost / 127.* / 0.0.0.0 / *.local / private LAN)?
- * Local -> default CBOE; hosted (e.g. GitHub Pages) -> default CACHE.
- */
-export function isLocalHost(): boolean {
-    try {
-        const h = window.location.hostname;
-        return (
-            h === 'localhost' || h === '0.0.0.0' || h === '::1' || h.endsWith('.local') ||
-            /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) ||
-            /^172\.(1[6-9]|2\d|3[01])\./.test(h)
-        );
-    } catch { return false; }
-}
-
-/** Default provider id for this host — not the same as dropdown order. */
-export function defaultProviderId(): string {
-    return isLocalHost() ? 'cboe' : 'static';
+/** The provider of an id; CACHE for an unknown one. */
+export function providerById(id: string): DataProvider {
+    return PROVIDERS.find((p) => p.id === id) ?? staticProvider;
 }
 
 /** Curated public CORS proxies for CBOE. "{url}" = encoded target URL. */

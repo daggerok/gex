@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the Chart tab's crosshair magnet (src/crosshair-magnet.ts): the real mouse moves down one column of
@@ -20,8 +20,8 @@ async function main(): Promise<void> {
         const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
         const errors: string[] = [];
         page.on('pageerror', (e) => errors.push(e.message));
+        await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);
-        await page.getByText('💾').first().click(); // CACHE provider
         const ticker = page.locator('input[role=combobox]');
         await ticker.fill('SPY');
         await ticker.press('Enter');
