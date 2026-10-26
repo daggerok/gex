@@ -52,11 +52,11 @@ export interface DeskColumnDef {
 /** Build the currently visible call/put columns from Settings → Desk columns. */
 export function deskColumns(settings: DeskColumnSettings, t: (key: string) => string, colorTheme: ColorThemeId = DEFAULT_COLOR_THEME): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
     const ax = accentOf(colorTheme);
-    // a TradingView OI older than the chain's newest OI day stays in the numbers but is shown pale (owner decision G10)
+    // a TradingView OI dated before the chain's newest OI day did not change since then: equal to the CME bulletin (checked
+    // 2026-10-26 on 266 such ES calls), so it is shown as is, with its date in the tooltip (G10 resolved)
     const oi: DeskColumnDef = {
         key: 'openInterest', label: t('settings.deskColumns.openInterest'), headerLabel: t('deskColumns.header.openInterest'), render: (q) => fmtInt(q?.openInterest),
-        cellClass: (q) => (q?.oiStale ? 'opacity-45' : ''),
-        tip: (q) => (q?.oiStale && q.oiDate ? t('chain.oiStale').replace('{{date}}', q.oiDate) : null),
+        tip: (q) => (q?.oiStale && q.oiDate ? t('chain.oiUnchanged').replace('{{date}}', q.oiDate) : null),
     };
     const vol: DeskColumnDef = { key: 'volume', label: t('settings.deskColumns.volume'), headerLabel: t('deskColumns.header.volume'), render: (q) => fmtInt(q?.volume) };
     const iv: DeskColumnDef = { key: 'iv', label: t('settings.deskColumns.iv'), headerLabel: t('deskColumns.header.iv'), className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
@@ -146,7 +146,7 @@ export const QuoteCells: React.FC<{ q?: OptionQuote; columns: DeskColumnDef[] }>
             const text = c.render(q);
             return (
                 <Cell key={c.key} className={extra ? `${c.className ?? ''} ${extra}` : c.className}>
-                    {tip ? <Tip text={tip} wrapperClassName="inline-flex justify-end" ><span data-oi-stale="">{text}</span></Tip> : text}
+                    {tip ? <Tip text={tip} wrapperClassName="inline-flex justify-end" ><span data-oi-since="">{text}</span></Tip> : text}
                 </Cell>
             );
         })}

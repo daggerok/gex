@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import { chainFromCacheFile } from './providers/cache';
-import { latestOiDate, markStaleOi, staleOiSummary } from './oi-dates';
+import { cmeOiLag, latestOiDate, markStaleOi, oiByProduct, productOf, staleOiSummary } from './oi-dates';
 import type { OptionQuote } from './types';
 
 const q = (strike: number, oi: number | null, oiDate?: string | null): OptionQuote => ({
@@ -40,5 +40,24 @@ describe('TradingView OI dates (owner decision G10: keep, mark, count)', () => {
         expect(chain.quotes.map((x) => [x.oiDate ?? null, Boolean(x.oiStale)])).toEqual([['2026-10-23', false], ['2026-10-20', true], [null, false]]);
         const opt = chainFromCacheFile('SPY', { quotes: [{ symbol: 'S', expiration: '2026-10-30', side: 'call', strike: 1, openInterest: 1 }] }, 'x');
         expect('oiDate' in opt.quotes[0]).toBe(false);
+    });
+});
+
+describe('CME open interest cross-check', () => {
+    test('product codes from TradingView option names; sums by product and side', () => {
+        expect(productOf('E4A261026C7630')).toBe('E4A');
+        expect(productOf('EW4261023P7600')).toBe('EW4');
+        expect(productOf('ES261218C7600')).toBe('ES');
+        expect(productOf('SPXW261026P7625.0')).toBe('SPXW');
+        expect(productOf('nonsense')).toBeNull();
+        const qs = [{ ...q(1, 10), symbol: 'E4A261026C7630' }, { ...q(2, 5), symbol: 'E4A261026C7635' }, { ...q(3, 7), symbol: 'E4A261026P7630', side: 'put' as const }, { ...q(4, null), symbol: 'ES261218C7600' }];
+        expect(oiByProduct(qs)).toEqual({ 'E4A|call': 15, 'E4A|put': 7 });
+    });
+
+    test('lag per product present in both, largest CME first, and of the total', () => {
+        const r = cmeOiLag({ 'E4A|put': 200_000, 'E4A|call': 50_000, 'XX|put': 1 }, { 'E4A|put': 242_588, 'E4A|call': 50_000, 'ES|put': 692_844 });
+        expect(r.rows.map((x) => [x.product, x.side, Math.round(x.lag * 1000) / 1000])).toEqual([['E4A', 'put', 0.176], ['E4A', 'call', 0]]);
+        expect(r.total!.lag).toBeCloseTo(1 - 250_000 / 292_588, 9);
+        expect(cmeOiLag({}, { 'ES|put': 1 })).toEqual({ rows: [], total: null });
     });
 });
