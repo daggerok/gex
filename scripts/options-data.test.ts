@@ -28,6 +28,7 @@ import {
   applyCboeRows,
   buildChartFile,
   buildChartQueue,
+  FUTURES_CHART_SYMBOLS,
   buildQueue,
   yahooChartCandidates,
   PRIORITY_SYMBOLS,
@@ -954,14 +955,26 @@ describe('chart cache', () => {
       isFresh: (s) => s === 'FRESH',
       updatedOf: (s) => updated[s] ?? '',
     });
-    expect(q).toEqual(['SPY', 'SPX', 'QQQ', 'NDX', 'AAPL', 'MSFT', 'OLD', 'NEWER']);
+    expect(q).toEqual(['SPY', 'SPX', 'QQQ', 'NDX', ...FUTURES_CHART_SYMBOLS, 'AAPL', 'MSFT', 'OLD', 'NEWER']);
   });
 
   test('chart queue with an explicit list stays inside it and still puts priority symbols first', () => {
     const q = buildChartQueue(['AAPL', 'QQQ'], {
       cached: ['AAPL', 'QQQ', 'OTHER'], explicit: true, hasChart: () => false, isFresh: () => false, updatedOf: () => '',
     });
-    expect(q).toEqual(['QQQ', 'AAPL']);
+    expect(q).toEqual(['QQQ', ...FUTURES_CHART_SYMBOLS, 'AAPL']);
+  });
+
+  test('chart queue: the futures candles are queued on every run after the priority symbols, a fresh one is skipped', () => {
+    expect(FUTURES_CHART_SYMBOLS).toEqual(['ES=F', 'NQ=F', 'YM=F', 'RTY=F', 'MES=F', 'MNQ=F', 'MYM=F', 'M2K=F']);
+    const q = buildChartQueue(['AAPL'], {
+      cached: ['AAPL'], explicit: true, hasChart: () => true, isFresh: (s) => s === 'NQ=F', updatedOf: () => '',
+      futures: ['ES=F', 'NQ=F'],
+    });
+    expect(q).toEqual(['ES=F', 'AAPL']);
+    // a futures symbol never gets a caret (it is not a cash index) and is never an options ticker
+    for (const s of FUTURES_CHART_SYMBOLS) expect(yahooChartCandidates(s)).toEqual([s]);
+    expect(DEFAULT_SYMBOLS.some((s) => s.endsWith('=F'))).toBe(false);
   });
 });
 

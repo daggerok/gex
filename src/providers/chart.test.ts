@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
-import { fetchCachedOhlc, fetchOhlc, loadOhlc, parseYahooChart, yahooChartSymbol } from './chart';
+import { cachedChartPath, fetchCachedOhlc, fetchOhlc, loadOhlc, parseYahooChart, yahooChartSymbol } from './chart';
 
 // Trimmed from a real response of
 //   GET https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1mo
@@ -172,6 +172,22 @@ describe('chart cache file and source order', () => {
     expect(calls[0]).toContain('/api/chart');
     expect(calls[1]).toBe('api/charts/SPY.json');
     expect(bars.length).toBe(2);
+  });
+
+  test('futures candles are cached under the Yahoo symbol, the = stays literal in the path', async () => {
+    expect(cachedChartPath('es=f')).toBe('api/charts/ES=F.json');
+    expect(cachedChartPath('^SPX')).toBe('api/charts/SPX.json');
+    expect(cachedChartPath('BRK-B')).toBe('api/charts/BRK-B.json');
+    mock(200);
+    expect((await loadOhlc('ES=F', { proxyBase: '' }, {}, false)).length).toBe(2);
+    expect(calls).toEqual(['api/charts/ES=F.json']);
+  });
+
+  test('futures follow the auto proxy like any ticker: proxy found -> live Yahoo ES=F, the cache only as the fallback', async () => {
+    mock(200);
+    await loadOhlc('ES=F', { proxyBase: 'http://localhost:8787' }, {}, false);
+    expect(calls).toEqual(['http://localhost:8787/api/chart?symbol=ES%3DF&range=6mo&interval=1d']);
+    expect(yahooChartSymbol('ES=F')).toBe('ES=F');
   });
 
   test('without a proxy only the cache is tried and its error is reported', async () => {
