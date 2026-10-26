@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the chart full screen on the GEX and Chart tabs: the button and the F key put the chart card over the whole
@@ -118,8 +118,8 @@ async function main(): Promise<void> {
     }
 
     try {
+        await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);
-        await page.getByText('💾').first().click();
         const ticker = page.locator('input[role=combobox]');
         await ticker.fill('SPY');
         await ticker.press('Enter');

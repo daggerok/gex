@@ -112,7 +112,7 @@ describe('fetchOhlc', () => {
         await expect(fetchOhlc('SPY', ctx)).rejects.toThrow('rate limited');
         mock(400, JSON.stringify({ error: 'unsupported range: 7mo' }));
         await expect(fetchOhlc('SPY', ctx, { range: '7mo' })).rejects.toThrow('unsupported range: 7mo');
-        await expect(fetchOhlc('SPY', { proxyBase: '' })).rejects.toThrow('Proxy base URL');
+        await expect(fetchOhlc('SPY', { proxyBase: '' })).rejects.toThrow('proxy URL in Settings');
     });
 });
 

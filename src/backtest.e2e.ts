@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { extractEntry, parseZipDirectory } from './history-zip';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the backtest ("As of") feature: the selector (grey while live, amber in a
@@ -41,8 +41,8 @@ async function main(): Promise<void> {
     const zipNames = (bytes: Buffer) => parseZipDirectory(new Uint8Array(bytes)).map((e) => e.name);
 
     try {
+        await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);
-        await page.getByText('💾').first().click(); // CACHE provider
         const ticker = page.locator('input[role=combobox]');
         await ticker.fill('SPY');
         await ticker.press('Enter');

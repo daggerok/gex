@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of review GEX-H2: a superseded ticker request must not land. SPY is entered first and its file answers
@@ -27,8 +27,8 @@ async function main(): Promise<void> {
             await new Promise((r) => setTimeout(r, 2000));
             await route.continue();
         });
+        await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);
-        await page.getByText('💾').first().click(); // CACHE provider
         const ticker = page.locator('input[role=combobox]');
         await ticker.fill('SPY');
         await ticker.press('Enter');

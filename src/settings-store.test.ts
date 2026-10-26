@@ -249,3 +249,37 @@ describe('loadSettings: the removed Cloudflare Worker preset', () => {
         }
     });
 });
+
+describe('loadSettings: the provider menu became the auto source (owner 2026-10-25)', () => {
+    test('an old saved providerId is dropped and the source is Auto; a saved override and the polling switch are kept', () => {
+        const g = globalThis as unknown as { localStorage?: Pick<Storage, 'getItem'> };
+        const saved = g.localStorage;
+        let blob = '';
+        g.localStorage = { getItem: (k) => (k === SETTINGS_KEY ? blob : null) };
+        try {
+            expect(DEFAULT_SETTINGS.source).toBe('auto');
+            expect(DEFAULT_SETTINGS.proxyAutoPoll).toBe(false);
+            expect(DEFAULT_SETTINGS.proxyBase).toBe('http://localhost:8787');
+            for (const providerId of ['cboe', 'static', 'yahoo', 'marketdata']) {
+                blob = JSON.stringify({ providerId, lastTicker: 'SPY' });
+                const s = loadSettings();
+                expect('providerId' in s).toBe(false);
+                expect(s.source).toBe('auto');
+                expect(s.proxyAutoPoll).toBe(false);
+                expect(s.lastTicker).toBe('SPY');
+            }
+            blob = JSON.stringify({ source: 'static', proxyAutoPoll: true, proxyBase: 'http://127.0.0.1:9000' });
+            const s = loadSettings();
+            expect(s.source).toBe('static');
+            expect(s.proxyAutoPoll).toBe(true);
+            expect(s.proxyBase).toBe('http://127.0.0.1:9000');
+            blob = JSON.stringify({ source: 'dolthub', proxyAutoPoll: 'yes', proxyBase: 5 });
+            const bad = loadSettings();
+            expect(bad.source).toBe('auto');
+            expect(bad.proxyAutoPoll).toBe(false);
+            expect(bad.proxyBase).toBe('http://localhost:8787');
+        } finally {
+            g.localStorage = saved;
+        }
+    });
+});

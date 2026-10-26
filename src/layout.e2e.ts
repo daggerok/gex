@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Layout regression check. On a wide window (from `lg`, 1024 px) the Desk, Board, GEX and Chart tabs all fit the
@@ -105,8 +105,8 @@ async function main(): Promise<void> {
             const page = await browser.newPage({ viewport: { width, height } });
             const errors: string[] = [];
             page.on('pageerror', (e) => errors.push(String(e)));
+            await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
             await page.goto(site.url);
-            await page.getByText('💾').first().click(); // CACHE provider
             const ticker = page.locator('input[role=combobox]');
             await ticker.fill('SPY');
             await ticker.press('Enter');

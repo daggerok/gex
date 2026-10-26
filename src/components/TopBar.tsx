@@ -3,10 +3,11 @@ import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Tip } from './Tip';
 import { useI18n, type Language } from '../i18n';
-import { LIVE_PROVIDERS, PROVIDERS } from '../providers';
+import { AUTO_LIVE_ORDER, type ProxyDiscovery, SOURCE_OVERRIDES, type SourceLabel, sanitizeSourceOverride } from '../proxy-discovery';
 import { normalizeColorTheme } from '../settings-store';
 import { accentOf } from '../theme';
 import type { DataProvider, Settings, ThemeMode, TickerSuggestion } from '../types';
+import { ChipSwitch } from './ChipSwitch';
 import { SettingsPanel } from './SettingsPanel';
 
 // ============================================================================
@@ -14,13 +15,13 @@ import { SettingsPanel } from './SettingsPanel';
 // ============================================================================
 
 /**
- * Top navigation bar. Layout per product spec:
- *   [ left: brand "GEX" ] ................ [ API dropdown | theme | gear ]
+ * Top navigation bar:
+ *   [ ticker search | search button | As of | source label | theme | language | gear ]
  */
 
 /** Segmented control — same visual language as fundamentals header pills.
- *  `size` ('sm', the default) keeps every existing caller (the CACHE/LIVE
- *  toggle, language switch, dark/light, color theme - all in THIS file,
+ *  `size` ('sm', the default) keeps every existing caller (the language
+ *  switch, dark/light, color theme - all in THIS file,
  *  TopBar's own compact row) pixel-identical. `size="md"` is an opt-in,
  *  additive variant for TabSwitcher's tab-pill usage ONLY: it widens the
  *  OUTER wrapper's own padding (`p-0.5` -> `p-[7px]`, +5px top/+5px bottom)
@@ -118,8 +119,16 @@ export const TopBar: React.FC<{
     onChooseSuggestion: (s: TickerSuggestion) => void;
     setActiveTickerSuggestion: (i: number) => void;
     setTickerSuggestionsOpen: (v: boolean) => void;
-    proxyOk: boolean | null;
-    proxyChecking: boolean;
+    /** Auto proxy discovery state (src/proxy-discovery.ts). */
+    proxy: ProxyDiscovery;
+    /** False on a page not served from this machine: no request goes to the proxy. */
+    proxyAllowed: boolean;
+    /** The data source is live (proxy found or a live provider fixed), else the cache. */
+    live: boolean;
+    /** Source label next to the ticker; null in a backtest (the As of selector shows the day). */
+    source: SourceLabel | null;
+    /** The cached data shown is of an earlier trading day. */
+    sourceStale: boolean;
     /** The "As of" selector (backtest), rendered next to the provider. */
     asOfSlot?: React.ReactNode;
     /** The same controls as a block of the settings menu, for a narrow screen where the selector is hidden. */
@@ -129,14 +138,16 @@ export const TopBar: React.FC<{
     tickerInput, tickerHint, onTickerInput, onSearch, searching,
     tickerSuggestions, tickerSuggestionsOpen, tickerSuggestionsLoading, activeTickerSuggestion,
     onTickerFocus, onTickerBlur, onTickerKeyDown, onChooseSuggestion, setActiveTickerSuggestion, setTickerSuggestionsOpen,
-    proxyOk, proxyChecking, asOfSlot, asOfMenuSlot,
+    proxy, proxyAllowed, live, source, sourceStale, asOfSlot, asOfMenuSlot,
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
     const { t, lang, setLang } = useI18n();
     const hasKey = !!(settings.tokens[provider.id]) &&
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
     const ax = accentOf(settings.colorTheme);
-    const isCache = settings.providerId === 'static';
+    const isCache = !live;
+    // the proxy is probed at all: allowed on this page and not the "always cache" override
+    const probing = proxyAllowed && settings.source !== 'static';
     const isDark = settings.theme === 'dark' || (
         settings.theme === 'system' &&
         typeof window !== 'undefined' &&
@@ -201,15 +212,34 @@ export const TopBar: React.FC<{
         : (settings.colorTheme === 'fundamentals' ? 'text-emerald-700' : 'text-indigo-700');
     const sun = 'text-yellow-400';
 
-    const proxyDotCls = isCache
+    // proxy status: muted when it is not probed, pulsing while a probe runs, accent when found, slate when not (no proxy is
+    // not an error: the cache serves)
+    const proxyDotCls = !probing
         ? 'bg-slate-400/50 dark:bg-slate-600/50'
-        : proxyChecking
+        : proxy.checking || proxy.up === null
             ? 'bg-yellow-400 animate-pulse'
-            : proxyOk
+            : proxy.up
                 ? (settings.colorTheme === 'fundamentals' ? 'bg-emerald-500' : 'bg-indigo-500')
-                : 'bg-red-500';
-    const proxyStatusCls = !isCache && proxyOk ? statusOk : (!isCache && proxyOk === false ? 'text-red-500' : mt);
-    const proxyStatusLabel = isCache ? '● n/a' : proxyChecking ? '● …' : proxyOk ? '● online' : '● offline';
+                : 'bg-slate-400';
+    const proxyStatusCls = probing && proxy.up ? statusOk : mt;
+    const proxyStatusText = !probing
+        ? (proxyAllowed ? t('settings.proxyOff') : t('settings.proxyLocalOnly'))
+        : proxy.up === null ? t('settings.proxyChecking') : proxy.up ? t('settings.proxyFound') : t('settings.proxyNotFound');
+    const base = settings.proxyBase || '—';
+    const sourceText = !source ? '' : source.kind === 'checking' ? '…' : source.kind === 'live'
+        ? `LIVE${source.provider ? ` ${source.provider}` : ''}`
+        : `CACHE${source.date ? ` ${source.date}` : ''}`;
+    const sourceTip = !source ? '' : source.kind === 'checking'
+        ? t('source.tip.checking', { base })
+        : source.kind === 'live'
+            ? (source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
+            : (source.date ? t('source.tip.cache', { date: source.date }) : t('source.tip.cacheNext'));
+    const sourceCls = sourceStale
+        ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+        : source?.kind === 'live'
+            ? (dark ? `border-slate-600 bg-slate-800 ${textAccent}` : `border-slate-200 bg-slate-50 ${textAccent}`)
+            : (dark ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600');
+    const overrideLabel = (o: string) => o === 'auto' ? t('settings.sourceOverride.auto') : o === 'static' ? t('settings.sourceOverride.static') : t('settings.sourceOverride.fixed', { provider: o.toUpperCase() });
 
     const setThemeMode = (mode: ThemeMode) => onChange({ theme: mode });
     const toggleDark = () => setThemeMode(dark ? 'light' : 'dark');
@@ -288,22 +318,18 @@ export const TopBar: React.FC<{
                     {/* 5b. "As of" selector (backtest), same for all tabs */}
                     {asOfSlot}
 
-                    {/* 6. CACHE / LIVE — fundamentals Pill */}
-                    <Tip text={isCache ? t('topBar.cache') : t('topBar.live')} wrapperClassName="inline-flex flex-shrink-0">
-                        <Pill
-                            value={isCache ? 'cache' : 'live'}
-                            options={[
-                                { k: 'cache', l: '💾' },
-                                { k: 'live', l: '🌐' },
-                            ]}
-                            onChange={(k) => {
-                                if (k === 'cache') onChange({ providerId: 'static' });
-                                else if (isCache) onChange({ providerId: 'cboe' });
-                            }}
-                            dark={dark}
-                            accentActive={pillActive}
-                        />
-                    </Tip>
+                    {/* 6. Source label (auto proxy, owner 2026-10-25): LIVE CBOE / LIVE YAHOO / CACHE <data date>. It replaced the
+                        CACHE / LIVE switch: the source is found automatically, a manual override is in the advanced settings. */}
+                    {source && (
+                        <Tip text={sourceTip} wrapperClassName="inline-flex flex-shrink-0">
+                            <span
+                                data-source-label={source.kind}
+                                className={`flex-shrink-0 whitespace-nowrap rounded-lg border px-2 py-1.5 font-mono text-[11px] font-bold leading-none tabular-nums ${sourceCls}`}
+                            >
+                                {sourceText}
+                            </span>
+                        </Tip>
+                    )}
 
                     {/* 7. Theme — fundamentals sun/moon text button */}
                     <Tip text={t('theme.' + (dark ? 'light' : 'dark'))} wrapperClassName="inline-flex flex-shrink-0">
@@ -423,57 +449,62 @@ export const TopBar: React.FC<{
                                     />
                                 </div>
 
-                                {/* Data source, at the bottom of the menu: online (live proxies) or cached data, and the provider inside it.
-                                    This replaced the provider dropdown of the header. */}
-                                <div className={`border-t ${bdr} pt-2 space-y-2`}>
+                                {/* Data source, at the bottom of the menu (auto proxy, owner 2026-10-25): no provider menu and no cache / live
+                                    switch, only the auto-discovery with its polling switch; the manual override and the proxy URL are advanced. */}
+                                <div className={`border-t ${bdr} pt-2 space-y-2`} data-data-source>
                                     <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>{t('settings.dataSource')}</div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {([
-                                            { k: 'live', l: `🌐 ${t('settings.onlineData')}`, on: !isCache },
-                                            { k: 'cache', l: `💾 ${t('settings.cachedData')}`, on: isCache },
-                                        ] as const).map((b) => (
-                                            <button
-                                                key={b.k}
-                                                type="button"
-                                                data-data-source={b.k}
-                                                aria-pressed={b.on}
-                                                onClick={() => {
-                                                    if (b.k === 'cache') onChange({ providerId: 'static' });
-                                                    else if (isCache) onChange({ providerId: 'cboe' });
-                                                }}
-                                                className={`rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
-                                                    b.on ? pillActive : dark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                                }`}
-                                            >
-                                                {b.l}
-                                            </button>
-                                        ))}
-                                    </div>
                                     <div className="flex items-center justify-between gap-2">
-                                        <span className={`text-xs ${t2}`}>{t('settings.provider')}</span>
-                                        <select
-                                            value={settings.providerId}
-                                            onChange={(e) => onChange({ providerId: e.target.value })}
-                                            disabled={isCache}
-                                            data-provider-select={isCache ? 'disabled' : 'live'}
-                                            className={`box-border w-[7.25rem] max-w-full rounded-lg border px-2 py-1 text-xs font-bold outline-none ${
-                                                isCache
-                                                    ? dark
-                                                        ? 'border-slate-700 bg-slate-900/50 text-slate-500 cursor-not-allowed'
-                                                        : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                                                    : dark
-                                                        ? 'border-slate-600 bg-slate-900 text-slate-100'
-                                                        : 'border-slate-200 bg-white text-slate-800'
-                                            }`}
-                                        >
-                                            {(isCache ? PROVIDERS.filter((p) => p.id === 'static') : LIVE_PROVIDERS).map((p) => (
-                                                <option key={p.id} value={p.id}>{p.label}</option>
-                                            ))}
-                                        </select>
+                                        <span className={`text-xs ${t2}`}>{t('settings.autoDiscovery')}</span>
+                                        <span className={`inline-flex ${settings.proxyAutoPoll ? textAccent : mt}`} data-proxy-autopoll={settings.proxyAutoPoll ? 'on' : 'off'}>
+                                            <ChipSwitch
+                                                checked={settings.proxyAutoPoll}
+                                                onChange={(on) => onChange({ proxyAutoPoll: on })}
+                                                label={t('settings.autoDiscovery')}
+                                            />
+                                        </span>
+                                    </div>
+                                    <div className={`flex items-center gap-2 text-xs font-semibold ${proxyStatusCls}`} data-proxy-status={!probing ? 'off' : proxy.up === null ? 'checking' : proxy.up ? 'up' : 'down'}>
+                                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${proxyDotCls}`} />
+                                        <span>{proxyStatusText}</span>
                                     </div>
                                     <div className={`text-[10px] ${mt}`}>
-                                        {isCache ? t('topBar.proxyDisabled') : t('settings.providerHint')}
+                                        {settings.proxyAutoPoll ? t('settings.autoDiscoveryHint.on') : t('settings.autoDiscoveryHint.off')}
                                     </div>
+                                    <details className="group" data-source-advanced>
+                                        <summary className={`cursor-pointer select-none text-[10px] font-bold uppercase tracking-wide ${mt}`}>{t('settings.advanced')}</summary>
+                                        <div className="mt-2 space-y-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className={`text-xs ${t2}`}>{t('settings.sourceOverride')}</span>
+                                                <select
+                                                    value={settings.source}
+                                                    onChange={(e) => onChange({ source: sanitizeSourceOverride(e.target.value) })}
+                                                    data-source-override
+                                                    className={`box-border w-[9rem] max-w-full rounded-lg border px-2 py-1 text-xs font-bold outline-none ${
+                                                        dark ? 'border-slate-600 bg-slate-900 text-slate-100' : 'border-slate-200 bg-white text-slate-800'
+                                                    }`}
+                                                >
+                                                    {SOURCE_OVERRIDES.map((o) => (
+                                                        <option key={o} value={o} disabled={!proxyAllowed && (AUTO_LIVE_ORDER as readonly string[]).includes(o)}>{overrideLabel(o)}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className={`text-[10px] ${mt}`}>{t('settings.sourceOverrideHint')}</div>
+                                            <label className="block">
+                                                <span className={`mb-1 block text-xs ${t2}`}>{t('settings.proxyBase')}</span>
+                                                <input
+                                                    type="text"
+                                                    value={settings.proxyBase}
+                                                    placeholder={t('settings.proxyBasePlaceholder')}
+                                                    onChange={(e) => onChange({ proxyBase: e.target.value.trim() })}
+                                                    data-proxy-base
+                                                    className={`w-full rounded-lg border px-2 py-1 font-mono text-xs outline-none ${
+                                                        dark ? 'border-slate-600 bg-slate-900 text-slate-100' : 'border-slate-200 bg-white text-slate-800'
+                                                    }`}
+                                                />
+                                                <span className={`mt-1 block text-[10px] ${mt}`}>{t('settings.proxyBaseHint')}</span>
+                                            </label>
+                                        </div>
+                                    </details>
                                 </div>
 
                                 {asOfMenuSlot}
@@ -485,15 +516,13 @@ export const TopBar: React.FC<{
                                     <div className={`rounded-lg border ${bdr} divide-y ${bdr}`}>
                                         <div className="flex items-start justify-between gap-3 px-3 py-2">
                                             <span className={`text-xs ${mt}`}>{t('topBar.proxy')}</span>
-                                            <Tip text={isCache ? `${t('topBar.proxy')} (${t('topBar.cache')} - ${t('topBar.proxyDisabled')})` : t('topBar.proxy')} wrapperClassName="inline-flex">
                                             <span
                                                 className={`flex items-center gap-2 text-xs font-mono font-semibold ${proxyStatusCls}`}
-                                                data-proxy-indicators={isCache ? 'disabled' : 'live'}
+                                                data-proxy-indicators={probing ? 'live' : 'disabled'}
                                             >
                                                 <span className={`h-2.5 w-2.5 rounded-full ${proxyDotCls}`} />
-                                                {proxyStatusLabel.replace('● ', '')}
+                                                {!probing ? 'n/a' : proxy.up === null ? '…' : proxy.up ? 'online' : 'offline'}
                                             </span>
-                                            </Tip>
                                         </div>
                                         <div className="flex items-start justify-between gap-3 px-3 py-2">
                                             <span className={`text-xs ${mt}`}>{t('topBar.provider')}</span>

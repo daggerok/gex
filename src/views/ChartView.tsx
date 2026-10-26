@@ -106,6 +106,9 @@ export interface ChartViewProps {
     strikes?: readonly number[];
     /** Backtest: the archived day (`YYYY-MM-DD`). The candles stop at it and come from the cache files, the live proxy is off. null = live. */
     asOfDate?: string | null;
+    /** The data source is live (the proxy was found, or a live provider is fixed): candles come from the proxy first, the
+     *  cache is the fallback. False: only the cache, no request to the proxy (owner rule of thumb, 2026-10-25). */
+    liveCandles?: boolean;
 }
 
 type FetchState =
@@ -122,7 +125,7 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [], asOfDate = null }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [], asOfDate = null, liveCandles = false }) => {
     const agEnabled = metrics.includes('absoluteGamma');
     const fs = useFullscreen();
     const { t: tr, lang } = useI18n();
@@ -168,13 +171,14 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
 
     // ---- OHLC fetch (symbol; always LOAD_RANGE of daily bars, the range buttons only change the visible part) ----
     const loadRange = loadRangeFor(range);
-    const fetchKey = `${symbol}|${loadRange}|${settings.proxyBase}|${settings.providerId}|${asOfDate ?? ''}`;
+    const proxyBase = liveCandles ? settings.proxyBase : '';
+    const fetchKey = `${symbol}|${loadRange}|${proxyBase}|${asOfDate ?? ''}`;
     const [state, setState] = useState<FetchState>({ key: '', status: 'loading' });
     useEffect(() => {
         if (!symbol) return;
         const ac = new AbortController();
         setState({ key: fetchKey, status: 'loading' });
-        loadOhlc(symbol, { proxyBase: settings.proxyBase, signal: ac.signal }, { range: loadRange, interval: DEFAULT_CHART_INTERVAL }, settings.providerId === 'static' || asOfDate !== null)
+        loadOhlc(symbol, { proxyBase, signal: ac.signal }, { range: loadRange, interval: DEFAULT_CHART_INTERVAL }, asOfDate !== null)
             .then((bars) => { if (!ac.signal.aborted) setState({ key: fetchKey, status: 'ok', bars: asOfDate ? cutBarsAfter(bars, asOfDate) : bars }); })
             .catch((e: unknown) => {
                 if (ac.signal.aborted) return;

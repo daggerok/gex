@@ -1,6 +1,7 @@
 /// <reference lib="esnext" />
 import { DEFAULT_LANGUAGE, LANGUAGES, type Language } from './i18n';
-import { defaultProviderId, PROVIDERS, PROXY_PRESETS } from './providers';
+import { PROXY_PRESETS } from './providers';
+import { DEFAULT_PROXY_BASE, sanitizeSourceOverride } from './proxy-discovery';
 import type { ChainResult, ColorThemeId, Settings } from './types';
 import { dbg } from './utils';
 
@@ -401,13 +402,14 @@ export function normalizeColorTheme(v: unknown): ColorThemeId {
 export const SETTINGS_KEY = 'gex.settings.v5';
 
 export const DEFAULT_SETTINGS: Settings = {
-    // Host-aware default selection; dropdown order stays CACHE, CBOE, NASDAQ, YAHOO.
-    providerId: defaultProviderId(),
+    // Auto: the local proxy is found by itself (src/proxy-discovery.ts), the cache when there is none
+    source: 'auto',
+    proxyAutoPoll: false,
     language: DEFAULT_LANGUAGE,
     theme: 'system',
     colorTheme: DEFAULT_COLOR_THEME,
     proxyTemplate: PROXY_PRESETS[0].template,
-    proxyBase: 'http://localhost:8787',    // local Bun Yahoo proxy default
+    proxyBase: DEFAULT_PROXY_BASE,    // local Bun proxy (`bun run all:proxy`)
     tokens: {},
     secrets: {},
     deskColumns: {
@@ -478,9 +480,9 @@ export function sanitizeGexMetrics(v: unknown): Settings['gexMetrics'] {
     return filtered.length > 0 ? filtered : [...DEFAULT_SETTINGS.gexMetrics];
 }
 
-/** Fresh settings object with the current host default (not a shared mutable ref). */
+/** Fresh settings object (not a shared mutable ref). */
 export function freshDefaultSettings(): Settings {
-    return { ...DEFAULT_SETTINGS, providerId: defaultProviderId() };
+    return { ...DEFAULT_SETTINGS };
 }
 
 /** Load settings from localStorage, merged over defaults (forward-compatible). */
@@ -489,7 +491,6 @@ export function loadSettings(): Settings {
         const raw = localStorage.getItem(SETTINGS_KEY);
         if (!raw) return freshDefaultSettings();
         const parsed = JSON.parse(raw);
-        const hostDefault = defaultProviderId();
         const merged: Settings = {
             ...DEFAULT_SETTINGS,
             ...parsed,
@@ -509,10 +510,12 @@ export function loadSettings(): Settings {
         // The "Your Worker (/raw?url=)" preset was removed with the Cloudflare Worker: a saved {worker} template falls back to the default
         if (typeof merged.proxyTemplate !== 'string' || merged.proxyTemplate.includes('{worker}')) merged.proxyTemplate = DEFAULT_SETTINGS.proxyTemplate;
         delete (merged as Settings & { workerUrl?: unknown }).workerUrl;
-        // Drop removed providers (marketdata, dolthub, …) → fall back to host default.
-        if (!PROVIDERS.some((p) => p.id === merged.providerId)) {
-            merged.providerId = hostDefault;
-        }
+        // The provider menu is gone (auto proxy, owner 2026-10-25): an old saved `providerId` (cboe, static, a removed
+        // marketdata / dolthub) is dropped, never mapped to an override, so every user starts on Auto
+        delete (merged as Settings & { providerId?: unknown }).providerId;
+        merged.source = sanitizeSourceOverride(parsed.source);
+        merged.proxyAutoPoll = parsed.proxyAutoPoll === true;
+        if (typeof merged.proxyBase !== 'string') merged.proxyBase = DEFAULT_SETTINGS.proxyBase;
         return merged;
     } catch {
         return freshDefaultSettings();

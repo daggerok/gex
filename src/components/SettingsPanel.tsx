@@ -1,8 +1,7 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { providerDescription, useI18n } from '../i18n';
-import { LIVE_PROVIDERS, PROVIDERS, PROXY_PRESETS } from '../providers';
+import { useI18n } from '../i18n';
 import { cacheStats, type CacheStats, fmtBytes, subscribeCache } from '../settings-store';
 import { accentOf } from '../theme';
 import type { DataProvider, Settings } from '../types';
@@ -29,7 +28,7 @@ export const SettingsPanel: React.FC<{
     /** When true, render body only (no absolute popover chrome) — used inside fundamentals-style settings card. */
     embedded?: boolean;
 }> = ({ settings, provider, onChange, onSetToken, onSetSecret, onClearData, onClearSettings, onClearAll, onClose, embedded = false }) => {
-    const { t, lang } = useI18n();
+    const { t } = useI18n();
     const ax = accentOf(settings.colorTheme);
     const currentToken = settings.tokens[provider.id] || '';
     const currentSecret = settings.secrets[provider.id] || '';
@@ -76,10 +75,6 @@ export const SettingsPanel: React.FC<{
                   <h2 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t('settings.title')}</h2>
                 )}
 
-                <p className="mb-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                    {providerDescription(provider.id, lang)}
-                </p>
-
                 {/* API key (and optional secret) — for token-capable providers. */}
                 {provider.supportsToken && (
                     <div className="mb-3">
@@ -120,44 +115,6 @@ export const SettingsPanel: React.FC<{
                             {provider.keyHint || t('settings.keyHint')}
                         </span>
                     </div>
-                )}
-
-                {/* Proxy base URL — for request-handling proxies (Yahoo/worker). */}
-                {provider.needsProxyBase && (
-                    <label className="mb-3 block">
-                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.proxyBase')}</span>
-                        <input
-                            type="text"
-                            value={settings.proxyBase}
-                            placeholder={t('settings.proxyBasePlaceholder')}
-                            onChange={(e) => onChange({ proxyBase: e.target.value.trim() })}
-                            className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
-                        />
-                        <span className="mt-1 block text-[11px] text-slate-400">
-                            {t('settings.proxyBaseHint')}
-                        </span>
-                    </label>
-                )}
-
-                {/* CORS proxy — only for providers that need it (CBOE). */}
-                {provider.needsProxy && (
-                    <>
-                        <label className="mb-2 block">
-                            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.corsProxy')}</span>
-                            <select
-                                value={settings.proxyTemplate}
-                                onChange={(e) => onChange({ proxyTemplate: e.target.value })}
-                                className={`w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 ${ax.focusRing}`}
-                            >
-                                {PROXY_PRESETS.map((p) => (
-                                    <option key={p.template} value={p.template}>{p.label}</option>
-                                ))}
-                            </select>
-                            <span className="mt-1 block text-[11px] text-slate-400">
-                                {t('settings.corsProxyHint')}
-                            </span>
-                        </label>
-                    </>
                 )}
 
                 {/* ---- Desk columns: per-side, per-column toggles -------- */}
@@ -294,23 +251,6 @@ export const SettingsPanel: React.FC<{
                 {/* ---- Heading fast-access controls (must live at the end of the settings menu) ---- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3 space-y-3">
                     <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('topBar.settings')}</h3>
-                    <label className="block">
-                        <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.provider')}</span>
-                        <select
-                            value={settings.providerId}
-                            onChange={(e) => onChange({ providerId: e.target.value })}
-                            disabled={settings.providerId === 'static'}
-                            className={
-                                'w-full rounded-lg border px-2 py-1.5 text-sm outline-none focus:ring-2 ' +
-                                (settings.providerId === 'static'
-                                    ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
-                                    : `border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 ${ax.focusRing}`)
-                            }
-                        >
-                            {(settings.providerId === 'static' ? PROVIDERS.filter((p) => p.id === 'static') : LIVE_PROVIDERS).map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
-                        </select>
-                        <span className="mt-1 block text-[11px] text-slate-400">{t('settings.providerHint')}</span>
-                    </label>
                     <div>
                         <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{t('settings.theme')}</span>
                         <ThemeSwitch value={settings.theme} onChange={(theme) => onChange({ theme })} colorTheme={settings.colorTheme} />

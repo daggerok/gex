@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the Board tab (src/views/BoardView.tsx): it opens with the ATM row (strike nearest to spot) in the
@@ -36,8 +36,8 @@ async function main(): Promise<void> {
             const page = await (await browser.newContext({ viewport: { width, height }, colorScheme: scheme })).newPage();
             const errors: string[] = [];
             page.on('pageerror', (e) => errors.push(e.message));
+            await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
             await page.goto(site.url);
-            await page.getByText('💾').first().click(); // CACHE provider
             const ticker = page.locator('input[role=combobox]');
             await ticker.fill('SPY');
             await ticker.press('Enter');
