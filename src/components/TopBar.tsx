@@ -134,6 +134,8 @@ export const TopBar: React.FC<{
     source: SourceLabel | null;
     /** The cached data shown is of an earlier trading day. */
     sourceStale: boolean;
+    /** A second line for the source tooltip (the count of TradingView OI older than the newest day), '' for none. */
+    sourceNote?: string;
     /** The "As of" selector (backtest), rendered next to the provider. */
     asOfSlot?: React.ReactNode;
     /** The same controls as a block of the settings menu, for a narrow screen where the selector is hidden. */
@@ -143,7 +145,7 @@ export const TopBar: React.FC<{
     tickerInput, tickerHint, onTickerInput, onSearch, searching,
     tickerSuggestions, tickerSuggestionsOpen, tickerSuggestionsLoading, activeTickerSuggestion,
     onTickerFocus, onTickerBlur, onTickerKeyDown, onChooseSuggestion, setActiveTickerSuggestion, setTickerSuggestionsOpen,
-    proxy, proxyAllowed, localPage, live, source, sourceStale, asOfSlot, asOfMenuSlot,
+    proxy, proxyAllowed, localPage, live, source, sourceStale, sourceNote = '', asOfSlot, asOfMenuSlot,
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
     const { t, lang, setLang } = useI18n();
@@ -234,14 +236,14 @@ export const TopBar: React.FC<{
     const sourceText = !source ? '' : source.kind === 'checking' ? '…' : source.kind === 'live'
         ? `LIVE${source.provider ? ` ${source.provider}` : ''}${source.at ? ` ${source.at}` : ''}`
         : source.kind === 'tv'
-            ? `TV ${TV_STATE_SHORT[source.state] ?? source.state.toUpperCase()}`
+            ? (source.state === 'starting' ? `TV starting…${source.progress ? ` ${source.progress}` : ''}` : `TV ${TV_STATE_SHORT[source.state] ?? source.state.toUpperCase()}`)
             : `CACHE${source.date ? ` ${source.date}` : ''}`;
     const sourceTip = !source ? '' : source.kind === 'checking'
         ? t('source.tip.checking', { base })
         : source.kind === 'live'
             ? (source.provider === 'TV' ? t('source.tip.liveTv', { at: source.at ?? '', base }) : source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
             : source.kind === 'tv'
-                ? t(source.state === 'rate-limited' ? 'source.tip.tvPaused' : source.state === 'reconnecting' ? 'source.tip.tvReconnecting' : source.state === 'expired' || source.state === 'no-session' ? 'source.tip.tvLogin' : 'source.tip.tvError', { message: source.message, date: source.date ?? '', until: source.until ? new Date(source.until).toLocaleTimeString() : '' })
+                ? t(source.state === 'starting' ? 'source.tip.tvStarting' : source.state === 'rate-limited' ? 'source.tip.tvPaused' : source.state === 'reconnecting' ? 'source.tip.tvReconnecting' : source.state === 'expired' || source.state === 'no-session' ? 'source.tip.tvLogin' : 'source.tip.tvError', { message: source.message, date: source.date ?? '', until: source.until ? new Date(source.until).toLocaleTimeString() : '' })
             : (source.date ? t('source.tip.cache', { date: source.date }) : t('source.tip.cacheNext'));
     const sourceCls = sourceStale || source?.kind === 'tv'
         ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
@@ -330,7 +332,7 @@ export const TopBar: React.FC<{
                     {/* 6. Source label (auto proxy, owner 2026-10-25): LIVE CBOE / LIVE YAHOO / CACHE <data date>. It replaced the
                         CACHE / LIVE switch: the source is found automatically, a manual override is in the advanced settings. */}
                     {source && (
-                        <Tip text={sourceTip} wrapperClassName="inline-flex flex-shrink-0">
+                        <Tip text={sourceNote ? `${sourceTip}\n${sourceNote}` : sourceTip} multiline={!!sourceNote} wrapperClassName="inline-flex flex-shrink-0">
                             <span
                                 data-source-label={source.kind}
                                 className={`flex-shrink-0 whitespace-nowrap rounded-lg border px-2 py-1.5 font-mono text-[11px] font-bold leading-none tabular-nums ${sourceCls}`}

@@ -32,6 +32,11 @@ export interface DeskViewProps {
     spotIsEstimated: boolean;
     /** Age of the loaded cache data (GEX-H4), null for live providers */
     dataAge: DataAge | null;
+    /**
+     * The live source when the data streams (TradingView live mode: "LIVE TV" and the time of the last update, New York),
+     * shown in place of the provider and the cache time, the same as the top label; null otherwise.
+     */
+    liveSource?: { label: string; at: string } | null;
     notice: string;
     error: string;
     showOnboarding: boolean;
@@ -55,7 +60,7 @@ export interface DeskViewProps {
 export const DeskView: React.FC<DeskViewProps> = ({
     settings, provider, meta, loadChain, getDates,
     tickerInput, metaLoading, expLoading, anyLoading, cancelAll, chainSymbol, spot,
-    spotIsEstimated, dataAge, notice, error, showOnboarding, setToken, setSecret, onboardingPreview,
+    spotIsEstimated, dataAge, liveSource = null, notice, error, showOnboarding, setToken, setSecret, onboardingPreview,
     previewLabel, sections, hasRows, metrics, setMetrics, levels, levelsSymbol, active,
 }) => {
     const { t: tr } = useI18n();
@@ -72,7 +77,9 @@ export const DeskView: React.FC<DeskViewProps> = ({
                 </span>
             )}
             <span className="text-xs text-slate-400">
-                {dataAge
+                {liveSource
+                    ? tr('spot.asOf', { at: liveSource.at, provider: liveSource.label })
+                    : dataAge
                     ? tr('spot.asOf', { at: dataAge.at, provider: provider.label.split(' ')[0] })
                     : tr('spot.delayed', { provider: provider.label.split(' ')[0] })}
             </span>
