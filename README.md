@@ -209,12 +209,20 @@ Measured on 2026-10-25 (Sunday evening session, ES, MacBook): proxy with the liv
 
 With the proxy running and a TradingView session, a stock or index ticker that loaded live from CBOE (or NASDAQ) switches to a TradingView stream of its options once it delivers (under a minute for SPY, about 2 minutes for SPX), label `TV 15m delayed hh:mm:ss`:
 
-- **What comes from where:** bid, ask, last and volume from TradingView's OPRA feed, **15 minutes delayed** without an OPRA subscription (`delayed_streaming_900`); IV and greeks from TradingView's scanner every 45 s (the websocket has none); open interest from **Cboe** (TradingView keeps each contract's OI of the last day it changed, often weeks old and 9-30% low; where Cboe has no value TradingView's is used and shown pale on the Desk when older than the newest day); spot = the put-call parity forward of the options, so it matches their 15-minute delay
+- **What comes from where:** bid, ask, last and volume from TradingView's OPRA feed, **15 minutes delayed** without an OPRA subscription (`delayed_streaming_900`); IV and greeks from TradingView's scanner every 45 s (the websocket has none); open interest from **Cboe** (TradingView keeps each contract's OI of the last day it changed, often weeks old and 9-30% low; where Cboe has no value TradingView's is used, with its day in the tooltip of the Desk OI cell); spot = the put-call parity forward of the options, so it matches their 15-minute delay
 - **Window:** expirations within 42 days, strikes within ±6% (SPX about 7,000 options in 3 quote sessions, SPY about 2,400); the window follows the price every 5 minutes
 - **Limits:** on demand only (the stream starts when a page opens the ticker and stops 2 minutes after the last page leaves), at most 2 tickers at once, each its own websocket; scanner 429 / 403 back off 15 minutes and more
 - **Never stored:** OPRA data is for personal use: the proxy keeps it in memory only, never writes it to `api/` or any file, nothing is committed or published
 - `GET /api/tv/live?symbol=SPY` (the same events as the futures stream) and `GET /api/tv/status` (the running feeds); `GEX_TV=0` turns it off together with the futures live mode
 - Measured (SPX, 7,002 options, Sunday night GTH session): browser tab 2.6% of a CPU core, about 25 ms per update
+
+### CME open interest cross-check
+
+CME publishes, free on its anonymous FTP, the preliminary open interest of every option **product** and side once a day (`ftp://ftp.cmegroup.com/daily_volume/daily_volume_YYYYMMDD.xlsx`, about 100 KB, posted about 03:30 Chicago time the next morning). The TradingView root of a futures option is the CME product code (`E4A`, `EW3`, `ES`, `QN4`, `R4E`...), so the proxy compares the two:
+
+- The proxy downloads the newest file when it is missing (on start and when a page opens a futures ticker; while it is not posted yet, at most once an hour) into `api/futures/cme/` (gitignored, never published) and serves the totals at `GET /api/futures/cme-oi`; the xlsx is read with built-ins (zip + XML), no extra package
+- The tooltip of the source label adds a line like `CME open interest of 2026-10-22 (preliminary, per product): the TradingView window holds 28% of it (EW3 put 10%, EW put 29%, ...)`. The window holds only the strikes within ±6% and the expirations through the monthly, while CME counts every strike and every listed expiration of the product, so the share is the window's coverage, not an error: per strike TradingView equals the CME Daily Bulletin (checked on 880 ES calls of 2026-10-23)
+- Only the FTP is used: www.cmegroup.com forbids scripts in its terms and blocks non-browser clients, the proxy never contacts it
 
 ### What auto-discovery does
 
@@ -262,7 +270,7 @@ They stay as of that commit until refreshed by hand again (CI has no session and
 - `/ES` says its file is missing: the live mode has not written it yet (up to 3 minutes after the proxy starts for all four futures) or the session is missing (`curl http://localhost:8787/api/futures/status`)
 - The label stays `CACHE <time>` for `/ES` while the proxy runs: refresh the page (auto-discovery off looks for the proxy only on load), check `curl http://localhost:8787/api/futures/status` says `"state":"live"`; with **Always cache** the live mode is off on purpose
 - Debug: `kill -USR2 <pid of bun scripts/tv/futures.ts>` drops the websocket of a standalone `tv:futures` to see the reconnect (`websocket closed`, `reconnecting in 5 s`, `subscribed N options in K quote session(s)`, `reconnected`); `TV_RENEW_EVERY_MS=180000 bun run tv:futures` renews the token every 3 minutes instead of 15 minutes before it expires; `GEX_TV_ENV=<file>` reads another env file (a copy with a wrong value shows the "session expired" message without touching the real one)
-- Open interest is the exchange's daily figure and lags one or two sessions. TradingView keeps each contract's OI of the last day it changed (`oi.time`): about 9% of the ES open interest (13% NQ, 30% RTY) is dated before the newest day. Those values stay in every level, but the Desk shows their OI cell pale with a tooltip `OI from <date>, TradingView has no newer value`, and the tooltip of the source label counts them (`OI older than 2026-10-23: 9.1% of total OI (1,501 contracts)`); the files keep the day per option (`oiDate`)
+- Open interest is the exchange's daily figure and lags one or two sessions. TradingView keeps each contract's OI of the last day it changed (`oi.time`, about 9% of the ES OI is dated before the newest day): checked against the CME Daily Bulletin of 2026-10-23, every value is equal, an older day just means no trade changed it since. The Desk names that day in the tooltip of the OI cell (`OI unchanged since <date>`), the files keep it per option (`oiDate`)
 
 ### Security
 
