@@ -46,9 +46,12 @@ export interface AuthAnswer {
     loggedIn: boolean;
 }
 
+/** The logged-in chart page that holds the auth token. Mutable for tests only (a local fake server). */
+export const TV_HTTP = { chartUrl: 'https://www.tradingview.com/chart/' };
+
 /** GET tradingview.com/chart/ with the session cookie; the token is null when the session was rejected. */
 export async function fetchAuthToken(s: TvSession): Promise<AuthAnswer> {
-    const res = await fetch('https://www.tradingview.com/chart/', {
+    const res = await fetch(TV_HTTP.chartUrl, {
         headers: { 'User-Agent': UA, Cookie: cookieHeader(s), Accept: 'text/html' },
         redirect: 'follow',
     });
@@ -73,6 +76,8 @@ export class TvSocket {
     closed = false;
     /** messages sent, for the request counts in the logs */
     sent = 0;
+    /** when the last frame (heartbeats included) arrived; a socket silent for long is half-open (see futures.ts) */
+    lastFrameAt = Date.now();
 
     constructor(private readonly opts: WsOptions) {
         const url = `wss://data.tradingview.com/socket.io/websocket?from=chart%2F&date=${new Date().toISOString().slice(0, 19)}&type=chart`;
@@ -92,6 +97,7 @@ export class TvSocket {
             this.opts.onClose?.(`closed (code ${(ev as CloseEvent).code})`);
         });
         this.ws.addEventListener('message', (ev) => {
+            this.lastFrameAt = Date.now();
             for (const payload of decodeFrames(String(ev.data))) {
                 if (payload.startsWith('~h~')) {
                     this.ws.send(encodeFrame(payload));
@@ -113,6 +119,19 @@ export class TvSocket {
         if (this.closed) return;
         this.sent++;
         this.ws.send(encodeFrame(JSON.stringify({ m, p })));
+    }
+
+    /**
+     * Close the socket as if the server dropped it: unlike close(), onClose is called, so the owner reconnects. Used for a
+     * silent (half-open) socket and by the SIGUSR2 debug hook of tv:futures.
+     */
+    drop(): void {
+        if (this.closed) return;
+        try {
+            this.ws.close();
+        } catch {
+            // already closing: the close event still comes
+        }
     }
 
     close(): void {

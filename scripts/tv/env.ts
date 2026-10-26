@@ -13,7 +13,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-export const TV_ENV_PATH = join(homedir(), '.config', 'gex', 'tradingview.env');
+/**
+ * The env file. `GEX_TV_ENV` points to another file (a test copy with an invalid value simulates an expired session
+ * without touching the real file).
+ */
+export const TV_ENV_PATH = process.env.GEX_TV_ENV || join(homedir(), '.config', 'gex', 'tradingview.env');
 
 export interface TvSession {
     sessionid: string;

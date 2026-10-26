@@ -197,6 +197,8 @@ export function familiesOf(v: QuoteValues | undefined): Family[] {
 // ---- scanner (greeks) ------------------------------------------------------------------------------------------------
 
 export const SCAN_URL = 'https://scanner.tradingview.com/options/scan2?label-product=options-builder';
+/** Where scanGreeks posts. Mutable for tests only (a local fake server). */
+export const TV_SCAN = { url: SCAN_URL };
 export const SCAN_COLUMNS = ['name', 'option-type', 'strike', 'expiration', 'root', 'iv', 'delta', 'gamma', 'theta', 'vega', 'rho'];
 
 export interface ScanRow {
@@ -253,7 +255,7 @@ export async function scanGreeks(front: string, wanted: readonly WantedOption[],
     if (session) headers.Cookie = cookieHeader(session);
     // pages of SCAN_PAGE rows (sorted by strike, so the pages do not overlap) until a short page
     for (let page = 0; page < SCAN_MAX_PAGES; page++) {
-        const res = await fetch(SCAN_URL, { method: 'POST', headers, body: JSON.stringify(scanBody(front, wanted, page * SCAN_PAGE)) });
+        const res = await fetch(TV_SCAN.url, { method: 'POST', headers, body: JSON.stringify(scanBody(front, wanted, page * SCAN_PAGE)) });
         if (res.status === 429 || res.status === 403) throw new TvRateLimitError(`scanner answered ${res.status}`);
         const text = await res.text();
         if (!res.ok) throw new Error(`scanner ${res.status}: ${redact(text, session).slice(0, 200)}`);

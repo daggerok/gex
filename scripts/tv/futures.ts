@@ -47,8 +47,24 @@ export const AUTH_REFRESH_BEFORE_MS = 15 * 60_000;
 export const AUTH_FALLBACK_LIFETIME_MS = 3.5 * 60 * 60_000;
 /** Pause of every HTTP request after a 429 or 403. */
 export const RATE_LIMIT_BACKOFF_MS = 15 * 60_000;
+/**
+ * Debug: `TV_RENEW_EVERY_MS=180000` renews the token at least this often (instead of only AUTH_REFRESH_BEFORE_MS before
+ * it expires), to exercise the renewal path in minutes instead of hours. Unset in normal use.
+ */
+export const RENEW_EVERY_MS: number | null = Number(process.env.TV_RENEW_EVERY_MS) >= 60_000 ? Number(process.env.TV_RENEW_EVERY_MS) : null;
+
+/** When the token is renewed: AUTH_REFRESH_BEFORE_MS before it expires, or sooner with the debug `renewEveryMs`. */
+export function renewDueAt(expiresAt: number, now: number, renewEveryMs: number | null = RENEW_EVERY_MS): number {
+    const due = expiresAt - AUTH_REFRESH_BEFORE_MS;
+    return renewEveryMs != null ? Math.min(due, now + renewEveryMs) : due;
+}
 export const RECONNECT_MIN_MS = 5_000;
 export const RECONNECT_MAX_MS = 5 * 60_000;
+/**
+ * A socket with no frame for this long is treated as dropped (half-open after a network change or a sleep: no close
+ * event ever comes). TradingView sends a heartbeat about every 10-20 s, so 90 s is several missed ones.
+ */
+export const SILENT_SOCKET_MS = 90_000;
 /** Wait for the continuous and the front future quotes this long. */
 const FUTURE_TIMEOUT_MS = 10_000;
 
@@ -122,6 +138,8 @@ class RootFeed {
     /** the session each watched option symbol was added to */
     readonly sessionOf = new Map<string, string>();
     front: string | null = null;
+    /** the front future added to the current quote session (null after a reconnect: add it again) */
+    subscribedFront: string | null = null;
     families: Family[] = [];
     wanted: WantedOption[] = [];
     readonly values = new Map<string, QuoteValues>();
@@ -148,12 +166,16 @@ export class FuturesWatcher {
     private session: TvSession | null = null;
     private token: string | null = null;
     private tokenExpiresAt = 0;
+    /** when the next token renewal is due (renewDueAt) */
+    private renewAt = 0;
     private pausedUntil = 0;
     private reconnectDelay = RECONNECT_MIN_MS;
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private tickTimer: ReturnType<typeof setInterval> | null = null;
     private lastRefresh = 0;
     private busy = false;
+    /** connect() runs (first connection or a reconnect): the periodic refresh waits, so nothing subscribes twice */
+    private connecting = false;
     private stopping = false;
     private waiters: (() => void)[] = [];
 
@@ -197,6 +219,19 @@ export class FuturesWatcher {
         this.wake();
     }
 
+    /**
+     * Debug hook (SIGUSR2 in watch mode): drop the websocket as if the network did, to check the reconnect and the
+     * resubscription of every quote session. Local only, sends nothing to TradingView.
+     */
+    debugDrop(): void {
+        if (!this.sock || this.sock.closed) {
+            this.log('debug: no open websocket to drop');
+            return;
+        }
+        this.log('debug: SIGUSR2, dropping the websocket');
+        this.sock.drop();
+    }
+
     private log(line: string): void {
         console.log(`[${clock()}] ${this.redact(line)}`);
     }
@@ -234,8 +269,11 @@ export class FuturesWatcher {
         const changed = auth.token !== this.token;
         this.token = auth.token;
         this.tokenExpiresAt = jwtExpiresAt(auth.token) ?? Date.now() + AUTH_FALLBACK_LIFETIME_MS;
-        if (changed && this.sock && !this.sock.closed) this.sock.send('set_auth_token', [auth.token]);
-        if (!fatal) this.log(`auth token refreshed, valid until ${clock(new Date(this.tokenExpiresAt))}`);
+        this.renewAt = renewDueAt(this.tokenExpiresAt, Date.now());
+        const sent = changed && this.sock != null && !this.sock.closed;
+        if (sent) this.sock?.send('set_auth_token', [auth.token]);
+        const line = `auth token ${fatal ? 'received' : 'refreshed'} (${changed ? 'new token' : 'same token'}${sent ? ', sent on the open websocket' : ''}), valid until ${clock(new Date(this.tokenExpiresAt))}, next renewal ${clock(new Date(this.renewAt))}`;
+        this.log(line);
     }
 
     private onMessage(msg: TvMessage): void {
@@ -287,6 +325,24 @@ export class FuturesWatcher {
     /** Open the socket, authenticate it and subscribe every root, one after the other. */
     private async connect(): Promise<void> {
         if (!this.token) throw new Error('no auth token');
+        this.connecting = true;
+        let sock: TvSocket | null = null;
+        try {
+            sock = this.newSocket();
+            await this.subscribeAll(sock);
+        } catch (err) {
+            // close only the socket this call opened (a later reconnect may already own this.sock)
+            if (sock && this.sock === sock) {
+                sock.close();
+                this.sock = null;
+            }
+            throw err;
+        } finally {
+            this.connecting = false;
+        }
+    }
+
+    private newSocket(): TvSocket {
         const sock = new TvSocket({
             session: this.session,
             onMessage: (m) => this.onMessage(m),
@@ -299,22 +355,30 @@ export class FuturesWatcher {
             },
         });
         this.sock = sock;
+        return sock;
+    }
+
+    /** Authenticate a new socket and subscribe every root on it, each in fresh quote sessions. */
+    private async subscribeAll(sock: TvSocket): Promise<void> {
         await sock.opened;
         sock.send('set_auth_token', [this.token]);
         this.byQs.clear();
         for (const feed of this.feeds) {
-            if (this.sock !== sock) throw new Error('websocket dropped while subscribing');
+            if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
             feed.sessions = [];
             feed.sessionOf.clear();
+            feed.subscribedFront = null;
             feed.completed.clear();
             feed.failed.clear();
             feed.qs = this.openSession(feed, sock);
             try {
                 await this.subscribe(feed, true);
+                this.log(`${feed.root}: subscribed ${feed.sessionOf.size} options in ${feed.sessions.length} quote session(s) [${feed.sessions.map((x) => x.count).join(', ')}]`);
             } catch (err) {
                 this.log(`${feed.root}: ${this.redact(err)}`);
             }
         }
+        if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
         this.reconnectDelay = RECONNECT_MIN_MS;
     }
 
@@ -367,14 +431,17 @@ export class FuturesWatcher {
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             void (async () => {
+                if (this.stopping) return;
+                if (this.connecting) {
+                    this.scheduleReconnect();
+                    return;
+                }
                 try {
-                    if (Date.now() > this.tokenExpiresAt - AUTH_REFRESH_BEFORE_MS) await this.authenticate(false);
+                    if (Date.now() >= this.renewAt) await this.authenticate(false);
                     await this.connect();
                     this.log('reconnected');
                 } catch (err) {
                     this.log(`reconnect failed: ${this.redact(err)}`);
-                    this.sock?.close();
-                    this.sock = null;
                     this.scheduleReconnect();
                 }
             })();
@@ -401,9 +468,11 @@ export class FuturesWatcher {
         const front = `${feed.prefix}:${String(cont.front_contract)}`;
         const families = familiesOf(cont);
         if (families.length) feed.families = families;
-        if (front !== feed.front || fresh) {
+        if (front !== feed.subscribedFront) {
             if (feed.front && front !== feed.front) this.log(`${feed.root}: front contract ${feed.front} -> ${front}`);
+            if (feed.subscribedFront && feed.subscribedFront !== front) sock.send('quote_remove_symbols', [feed.qs, feed.subscribedFront]);
             feed.front = front;
+            feed.subscribedFront = front;
             sock.send('quote_add_symbols', [feed.qs, front]);
             await this.waitFor(feed, [front], FUTURE_TIMEOUT_MS);
         }
@@ -413,9 +482,9 @@ export class FuturesWatcher {
         const next = wantedOptions(feed.families, front, center, new Date());
         if (!next.length) throw new Error(`no option series on ${front} (TradingView lists none for this root)`);
 
-        // what the sessions hold now: nothing on a new connection, else the symbols added so far (a retry of a failed
-        // first subscription keeps what it already added)
-        const before = new Set(fresh ? feed.sessionOf.keys() : feed.wanted.map((w) => w.symbol));
+        // what the quote sessions hold now (sessionOf is cleared on a new connection, and a retry of a failed or interrupted
+        // subscription keeps what it already added), so a reconnect adds the whole window again
+        const before = new Set(feed.sessionOf.keys());
         const nextSet = new Set(next.map((w) => w.symbol));
         const removed = Array.from(before).filter((sym) => !nextSet.has(sym));
         const added = next.filter((w) => !before.has(w.symbol)).map((w) => w.symbol);
@@ -457,11 +526,21 @@ export class FuturesWatcher {
 
     /** Every --watch: write the files; renew the token when due; re-read the window and the greeks every --refresh. */
     private async tick(): Promise<void> {
-        this.writeAll();
+        try {
+            this.writeAll();
+        } catch (err) {
+            this.log(`writing the files failed: ${this.redact(err)}`);
+        }
         if (this.busy || this.stopping) return;
+        const sock = this.sock;
+        if (sock && !sock.closed && !this.connecting && Date.now() - sock.lastFrameAt > SILENT_SOCKET_MS) {
+            this.log(`websocket silent for ${Math.round((Date.now() - sock.lastFrameAt) / 1000)} s, dropping it`);
+            sock.drop();
+            return;
+        }
         this.busy = true;
         try {
-            if (Date.now() > this.tokenExpiresAt - AUTH_REFRESH_BEFORE_MS) {
+            if (Date.now() >= this.renewAt) {
                 try {
                     await this.authenticate(false);
                 } catch (err) {
@@ -469,7 +548,7 @@ export class FuturesWatcher {
                 }
             }
             // the timer may fire a few ms early: a refresh due within the next second counts as due
-            if (Date.now() - this.lastRefresh >= this.args.refreshMs - 1000 && this.sock && !this.sock.closed && !this.paused()) {
+            if (Date.now() - this.lastRefresh >= this.args.refreshMs - 1000 && this.sock && !this.sock.closed && !this.connecting && !this.paused()) {
                 this.lastRefresh = Date.now();
                 for (const feed of this.feeds) {
                     if (!this.sock || this.sock.closed) break;
@@ -537,6 +616,8 @@ async function main(): Promise<void> {
     };
     process.on('SIGINT', stop);
     process.on('SIGTERM', stop);
+    // debug: `kill -USR2 <pid>` drops the websocket to check the reconnect (README, Local futures)
+    process.on('SIGUSR2', () => watcher.debugDrop());
     await watcher.runWatch();
 }
 
