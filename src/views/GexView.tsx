@@ -15,6 +15,7 @@ import { CustomLevelEditor, type LevelDraft } from '../components/CustomLevelEdi
 import { ToggleChip } from '../components/ToggleChip';
 import { ALL_LEVEL_KEYS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, levelLabelItems, LEVEL_CHART_LABEL_KEY, LEVEL_LABEL_KEY, LEVEL_TOOLTIP_KEY, levelPrice, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, useLevelPrefs, zeroGexDisplay, type ToggleableLevelKey } from '../level-prefs';
 import { HelpButton } from '../components/HelpButton';
+import { AG_AREA_CLASS, agActiveDotRenderer, agDotRenderer, agHolesStyle, agRingIds } from '../components/AgRings';
 import { DEFAULT_GEX_METRICS, GEX_METRICS, netGexView, resetMetricColors, useMetricColors, type GexMetric } from '../metric-prefs';
 import { isApplePlatform, levelColorOf, nearestStrike, defaultLevelName, proposeLevelColor } from '../custom-levels';
 import { loadChartZooms, saveChartZooms, withZoom, zoomFor } from '../chart-zoom-store';
@@ -22,7 +23,7 @@ import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeOiVolumeTotals, computePCRatio, gexBarHalves, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
-    AG_DOT_HOVER_RING, AG_DOT_STROKE_WIDTH, CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
+    AG_DOT_HOVER_RING, CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
     type GexLevelKey, type LevelColorSet, type MetricColorSet,
 } from '../gex-colors';
 import { useI18n } from '../i18n';
@@ -44,9 +45,6 @@ type CountMetric = 'callOi' | 'putOi' | 'callVolume' | 'putVolume';
 type RatioMetric = 'pcRatioOi' | 'pcRatioVolume';
 /** Per-strike ratios above this are drawn at the cap (the hover shows the real value). */
 const RATIO_PLOT_CAP = 5;
-/** Radius of the Absolute Gamma dot at every strike and of the hovered one (owner 2026-10-25: bolder than the 2 / 3.5 of v1). */
-const AG_DOT_RADIUS = 3.5;
-const AG_DOT_ACTIVE_RADIUS = 5.5;
 
 /** The GexPoint (src/gex.ts/src/types.ts) field a metric plots. Identical to
  *  the metric's own name for every metric except 'absoluteGamma', whose
@@ -446,14 +444,11 @@ export const GexView: React.FC<GexViewProps> = ({
     // ---- Per-metric bar colors (user-customizable, persisted) --------------
     // The colours are shared with the Chart tab (metric-prefs.ts)
     const metricColors = useMetricColors();
-    // AG dots v3 (owner 2026-10-25): a hollow ring at every strike, stroke in the AG line colour (follows a custom colour),
-    // fill none so the bar or the card shows through; the hovered ring is larger and takes the theme's hover token
+    // AG rings (owner 2026-10-25, v3 + v4): a hollow ring at every strike, stroke in the AG line colour (follows a custom
+    // colour), the AG line and fill cut out inside every ring (components/AgRings.tsx); the hovered ring is larger and takes
+    // the theme's hover token
     const dark = useDarkClass();
-    const agDot = (r: number, active: boolean) => (props: { cx?: number; cy?: number; index?: number }) => {
-        if (props.cx == null || props.cy == null) return <g key={`ag-dot-${props.index}`} />;
-        const stroke = active ? AG_DOT_HOVER_RING[dark ? 'dark' : 'light'] : metricColors.absoluteGamma;
-        return <circle key={`ag-dot-${props.index}`} cx={props.cx} cy={props.cy} r={r} fill="none" stroke={stroke} strokeWidth={AG_DOT_STROKE_WIDTH} data-ag-dot={active ? 'active' : 'ring'} />;
-    };
+    const agIds = agRingIds(useId());
     const colorFor = (m: GexMetric, sign?: 'pos' | 'neg'): string => {
         if (m === 'netGex') return sign === 'neg' ? metricColors.netGexNeg : metricColors.netGexPos;
         return metricColors[m];
@@ -1517,6 +1512,8 @@ export const GexView: React.FC<GexViewProps> = ({
                                     // on the chart drew the browser's bright focus ring, and it moves the tooltip with the
                                     // arrow keys, which the chart's own keyboard shortcuts already use.
                                     accessibilityLayer={false}
+                                    // hands the AG ring holes mask to the AG area layer (index.css .gex-ag-area)
+                                    style={agHolesStyle(agIds)}
                                     stackOffset="sign"
                                     barCategoryGap="15%"
                                     onMouseDown={onChartMouseDown}
@@ -1740,6 +1737,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                     {hasAbsoluteGamma && (
                                         <Area
                                             yAxisId="ag"
+                                            className={AG_AREA_CLASS}
                                             dataKey="absGamma"
                                             name={metricLabelFull('absoluteGamma')}
                                             stroke={metricColors.absoluteGamma}
@@ -1747,8 +1745,8 @@ export const GexView: React.FC<GexViewProps> = ({
                                             fillOpacity={0.18}
                                             strokeWidth={2}
                                             // a hollow ring at every strike makes the line easier to read (owner 2026-10-25, AG dots v3)
-                                            dot={agDot(AG_DOT_RADIUS, false)}
-                                            activeDot={agDot(AG_DOT_ACTIVE_RADIUS, true)}
+                                            dot={agDotRenderer(agIds, metricColors.absoluteGamma)}
+                                            activeDot={agActiveDotRenderer(agIds, AG_DOT_HOVER_RING[dark ? 'dark' : 'light'])}
                                             // recharts layers: Area 100 < Bar 300 < Line/ReferenceLine
                                             // 400. 350 draws AG on top of the GEX bars but below the
                                             // level lines.

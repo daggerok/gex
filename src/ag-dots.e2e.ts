@@ -1,16 +1,94 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
-import { chromium } from 'playwright';
+import { chromium, type Page } from 'playwright';
 import { noProxy, startTestSite } from './e2e-site';
 import { AG_DOT_HOVER_RING } from './gex-colors';
 
 // ============================================================================
-// Browser check of the Absolute Gamma dots on the GEX chart (owner 2026-10-25, "AG dots v3"): a hollow ring at every
-// strike, stroke in the AG line colour (the computed AG path stroke, so a custom colour is followed), fill none, r 3.5,
-// stroke 1.5-2 px; the hovered ring is larger and takes the theme's hover token (gex-colors.ts AG_DOT_HOVER_RING).
-// Both themes. Run: `bun run test:e2e ag-dots`.
+// Browser check of the Absolute Gamma rings on the GEX chart (owner 2026-10-25, "AG dots v3" + "AG rings v4"): a hollow
+// ring at every strike, stroke in the AG line colour (the computed AG path stroke, so a custom colour is followed), fill
+// none, r 3.5, stroke 1.5-2 px; the hovered ring is larger and takes the theme's hover token (gex-colors.ts
+// AG_DOT_HOVER_RING). v4: inside a ring only what is behind the AG series shows (background or a Net GEX bar): the pixel
+// at a ring centre equals the same pixel with the AG layer hidden, also over bars, while hovered, after a zoom and a
+// resize. Both themes. Run: `bun run test:e2e ag-dots`.
 // ============================================================================
+
+type Rgb = [number, number, number];
+interface Pt { x: number; y: number }
+
+/** Hides (or shows again) everything the AG series draws: area fill and line, the rings, the hovered ring. */
+async function setAgHidden(page: Page, hidden: boolean): Promise<void> {
+    await page.evaluate((h) => {
+        document.querySelectorAll<SVGElement>('.gex-ag-area, .recharts-area-dots, .recharts-active-dot').forEach((e) => { e.style.visibility = h ? 'hidden' : ''; });
+    }, hidden);
+}
+
+/** Viewport pixels at the given points, read from a screenshot decoded on a blank page (no app code involved). */
+async function pixelsAt(page: Page, pts: Pt[]): Promise<Rgb[]> {
+    const png = await page.screenshot();
+    const decoder = await page.context().newPage();
+    try {
+        return await decoder.evaluate(async ({ b64, pts }) => {
+            const img = new Image();
+            img.src = `data:image/png;base64,${b64}`;
+            await img.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('no 2d context');
+            ctx.drawImage(img, 0, 0);
+            return pts.map((p) => { const d = ctx.getImageData(Math.floor(p.x), Math.floor(p.y), 1, 1).data; return [d[0], d[1], d[2]] as [number, number, number]; });
+        }, { b64: png.toString('base64'), pts });
+    } finally {
+        await decoder.close();
+    }
+}
+
+const same = (a: Rgb, b: Rgb): boolean => a.every((v, i) => Math.abs(v - b[i]) <= 6);
+const hex = (c: Rgb): string => `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+function rgbOf(color: string): Rgb {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color);
+    assert.ok(m, `a hex colour: ${color}`);
+    return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+/** Ring centres (viewport px) in strike order; `isolated`: far enough from every other ring that only one ring covers it. */
+async function ringCentres(page: Page, kind: 'ring' | 'active'): Promise<Array<Pt & { isolated: boolean }>> {
+    const all = await page.locator(`[data-ag-dot=${kind}]`).evaluateAll((els) => els.map((e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }));
+    return all.map((p, i) => ({ ...p, isolated: all.every((q, j) => i === j || Math.hypot(p.x - q.x, p.y - q.y) >= 8) }));
+}
+
+/**
+ * The owner's v4 rule: every isolated ring centre shows exactly what is there without the AG layer. A control proves the
+ * comparison sees the AG layer at all: points on the AG line between two rings DO change when it is hidden.
+ */
+async function checkHoles(page: Page, label: string, barFills: Rgb[]): Promise<{ rings: number; overBars: number }> {
+    const rings = await ringCentres(page, 'ring');
+    const centres = rings.filter((r) => r.isolated);
+    assert.ok(centres.length >= 5, `${label}: enough isolated rings to check (${centres.length})`);
+    // the middle of a steep AG segment between two neighbouring rings (Area type linear: the line passes through it)
+    const controls: Pt[] = [];
+    for (let i = 0; i + 1 < rings.length; i++) {
+        const a = rings[i];
+        const b = rings[i + 1];
+        if (Math.abs(b.y - a.y) > 20) controls.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    }
+    const pts: Pt[] = [...centres, ...controls];
+    const withAg = await pixelsAt(page, pts);
+    await setAgHidden(page, true);
+    const without = await pixelsAt(page, pts);
+    await setAgHidden(page, false);
+    const bad = centres.map((p, i) => ({ p, got: withAg[i], want: without[i] })).filter((r) => !same(r.got, r.want));
+    assert.equal(bad.length, 0, `${label}: inside a ring only what is behind the AG series shows; ${bad.length} of ${centres.length} ring centres differ: ${bad.slice(0, 5).map((r) => `(${r.p.x.toFixed(0)},${r.p.y.toFixed(0)}) ${hex(r.got)} instead of ${hex(r.want)}`).join(', ')}`);
+    if (controls.length) {
+        const seen = controls.filter((_, i) => !same(withAg[centres.length + i], without[centres.length + i])).length;
+        assert.ok(seen >= Math.ceil(controls.length / 2), `${label}: control - the AG line is visible between the rings (${seen} of ${controls.length})`);
+    }
+    const overBars = without.slice(0, centres.length).filter((c) => barFills.some((f) => same(c, f))).length;
+    return { rings: centres.length, overBars };
+}
 
 async function main(): Promise<void> {
     const site = await startTestSite();
@@ -36,15 +114,37 @@ async function main(): Promise<void> {
             assert.ok(dots.every((d) => d.stroke === line), `${scheme}: every ring is the AG line colour ${line}: ${Array.from(new Set(dots.map((d) => d.stroke))).join(', ')}`);
             assert.ok(dots.every((d) => d.r === 3.5 && d.width >= 1.5 && d.width <= 2), `${scheme}: r 3.5, stroke 1.5-2 px`);
 
-            // ---- hover: the active dot has the theme's hover ring (no hard-coded white) ----
-            const box = await page.locator('.recharts-wrapper').first().boundingBox();
-            assert.ok(box, `${scheme}: the chart is on the page`);
-            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            // ---- v4: the AG line and fill are cut out inside every ring ----
+            const barFills = Array.from(new Set(await page.locator('.recharts-bar-rectangle path').evaluateAll((els) => els.map((e) => e.getAttribute('fill') ?? '')))).filter((f) => f.startsWith('#')).map(rgbOf);
+            const full = await checkHoles(page, `${scheme} full view`, barFills);
+            assert.ok(full.overBars >= 1, `${scheme}: at least one checked ring sits on a Net GEX bar (${full.overBars})`);
+
+            // ---- hover: the active dot has the theme's hover ring (no hard-coded white) and shows only the bar or background ----
+            const target = (await ringCentres(page, 'ring')).filter((r) => r.isolated).sort((a, b) => a.y - b.y)[0];
+            await page.mouse.move(target.x, target.y);
             await page.waitForTimeout(400);
             const active = (await read()).filter((d) => d.kind === 'active');
             assert.ok(active.length >= 1, `${scheme}: there is a hovered ring`);
             assert.ok(active.every((d) => d.stroke === hover && d.fill === 'none' && d.r === 5.5), `${scheme}: the hovered ring is larger, hollow, stroke ${hover}`);
-            console.log(`ag-dots e2e ${scheme}: ${dots.length} rings ${line}, hover ring ${hover}: ok`);
+            const [activeCentre] = await ringCentres(page, 'active');
+            // the inner edge of the small ring of the same strike (r 3.5 - 0.875) must be gone too inside the hovered ring
+            const hoverPts = [activeCentre, { x: activeCentre.x + 3, y: activeCentre.y }, { x: activeCentre.x - 3, y: activeCentre.y }];
+            const hoverWith = await pixelsAt(page, hoverPts);
+            await setAgHidden(page, true);
+            const hoverWithout = await pixelsAt(page, hoverPts);
+            await setAgHidden(page, false);
+            hoverPts.forEach((p, i) => assert.ok(same(hoverWith[i], hoverWithout[i]), `${scheme}: inside the hovered ring at (${p.x.toFixed(0)},${p.y.toFixed(0)}) ${hex(hoverWith[i])} instead of ${hex(hoverWithout[i])}`));
+            await page.mouse.move(5, 5);
+            await page.waitForTimeout(300);
+
+            // ---- the holes follow a zoom and a resize ----
+            for (let i = 0; i < 2; i++) await page.getByRole('button', { name: 'Horizontal Zoom In' }).click();
+            await page.waitForTimeout(500);
+            const zoomed = await checkHoles(page, `${scheme} zoomed`, barFills);
+            await page.setViewportSize({ width: 1100, height: 800 });
+            await page.waitForTimeout(800);
+            const resized = await checkHoles(page, `${scheme} resized`, barFills);
+            console.log(`ag-dots e2e ${scheme}: ${dots.length} rings ${line}, hover ring ${hover}; holes ok in ${full.rings} rings (${full.overBars} on bars), zoomed ${zoomed.rings}, resized ${resized.rings}, hovered`);
             await page.context().close();
         }
     } finally {

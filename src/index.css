@@ -618,3 +618,10 @@ body {
 .recharts-surface:focus-visible {
     outline: none;
 }
+
+/* AG rings v4 (owner 2026-10-25): the Absolute Gamma line and area fill are cut out inside every ring on the GEX chart, so
+   a ring shows only the background or the Net GEX bar behind the AG series. The mask is rendered by the AG dots
+   (components/AgRings.tsx) and its id comes through the chart's style (--gex-ag-holes). */
+.gex-ag-area {
+    mask: var(--gex-ag-holes, none);
+}
