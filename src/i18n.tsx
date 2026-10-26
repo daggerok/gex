@@ -283,6 +283,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'board.help.delta': 'Notional delta (this app\'s own definition): the dealer delta exposure in $ under the same positioning, delta x OI x 100 x spot for calls minus the same for puts. Quotes without gamma or delta are left out of these columns, never counted as 0.',
         'board.help.counts': 'Total, call and put OI and volume are contracts. The Expirations panel above shows each loaded expiration\'s share of the total open interest next to its date.',
         'board.help.toolbar': 'The Metrics chips show or hide their columns (Net GEX; AG: Abs GEX; call and put OI and volume; the P/C ratios), its Net GEX switch shows call GEX and put GEX instead of their net, as the chart does. The Levels chips mark their strikes in the Levels column; a level between two strikes (Spot, Gamma Flip) marks the nearest one. Both rows are the same as on the GEX and Chart tabs.',
+        'board.help.marks': 'The narrow strip right of the scrollbar is a map of the whole table: one tick per strike, top to bottom, in the positive or negative colour of its Net GEX and the stronger the larger its |Net GEX|. The ATM strike (Spot colour), the enabled levels (their colours) and the peaks and runner-ups are drawn on top at full strength. The frame shows the rows in view, the ticks outside it are the ones you cannot see. Hover a tick to see its strike and what it marks (ticks closer than 3 px share one tooltip), click it to bring that row to the middle of the table.',
+        'board.marks.label': 'Scroll marks: every strike of the table',
         'tabs.stub.gex': 'GEX view coming soon.',
         'tabs.stub.chart': 'Chart view coming soon.',
 
@@ -775,6 +777,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'board.help.delta': 'Номинальная дельта (собственное определение приложения): дельта-экспозиция дилеров в $ при той же позиции, дельта x OI x 100 x спот для коллов минус то же для путов. Котировки без гаммы или дельты не входят в эти столбцы и не считаются нулём.',
         'board.help.counts': 'OI и объём всего, коллов и путов в контрактах. Панель «Экспирации» выше показывает рядом с датой долю каждой загруженной экспирации в общем открытом интересе.',
         'board.help.toolbar': 'Кнопки «Метрики» показывают или скрывают свои столбцы (Нетто GEX; AG: Абс. GEX; OI и объём коллов и путов; соотношения P/C), переключатель Нетто GEX показывает GEX коллов и GEX путов вместо их нетто, как на графике. Кнопки «Уровни» отмечают свои страйки в столбце «Уровни»; уровень между двумя страйками (Спот, Гамма-флип) отмечает ближайший. Обе панели те же, что на вкладках GEX и График.',
+        'board.help.marks': 'Узкая полоса справа от полосы прокрутки: карта всей таблицы. Одна метка на страйк сверху вниз, цветом знака его Нетто GEX (положительный или отрицательный), тем ярче, чем больше |Нетто GEX|. Страйк ATM (цвет Спота), включённые уровни (их цвета), пики и вторые места нарисованы поверх в полную силу. Рамка показывает строки на экране, метки вне её: строки, которых сейчас не видно. Наведите на метку, чтобы увидеть страйк и что он отмечает (метки ближе 3 px делят одну подсказку), щёлкните, чтобы прокрутить эту строку в середину таблицы.',
+        'board.marks.label': 'Метки прокрутки: все страйки таблицы',
         'tabs.stub.gex': 'Экран GEX скоро появится.',
         'tabs.stub.chart': 'Экран графика скоро появится.',
 

@@ -3,12 +3,14 @@ import * as React from 'react';
 import { useEffect, useRef } from 'react';
 import { centerRowInScroll } from '../center-row';
 import { HelpButton } from '../components/HelpButton';
+import { ScrollMarks } from '../components/ScrollMarks';
 import { ToolbarRow } from '../components/ToolbarRow';
 import { BOARD_COLUMNS, type Board, type BoardColumn, type BoardRow, type NetGexView } from '../gex';
 import { LEVEL_LABEL_SEPARATOR, levelMarksByStrike, type LevelLabelItem } from '../level-labels';
 import { useI18n } from '../i18n';
 import { LEVEL_CHART_LABEL_KEY, levelLabelItems, sigmaMode, useLevelPrefs } from '../level-prefs';
 import { netGexView, signColor, useMetricColors, type GexMetric } from '../metric-prefs';
+import type { ScrollMarkRow } from '../scroll-marks';
 import type { GexLevels, Settings } from '../types';
 import { useCustomLevels } from '../use-custom-levels';
 import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
@@ -20,7 +22,9 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // (the Net GEX (+) / (-) colours, metric-prefs signColor), and tints its row by the sign of the
 // row's Net GEX; the runner-up of a column (computeBoard seconds) gets the same dot and, on an untinted row only, its own cell tinted exactly like a peak row (signTint); the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
 // and whenever the ticker or the expiration selection changes (src/center-row.ts, like the Desk). The table looks like the
-// Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel.
+// Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel. Right of the
+// table's scrollbar a minimap strip (components/ScrollMarks.tsx, src/scroll-marks.ts) has a tick per row in its Net GEX sign
+// colour, the ATM, level, peak and runner-up rows on top, a frame over the rows in view; a click glides its row to the middle.
 // ============================================================================
 
 interface BoardColumnDef {
@@ -138,6 +142,27 @@ export const BoardView: React.FC<{
         return centerRowInScroll(() => scrollRef.current, () => atmRef.current, () => headRef.current?.getBoundingClientRect().height ?? 0);
     }, [symbol, selectionKey, hasRows]);
 
+    // ---- the scroll marks strip: one entry per row with what it marks (only the shown columns' peaks and runner-ups) ----
+    const markRows = React.useMemo<ScrollMarkRow[]>(() => (board?.rows ?? []).map((r) => ({
+        strike: r.strike,
+        netGex: r.netGex,
+        atm: r.strike === board?.atmStrike,
+        levels: marks.get(r.strike),
+        peaks: columns.filter((c) => c.peak && peakSets[c.peak].has(r.strike)).map((c) => c.key),
+        seconds: columns.filter((c) => c.peak && !peakSets[c.peak].has(r.strike) && secondSets[c.peak].has(r.strike)).map((c) => c.key),
+    })), [board, marks, columns, peakSets, secondSets]);
+    const markColors = React.useMemo(() => ({ pos: colors.netGexPos, neg: colors.netGexNeg, zero: NEUTRAL_DOT, atm: atmColor }), [colors.netGexPos, colors.netGexNeg, atmColor]);
+    const headHeight = React.useCallback(() => headRef.current?.getBoundingClientRect().height ?? 0, []);
+    const rowOf = React.useCallback((strike: number) => scrollRef.current?.querySelector<HTMLElement>(`[data-board-row="${strike}"]`) ?? null, []);
+    const describeMark = React.useCallback((r: ScrollMarkRow): string => {
+        const parts = [`${fmt(r.strike)}   ${tr('board.col.netGex')} ${fmtSignedCompact(r.netGex)}`];
+        if (r.atm) parts.push(tr('board.atm'));
+        if (r.levels?.length) parts.push(r.levels.map((l) => l.text).join(LEVEL_LABEL_SEPARATOR));
+        if (r.peaks?.length) parts.push(`${tr('board.peak')}: ${r.peaks.map((k) => tr(ALL_COLUMNS[k].label)).join(', ')}`);
+        if (r.seconds?.length) parts.push(`${tr('board.second')}: ${r.seconds.map((k) => tr(ALL_COLUMNS[k].label)).join(', ')}`);
+        return parts.join(' · ');
+    }, [tr]);
+
     /** A peak's row tint (null when no shown column peaks on this row). */
     const peakRowTint = (row: BoardRow): string | undefined =>
         columns.some((c) => c.peak && peakSets[c.peak].has(row.strike)) ? signTint(row.netGex, colors) : undefined;
@@ -146,88 +171,92 @@ export const BoardView: React.FC<{
         <main className="mx-auto w-full px-4 pt-4 lg:px-6 h-full flex flex-col min-h-0" data-board>
             {/* the Metrics + Levels row of the GEX and Chart tabs (the expirations and their OI shares are in the shared panel) */}
             <ToolbarRow metrics={metrics} setMetrics={setMetrics} levels={levels} symbol={symbol} colorTheme={colorTheme} spotEstimated={spotEstimated} />
-            <div
-                ref={scrollRef}
-                className="themed-scroll flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800"
-                style={{ ['--od-atm' as string]: atmColor }}
-                data-board-scroll
-            >
-                {!board || !hasRows ? (
-                    <p className="p-4 text-sm text-slate-500 dark:text-slate-400">{tr('board.empty')}</p>
-                ) : (
-                    // the Desk's look (ChainTable): 16 px tabular numbers, 3 px x 8 px cells, 30 px rows, the zebra and the
-                    // 11 px uppercase header on slate-100 / slate-800 (index.css `.board-*`, next to the `.od-*` rules)
-                    <table className="w-full min-w-[60rem] border-separate border-spacing-0 tabular-nums text-slate-700 dark:text-slate-200" aria-label={tr('board.label')}>
-                        <thead ref={headRef} className="sticky top-0 z-10">
-                            <tr className="board-head text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                <th scope="col" className="sticky left-0 z-10 px-2 py-[3px] text-center font-medium">
-                                    <span className="inline-flex items-center gap-1">
-                                        {tr('board.col.strike')}
-                                        <HelpButton label={tr('board.help.label')} paragraphs={[tr('board.help.rows'), tr('board.help.gex'), tr('board.help.delta'), tr('board.help.counts'), tr('board.help.toolbar')]} align="left" />
-                                    </span>
-                                </th>
-                                <th scope="col" className="px-2 py-[3px] text-left font-medium">{tr('board.col.levels')}</th>
-                                {columns.map((c) => (
-                                    <th key={c.key} scope="col" className="px-2 py-[3px] text-right font-medium">{tr(c.label)}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {board.rows.map((row) => {
-                                const atm = row.strike === board.atmStrike;
-                                // the ATM tint wins over a peak tint (the peak dots stay)
-                                const bg = atm ? undefined : peakRowTint(row);
-                                // a row with a background of its own (ATM, peak) never gets a second one in a runner-up cell
-                                const rowTinted = atm || bg != null;
-                                return (
-                                    <tr
-                                        key={row.strike}
-                                        ref={atm ? atmRef : undefined}
-                                        data-board-row={row.strike}
-                                        data-board-atm={atm ? '' : undefined}
-                                        data-board-sign={row.netGex > 0 ? 'pos' : row.netGex < 0 ? 'neg' : undefined}
-                                        data-board-tinted={bg ? '' : undefined}
-                                        aria-current={atm ? 'true' : undefined}
-                                        className={'board-row' + (atm ? ' od-atm' : '')}
-                                        style={bg ? { backgroundColor: bg } : undefined}
-                                    >
-                                        <th
-                                            scope="row"
-                                            className="od-strike-cell sticky left-0 px-1.5 py-[3px] text-center font-semibold text-slate-900 dark:text-slate-100"
-                                            // the sticky strike cell is opaque, so it takes the (opaque) peak tint itself
+            {/* the card and, as an absolute overlay in the gutter right of it, the scroll marks strip (layout unchanged) */}
+            <div className="relative flex flex-1 min-h-0 flex-col">
+                <div
+                    ref={scrollRef}
+                    className="themed-scroll flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800"
+                    style={{ ['--od-atm' as string]: atmColor }}
+                    data-board-scroll
+                >
+                    {!board || !hasRows ? (
+                        <p className="p-4 text-sm text-slate-500 dark:text-slate-400">{tr('board.empty')}</p>
+                    ) : (
+                        // the Desk's look (ChainTable): 16 px tabular numbers, 3 px x 8 px cells, 30 px rows, the zebra and the
+                        // 11 px uppercase header on slate-100 / slate-800 (index.css `.board-*`, next to the `.od-*` rules)
+                        <table className="w-full min-w-[60rem] border-separate border-spacing-0 tabular-nums text-slate-700 dark:text-slate-200" aria-label={tr('board.label')}>
+                            <thead ref={headRef} className="sticky top-0 z-10">
+                                <tr className="board-head text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    <th scope="col" className="sticky left-0 z-10 px-2 py-[3px] text-center font-medium">
+                                        <span className="inline-flex items-center gap-1">
+                                            {tr('board.col.strike')}
+                                            <HelpButton label={tr('board.help.label')} paragraphs={[tr('board.help.rows'), tr('board.help.gex'), tr('board.help.delta'), tr('board.help.counts'), tr('board.help.toolbar'), tr('board.help.marks')]} align="left" />
+                                        </span>
+                                    </th>
+                                    <th scope="col" className="px-2 py-[3px] text-left font-medium">{tr('board.col.levels')}</th>
+                                    {columns.map((c) => (
+                                        <th key={c.key} scope="col" className="px-2 py-[3px] text-right font-medium">{tr(c.label)}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {board.rows.map((row) => {
+                                    const atm = row.strike === board.atmStrike;
+                                    // the ATM tint wins over a peak tint (the peak dots stay)
+                                    const bg = atm ? undefined : peakRowTint(row);
+                                    // a row with a background of its own (ATM, peak) never gets a second one in a runner-up cell
+                                    const rowTinted = atm || bg != null;
+                                    return (
+                                        <tr
+                                            key={row.strike}
+                                            ref={atm ? atmRef : undefined}
+                                            data-board-row={row.strike}
+                                            data-board-atm={atm ? '' : undefined}
+                                            data-board-sign={row.netGex > 0 ? 'pos' : row.netGex < 0 ? 'neg' : undefined}
+                                            data-board-tinted={bg ? '' : undefined}
+                                            aria-current={atm ? 'true' : undefined}
+                                            className={'board-row' + (atm ? ' od-atm' : '')}
                                             style={bg ? { backgroundColor: bg } : undefined}
                                         >
-                                            {fmt(row.strike)}
-                                            {atm && <span className="sr-only"> {tr('board.atm')}</span>}
-                                        </th>
-                                        <td className="whitespace-nowrap px-2 py-[3px] text-left text-[11px] font-semibold" data-board-marks={marks.has(row.strike) ? '' : undefined}>
-                                            {(marks.get(row.strike) ?? []).map((m, i) => (
-                                                <React.Fragment key={m.key}>
-                                                    {i > 0 && <span className="text-slate-400">{LEVEL_LABEL_SEPARATOR}</span>}
-                                                    <span style={{ color: m.color }} data-board-mark={m.key}>{m.text}</span>
-                                                </React.Fragment>
-                                            ))}
-                                        </td>
-                                        {columns.map((c) => {
-                                            const peak = !!c.peak && peakSets[c.peak].has(row.strike);
-                                            // the runner-up: the peak's dot (by the value's sign) and, on an untinted row only, this cell
-                                            // tinted exactly like a peak's row (signTint by the row's Net GEX) - never two backgrounds stacked
-                                            const second = !peak && !!c.peak && secondSets[c.peak].has(row.strike);
-                                            const dot = peak || second ? signColor(c.value(row), colors) : undefined;
-                                            const cellBg = second && !rowTinted ? signTint(row.netGex, colors) : undefined;
-                                            return (
-                                                <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" style={cellBg ? { backgroundColor: cellBg } : undefined} data-board-peak={peak ? c.key : undefined} data-board-second={second ? c.key : undefined} data-board-col={c.key}>
-                                                    {(peak || second) && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: dot ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr(peak ? 'board.peak' : 'board.second')} />}
-                                                    {c.format(row)}
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                )}
+                                            <th
+                                                scope="row"
+                                                className="od-strike-cell sticky left-0 px-1.5 py-[3px] text-center font-semibold text-slate-900 dark:text-slate-100"
+                                                // the sticky strike cell is opaque, so it takes the (opaque) peak tint itself
+                                                style={bg ? { backgroundColor: bg } : undefined}
+                                            >
+                                                {fmt(row.strike)}
+                                                {atm && <span className="sr-only"> {tr('board.atm')}</span>}
+                                            </th>
+                                            <td className="whitespace-nowrap px-2 py-[3px] text-left text-[11px] font-semibold" data-board-marks={marks.has(row.strike) ? '' : undefined}>
+                                                {(marks.get(row.strike) ?? []).map((m, i) => (
+                                                    <React.Fragment key={m.key}>
+                                                        {i > 0 && <span className="text-slate-400">{LEVEL_LABEL_SEPARATOR}</span>}
+                                                        <span style={{ color: m.color }} data-board-mark={m.key}>{m.text}</span>
+                                                    </React.Fragment>
+                                                ))}
+                                            </td>
+                                            {columns.map((c) => {
+                                                const peak = !!c.peak && peakSets[c.peak].has(row.strike);
+                                                // the runner-up: the peak's dot (by the value's sign) and, on an untinted row only, this cell
+                                                // tinted exactly like a peak's row (signTint by the row's Net GEX) - never two backgrounds stacked
+                                                const second = !peak && !!c.peak && secondSets[c.peak].has(row.strike);
+                                                const dot = peak || second ? signColor(c.value(row), colors) : undefined;
+                                                const cellBg = second && !rowTinted ? signTint(row.netGex, colors) : undefined;
+                                                return (
+                                                    <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" style={cellBg ? { backgroundColor: cellBg } : undefined} data-board-peak={peak ? c.key : undefined} data-board-second={second ? c.key : undefined} data-board-col={c.key}>
+                                                        {(peak || second) && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: dot ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr(peak ? 'board.peak' : 'board.second')} />}
+                                                        {c.format(row)}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+                {hasRows && <ScrollMarks scrollRef={scrollRef} headHeight={headHeight} rows={markRows} colors={markColors} rowOf={rowOf} describe={describeMark} label={tr('board.marks.label')} />}
             </div>
         </main>
     );
