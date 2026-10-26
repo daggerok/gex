@@ -105,7 +105,7 @@ function barPxOf(container: HTMLElement | null): number {
 
 /** The scroll marks tick of a section header with no Net GEX (the expiration bar): neutral slate, like the bar's text. */
 const SECTION_TICK = '#64748b';
-/** A row whose Net GEX is 0 or unknown (no gamma): grey, like the Board's neutral dot. */
+/** A row whose Net GEX is 0 or unknown (no gamma): grey, like the Board's neutral scroll mark. */
 const NEUTRAL_TICK = '#94a3b8';
 
 export function gridCols(callCount: number, putCount: number): string {

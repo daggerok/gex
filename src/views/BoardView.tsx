@@ -6,11 +6,13 @@ import { HelpButton } from '../components/HelpButton';
 import { ScrollMarks } from '../components/ScrollMarks';
 import { ToolbarRow } from '../components/ToolbarRow';
 import { BOARD_COLUMNS, type Board, type BoardColumn, type BoardRow, type NetGexView } from '../gex';
+import { BOARD_PEAK_DOT } from '../gex-colors';
 import { LEVEL_LABEL_SEPARATOR, levelMarksByStrike, type LevelLabelItem } from '../level-labels';
 import { useI18n } from '../i18n';
 import { LEVEL_CHART_LABEL_KEY, levelLabelItems, sigmaMode, useLevelPrefs } from '../level-prefs';
 import { netGexView, signColor, useMetricColors, type GexMetric } from '../metric-prefs';
 import type { ScrollMarkRow } from '../scroll-marks';
+import { useDarkClass } from '../theme';
 import type { GexLevels, Settings } from '../types';
 import { useCustomLevels } from '../use-custom-levels';
 import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
@@ -18,8 +20,8 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // ============================================================================
 // BOARD TAB (owner 2026-10-25) - one row per strike of the selected expirations: Net GEX, Abs GEX, notional delta, OI and
 // volume (total, calls, puts) and each strike's share of the Abs GEX. The numbers come from src/gex.ts computeBoard
-// through useGexLevels (the view only renders). A dot marks each column's peak, coloured by the sign of the value it marks
-// (the Net GEX (+) / (-) colours, metric-prefs signColor), and tints its row by the sign of the
+// through useGexLevels (the view only renders). A dot marks each column's peak, light blue in the dark theme and a darker blue in the
+// light one (gex-colors.ts BOARD_PEAK_DOT, owner 2026-10-25: no longer the value's sign colour), and tints its row by the sign of the
 // row's Net GEX; the runner-up of a column (computeBoard seconds) gets the same dot and, on an untinted row only, its own cell tinted exactly like a peak row (signTint); the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
 // and whenever the ticker or the expiration selection changes (src/center-row.ts, like the Desk). The table looks like the
 // Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel. Right of the
@@ -34,28 +36,26 @@ interface BoardColumnDef {
     format: (r: BoardRow) => string;
     /** the column whose peak dot this is (computeBoard peaks), none for the ratios */
     peak?: BoardColumn;
-    /** the value whose sign colours the peak dot */
-    value: (r: BoardRow) => number | null;
 }
 
 const ratio = (v: number | null): string => (v === null ? '-' : v.toFixed(2));
 
 /** Every column the Board can show, in order; which are shown follows the Metrics chips (boardColumns). */
 const ALL_COLUMNS: Record<string, BoardColumnDef> = {
-    netGex: { key: 'netGex', label: 'board.col.netGex', format: (r) => fmtSignedCompact(r.netGex), peak: 'netGex', value: (r) => r.netGex },
-    callGex: { key: 'callGex', label: 'board.col.callGex', format: (r) => fmtSignedCompact(r.callGex), peak: 'callGex', value: (r) => r.callGex },
-    putGex: { key: 'putGex', label: 'board.col.putGex', format: (r) => fmtSignedCompact(r.putGex), peak: 'putGex', value: (r) => r.putGex },
-    absGex: { key: 'absGex', label: 'board.col.absGex', format: (r) => fmtCompact(r.absGex), peak: 'absGex', value: (r) => r.absGex },
-    notionalDelta: { key: 'notionalDelta', label: 'board.col.notionalDelta', format: (r) => fmtSignedCompact(r.notionalDelta), peak: 'notionalDelta', value: (r) => r.notionalDelta },
-    totalOi: { key: 'totalOi', label: 'board.col.totalOi', format: (r) => fmtInt(r.totalOi), peak: 'totalOi', value: (r) => r.totalOi },
-    callOi: { key: 'callOi', label: 'board.col.callOi', format: (r) => fmtInt(r.callOi), peak: 'callOi', value: (r) => r.callOi },
-    putOi: { key: 'putOi', label: 'board.col.putOi', format: (r) => fmtInt(r.putOi), peak: 'putOi', value: (r) => r.putOi },
-    pcOi: { key: 'pcOi', label: 'board.col.pcOi', format: (r) => ratio(r.pcRatioOi), value: (r) => r.pcRatioOi },
-    totalVolume: { key: 'totalVolume', label: 'board.col.totalVolume', format: (r) => fmtInt(r.totalVolume), peak: 'totalVolume', value: (r) => r.totalVolume },
-    callVolume: { key: 'callVolume', label: 'board.col.callVolume', format: (r) => fmtInt(r.callVolume), peak: 'callVolume', value: (r) => r.callVolume },
-    putVolume: { key: 'putVolume', label: 'board.col.putVolume', format: (r) => fmtInt(r.putVolume), peak: 'putVolume', value: (r) => r.putVolume },
-    pcVolume: { key: 'pcVolume', label: 'board.col.pcVolume', format: (r) => ratio(r.pcRatioVolume), value: (r) => r.pcRatioVolume },
-    absGexShare: { key: 'absGexShare', label: 'board.col.absGexShare', format: (r) => `${(r.absGexShare * 100).toFixed(2)}%`, peak: 'absGexShare', value: (r) => r.absGexShare },
+    netGex: { key: 'netGex', label: 'board.col.netGex', format: (r) => fmtSignedCompact(r.netGex), peak: 'netGex' },
+    callGex: { key: 'callGex', label: 'board.col.callGex', format: (r) => fmtSignedCompact(r.callGex), peak: 'callGex' },
+    putGex: { key: 'putGex', label: 'board.col.putGex', format: (r) => fmtSignedCompact(r.putGex), peak: 'putGex' },
+    absGex: { key: 'absGex', label: 'board.col.absGex', format: (r) => fmtCompact(r.absGex), peak: 'absGex' },
+    notionalDelta: { key: 'notionalDelta', label: 'board.col.notionalDelta', format: (r) => fmtSignedCompact(r.notionalDelta), peak: 'notionalDelta' },
+    totalOi: { key: 'totalOi', label: 'board.col.totalOi', format: (r) => fmtInt(r.totalOi), peak: 'totalOi' },
+    callOi: { key: 'callOi', label: 'board.col.callOi', format: (r) => fmtInt(r.callOi), peak: 'callOi' },
+    putOi: { key: 'putOi', label: 'board.col.putOi', format: (r) => fmtInt(r.putOi), peak: 'putOi' },
+    pcOi: { key: 'pcOi', label: 'board.col.pcOi', format: (r) => ratio(r.pcRatioOi) },
+    totalVolume: { key: 'totalVolume', label: 'board.col.totalVolume', format: (r) => fmtInt(r.totalVolume), peak: 'totalVolume' },
+    callVolume: { key: 'callVolume', label: 'board.col.callVolume', format: (r) => fmtInt(r.callVolume), peak: 'callVolume' },
+    putVolume: { key: 'putVolume', label: 'board.col.putVolume', format: (r) => fmtInt(r.putVolume), peak: 'putVolume' },
+    pcVolume: { key: 'pcVolume', label: 'board.col.pcVolume', format: (r) => ratio(r.pcRatioVolume) },
+    absGexShare: { key: 'absGexShare', label: 'board.col.absGexShare', format: (r) => `${(r.absGexShare * 100).toFixed(2)}%`, peak: 'absGexShare' },
 };
 
 /**
@@ -93,7 +93,7 @@ export function signTint(netGex: number, colors: { netGexPos: string; netGexNeg:
     return color ? `color-mix(in srgb, ${color} ${PEAK_TINT_PCT}%, var(--board-base))` : undefined;
 }
 
-/** A peak dot of a zero value (no sign): grey. A positive value's dot is the Net GEX (+) colour, a negative one's (-). */
+/** A zero Net GEX (no sign) on the scroll marks: grey. */
 const NEUTRAL_DOT = '#94a3b8';
 
 export const BoardView: React.FC<{
@@ -108,6 +108,8 @@ export const BoardView: React.FC<{
 }> = ({ symbol, board, selectedExps, levels, metrics, setMetrics, colorTheme, spotEstimated = false }) => {
     const { t: tr } = useI18n();
     const colors = useMetricColors();
+    // the peak and runner-up dots: one blue per theme, not the sign colours (owner 2026-10-25)
+    const dotColor = BOARD_PEAK_DOT[useDarkClass() ? 'dark' : 'light'];
     const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
     // the ATM row is tinted with the Spot level colour exactly like the Desk's (index.css `.od-atm`, --od-atm)
     const atmColor = levelColors.spot;
@@ -241,14 +243,13 @@ export const BoardView: React.FC<{
                                             </td>
                                             {columns.map((c) => {
                                                 const peak = !!c.peak && peakSets[c.peak].has(row.strike);
-                                                // the runner-up: the peak's dot (by the value's sign) and, on an untinted row only, this cell
+                                                // the runner-up: the peak's dot (the theme's blue) and, on an untinted row only, this cell
                                                 // tinted exactly like a peak's row (signTint by the row's Net GEX) - never two backgrounds stacked
                                                 const second = !peak && !!c.peak && secondSets[c.peak].has(row.strike);
-                                                const dot = peak || second ? signColor(c.value(row), colors) : undefined;
                                                 const cellBg = second && !rowTinted ? signTint(row.netGex, colors) : undefined;
                                                 return (
                                                     <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" style={cellBg ? { backgroundColor: cellBg } : undefined} data-board-peak={peak ? c.key : undefined} data-board-second={second ? c.key : undefined} data-board-col={c.key}>
-                                                        {(peak || second) && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: dot ?? NEUTRAL_DOT }} data-board-dot role="img" aria-label={tr(peak ? 'board.peak' : 'board.second')} />}
+                                                        {(peak || second) && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: dotColor }} data-board-dot role="img" aria-label={tr(peak ? 'board.peak' : 'board.second')} />}
                                                         {c.format(row)}
                                                     </td>
                                                 );
