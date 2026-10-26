@@ -477,17 +477,10 @@ export const GexView: React.FC<GexViewProps> = ({
     const otherMetrics = metrics.filter((m) => m !== 'netGex' && m !== 'absoluteGamma');
 
     // ---- Key Levels: toggleable + colorable <ReferenceLine>s ---------------
-    // Same pattern as the metrics panel above: per-level show/hide + a color
-    // picker, persisted colors (gex-colors.ts's loadLevelColors/
-    // saveLevelColors, dedicated 'gex.levelColors.v1' key). Selection itself
-    // is plain component state (not persisted) - mirroring how `metrics`
-    // selection itself works today (its *colors* persist via
-    // loadMetricColors/saveMetricColors, but the selection array is just
-    // useState in main.tsx with no localStorage key); unlike metrics, there's
-    // no "at least one must stay on" rule here - toggling every level off is
-    // a valid (if unusual) choice. Reset restores DEFAULT_SELECTED_LEVELS
-    // (Part 2 - only Max Net GEX/Min Net GEX start OFF; Net GEX+/Net GEX-/
-    // Gamma Flip/Max Pain start ON), not "every level on".
+    // Same pattern as the metrics panel above: per-level show/hide + a color picker. Both the selection
+    // ('gex.selectedLevels.v1') and the colours ('gex.levelColors.v1') are remembered in the browser by
+    // level-prefs.ts; unlike metrics there is no "at least one must stay on" rule, toggling every level off
+    // is valid. Reset restores DEFAULT_SELECTED_LEVELS (every level except DEFAULT_OFF_LEVELS).
     // Which levels are on and their colours are shared with the Chart tab (level-prefs.ts)
     const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
     const zeroArea = zeroGexDisplay.use() === 'area';

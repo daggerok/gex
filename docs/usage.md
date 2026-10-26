@@ -83,7 +83,7 @@ All settings and what the browser remembers: [Configuration](configuration.md)
 The same two chip rows sit above every tab and share their state. On the Desk the Levels panel is greyed out (levels are not shown there, its choices still apply on the other tabs) and the Metrics chips choose which Board columns give the peaks and runner-ups of the Desk scroll marks
 
 - **Metrics:** Net GEX (with the Net GEX / Abs GEX switch and the (+) and (-) colour squares), AG, call and put OI, call and put volume, P/C by OI and by volume. Click a chip to show or hide it (at least one stays on), click its colour square to change the colour. Default: Net GEX and AG, remembered in the browser
-- **Levels:** your custom levels first (by price), then the built-in levels from the lowest price to the highest. Click a chip to show or hide it, the square changes its colour. The Zero GEX chip has a line / area switch, the Sigma chip a % / σ switch. Max AG has a chip only while the AG metric is on. The level selection starts from the defaults on every page load; colours and the two switches are remembered
+- **Levels:** your custom levels first (by price), then the built-in levels from the lowest price to the highest. Click a chip to show or hide it, the square changes its colour. The Zero GEX chip has a line / area switch, the Sigma chip a % / σ switch. Max AG has a chip only while the AG metric is on. The level selection, the colours and the two switches are remembered in the browser; Reset brings the defaults back
 
 What each level means: [How the numbers are computed](levels.md#levels)
 

@@ -1,8 +1,8 @@
 /// <reference types="bun" />
 /// <reference types="node" />
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { CustomLevel } from './custom-levels';
-import { DEFAULT_OFF_LEVELS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, levelLabelItems, getLevelPrefs, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, zeroGexDisplay } from './level-prefs';
+import { ALL_LEVEL_KEYS, DEFAULT_OFF_LEVELS, DEFAULT_SELECTED_LEVELS, gammaFlipUnavailableText, loadSelectedLevels, parseSelectedLevels, SELECTED_LEVELS_KEY, levelLabelItems, getLevelPrefs, levelPanelOrder, resetLevelPrefs, setLevelColor, sigmaLines, sigmaMode, toggleLevel, zeroGexDisplay } from './level-prefs';
 import type { GexLevels, SigmaLevel } from './types';
 
 const levels = (over: Partial<GexLevels> = {}): GexLevels => ({
@@ -78,6 +78,57 @@ describe('shared level preferences', () => {
     expect(getLevelPrefs().colors.maxPain).toBe('#123456');
     resetLevelPrefs();
     expect(getLevelPrefs().colors.maxPain).not.toBe('#123456');
+  });
+});
+
+describe('remembered level selection', () => {
+  type MiniStorage = Pick<Storage, 'getItem' | 'setItem'>;
+  const g = globalThis as unknown as { localStorage?: MiniStorage };
+  let saved: MiniStorage | undefined;
+  let store: Record<string, string>;
+  beforeEach(() => {
+    saved = g.localStorage;
+    store = {};
+    g.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+  });
+  afterEach(() => {
+    resetLevelPrefs();
+    g.localStorage = saved;
+  });
+
+  test('nothing stored, garbage or an array gives the defaults', () => {
+    expect(parseSelectedLevels(null)).toEqual(DEFAULT_SELECTED_LEVELS);
+    expect(parseSelectedLevels('{not json')).toEqual(DEFAULT_SELECTED_LEVELS);
+    expect(parseSelectedLevels('["maxPain"]')).toEqual(DEFAULT_SELECTED_LEVELS);
+    expect(loadSelectedLevels()).toEqual(DEFAULT_SELECTED_LEVELS);
+  });
+
+  test('stored booleans win, missing levels (added later) take their default, unknown keys are ignored', () => {
+    const got = parseSelectedLevels(JSON.stringify({ maxPain: false, sigma: true, netGexPlus: 'yes', oldLevel: true }));
+    expect(got).not.toContain('maxPain');
+    expect(got).toContain('sigma');
+    expect(got).not.toContain('netGexPlus'); // not a boolean: default (off)
+    expect(got).toContain('zeroGex'); // missing: default (on)
+    expect(got).not.toContain('oldLevel' as never);
+    expect(got).toEqual(ALL_LEVEL_KEYS.filter((k) => got.includes(k))); // ALL_LEVEL_KEYS order
+  });
+
+  test('a toggle is saved for every known level, so a reload restores it; Reset saves the defaults', () => {
+    toggleLevel('maxPain');
+    toggleLevel('sigma');
+    const map = JSON.parse(store[SELECTED_LEVELS_KEY]) as Record<string, boolean>;
+    expect(Object.keys(map).sort()).toEqual([...ALL_LEVEL_KEYS].sort());
+    expect([map.maxPain, map.sigma, map.zeroGex]).toEqual([false, true, true]);
+    expect(loadSelectedLevels()).toEqual(getLevelPrefs().selected.slice().sort((a, b) => ALL_LEVEL_KEYS.indexOf(a) - ALL_LEVEL_KEYS.indexOf(b)));
+    resetLevelPrefs();
+    expect(loadSelectedLevels()).toEqual(DEFAULT_SELECTED_LEVELS);
+  });
+
+  test('a storage that throws keeps the defaults and toggling still works for the page', () => {
+    g.localStorage = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+    expect(loadSelectedLevels()).toEqual(DEFAULT_SELECTED_LEVELS);
+    toggleLevel('maxPain');
+    expect(getLevelPrefs().selected).not.toContain('maxPain');
   });
 });
 
