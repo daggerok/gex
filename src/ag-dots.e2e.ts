@@ -54,10 +54,24 @@ function rgbOf(color: string): Rgb {
     return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
 }
 
-/** Ring centres (viewport px) in strike order; `isolated`: far enough from every other ring that only one ring covers it. */
+/**
+ * Ring centres (viewport px) in strike order; `isolated`: inside the plot (a zoomed chart keeps rings past its edges,
+ * clipped away) and far enough from every other ring that only one ring covers it.
+ */
 async function ringCentres(page: Page, kind: 'ring' | 'active'): Promise<Array<Pt & { isolated: boolean }>> {
+    const plot = await page.locator('.recharts-area-dots').first().evaluate((g) => {
+        const id = /url\(#(.+)\)/.exec(g.getAttribute('clip-path') ?? '')?.[1];
+        const rect = id ? document.getElementById(id)?.querySelector('rect') : null;
+        const svg = (g as SVGGElement).ownerSVGElement?.getBoundingClientRect();
+        if (!rect || !svg) return null;
+        // a clipPath child is never rendered (empty client rect): its attributes are svg user units, 1:1 with css px here
+        const n = (k: string): number => Number(rect.getAttribute(k));
+        return { left: svg.left + n('x'), right: svg.left + n('x') + n('width'), top: svg.top + n('y'), bottom: svg.top + n('y') + n('height') };
+    });
+    assert.ok(plot, 'the AG dots are clipped to the plot');
     const all = await page.locator(`[data-ag-dot=${kind}]`).evaluateAll((els) => els.map((e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }));
-    return all.map((p, i) => ({ ...p, isolated: all.every((q, j) => i === j || Math.hypot(p.x - q.x, p.y - q.y) >= 8) }));
+    const inside = (p: Pt): boolean => p.x >= plot.left + 8 && p.x <= plot.right - 8 && p.y >= plot.top + 8 && p.y <= plot.bottom + 1;
+    return all.map((p, i) => ({ ...p, isolated: inside(p) && all.every((q, j) => i === j || Math.hypot(p.x - q.x, p.y - q.y) >= 8) }));
 }
 
 /**
@@ -139,7 +153,8 @@ async function main(): Promise<void> {
 
             // ---- the holes follow a zoom and a resize ----
             for (let i = 0; i < 2; i++) await page.getByRole('button', { name: 'Horizontal Zoom In' }).click();
-            await page.waitForTimeout(500);
+            await page.mouse.move(5, 5); // off the button: its tooltip must not cover the chart in the screenshots
+            await page.waitForTimeout(800);
             const zoomed = await checkHoles(page, `${scheme} zoomed`, barFills);
             await page.setViewportSize({ width: 1100, height: 800 });
             await page.waitForTimeout(800);
