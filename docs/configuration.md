@@ -62,7 +62,7 @@ Everything stays in this browser (`localStorage` and IndexedDB), nothing is sent
 | `gex.valuesOpen.v1` | the Values table of the GEX sidebar open or closed | closed |
 | `gex.backup.choice.v2` | what the last "Create backup" was made of | the preset (default tickers) |
 | IndexedDB `gex-cache-db` | the query cache: every loaded chain, LRU, about 200 MB soft cap | empty |
-| IndexedDB `gex-backtest-db` | archived days and backups you opened, imported or created | empty |
+| IndexedDB `gex-backtest-db` | archived days and backups you opened, imported or created (which day is open is not stored: every page load starts at today) | empty |
 
 Not remembered on purpose: the collapsed or expanded Desk sections
 

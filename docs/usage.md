@@ -58,6 +58,7 @@ Without a running proxy the app uses this cache by itself; with one, choose Sett
 - **Proxy auto-discovery** (Settings -> Data source, off by default): off, the proxy is looked for once when the page loads, so refresh the page after starting or stopping it; on, every 30 s and when you come back to the tab, and the open ticker reloads from the new source
 - **Advanced:** fix the source (**Always cache** or one provider only) and change the proxy URL
 - The Chart tab follows the same result: candles through the proxy when live, else the cached `api/charts/<SYM>.json`
+- The source label next to the ticker: `LIVE <provider>`, `CACHE <date>` or `ARCHIVE <day>` (an As of day is open). On `CACHE` its tooltip says why live is off: Always cache is set, the published site has no **Use my local proxy** yet, or the proxy did not answer (when the page loaded, or on the last check with auto-discovery on)
 
 All settings and what the browser remembers: [Configuration](configuration.md)
 
@@ -103,8 +104,8 @@ Your own named levels on the GEX and Chart tabs, stored per symbol in the browse
 
 One selector in the top bar for every tab
 
-- Grey = not a backtest: "As of today" while a live provider answers, otherwise "As of <date>" (the newest cache day, `api/latest.json`)
-- Pick an archived day or a backup (those on the site from `api/history/index.json`, plus those held in this browser): an amber "Backtest: as of ..." banner shows, and every tab reads that snapshot (chain, spot, expirations, levels, model greeks valued at that time, Chart candles cut after that day). Live providers are off; a ticker that is not in the snapshot shows an error. **Back to live** returns
+- Grey = not a backtest: "As of today" while a live provider answers, otherwise "As of <date>" (the newest cache day, `api/latest.json`). So a grey "As of 2026-10-23" means the page found no live source (see the source label's tooltip for why), not that a past day is selected
+- Pick an archived day or a backup (those on the site from `api/history/index.json`, plus those held in this browser): an amber "Backtest: as of ..." banner shows, and every tab reads that snapshot (chain, spot, expirations, levels, model greeks valued at that time, Chart candles cut after that day). Live providers are off, also with the local proxy running; a ticker that is not in the snapshot shows an error. The source label says `ARCHIVE <day>`; a click on it or **Back to latest** in the banner returns. The selection is not remembered: every page load starts at today
 - **Import zip:** a day zip, a backup or a bundle, read in the browser, nothing is uploaded
 - **Create backup:** the default tickers (default), the current ticker, all available data or chosen tickers; Enter downloads `<id>.zip`, the same format the CI backup makes plus your custom levels (`custom-levels.json`), and keeps it in the browser. The last choice is remembered
 - **Backtest data:** what the browser holds with size and source; download one or several as one zip, remove selected, everything older than a date, or all. Held snapshots stay in IndexedDB and work offline
