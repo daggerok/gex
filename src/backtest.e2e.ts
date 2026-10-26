@@ -57,8 +57,12 @@ async function main(): Promise<void> {
         assert.equal(await option('2026-09-30').count(), 1);
         await page.keyboard.press('Escape');
 
-        // custom levels of the user, saved before the backtest
-        await page.evaluate((k) => localStorage.setItem(k, JSON.stringify([{ id: 'u1', name: 'My level', price: 777, color: '#fb7185' }])), levelsKey);
+        // custom levels of the user, saved before the backtest (as by another tab: the storage event drops the app's cached
+        // list of SPY, which the Desk's scroll marks already read)
+        await page.evaluate((k) => {
+            localStorage.setItem(k, JSON.stringify([{ id: 'u1', name: 'My level', price: 777, color: '#fb7185' }]));
+            window.dispatchEvent(new StorageEvent('storage', { key: k }));
+        }, levelsKey);
 
         // ---- a backup made in the app: tickers remembered, custom levels inside, the same zip layout as the CI backup ----
         await openMenu();
@@ -179,7 +183,10 @@ async function main(): Promise<void> {
         assert.ok((await page.locator('[data-backtest-toast=error]').innerText()).includes('broken.zip'));
 
         // ---- the custom levels of a snapshot replace the user's own and cannot be edited ----
-        await page.evaluate((k) => localStorage.setItem(k, JSON.stringify([{ id: 'u2', name: 'Changed later', price: 111 }])), levelsKey);
+        await page.evaluate((k) => {
+            localStorage.setItem(k, JSON.stringify([{ id: 'u2', name: 'Changed later', price: 111 }]));
+            window.dispatchEvent(new StorageEvent('storage', { key: k }));
+        }, levelsKey);
         await pick(backupId);
         await page.getByRole('button', { name: 'GEX' }).first().click();
         await page.waitForTimeout(1200);

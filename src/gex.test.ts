@@ -10,6 +10,7 @@ import {
   netGexPlusMinusMinDistance,
   computeGexLevels,
   computeGexProfile,
+  netGexByStrike,
   computeMaxPain,
   computeOiVolumeTotals,
   computePCRatio,
@@ -1264,5 +1265,30 @@ describe('expirationOiShares', () => {
     const q = (oi: number | null): OptionQuote => ({ symbol: 'x', expiration: 'e', side: 'call', strike: 1, bid: null, ask: null, mid: null, last: null, volume: null, openInterest: oi, iv: null, delta: null, gamma: null, theta: null, vega: null });
     expect(expirationOiShares({ a: [q(30), q(10)], b: [q(60)], c: [q(null)] })).toEqual({ a: 0.4, b: 0.6, c: 0 });
     expect(expirationOiShares({ a: [q(0)] })).toEqual({ a: 0 });
+  });
+});
+
+describe('netGexByStrike (Desk scroll marks: one expiration, one strike)', () => {
+  test('call GEX + put GEX of the strike, by hand, keyed by strike', () => {
+    // spot 100, gamma 0.01: gexCall = 0.01 * OI * 100 * 100^2 * 0.01 = 100 * OI
+    const quotes = [q('2026-01-16', 'call', 95, 30, 0.01), q('2026-01-16', 'put', 95, 50, 0.01), q('2026-01-16', 'call', 100, 20, 0.01)];
+    const net = netGexByStrike(quotes, 100);
+    expect(Array.from(net.keys())).toEqual([95, 100]);
+    expect(net.get(95)).toBeCloseTo(100 * 30 - 100 * 50, 6);
+    expect(net.get(100)).toBeCloseTo(2000, 6);
+  });
+
+  test('a strike whose quotes all lack gamma is absent (not 0); one side without gamma counts only the other', () => {
+    const quotes = [q('2026-01-16', 'call', 90, 10, null), q('2026-01-16', 'put', 90, 10, null), q('2026-01-16', 'call', 95, 10, 0.01), q('2026-01-16', 'put', 95, 40, null)];
+    const net = netGexByStrike(quotes, 100);
+    expect(net.has(90)).toBe(false);
+    expect(net.get(95)).toBeCloseTo(1000, 6);
+  });
+
+  test('the same numbers as computeGexProfile', () => {
+    const quotes = [q('2026-01-16', 'call', 100, 7, 0.02), q('2026-01-16', 'put', 100, 9, 0.03), q('2026-01-16', 'put', 105, 4, 0.01)];
+    const net = netGexByStrike(quotes, 250);
+    for (const p of computeGexProfile(quotes, 250)) expect(net.get(p.strike)).toBe(p.netGex);
+    expect(netGexByStrike([], 100).size).toBe(0);
   });
 });
