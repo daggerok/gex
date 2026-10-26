@@ -1308,3 +1308,17 @@ describe('fetchTicker applies the expiration rule to default tickers only', () =
     expect((await fetchTicker('ZZZZ'))?.expirations).toEqual(dates.map(iso));
   });
 });
+
+describe('hand-maintained ticker lists', () => {
+  // api/All.txt feeds TICKERS of the weekly full run (no script writes it). Real tickers are plain Yahoo/Cboe symbols such
+  // as SPY, BRK.B, BRK-B or ^VIX; exchange-prefixed TradingView names (NYSE:TTE) are junk: no provider knows them
+  const PLAIN_TICKER = /^[A-Z0-9.^-]+$/;
+  for (const file of ['api/All.txt', 'api/Indices.txt']) {
+    test(`${file}: every line is a plain ticker, none listed twice`, () => {
+      const lines = readFileSync(join(root, file), 'utf8').split('\n').map((l) => l.trim()).filter((l) => l !== '');
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.filter((l) => !PLAIN_TICKER.test(l))).toEqual([]);
+      expect(lines.filter((l, i) => lines.indexOf(l) !== i)).toEqual([]);
+    });
+  }
+});
