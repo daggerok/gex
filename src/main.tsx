@@ -1268,7 +1268,9 @@ const App: React.FC = () => {
         else setShowBackup(false);
     }, []);
     const live = liveLabel({ liveReachable: chain[0] !== 'static', latestDate: bt.latestDate });
-    const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null });
+    // a futures ticker shows its file's own time (the Desk's "as of"), not the trading day the file belongs to
+    const futuresAt = meta && isFuturesTicker(meta.symbol) ? dataAge(meta.updated, meta.dataDate)?.at ?? null : null;
+    const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null, futuresAt });
     const liveText = live.kind === 'today' ? tr('bt.asOfToday') : live.date ? tr('bt.asOfLatest', { date: live.date }) : tr('bt.asOfUnknown');
 
     /**

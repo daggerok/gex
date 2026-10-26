@@ -148,8 +148,13 @@ export function sourceLabel(opts: {
     probing: boolean;
     servedBy: SourceProviderId | null;
     dataDate: string | null;
+    /**
+     * A futures ticker (api/futures, PR #202): the loaded file's own time ("2026-10-25 21:40", New York, the Desk's "as
+     * of"), which replaces the trading day (owner bug: CACHE 2026-10-23 next to "as of 2026-10-25 21:40 ET").
+     */
+    futuresAt?: string | null;
 }): SourceLabel {
-    if (opts.servedBy === 'static') return { kind: 'cache', date: opts.dataDate };
+    if (opts.servedBy === 'static') return { kind: 'cache', date: opts.futuresAt ?? opts.dataDate };
     if (opts.servedBy) return { kind: 'live', provider: opts.servedBy.toUpperCase() };
     if (opts.probing) return { kind: 'checking' };
     return opts.chain[0] === 'static' ? { kind: 'cache', date: null } : { kind: 'live', provider: null };

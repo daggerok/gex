@@ -78,4 +78,10 @@ describe('sourceLabel', () => {
         expect(sourceLabel({ chain: ['static'], probing: false, servedBy: null, dataDate: null })).toEqual({ kind: 'cache', date: null });
         expect(sourceLabel({ chain: ['cboe', 'yahoo', 'nasdaq', 'static'], probing: false, servedBy: null, dataDate: null })).toEqual({ kind: 'live', provider: null });
     });
+    test('a futures file: its own time, not the trading day (owner bug: CACHE 2026-10-23 next to "as of 2026-10-25 21:40")', () => {
+        expect(sourceLabel({ chain: ['static'], probing: false, servedBy: 'static', dataDate: '2026-10-23', futuresAt: '2026-10-25 21:40' })).toEqual({ kind: 'cache', date: '2026-10-25 21:40' });
+        // no time in the file: the trading day as before; an option ticker passes nothing
+        expect(sourceLabel({ chain: ['static'], probing: false, servedBy: 'static', dataDate: '2026-10-23', futuresAt: null })).toEqual({ kind: 'cache', date: '2026-10-23' });
+        expect(sourceLabel({ chain: ['static'], probing: false, servedBy: 'static', dataDate: '2026-10-23' })).toEqual({ kind: 'cache', date: '2026-10-23' });
+    });
 });
