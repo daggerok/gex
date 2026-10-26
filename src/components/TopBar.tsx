@@ -3,7 +3,7 @@ import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Tip } from './Tip';
 import { useI18n, type Language } from '../i18n';
-import { AUTO_LIVE_ORDER, PROXY_POLL_MS, type ProxyDiscovery, SOURCE_OVERRIDES, type SourceLabel, sanitizeSourceOverride } from '../proxy-discovery';
+import { AUTO_LIVE_ORDER, PROXY_POLL_MS, type ProxyDiscovery, SOURCE_OVERRIDES, type SourceLabel, sanitizeSourceOverride, useLocalNetworkDenied } from '../proxy-discovery';
 import { normalizeColorTheme } from '../settings-store';
 import { accentOf } from '../theme';
 import type { DataProvider, Settings, ThemeMode, TickerSuggestion } from '../types';
@@ -78,6 +78,7 @@ export const Pill = ({
                     key={k}
                     type="button"
                     disabled={disabled}
+                    aria-pressed={value === k}
                     onClick={() => onChange(k)}
                     className={`px-2.5 py-1 rounded-md text-sm font-bold leading-none transition-all ${
                         value === k
@@ -235,6 +236,13 @@ export const TopBar: React.FC<{
         ? (proxyAllowed ? t('settings.proxyOff') : t('settings.proxyLocalOnly'))
         : proxy.up === null ? t('settings.proxyChecking') : proxy.up ? t('settings.proxyFound') : t('settings.proxyNotFound');
     const base = settings.proxyBase || '—';
+    // Chrome denied this published page access to the local network: the probe can never answer, say so (owner 2026-10-26)
+    const lnaDenied = useLocalNetworkDenied(!localPage && settings.localProxyOptIn);
+    // One switch on the published site (owner 2026-10-26): "Proxy auto-discovery" ON is the user's consent to contact this
+    // computer, so it turns "Use my local proxy" on too, and that one OFF turns auto-discovery off. Locally the two are apart.
+    const setAutoPoll = (on: boolean) => onChange(!localPage && on ? { proxyAutoPoll: true, localProxyOptIn: true } : { proxyAutoPoll: on });
+    const toggleOptIn = () => onChange(settings.localProxyOptIn ? { localProxyOptIn: false, proxyAutoPoll: false } : { localProxyOptIn: true });
+    const autoTip = t('topBar.autoTip', { sec: String(PROXY_POLL_MS / 1000) });
     const sourceText = !source ? '' : source.kind === 'checking' ? '…' : source.kind === 'live'
         ? (source.delayedMin ? `TV ${source.delayedMin}m delayed${source.at ? ` ${source.at}` : ''}` : `LIVE${source.provider ? ` ${source.provider}` : ''}${source.at ? ` ${source.at}` : ''}`)
         : source.kind === 'tv'
@@ -246,6 +254,7 @@ export const TopBar: React.FC<{
     // nothing said why); empty when the proxy is up and the cache is still the answer (a futures file, live providers failed)
     const cacheWhy = settings.source === 'static' ? t('source.why.alwaysCache')
         : !proxyAllowed ? t('source.why.optIn')
+        : lnaDenied ? t('source.why.lnaDenied')
         : proxy.up === false ? (settings.proxyAutoPoll ? t('source.why.downPoll', { base, sec: String(PROXY_POLL_MS / 1000) }) : t('source.why.downOnce', { base }))
         : '';
     const sourceTip = !source ? '' : source.kind === 'archive' ? t('source.tip.archive', { date: source.date }) : source.kind === 'checking'
@@ -339,6 +348,20 @@ export const TopBar: React.FC<{
                     {/* 5b. "As of" selector (backtest), same for all tabs */}
                     {asOfSlot}
 
+                    {/* 5c. "Auto" = Proxy auto-discovery (owner 2026-10-26), the same setting as the switch in the settings menu.
+                        Below sm only the switch shows, the Tip explains it. */}
+                    <Tip text={autoTip} wrapperClassName="inline-flex flex-shrink-0">
+                        <span
+                            data-topbar-auto={settings.proxyAutoPoll ? 'on' : 'off'}
+                            className={`flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2 py-1.5 text-[11px] font-bold leading-none ${
+                                settings.proxyAutoPoll ? textAccent : mt
+                            } ${dark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}
+                        >
+                            <ChipSwitch checked={settings.proxyAutoPoll} onChange={setAutoPoll} label={t('settings.autoDiscovery')} />
+                            <span className="hidden sm:inline">{t('topBar.auto')}</span>
+                        </span>
+                    </Tip>
+
                     {/* 6. Source label (auto proxy, owner 2026-10-25): LIVE CBOE / LIVE YAHOO / CACHE <data date>. It replaced the
                         CACHE / LIVE switch: the source is found automatically, a manual override is in the advanced settings. */}
                     {source && (
@@ -365,8 +388,9 @@ export const TopBar: React.FC<{
                         </Tip>
                     )}
 
-                    {/* 7. Theme — fundamentals sun/moon text button */}
-                    <Tip text={t('theme.' + (dark ? 'light' : 'dark'))} wrapperClassName="inline-flex flex-shrink-0">
+                    {/* 7. Theme — fundamentals sun/moon text button. Hidden below sm (owner 2026-10-26, with the Auto switch the
+                        ticker field had no room left on a 390px phone); the theme stays at the top of the ⚙️ menu. */}
+                    <Tip text={t('theme.' + (dark ? 'light' : 'dark'))} wrapperClassName="hidden sm:inline-flex flex-shrink-0">
                     <button
                         type="button"
                         onClick={toggleDark}
@@ -467,23 +491,7 @@ export const TopBar: React.FC<{
                                     />
                                 </div>
 
-                                {/* Nested full SettingsPanel for desk columns / cache / proxy fields */}
-                                <div className={`border-t ${bdr} pt-2`}>
-                                    <SettingsPanel
-                                        settings={settings}
-                                        provider={provider}
-                                        onChange={onChange}
-                                        onSetToken={onSetToken}
-                                        onSetSecret={onSetSecret}
-                                        onClearData={onClearData}
-                                        onClearSettings={onClearSettings}
-                                        onClearAll={onClearAll}
-                                        onClose={() => setOpenSettings(false)}
-                                        embedded
-                                    />
-                                </div>
-
-                                {/* Data source, at the bottom of the menu (auto proxy, owner 2026-10-25): no provider menu and no cache / live
+                                {/* Data source, right under theme and language (owner 2026-10-26; auto proxy, owner 2026-10-25): no provider menu and no cache / live
                                     switch, only the auto-discovery with its polling switch; the manual override and the proxy URL are advanced. */}
                                 <div className={`border-t ${bdr} pt-2 space-y-2`} data-data-source>
                                     <div className={`text-[10px] font-bold uppercase tracking-wide ${mt}`}>{t('settings.dataSource')}</div>
@@ -492,7 +500,7 @@ export const TopBar: React.FC<{
                                         <span className={`inline-flex ${settings.proxyAutoPoll ? textAccent : mt}`} data-proxy-autopoll={settings.proxyAutoPoll ? 'on' : 'off'}>
                                             <ChipSwitch
                                                 checked={settings.proxyAutoPoll}
-                                                onChange={(on) => onChange({ proxyAutoPoll: on })}
+                                                onChange={setAutoPoll}
                                                 label={t('settings.autoDiscovery')}
                                             />
                                         </span>
@@ -504,12 +512,17 @@ export const TopBar: React.FC<{
                                     <div className={`text-[10px] ${mt}`}>
                                         {settings.proxyAutoPoll ? t('settings.autoDiscoveryHint.on') : t('settings.autoDiscoveryHint.off')}
                                     </div>
+                                    {lnaDenied && (
+                                        <div className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300" data-lna-denied>
+                                            {t('settings.lnaDenied')}
+                                        </div>
+                                    )}
                                     {/* Published site: the proxy is used only after this one click (persisted), see proxy-discovery.ts */}
                                     {!localPage && (
                                         <div className="space-y-1" data-proxy-optin={settings.localProxyOptIn ? 'on' : 'off'}>
                                             <button
                                                 type="button"
-                                                onClick={() => onChange({ localProxyOptIn: !settings.localProxyOptIn })}
+                                                onClick={toggleOptIn}
                                                 className={`w-full rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
                                                     settings.localProxyOptIn
                                                         ? dark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -556,9 +569,36 @@ export const TopBar: React.FC<{
                                             </label>
                                         </div>
                                     </details>
+                                    {/* the source label of the top bar, read-only, same text and Tip (owner 2026-10-26: the menu holds everything) */}
+                                    {source && (
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className={`text-xs ${t2}`}>{t('settings.sourceStatus')}</span>
+                                            <Tip text={sourceNote ? `${sourceTip}\n${sourceNote}` : sourceTip} multiline={!!sourceNote} wrapperClassName="inline-flex flex-shrink-0">
+                                                <span data-settings-source={source.kind} className={`whitespace-nowrap rounded-lg border px-2 py-1 font-mono text-[11px] font-bold leading-none tabular-nums ${sourceCls}`}>
+                                                    {sourceText}
+                                                </span>
+                                            </Tip>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {asOfMenuSlot}
+
+                                {/* Nested full SettingsPanel for desk columns / cache / proxy fields */}
+                                <div className={`border-t ${bdr} pt-2`}>
+                                    <SettingsPanel
+                                        settings={settings}
+                                        provider={provider}
+                                        onChange={onChange}
+                                        onSetToken={onSetToken}
+                                        onSetSecret={onSetSecret}
+                                        onClearData={onClearData}
+                                        onClearSettings={onClearSettings}
+                                        onClearAll={onClearAll}
+                                        onClose={() => setOpenSettings(false)}
+                                        embedded
+                                    />
+                                </div>
 
                                 {/* Status and debug, the last block of the menu: they used to be a button and two dots in the header.
                                     One dot is enough, both dots always showed the same /health probe. */}

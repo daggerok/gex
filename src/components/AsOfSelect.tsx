@@ -100,8 +100,9 @@ export const AsOfSelect: React.FC<{
 };
 
 /**
- * The same controls for a narrow screen, as a block of the settings menu (the selector in the top bar is hidden below `sm`):
- * a native list of the snapshots and the three actions. Shown only below `sm`.
+ * The same controls as a block of the settings menu, on every screen width (owner 2026-10-26: the menu holds everything the top
+ * bar has; the selector in the top bar is hidden below `sm`):
+ * a native list of the snapshots and the three actions.
  */
 export const AsOfMenuSection: React.FC<{
     entries: HistoryEntry[];
@@ -116,7 +117,7 @@ export const AsOfMenuSection: React.FC<{
     const fileRef = useRef<HTMLInputElement>(null);
     const btn = 'rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800';
     return (
-        <div className="space-y-2 border-t border-slate-200 pt-2 dark:border-slate-700 sm:hidden" data-asof-mobile>
+        <div className="space-y-2 border-t border-slate-200 pt-2 dark:border-slate-700" data-asof-mobile>
             <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('bt.mobileTitle')}</div>
             <select
                 value={activeId ?? ''}

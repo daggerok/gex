@@ -227,7 +227,7 @@ CME publishes, free on its anonymous FTP, the preliminary open interest of every
 ### What auto-discovery does
 
 - The app asks `{proxy URL}/health` (default `http://localhost:8787`, 500 ms timeout). Found -> live data: each options ticker tries **CBOE -> YAHOO -> NASDAQ -> cache**, a futures ticker subscribes to the live stream. Not found -> the cache, never an error
-- **Proxy auto-discovery** (Settings -> Data source, default **off**): off, the proxy is looked for **once when the page loads**, so after you start or stop it, refresh the page. On, it is looked for every 30 s and whenever you come back to the tab, and the data switches between live and cache by itself
+- **Proxy auto-discovery** (the **Auto** switch in the top bar, the same switch as Settings -> Data source, default **off**): off, the proxy is looked for **once when the page loads**, so after you start or stop it, refresh the page. On, it is looked for every 30 s and whenever you come back to the tab, and the data switches between live and cache by itself
 - **Settings -> Data source -> Advanced:** the manual override (**Auto**, **Always cache**, or one provider only) and the **proxy URL**. Always cache never contacts the proxy, also when it runs, and turns the live mode off in the page
 - The **Chart tab** follows the same result: candles through the proxy (`/api/chart`, futures as `ES=F` from Yahoo) when the source is live, otherwise the cached `api/charts/<SYM>.json`
 
@@ -236,8 +236,8 @@ CME publishes, free on its anonymous FTP, the preliminary open interest of every
 The published site (https://daggerok.github.io/gex/) never contacts your computer by itself: Chrome 142+ asks every visitor for permission to access the local network as soon as a site calls `localhost`. To use your proxy (and the live mode) from the published site:
 
 1. Start the proxy (`bun run proxy`)
-2. Open Settings -> Data source -> **Use my local proxy** (once, it is remembered in this browser; **Stop using my local proxy** turns it off)
-3. Allow Chrome's prompt to access devices on your local network
+2. Turn on **Auto** in the top bar (or Settings -> Data source -> **Use my local proxy**). On the published site Auto on is the same consent: it turns Use my local proxy on too, and **Stop using my local proxy** turns Auto off. Remembered in this browser
+3. Allow Chrome's prompt to access devices on your local network. If you blocked it, Settings and the `CACHE` tooltip say "Chrome blocked access to your computer": allow Local network access for the site in the address bar site settings
 
 The proxy answers browsers only for pages served from `localhost` or `127.0.0.1` (any port) and from `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`, any other page gets 403), and answers Chrome's private network preflight only for those. **Safari is not supported** here (it blocks `http://localhost` from an https page): use the local app (`bun run all`)
 
@@ -471,7 +471,7 @@ package.json                  # Bun and Parcel scripts
 ## Troubleshooting
 
 - **Nothing loads on open:** expected on the first visit. Type a ticker and press Enter
-- **The label says CACHE although the proxy runs:** with Proxy auto-discovery off the proxy is looked for only when the page loads, refresh the page (or turn auto-discovery on). Check `curl http://localhost:8787/health`, the proxy URL in Settings -> Advanced, and that the override there is **Auto**. On the published site click **Use my local proxy** first
+- **The label says CACHE although the proxy runs:** with Proxy auto-discovery off the proxy is looked for only when the page loads, refresh the page (or turn auto-discovery on). Check `curl http://localhost:8787/health`, the proxy URL in Settings -> Advanced, and that the override there is **Auto**. On the published site turn on **Auto** (or **Use my local proxy**) first; if Settings says Chrome blocked access, allow Local network access in the address bar site settings
 - **403 "origin not allowed" from the proxy:** the page is not served from `localhost` / `127.0.0.1` or `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`)
 - **`Unexpected token '<'`:** a proxy or server returned HTML instead of JSON. Check the proxy URL in Settings -> Advanced
 - **CACHE says not cached:** the ticker is absent from `api/options/*.json`. Start the local proxy, or run the fetcher for it (`TICKERS=XYZ ./scripts/options-data.ts`)
