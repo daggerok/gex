@@ -9,7 +9,9 @@
  * server-sent events stream per futures root for the app:
  *
  *   GET /api/futures/status          {"engine":true,"state":"live","message":"...","until":null,"since":...,"roots":["ES",...],
- *                                     "subscribed":{"ES":[3200,5560],...}}   options on the websocket / in the window
+ *                                     "subscribed":{"ES":[3200,5560],...},"tokenValidUntil":<epoch ms or null>}
+ *                                    subscribed: options on the websocket / in the window; tokenValidUntil: when the auth
+ *                                    token expires (the time only, never the token; bun run status shows it)
  *   GET /api/futures/focus?root=ES&exps=2026-10-27,2026-10-28
  *                                    the page shows ES with these expirations: they join the websocket first
  *   GET /api/futures/live?root=ES    text/event-stream:
@@ -83,6 +85,8 @@ export function futuresFileResponse(pathname: string, dir: string = FUTURES_DIR)
 /** The parts of the watcher the engine uses (a fake in the tests). */
 export interface WatcherLike {
     readonly status: WatcherStatus;
+    /** when the auth token expires (epoch ms), null before the first one (bun run status shows it) */
+    readonly tokenValidUntil?: number | null;
     runWatch(): Promise<void>;
     stop(): void;
     readyRoots(): string[];
@@ -261,7 +265,7 @@ export class TvLiveEngine {
 
     /** The JSON of GET /api/futures/status. */
     statusJson(): Record<string, unknown> {
-        return { engine: true, ...this.statusNow, roots: this.watcher ? this.watcher.readyRoots() : [] };
+        return { engine: true, ...this.statusNow, roots: this.watcher ? this.watcher.readyRoots() : [], tokenValidUntil: this.watcher?.tokenValidUntil ?? null };
     }
 
     /** GET /api/futures/live?root=ES: status, the snapshot when ready, then the deltas. */

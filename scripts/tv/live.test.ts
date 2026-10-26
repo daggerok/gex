@@ -18,6 +18,7 @@ class FakeWatcher implements WatcherLike {
     quotes = new Map<string, Quote>([['E4A261030C7600', quote('E4A261030C7600', 10)], ['E4A261030P7600', quote('E4A261030P7600', 12)]]);
     ready = false;
     stopped = false;
+    tokenValidUntil: number | null = null;
     constructor(readonly hooks: WatcherHooks, private readonly fail: WatcherStatus | null) {}
     async runWatch(): Promise<void> {
         if (this.fail) {
@@ -26,6 +27,7 @@ class FakeWatcher implements WatcherLike {
             throw new Error(this.fail.message);
         }
         this.ready = true;
+        this.tokenValidUntil = 1_800_000_000_000;
         this.status = { state: 'live', message: 'streaming ES', until: null, since: 1 };
         this.hooks.onStatus?.(this.status);
     }
@@ -138,6 +140,8 @@ describe('live mode: the session is handled by itself', () => {
         expect(imports).toBe(1);
         expect(made).toHaveLength(2);
         expect(engine.status.state).toBe('live');
+        // the token's expiry time is in the status (bun run status), the token itself never
+        expect(engine.statusJson()).toMatchObject({ state: 'live', roots: ['ES'], tokenValidUntil: 1_800_000_000_000 });
     });
 
     test('Chrome holds the same expired session: ONE import (one Keychain dialog at most), then only retries, a clear status', async () => {
@@ -172,7 +176,7 @@ describe('live mode: the session is handled by itself', () => {
         engine.stop();
         expect(imports).toBe(0);
         expect(engine.status.message).toContain('log in to tradingview.com in Chrome');
-        expect(engine.statusJson()).toMatchObject({ engine: true, state: 'no-session', roots: [] });
+        expect(engine.statusJson()).toMatchObject({ engine: true, state: 'no-session', roots: [], tokenValidUntil: null });
     });
 
     test('rate limited at start: waits until the pause ends, no import', async () => {

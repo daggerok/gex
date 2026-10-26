@@ -245,7 +245,7 @@ function git(cwd: string, args: string[], quiet = true): { ok: boolean; out: str
 }
 
 /** The owner's main checkout (the folder holding the shared .git), from any worktree of the repo. */
-function mainCheckout(): string {
+export function mainCheckout(): string {
     const here = join(__dirname, "..");
     const common = git(here, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
     return common.ok ? dirname(common.out) : here;
@@ -320,9 +320,9 @@ export interface RunRecord {
     result: Result;
     why: string;
 }
-type State = Partial<Record<Job, RunRecord>>;
+export type State = Partial<Record<Job, RunRecord>>;
 
-function readState(p: Paths): State {
+export function readState(p: Paths): State {
     try {
         return JSON.parse(readFileSync(p.state, "utf8")) as State;
     } catch {
@@ -741,6 +741,7 @@ export const HELP = `gex local data runner (scripts/data-local.ts)
   bun run data:resume             load the schedule again
   bun run data:uninstall          remove the schedule
   bun run data:help               this list
+  bun run status                  the whole local stack on one screen (app, proxy, TradingView, pm2, this runner)
 
   advanced: bun scripts/data-local.ts install [--no-load] | unlock | runner | migrate   (setup does all four)
 `;

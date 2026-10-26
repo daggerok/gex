@@ -277,6 +277,11 @@ export class FuturesWatcher {
         return this.statusNow;
     }
 
+    /** When the current auth token expires (epoch ms), null before the first one. Only the time, never the token. */
+    get tokenValidUntil(): number | null {
+        return this.token && this.tokenExpiresAt ? this.tokenExpiresAt : null;
+    }
+
     private setStatus(state: WatcherState, message: string, until: number | null = null, progress?: string, subscribed?: Record<string, [number, number]>): void {
         const s = this.statusNow;
         if (s.state === state && s.message === message && s.until === until && s.progress === progress && JSON.stringify(s.subscribed) === JSON.stringify(subscribed)) return;
