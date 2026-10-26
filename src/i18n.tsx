@@ -192,6 +192,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'desk.marks.label': 'Scroll marks: the ATM, peak and runner-up rows of each expiration',
         'desk.marks.collapsed': 'collapsed',
         'desk.help.label': 'What the desk shows',
+        'desk.levelsDisabled': 'Levels are not shown on the Desk: switch them on the Board, GEX or Chart tab',
+        'desk.help.toolbar': 'The Metrics and Levels row above is the same as on the Board, GEX and Chart tabs, with the same choices. On the Desk the Metrics chips choose which Board columns give the peaks and runner-ups of the scroll marks (see below); the Levels panel is greyed out because levels are not shown on the Desk, its choices still apply on the other tabs.',
         'desk.help.marks': 'The narrow strip right of the scrollbar is a map of the desk with only what matters, top to bottom over the rows on screen. Each expiration bar is a grey tick (a collapsed expiration is only that tick). In an expanded expiration only two kinds of rows get a mark: its ATM strike in the Spot colour, and the strikes the Board would mark if it showed only that expiration (the peaks and runner-ups of the Board columns of the chosen metrics: Net GEX, notional delta, OI, volume and the others) in the positive or negative colour of their Net GEX (the call and put of that expiration at that strike). Hover a mark to see its expiration, strike and what it marks (marks closer than 3 px share one tooltip), click it to bring that row to the middle of the desk (a bar: to the top of its expiration).',
 
         'spot.label': 'Spot',
@@ -692,6 +694,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'desk.marks.label': 'Метки прокрутки: строки ATM, пиков и вторых мест каждой экспирации',
         'desk.marks.collapsed': 'свёрнута',
         'desk.help.label': 'Что показывает Деск',
+        'desk.levelsDisabled': 'Уровни не показываются на Деске: включайте их на вкладках Доска, GEX или График',
+        'desk.help.toolbar': 'Строка «Метрики» и «Уровни» выше та же, что на вкладках Доска, GEX и График, с тем же выбором. На Деске кнопки «Метрики» выбирают, какие столбцы Доски дают пики и вторые места меток прокрутки (см. ниже); панель «Уровни» серая, потому что уровни на Деске не показываются, а её выбор по-прежнему действует на других вкладках.',
         'desk.help.marks': 'Узкая полоса справа от полосы прокрутки: карта Деска только с главным, сверху вниз по строкам на экране. Плашка каждой экспирации: серая метка (у свёрнутой экспирации только она). В развёрнутой экспирации метку получают только строки двух видов: её страйк ATM цветом Спота и страйки, которые отметила бы Доска, если бы показывала только эту экспирацию (пики и вторые места столбцов Доски для выбранных метрик: Нетто GEX, номинальная дельта, OI, объём и другие), положительным или отрицательным цветом их Нетто GEX (колл и пут этой экспирации на этом страйке). Наведите на метку, чтобы увидеть экспирацию, страйк и что он отмечает (метки ближе 3 px делят одну подсказку), щёлкните, чтобы прокрутить эту строку в середину Деска (плашку: к началу её экспирации).',
 
         'spot.label': 'Спот',

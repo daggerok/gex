@@ -1753,7 +1753,7 @@ const App: React.FC = () => {
                     wraps to its own line below the tab pills (see
                     ExpirationChips.tsx's doc comment for the measured root cause). ---- */
                 endSlot={meta ? (
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 lg:flex-nowrap">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 lg:flex-nowrap" data-exp-panel>
                         <DataAgeBadge age={asOf ? null : metaAge} />
                         <ExpirationChips
                             expirations={meta.expirations}
@@ -1816,6 +1816,10 @@ const App: React.FC = () => {
                     sections={sections}
                     hasRows={hasRows}
                     metrics={gexMetrics}
+                    setMetrics={changeGexMetrics}
+                    levels={gex.levels}
+                    levelsSymbol={meta?.symbol ?? ''}
+                    active={activeTab === 'desk'}
                 />
             </div>
             {/* `grow` + flex-col (2026-10-07): the wrapper takes the leftover height so
