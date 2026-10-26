@@ -1,8 +1,9 @@
 /// <reference lib="esnext" />
 // ============================================================================
-// EDGE SCROLL (owner 2026-10-26, the shared Expirations panel): a horizontal row of chips with no scrollbar, clipped with
-// a fade on each side that has more chips, and < / > buttons that bring the previous / next hidden chip into view. View
-// geometry only (no GEX math): pure, so the rules are unit tested; components/ExpirationChips.tsx measures and scrolls.
+// EDGE SCROLL (owner 2026-10-26, the shared Expirations panel, then the Levels panel): a horizontal row of chips with no
+// scrollbar, clipped with a fade on each side that has more chips, and < / > buttons that bring the previous / next hidden
+// chip into view. View geometry only (no GEX math): pure, so the rules are unit tested; components/EdgeScrollRow.tsx
+// measures and scrolls.
 // ============================================================================
 
 /** Which sides of a horizontal scroller have more content: a fade and a button show on those sides. */
