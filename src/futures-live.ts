@@ -4,6 +4,7 @@ import { normalizeProxyBase } from './proxy-discovery';
 import { chainFromCacheFile, futuresFile } from './providers/cache';
 import { getBulk, putBulk, withoutExpired } from './providers/loader';
 import type { ChainMeta, ChainResult, OptionQuote } from './types';
+import { cmeOiLag, oiByProduct, type CmeLag } from './oi-dates';
 import { type LiveGreeksCache, liveFuturesGreeks, liveFuturesSpot, liveGreeksCrossCheck } from './vix-pricing';
 
 // ============================================================================
@@ -153,7 +154,17 @@ export class LiveChainState {
     }
 }
 
+/** CME's preliminary open interest per product and side against the live chain (scripts/tv/cme-oi.ts, oi-dates.ts). */
+export interface CmeCheck {
+    /** the trading day of CME's file */
+    day: string;
+    rows: CmeLag[];
+    total: CmeLag | null;
+}
+
 export interface TvLive {
+    /** futures only: the CME cross-check of the open interest, null without the proxy's file */
+    cme?: CmeCheck | null;
     /** the engine's state (null before the stream answered: no live stream known) */
     status: TvLiveStatus | null;
     /** the stream delivered a snapshot: the app shows live data */
@@ -197,6 +208,14 @@ export function useTvLive(base: string, symbol: string | null, onChain: (chain: 
             const d = read(ev as MessageEvent) as { root?: string; rows?: LiveGreekRow[] } | null;
             if (d?.root === root && Array.isArray(d.rows)) state.applyGreeks(d.rows);
         });
+        // futures: CME's daily totals once per subscription (the proxy downloads the file when it is missing)
+        let cme: { day: string | null; products: Record<string, number> } | null = null;
+        if (kind === 'futures') {
+            fetch(`${normalizeProxyBase(base)}/api/futures/cme-oi`, { cache: 'no-store' })
+                .then((r) => (r.ok ? r.json() : null))
+                .then((j: { day?: string | null; products?: Record<string, number> } | null) => { if (j?.day && j.products) cme = { day: j.day, products: j.products }; })
+                .catch(() => { /* an older proxy: no cross-check */ });
+        }
         let timer = 0;
         const step = () => {
             let wait = LIVE_APPLY_MS;
@@ -204,7 +223,9 @@ export function useTvLive(base: string, symbol: string | null, onChain: (chain: 
                 const t0 = performance.now();
                 const chain = state.toChain(symbol, kind);
                 if (chain) {
-                    setLive((l) => ({ ...l, streaming: true, updated: state.updated }));
+                    const c = cme;
+                    const check = c && c.day ? { day: c.day, ...cmeOiLag(oiByProduct(chain.quotes), c.products) } : null;
+                    setLive((l) => ({ ...l, streaming: true, updated: state.updated, cme: check }));
                     handler.current(chain);
                 }
                 // the cost of the previous update up to its commit (main.tsx measures 'futures-live-reload'), plus this build

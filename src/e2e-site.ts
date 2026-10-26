@@ -191,6 +191,9 @@ export function startFakeProxy(): FakeProxy {
             if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
             if (url.pathname === '/health') return new Response(up ? 'ok' : 'down', { status: up ? 200 : 503, headers: cors });
             if (!up) return new Response('down', { status: 503, headers: cors });
+            // CME's product totals of the open interest cross-check (scripts/tv/cme-oi.ts): SPY's file under the YM name has
+            // symbols like SPY261030C00500000, so the fake product is SPY
+            if (url.pathname === '/api/futures/cme-oi') return new Response(JSON.stringify({ day: '2026-10-22', file: 'daily_volume_20261022.xlsx', products: { 'SPY|call': 1e9, 'SPY|put': 1e9 } }), { headers: { ...cors, 'Content-Type': 'application/json' } });
             if (url.pathname === '/api/futures/live' || url.pathname === '/api/tv/live') {
                 srv.timeout(req, 0);
                 let self: ReadableStreamDefaultController<Uint8Array> | null = null;

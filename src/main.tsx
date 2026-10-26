@@ -834,7 +834,6 @@ import { isLoopbackHost, sourceChain, sourceLabel, type SourceProviderId, usePro
 import { loadDefaultTickers } from './providers/cache';
 import { loadExpiration, loadMeta } from './providers/loader';
 import { applyLiveChain, nyTime, useTvLive } from './futures-live';
-import { staleOiSummary } from './oi-dates';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
 import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
@@ -1605,11 +1604,18 @@ const App: React.FC = () => {
     const spotIsEstimated = meta != null && meta.underlyingPrice == null && spot != null;
     // Age of the loaded cache data (GEX-H4): null for live providers, which carry no `updated`
     const metaAge = useMemo(() => dataAge(meta?.updated, meta?.dataDate), [meta]);
-    // TradingView OI older than the chain's newest day (owner decision G10): counted in the source tooltip
+    // the CME open interest cross-check (scripts/tv/cme-oi.ts) as a second line of the source tooltip
     const oiNote = useMemo(() => {
-        const s = staleOiSummary(Object.values(expData).flat());
-        return s ? tr('source.oiStale', { latest: s.latest, share: `${(s.share * 100).toFixed(1)}%`, contracts: s.contracts.toLocaleString('en-US') }) : '';
-    }, [expData, tr]);
+        const lines: string[] = [];
+        // CME's preliminary product totals against the live chain (scripts/tv/cme-oi.ts): the four largest products and all
+        const cme = liveFuturesSymbol ? tvLive.cme : null;
+        if (cme?.total) {
+            const pct = (x: number) => `${Math.round(x * 100)}%`;
+            const top = cme.rows.slice(0, 4).map((r) => tr('source.cmeOiRow', { product: r.product, side: r.side, share: pct(1 - r.lag) })).join(', ');
+            lines.push(tr('source.cmeOi', { day: cme.day, share: pct(1 - cme.total.lag), products: top }));
+        }
+        return lines.join('\n');
+    }, [tr, liveFuturesSymbol, tvLive.cme]);
 
     // ---- GEX tab (Phase 3): reuses chain data already held, never fetches ----
     // Bulk providers (CACHE/CBOE/NASDAQ) offer every expiration of the bulk cache, lazy YAHOO what Desk loaded into

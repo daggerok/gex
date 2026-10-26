@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     const file = JSON.parse(readFileSync(join(ROOT, 'api', 'options', 'SPY.json'), 'utf8')) as { symbol: string; updated: string; quotes: Q[]; expirations: string[] };
     file.symbol = 'YM';
     file.updated = '2026-10-25T21:40:00-04:00';
-    // TradingView OI days (owner decision G10): every third quote carries an older one -> its Desk OI cell is pale
+    // TradingView OI days: every third quote carries an older one -> its Desk OI cell names the day in a tooltip (G10)
     file.quotes.forEach((q, i) => { (q as Q & { oiDate: string }).oiDate = i % 3 === 0 ? '2026-10-15' : '2026-10-23'; });
     const site = await startTestSite({ futures: { YM: JSON.stringify(file) } });
     const proxy = startFakeProxy();
@@ -38,8 +38,8 @@ async function main(): Promise<void> {
             .catch(async () => assert.fail(`${what}: the label is "${await label.textContent()}", expected ${re}`));
         await waitLabel(/^CACHE 2026-10-25 21:40$/, 'before the stream: the file\'s own time');
         await page.waitForFunction(() => document.querySelectorAll('.od-atm').length > 0, null, { timeout: 10000 });
-        const pale = await page.evaluate(() => document.querySelectorAll('[data-oi-stale]').length);
-        assert.ok(pale > 0, 'OI cells older than the newest OI day are marked pale on the Desk');
+        const since = await page.evaluate(() => document.querySelectorAll('[data-oi-since]').length);
+        assert.ok(since > 0, 'OI cells dated before the newest OI day carry their date (tooltip) on the Desk');
         for (let i = 0; i < 50 && proxy.liveClients() === 0; i++) await page.waitForTimeout(100);
         assert.equal(proxy.liveClients(), 1, 'the app subscribed to the live stream of the proxy');
 
@@ -63,6 +63,8 @@ async function main(): Promise<void> {
             .map((q) => [q.symbol, q.bid! * 2, q.ask! * 2, q.last, q.volume, (q.openInterest ?? 0) * 3]);
         proxy.sendLive('delta', { root: 'YM', updated: '2026-10-26T14:05:07.000Z', rows });
         await waitLabel(/^LIVE TV 10:05:07$/, 'after the delta: its New York time');
+        await page.waitForFunction(() => /^CME open interest of 2026-10-22/.test(document.querySelector('[data-source-label]')?.getAttribute('data-source-note') ?? ''), null, { timeout: 5000 })
+            .catch(async () => assert.fail(`the source tooltip has the CME cross-check line: "${await page.locator('[data-source-label]').getAttribute('data-source-note')}"`));
         await page.waitForFunction(() => /as of \d{4}-\d{2}-\d{2} 10:05:07 ET · LIVE TV/.test(document.body.textContent ?? ''), null, { timeout: 5000 })
             .catch(() => assert.fail('the Desk header says LIVE TV with the time of the last update, like the top label'));
         await page.waitForFunction((before) => document.querySelector('.od-atm')?.textContent !== before, atmBefore, { timeout: 8000 })

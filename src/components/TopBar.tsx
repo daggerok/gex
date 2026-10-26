@@ -335,6 +335,7 @@ export const TopBar: React.FC<{
                         <Tip text={sourceNote ? `${sourceTip}\n${sourceNote}` : sourceTip} multiline={!!sourceNote} wrapperClassName="inline-flex flex-shrink-0">
                             <span
                                 data-source-label={source.kind}
+                                data-source-note={sourceNote || undefined}
                                 className={`flex-shrink-0 whitespace-nowrap rounded-lg border px-2 py-1.5 font-mono text-[11px] font-bold leading-none tabular-nums ${sourceCls}`}
                             >
                                 {sourceText}
