@@ -73,6 +73,12 @@ describe('sourceLabel', () => {
         expect(sourceLabel({ chain: ['cboe', 'yahoo', 'nasdaq', 'static'], probing: false, servedBy: 'yahoo', dataDate: null })).toEqual({ kind: 'live', provider: 'YAHOO' });
         expect(sourceLabel({ chain: ['cboe', 'yahoo', 'nasdaq', 'static'], probing: false, servedBy: 'static', dataDate: '2026-10-23' })).toEqual({ kind: 'cache', date: '2026-10-23' });
     });
+    test('an open "As of" day is ARCHIVE <day>, whatever served the ticker or streams', () => {
+        const tvLive = { streaming: true, at: '10:00:00', status: null };
+        expect(sourceLabel({ chain: ['cboe', 'yahoo', 'nasdaq', 'static'], probing: false, servedBy: 'static', dataDate: '2026-10-23', futuresAt: '2026-10-25 21:40', tvLive, archive: '2026-10-23' })).toEqual({ kind: 'archive', date: '2026-10-23' });
+        expect(sourceLabel({ chain: ['static'], probing: true, servedBy: null, dataDate: null, archive: '2026-10-23 16:00' })).toEqual({ kind: 'archive', date: '2026-10-23 16:00' });
+        expect(sourceLabel({ chain: ['static'], probing: false, servedBy: 'static', dataDate: '2026-10-23', archive: null })).toEqual({ kind: 'cache', date: '2026-10-23' });
+    });
     test('before a ticker is loaded: what the next load uses, or checking during the first probe', () => {
         expect(sourceLabel({ chain: ['static'], probing: true, servedBy: null, dataDate: null })).toEqual({ kind: 'checking' });
         expect(sourceLabel({ chain: ['static'], probing: false, servedBy: null, dataDate: null })).toEqual({ kind: 'cache', date: null });

@@ -1318,7 +1318,7 @@ const App: React.FC = () => {
     // a futures ticker shows its file's own time (the Desk's "as of"), not the trading day the file belongs to
     const futuresAt = meta && isFuturesTicker(meta.symbol) ? dataAge(meta.updated, meta.dataDate)?.at ?? null : null;
     const tvLiveLabel = liveSymbol ? { streaming: tvLive.streaming, at: nyTime(tvLive.updated), status: tvLive.status, hybrid: liveKind === 'hybrid' } : null;
-    const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null, futuresAt, tvLive: tvLiveLabel });
+    const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null, futuresAt, tvLive: tvLiveLabel, archive: asOf?.label ?? null });
     const liveText = live.kind === 'today' ? tr('bt.asOfToday') : live.date ? tr('bt.asOfLatest', { date: live.date }) : tr('bt.asOfUnknown');
 
     /**
@@ -1755,7 +1755,9 @@ const App: React.FC = () => {
                 proxyAllowed={proxyAllowed}
                 localPage={localPage}
                 live={chain[0] !== 'static'}
-                source={asOf ? null : source}
+                // an open "As of" day says ARCHIVE <day> here (live is off on purpose); a click on it goes back, like the banner
+                source={source}
+                onLeaveArchive={() => { void btc.select(null); }}
                 sourceStale={!asOf && servedBy === 'static' && !!metaAge?.stale}
                 sourceNote={oiNote}
             />

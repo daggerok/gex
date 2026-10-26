@@ -3,7 +3,7 @@ import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Tip } from './Tip';
 import { useI18n, type Language } from '../i18n';
-import { AUTO_LIVE_ORDER, type ProxyDiscovery, SOURCE_OVERRIDES, type SourceLabel, sanitizeSourceOverride } from '../proxy-discovery';
+import { AUTO_LIVE_ORDER, PROXY_POLL_MS, type ProxyDiscovery, SOURCE_OVERRIDES, type SourceLabel, sanitizeSourceOverride } from '../proxy-discovery';
 import { normalizeColorTheme } from '../settings-store';
 import { accentOf } from '../theme';
 import type { DataProvider, Settings, ThemeMode, TickerSuggestion } from '../types';
@@ -130,8 +130,10 @@ export const TopBar: React.FC<{
     localPage: boolean;
     /** The data source is live (proxy found or a live provider fixed), else the cache. */
     live: boolean;
-    /** Source label next to the ticker; null in a backtest (the As of selector shows the day). */
+    /** Source label next to the ticker (ARCHIVE <day> while an "As of" day is open). */
     source: SourceLabel | null;
+    /** Leaves the open "As of" day (the archive label is a button then), the same as the backtest banner's button. */
+    onLeaveArchive?: () => void;
     /** The cached data shown is of an earlier trading day. */
     sourceStale: boolean;
     /** A second line for the source tooltip (the count of TradingView OI older than the newest day), '' for none. */
@@ -145,7 +147,7 @@ export const TopBar: React.FC<{
     tickerInput, tickerHint, onTickerInput, onSearch, searching,
     tickerSuggestions, tickerSuggestionsOpen, tickerSuggestionsLoading, activeTickerSuggestion,
     onTickerFocus, onTickerBlur, onTickerKeyDown, onChooseSuggestion, setActiveTickerSuggestion, setTickerSuggestionsOpen,
-    proxy, proxyAllowed, localPage, live, source, sourceStale, sourceNote = '', asOfSlot, asOfMenuSlot,
+    proxy, proxyAllowed, localPage, live, source, onLeaveArchive, sourceStale, sourceNote = '', asOfSlot, asOfMenuSlot,
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
     const { t, lang, setLang } = useI18n();
@@ -237,15 +239,23 @@ export const TopBar: React.FC<{
         ? (source.delayedMin ? `TV ${source.delayedMin}m delayed${source.at ? ` ${source.at}` : ''}` : `LIVE${source.provider ? ` ${source.provider}` : ''}${source.at ? ` ${source.at}` : ''}`)
         : source.kind === 'tv'
             ? (source.state === 'starting' ? `TV starting…${source.progress ? ` ${source.progress}` : ''}` : `TV ${TV_STATE_SHORT[source.state] ?? source.state.toUpperCase()}`)
-            : `CACHE${source.date ? ` ${source.date}` : ''}`;
-    const sourceTip = !source ? '' : source.kind === 'checking'
+            : source.kind === 'archive'
+                ? `${t('source.archive')} ${source.date}`
+                : `CACHE${source.date ? ` ${source.date}` : ''}`;
+    // why the cache is shown and not live data (owner 2026-10-26: CACHE on the published site with the proxy running and
+    // nothing said why); empty when the proxy is up and the cache is still the answer (a futures file, live providers failed)
+    const cacheWhy = settings.source === 'static' ? t('source.why.alwaysCache')
+        : !proxyAllowed ? t('source.why.optIn')
+        : proxy.up === false ? (settings.proxyAutoPoll ? t('source.why.downPoll', { base, sec: String(PROXY_POLL_MS / 1000) }) : t('source.why.downOnce', { base }))
+        : '';
+    const sourceTip = !source ? '' : source.kind === 'archive' ? t('source.tip.archive', { date: source.date }) : source.kind === 'checking'
         ? t('source.tip.checking', { base })
         : source.kind === 'live'
             ? (source.delayedMin ? t('source.tip.hybridTv', { at: source.at ?? '', base, min: String(source.delayedMin) }) : source.provider === 'TV' ? t('source.tip.liveTv', { at: source.at ?? '', base }) : source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
             : source.kind === 'tv'
                 ? t(source.state === 'starting' ? 'source.tip.tvStarting' : source.state === 'rate-limited' ? 'source.tip.tvPaused' : source.state === 'reconnecting' ? 'source.tip.tvReconnecting' : source.state === 'expired' || source.state === 'no-session' ? 'source.tip.tvLogin' : 'source.tip.tvError', { message: source.message, date: source.date ?? '', until: source.until ? new Date(source.until).toLocaleTimeString() : '' })
-            : (source.date ? t('source.tip.cache', { date: source.date }) : t('source.tip.cacheNext'));
-    const sourceCls = sourceStale || source?.kind === 'tv'
+            : [source.date ? t('source.tip.cache', { date: source.date }) : t('source.tip.cacheNext'), cacheWhy].filter(Boolean).join('. ');
+    const sourceCls = sourceStale || source?.kind === 'tv' || source?.kind === 'archive'
         ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
         : source?.kind === 'live'
             ? (dark ? `border-slate-600 bg-slate-800 ${textAccent}` : `border-slate-200 bg-slate-50 ${textAccent}`)
@@ -333,13 +343,25 @@ export const TopBar: React.FC<{
                         CACHE / LIVE switch: the source is found automatically, a manual override is in the advanced settings. */}
                     {source && (
                         <Tip text={sourceNote ? `${sourceTip}\n${sourceNote}` : sourceTip} multiline={!!sourceNote} wrapperClassName="inline-flex flex-shrink-0">
-                            <span
-                                data-source-label={source.kind}
-                                data-source-note={sourceNote || undefined}
-                                className={`flex-shrink-0 whitespace-nowrap rounded-lg border px-2 py-1.5 font-mono text-[11px] font-bold leading-none tabular-nums ${sourceCls}`}
-                            >
-                                {sourceText}
-                            </span>
+                            {source.kind === 'archive' && onLeaveArchive ? (
+                                <button
+                                    type="button"
+                                    onClick={onLeaveArchive}
+                                    aria-label={sourceTip}
+                                    data-source-label={source.kind}
+                                    className={`flex-shrink-0 whitespace-nowrap rounded-lg border px-2 py-1.5 font-mono text-[11px] font-bold leading-none tabular-nums hover:brightness-95 ${sourceCls}`}
+                                >
+                                    {sourceText}
+                                </button>
+                            ) : (
+                                <span
+                                    data-source-label={source.kind}
+                                    data-source-note={sourceNote || undefined}
+                                    className={`flex-shrink-0 whitespace-nowrap rounded-lg border px-2 py-1.5 font-mono text-[11px] font-bold leading-none tabular-nums ${sourceCls}`}
+                                >
+                                    {sourceText}
+                                </span>
+                            )}
                         </Tip>
                     )}
 
