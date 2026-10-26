@@ -10,7 +10,6 @@ import {
   netGexPlusMinusMinDistance,
   computeGexLevels,
   computeGexProfile,
-  netGexByStrike,
   computeMaxPain,
   computeOiVolumeTotals,
   computePCRatio,
@@ -28,6 +27,7 @@ import {
   findGammaFlipHypotheticalSpot,
   gammaFlipSweepCrossings,
   computeBoard,
+  boardPeakMarks,
   BOARD_COLUMNS,
   expirationOiShares,
   ivCoverageNearSpot,
@@ -1268,27 +1268,46 @@ describe('expirationOiShares', () => {
   });
 });
 
-describe('netGexByStrike (Desk scroll marks: one expiration, one strike)', () => {
-  test('call GEX + put GEX of the strike, by hand, keyed by strike', () => {
-    // spot 100, gamma 0.01: gexCall = 0.01 * OI * 100 * 100^2 * 0.01 = 100 * OI
-    const quotes = [q('2026-01-16', 'call', 95, 30, 0.01), q('2026-01-16', 'put', 95, 50, 0.01), q('2026-01-16', 'call', 100, 20, 0.01)];
-    const net = netGexByStrike(quotes, 100);
-    expect(Array.from(net.keys())).toEqual([95, 100]);
-    expect(net.get(95)).toBeCloseTo(100 * 30 - 100 * 50, 6);
-    expect(net.get(100)).toBeCloseTo(2000, 6);
+describe('boardPeakMarks (Desk scroll marks: the peaks and runner-ups of one expiration)', () => {
+  // spot 100, gamma 0.01: gexCall = 0.01 * OI * 100 * 100^2 * 0.01 = 100 * OI, gexPut = -100 * OI
+  const e = '2026-01-16';
+  const quotes = [
+    q(e, 'call', 90, 5, 0.01), q(e, 'put', 90, 40, 0.01), // net -3500 (min, peak)
+    q(e, 'call', 95, 10, 0.01), q(e, 'put', 95, 30, 0.01), // net -2000 (runner-up)
+    q(e, 'call', 100, 50, 0.01), // net +5000 (max, peak), total OI 50 (peak)
+    q(e, 'call', 105, 30, 0.01), q(e, 'put', 105, 15, 0.01), // net +1500 (runner-up), total OI 45 (runner-up)
+    q(e, 'call', 110, 1, 0.01), // net +100, nothing
+  ];
+
+  test('net GEX: max positive and min negative are peaks, the next ones runner-ups; unmarked strikes are absent', () => {
+    const marks = boardPeakMarks(quotes, 100, ['netGex']);
+    expect(Array.from(marks.keys())).toEqual([90, 95, 100, 105]);
+    expect(marks.get(90)).toEqual({ netGex: -3500, peaks: ['netGex'], seconds: [] });
+    expect(marks.get(95)).toEqual({ netGex: -2000, peaks: [], seconds: ['netGex'] });
+    expect(marks.get(100)!.peaks).toEqual(['netGex']);
+    expect(marks.get(105)!.seconds).toEqual(['netGex']);
+    expect(marks.has(110)).toBe(false);
   });
 
-  test('a strike whose quotes all lack gamma is absent (not 0); one side without gamma counts only the other', () => {
-    const quotes = [q('2026-01-16', 'call', 90, 10, null), q('2026-01-16', 'put', 90, 10, null), q('2026-01-16', 'call', 95, 10, 0.01), q('2026-01-16', 'put', 95, 40, null)];
-    const net = netGexByStrike(quotes, 100);
-    expect(net.has(90)).toBe(false);
-    expect(net.get(95)).toBeCloseTo(1000, 6);
+  test('only the given columns count, each listed on its strike', () => {
+    const marks = boardPeakMarks(quotes, 100, ['totalOi']);
+    expect(Array.from(marks.keys())).toEqual([90, 100]); // total OI: 90 -> 45, 95 -> 40, 100 -> 50, 105 -> 45 (tie to the lowest)
+    expect(marks.get(100)).toEqual({ netGex: 5000, peaks: ['totalOi'], seconds: [] });
+    expect(marks.get(90)!.seconds).toEqual(['totalOi']);
+    const both = boardPeakMarks(quotes, 100, ['netGex', 'totalOi']);
+    expect(both.get(100)!.peaks).toEqual(['netGex', 'totalOi']);
+    expect(both.get(90)).toEqual({ netGex: -3500, peaks: ['netGex'], seconds: ['totalOi'] });
+    expect(boardPeakMarks(quotes, 100, []).size).toBe(0);
   });
 
-  test('the same numbers as computeGexProfile', () => {
-    const quotes = [q('2026-01-16', 'call', 100, 7, 0.02), q('2026-01-16', 'put', 100, 9, 0.03), q('2026-01-16', 'put', 105, 4, 0.01)];
-    const net = netGexByStrike(quotes, 250);
-    for (const p of computeGexProfile(quotes, 250)) expect(net.get(p.strike)).toBe(p.netGex);
-    expect(netGexByStrike([], 100).size).toBe(0);
+  test('the same peaks and runner-ups as computeBoard, a peak is never also the runner-up of its column', () => {
+    const board = computeBoard(quotes, 100);
+    const marks = boardPeakMarks(quotes, 100, ['netGex', 'absGex', 'callOi']);
+    for (const c of ['netGex', 'absGex', 'callOi'] as const) {
+      for (const s of board.peaks[c]) expect(marks.get(s)!.peaks).toContain(c);
+      for (const s of board.seconds[c]) if (!board.peaks[c].includes(s)) expect(marks.get(s)!.seconds).toContain(c);
+    }
+    for (const m of Array.from(marks.values())) for (const c of m.peaks) expect(m.seconds).not.toContain(c);
+    expect(boardPeakMarks([], 100, ['netGex']).size).toBe(0);
   });
 });

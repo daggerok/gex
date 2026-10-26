@@ -58,6 +58,9 @@ const ALL_COLUMNS: Record<string, BoardColumnDef> = {
     absGexShare: { key: 'absGexShare', label: 'board.col.absGexShare', format: (r) => `${(r.absGexShare * 100).toFixed(2)}%`, peak: 'absGexShare' },
 };
 
+/** The i18n label key of each Board column with a peak (the Desk's scroll marks name the columns the same way). */
+export const BOARD_COLUMN_LABEL_KEY = Object.fromEntries(BOARD_COLUMNS.map((c) => [c, ALL_COLUMNS[c].label])) as Readonly<Record<string, string>>;
+
 /**
  * The Board columns for the chosen metrics (owner, 2026-10-25: the Metrics chips show or hide their columns): Net GEX ->
  * NET GEX, or CALL GEX and PUT GEX in the Abs GEX view (`split`), AG -> ABS GEX, Call / Put OI and volume -> their columns,
