@@ -777,7 +777,7 @@
  * COMPANION INFRASTRUCTURE (optional; outside the app source):
  *   - scripts/options-data.ts           Yahoo + Cboe -> api/options/*.json, index.json, api/charts/*.json
  *   - .github/workflows/update-data.yml, update-partial-data.yml   schedule the fetch
- *   - scripts/options-local-proxy.ts    local Bun proxy (Yahoo/NASDAQ/CBOE/chart/search), `bun run all:proxy`
+ *   - scripts/options-local-proxy.ts    local Bun proxy (Yahoo/NASDAQ/CBOE/chart/search), `bun run proxy`
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
  *   - Four providers (CACHE, CBOE, NASDAQ, YAHOO), no provider menu: the

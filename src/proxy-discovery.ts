@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export const PROXY_PROBE_TIMEOUT_MS = 500;
 /** Interval of the periodic probe while "Proxy auto-discovery" is ON. */
 export const PROXY_POLL_MS = 30_000;
-/** Default proxy base: the local Bun proxy (`bun run all:proxy`). */
+/** Default proxy base: the local Bun proxy (`bun run proxy`). */
 export const DEFAULT_PROXY_BASE = 'http://localhost:8787';
 
 /** The live providers in the order Auto tries them for a ticker; the cache comes after them. */

@@ -410,7 +410,7 @@ export const DEFAULT_SETTINGS: Settings = {
     theme: 'system',
     colorTheme: DEFAULT_COLOR_THEME,
     proxyTemplate: PROXY_PRESETS[0].template,
-    proxyBase: DEFAULT_PROXY_BASE,    // local Bun proxy (`bun run all:proxy`)
+    proxyBase: DEFAULT_PROXY_BASE,    // local Bun proxy (`bun run proxy`)
     tokens: {},
     secrets: {},
     deskColumns: {
