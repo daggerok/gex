@@ -1,0 +1,12 @@
+~m~98~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:ESZ2026","s":"ok","v":{"metrics_loaded":false}}]}
+~m~117~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:ESZ2026","s":"ok","v":{"minute_loaded":true,"lp_time":1792789140}}]}
+~m~145~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:ESZ2026","s":"ok","v":{"trade_loaded":true,"ask_size":1,"bid_size":7,"bid":7672,"ask":7672.5}}]}
+~m~105~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:E4A261026C7630","s":"ok","v":{"metrics_loaded":false}}]}
+~m~172~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:E4A261026C7630","s":"ok","v":{"oi_loaded":true,"oi":{"time":1792636820,"value":23},"oid":{"time":1792627200,"value":23}}}]}
+~m~149~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:E4A261026C7630","s":"ok","v":{"trade_loaded":true,"ask_size":3,"bid_size":3,"bid":56,"ask":57.25}}]}
+~m~209~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:E4A261026C7630","s":"ok","v":{"short_description":"E-mini S&P 500 26 Oct 2026 Call 7630","lp":56,"update_mode":"streaming","lp_time":1792789193,"volume":123}}]}
+~m~189~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:ESZ2026","s":"ok","v":{"short_description":"E-mini S&P 500 Futures (Dec 2026)","lp":7659.75,"update_mode":"streaming","volume":1744157.0}}]}
+~m~106~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:E4A261026C7630","s":"ok","v":{"fundamental_data":true}}]}
+~m~73~m~{"m":"quote_completed","p":["qs_FiSRu1mVD6DS","CME_MINI:E4A261026C7630"]}
+~m~100~m~{"m":"qsd","p":["qs_FiSRu1mVD6DS",{"n":"CME_MINI:ESZ2026","s":"ok","v":{"fundamental_data":false}}]}
+~m~66~m~{"m":"quote_completed","p":["qs_FiSRu1mVD6DS","CME_MINI:ESZ2026"]}

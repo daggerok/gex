@@ -431,3 +431,89 @@ export function enrichFuturesPricedQuotes(quotes: OptionQuote[], riskFree: numbe
     });
     return changed ? out : quotes;
 }
+
+// ---------------------------------------------------------------------------
+// Live futures options (TradingView live mode, PR #202, owner 2026-10-26)
+// ---------------------------------------------------------------------------
+// The TradingView quote websocket streams bid, ask, last, volume and open interest of ES / NQ / YM / RTY options but no
+// IV and no greeks (probed 2026-10-25: 143 quote fields, none of them a greek). The app therefore prices every option
+// itself from its streamed mid with Black-76 (Black 1976, the standard model for options on futures) on its expiration's
+// own put-call parity forward, the same per-expiration forward VIX uses above; TradingView's scanner greeks (read every
+// minute) stay as the fallback for an option without a two-sided quote and as the cross-check
+// (liveGreeksCrossCheck). Quarterly ES / NQ options are American; Black-76 is the usual European approximation for
+// them (early exercise of a futures option is rarely optimal), which is our choice, not a TradingView rule.
+// No `forward` field is set on the quotes: gex.ts keeps them in the Gamma Flip sweep with the parity forward as the
+// spot (the cache file convention, finding 5.1 of the futures spike).
+
+/** Solved IVs, keyed by symbol | mid | forward | minute: a quote whose inputs did not change is not solved again. */
+export type LiveGreeksCache = Map<string, { sigma: number | null }>;
+
+/**
+ * Greeks of live futures options from their mids (see the section comment). Quotes without a two-sided quote, or whose
+ * mid does not solve, keep what they carry (TradingView's scanner greeks). Returns new quote objects only where the
+ * greeks changed; `cache` (optional) remembers solved IVs between calls.
+ */
+export function liveFuturesGreeks(quotes: OptionQuote[], cache?: LiveGreeksCache, riskFree: number = BS_RISK_FREE_RATE): OptionQuote[] {
+    if (!quotes.length) return quotes;
+    const groups = new Map<string, OptionQuote[]>();
+    for (const q of quotes) {
+        const arr = groups.get(q.expiration);
+        if (arr) arr.push(q); else groups.set(q.expiration, [q]);
+    }
+    const forwards = new Map<string, number | null>();
+    groups.forEach((g, exp) => forwards.set(exp, resolveExpirationForward(g, exp, riskFree)));
+    const minute = Math.floor(Date.now() / 60_000);
+    return quotes.map((q) => {
+        const forward = forwards.get(q.expiration) ?? null;
+        const bid = num(q.bid);
+        const ask = num(q.ask);
+        if (forward == null || bid == null || ask == null || !(bid > 0) || !(ask >= bid)) return q;
+        const t = yearsToExpiration(q.expiration);
+        if (t == null || !(t > 0)) return q;
+        const mid = (bid + ask) / 2;
+        const key = `${q.symbol}|${mid}|${forward.toFixed(2)}|${minute}`;
+        let hit = cache?.get(key);
+        if (!hit) {
+            hit = { sigma: impliedVolBlack76(q.side, mid, forward, q.strike, t, riskFree) };
+            cache?.set(key, hit);
+        }
+        if (hit.sigma == null) return q;
+        const { greeks } = black76Greeks(q, forward, hit.sigma, riskFree);
+        if (!greeks) return q;
+        return {
+            ...q, iv: hit.sigma, delta: greeks.delta, gamma: greeks.gamma, theta: greeks.theta, vega: greeks.vega, rho: greeks.rho,
+            lambda: undefined, vanna: undefined, vomma: undefined, charm: undefined, speed: undefined, zomma: undefined, color: undefined,
+            greeksSource: 'black-76', greeksMissingReason: null,
+        };
+    });
+}
+
+/**
+ * The spot of a live futures chain: the parity forward of the nearest expiration that resolves (the rule the
+ * tv:futures files use for `underlyingPrice`, scripts/tv/chain.ts buildPayload), null when none does.
+ */
+export function liveFuturesSpot(quotes: OptionQuote[], riskFree: number = BS_RISK_FREE_RATE): number | null {
+    const exps = Array.from(new Set(quotes.map((q) => q.expiration))).sort();
+    for (const e of exps) {
+        const f = impliedForward(quotes, e, riskFree);
+        if (f != null && Number.isFinite(f) && f > 0) return Math.round(f * 100) / 100;
+    }
+    return null;
+}
+
+/**
+ * Cross-check of the app's own gamma against TradingView's scanner gamma (`tvGamma` by symbol): the median of
+ * |ours / theirs - 1| over the options both have near the money (|delta| 0.2-0.8), null when fewer than 5 compare.
+ */
+export function liveGreeksCrossCheck(quotes: readonly OptionQuote[], tvGamma: ReadonlyMap<string, number>): number | null {
+    const diffs: number[] = [];
+    for (const q of quotes) {
+        const theirs = tvGamma.get(q.symbol);
+        const d = num(q.delta);
+        if (q.greeksSource !== 'black-76' || theirs == null || !(theirs > 0) || q.gamma == null || d == null || Math.abs(d) < 0.2 || Math.abs(d) > 0.8) continue;
+        diffs.push(Math.abs(q.gamma / theirs - 1));
+    }
+    if (diffs.length < 5) return null;
+    diffs.sort((a, b) => a - b);
+    return diffs[Math.floor(diffs.length / 2)];
+}

@@ -829,10 +829,11 @@ import { setValuationTime, withoutExpiredQuotes } from './greeks';
 import { DEFAULT_LANGUAGE, I18nProvider, useI18n } from './i18n';
 import { asOfDayOf, makeAsOfProvider, valuationTimeOf } from './providers/asof';
 import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
-import { ctxFor, providerById, suggestTickers } from './providers';
+import { ctxFor, isFuturesTicker, providerById, suggestTickers } from './providers';
 import { isLoopbackHost, sourceChain, sourceLabel, type SourceProviderId, useProxyDiscovery } from './proxy-discovery';
 import { loadDefaultTickers } from './providers/cache';
 import { loadExpiration, loadMeta } from './providers/loader';
+import { applyLiveChain, nyTime, useTvLive } from './futures-live';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
 import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
@@ -1115,8 +1116,9 @@ const App: React.FC = () => {
         setExpData({});
         setChainSymbol('');
         // the providers to try: the backtest's own, or the source chain (per ticker CBOE -> YAHOO -> NASDAQ -> CACHE when
-        // the proxy is up); the first one that knows the ticker serves it, the error shown is the first provider's
-        const tries = asOf ? [provider] : chain.map(providerById);
+        // the proxy is up); the first one that knows the ticker serves it, the error shown is the first provider's. A futures
+        // ticker (/ES, ES1!) is read only from its api/futures file through CACHE, whatever the source (owner 2026-10-25)
+        const tries = asOf ? [provider] : isFuturesTicker(sym) ? [providerById('static')] : chain.map(providerById);
         let firstError: unknown = null;
         let errorProvider = tries[0];
         try {
@@ -1168,6 +1170,44 @@ const App: React.FC = () => {
         }
     }, [provider, asOf, chain, settings, patchSettings, tr, lang]);
     reloadOnSourceChange.current = (symbol: string) => { void getDates(symbol); };
+
+    // ---- TradingView live mode (src/futures-live.ts, README "Local proxy and TradingView live mode"): a loaded futures
+    // ticker with the proxy found (on the published site after "Use my local proxy") follows the proxy's live stream. Each
+    // new chain (at most once a second) goes into the CACHE provider's memory and becomes the meta, so the selected
+    // expirations load from it in place: tabs, selection and scroll stay, levels follow. Not in a backtest or "Always cache".
+    const liveFuturesSymbol = !asOf && meta && servedBy === 'static' && proxyAllowed && proxy.up === true && settings.source !== 'static' && isFuturesTicker(meta.symbol) ? meta.symbol : null;
+    // bumped at most once a minute while live: the Chart tab fetches its candles again (through the proxy)
+    const [chartRefresh, setChartRefresh] = useState(0);
+    const chartRefreshAt = useRef(0);
+    // set by a live update until its chain is committed (loadChain measures 'futures-live-reload' then)
+    const liveReloadPending = useRef(false);
+    const liveApplying = useRef(false);
+    const tvLive = useTvLive(settings.proxyBase, liveFuturesSymbol, (chain) => {
+        if (liveApplying.current || metaAbort.current || loadedSymbolRef.current !== chain.symbol) return; // the next one comes in a second
+        liveApplying.current = true;
+        performance.mark('futures-live-start');
+        void (async () => {
+            try {
+                const m = await applyLiveChain(chain, settings.vixFuturesPricing);
+                if (metaAbort.current || loadedSymbolRef.current !== m.symbol || !m.expirations.length) return;
+                const picked = pickExpirations(selectedExpsRef.current, m.expirations);
+                if (picked.join(',') !== selectedExpsRef.current.join(',')) {
+                    setSelectedExps(picked);
+                    patchSettings({ selectedExps: picked });
+                }
+                liveReloadPending.current = true;
+                setMeta(m);
+                if (Date.now() - chartRefreshAt.current >= 60_000) {
+                    chartRefreshAt.current = Date.now();
+                    setChartRefresh((n) => n + 1);
+                }
+            } catch (e: unknown) {
+                dbg('TradingView live update failed (the shown data stays)', String(e));
+            } finally {
+                liveApplying.current = false;
+            }
+        })();
+    });
 
     // Entering, changing or leaving a backtest reloads a ticker from the new source. Opening a snapshot picks the ticker: the
     // only one of a single-ticker backup; with two or more, the stored last ticker when the snapshot has it, else the first one
@@ -1267,7 +1307,10 @@ const App: React.FC = () => {
         else setShowBackup(false);
     }, []);
     const live = liveLabel({ liveReachable: chain[0] !== 'static', latestDate: bt.latestDate });
-    const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null });
+    // a futures ticker shows its file's own time (the Desk's "as of"), not the trading day the file belongs to
+    const futuresAt = meta && isFuturesTicker(meta.symbol) ? dataAge(meta.updated, meta.dataDate)?.at ?? null : null;
+    const tvLiveLabel = liveFuturesSymbol ? { streaming: tvLive.streaming, at: nyTime(tvLive.updated), status: tvLive.status } : null;
+    const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null, futuresAt, tvLive: tvLiveLabel });
     const liveText = live.kind === 'today' ? tr('bt.asOfToday') : live.date ? tr('bt.asOfLatest', { date: live.date }) : tr('bt.asOfUnknown');
 
     /**
@@ -1348,6 +1391,17 @@ const App: React.FC = () => {
             }
             setExpData(collected);
             setChainSymbol(meta.symbol);
+            if (liveReloadPending.current) {
+                liveReloadPending.current = false;
+                // after the commit of the new chain (the levels are computed in that render)
+                window.setTimeout(() => {
+                    try {
+                        const m = performance.measure('futures-live-reload', 'futures-live-start');
+                        dbg('TradingView live update', { ms: Math.round(m.duration) });
+                    } catch { /* no start mark */ }
+                    performance.clearMarks('futures-live-start');
+                }, 0);
+            }
             const total = Object.values(collected).reduce((n, q) => n + q.length, 0);
             if (total === 0) setNotice(tr('notice.noContracts'));
             dbg('loadChain ok', { expirations: ordered.length, total });
@@ -1899,6 +1953,7 @@ const App: React.FC = () => {
                         strikes={chartStrikes}
                         asOfDate={asOf ? asOfDayOf(asOf.id) : null}
                         liveCandles={chain[0] !== 'static'}
+                        refreshKey={chartRefresh}
                     />
                 </Suspense>
                 </div>

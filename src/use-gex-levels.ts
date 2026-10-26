@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
 import { useMemo } from 'react';
-import { computeBoard, computeGexLevels, expirationOiShares, type Board } from './gex';
+import { computeBoard, computeGexLevels, contractMultiplier, expirationOiShares, type Board } from './gex';
 import { isFuturesPricedSymbol } from './greeks';
 import type { GexLevels, OptionQuote } from './types';
 import { estimateSpot } from './utils';
@@ -128,8 +128,8 @@ export function useGexLevels(
     // each, memoized here like the levels so the view only renders. A futures-priced quote uses its own forward there.
     const board = useMemo(() => {
         const ref = isFuturesPriced ? referenceForward ?? spot : spot;
-        return quotes.length && ref != null ? computeBoard(quotes, ref) : null;
-    }, [quotes, spot, isFuturesPriced, referenceForward]);
+        return quotes.length && ref != null ? computeBoard(quotes, ref, contractMultiplier(symbol)) : null;
+    }, [quotes, spot, symbol, isFuturesPriced, referenceForward]);
     const oiShares = useMemo(() => expirationOiShares(quotesByExp), [quotesByExp]);
 
     return { quotes, spot, spotIsEstimated, levels, isFuturesPriced, board, oiShares };

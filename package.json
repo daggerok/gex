@@ -30,7 +30,10 @@
     "data:pause": "bun scripts/data-local.ts pause",
     "data:resume": "bun scripts/data-local.ts resume",
     "data:uninstall": "bun scripts/data-local.ts uninstall",
-    "data:help": "bun scripts/data-local.ts help"
+    "data:help": "bun scripts/data-local.ts help",
+    "tv:session": "bun scripts/tv/session.ts",
+    "tv:check": "bun scripts/tv/check.ts",
+    "tv:futures": "bun scripts/tv/futures.ts"
   },
   "keywords": [
     "npm-run-all",

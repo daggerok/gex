@@ -6,6 +6,7 @@ import { yahooChartSymbol } from './chart';
 import { CBOE_INDEX_SYMBOLS, cboeProvider } from './cboe';
 import { nasdaqProvider } from './nasdaq';
 import { yahooProvider } from './yahoo';
+import { providerForSymbol, PROVIDERS } from './index';
 
 const NEW_INDICES = ['XSP', 'NDX', 'DJX', 'RUT'];
 const ctx = { proxyTemplate: '{url}', proxyBase: 'http://localhost:8787', token: '' } as ProviderContext;
@@ -50,5 +51,19 @@ describe('index symbol routing', () => {
   test('OEX stays CBOE-only (no caret on Yahoo, no NASDAQ index error)', () => {
     expect(yahooChartSymbol('OEX')).toBe('OEX');
     expect(CBOE_INDEX_SYMBOLS.has('OEX')).toBe(true);
+  });
+});
+
+describe('futures tickers route to the CACHE provider (futures PR, owner 2026-10-25)', () => {
+  test('/ES, ES1! and the micros read the local file through CACHE whatever is selected', () => {
+    for (const selected of PROVIDERS) {
+      for (const sym of ['/ES', 'ES1!', '/nq', 'MES1!', ' /RTY ', '/M2K']) expect(providerForSymbol(selected, sym).id).toBe('static');
+    }
+  });
+
+  test('every other ticker keeps the selected provider (ES is the Eversource stock)', () => {
+    for (const selected of PROVIDERS) {
+      for (const sym of ['ES', 'SPY', 'SPX', '/ZZ', 'ZZ1!', '', null, undefined]) expect(providerForSymbol(selected, sym)).toBe(selected);
+    }
   });
 });
