@@ -3,6 +3,7 @@
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
 import { noProxy, startTestSite } from './e2e-site';
+import { BOARD_PEAK_DOT } from './gex-colors';
 
 // ============================================================================
 // Browser check of the Board tab (src/views/BoardView.tsx): it opens with the ATM row (strike nearest to spot) in the
@@ -11,7 +12,8 @@ import { noProxy, startTestSite } from './e2e-site';
 // same ATM tint (both themes); Net GEX has one or two peak dots, every other column
 // at most one; the page never scrolls (desktop and phone), only the table does; switching to the Board with every
 // expiration selected stays fast; a runner-up cell has exactly a peak row's tint and never stacks a second background on a
-// tinted row. Run: `bun run test:e2e`.
+// tinted row; every peak and runner-up dot is the theme's blue token (gex-colors.ts BOARD_PEAK_DOT, not a sign colour).
+// Run: `bun run test:e2e`.
 // ============================================================================
 
 /** Where the ATM row sits in the visible part of the table below its header: 0 = top, 1 = bottom, null = no row. */
@@ -169,6 +171,13 @@ async function main(): Promise<void> {
                     assert.notEqual(s.bg, TRANSPARENT, `${at}: runner-up ${s.k} on an untinted row is tinted`);
                 }
             }
+            // ---- the dots: peaks and runner-ups alike, the theme's blue (owner 2026-10-25), whatever the value's sign ----
+            const want = BOARD_PEAK_DOT[scheme];
+            const rgbWant = `rgb(${parseInt(want.slice(1, 3), 16)}, ${parseInt(want.slice(3, 5), 16)}, ${parseInt(want.slice(5, 7), 16)})`;
+            await page.waitForFunction((d: boolean) => document.documentElement.classList.contains('dark') === d, scheme === 'dark');
+            const dots = await page.locator('[data-board-dot]').evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
+            assert.ok(dots.length >= peaks.length && dots.length > 0, `${at}: a dot on every peak and runner-up (${dots.length})`);
+            assert.deepEqual(Array.from(new Set(dots)), [rgbWant], `${at}: every Board dot is the ${scheme} token ${want}`);
             console.log(`board e2e ${at}: ${seconds.length} runner-ups, ${seconds.filter((s) => s.rowTinted).length} on tinted rows, ${compared} compared with a peak row tint`);
 
             // ---- only the table scrolls, the footer stays in view ----

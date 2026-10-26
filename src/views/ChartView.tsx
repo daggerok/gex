@@ -258,7 +258,7 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
     }, [hasSymbol]);
 
     // ---- Candles in the sign colours (owner, 2026-10-25): bull = Net GEX (+), bear = Net GEX (-), body, border and wick.
-    // The same token as the GEX bars and the Board dots, so a custom colour and a reset of the Metrics panel reach them too.
+    // The same token as the GEX bars and the Board row tints, so a custom colour and a reset of the Metrics panel reach them too.
     const signColors = useMetricColors();
     useEffect(() => {
         const series = seriesRef.current;

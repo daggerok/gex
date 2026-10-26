@@ -69,6 +69,18 @@ export const AG_DOT_HOVER_RING: Readonly<Record<'light' | 'dark', string>> = {
 /** Stroke width of the AG rings, in px (owner: ~1.5-2 px, readable in both themes). */
 export const AG_DOT_STROKE_WIDTH = 1.75;
 
+/**
+ * The Board's peak and runner-up dots (owner 2026-10-25, replaces the sign-coloured dots): one blue for every column and for
+ * peaks and runner-ups alike, so the dot reads as "a top value" and never competes with the Net GEX sign colours of the row
+ * and cell tints. Light blue on the dark table, a darker blue on the white one. Contrast of the dot against what it sits on
+ * (WCAG 1.4.11 asks 3:1 for graphics): light sky-600 4.10 on white, 3.40 on the green peak tint, 3.28 on the red one, 3.47
+ * on the ATM tint; dark sky-300 10.71 on slate-900, 8.77 green tint, 9.36 red tint, 5.91 ATM tint.
+ */
+export const BOARD_PEAK_DOT: Readonly<Record<'light' | 'dark', string>> = {
+    light: '#0284c7', // sky-600
+    dark: '#7dd3fc', // sky-300
+};
+
 /** Lines the user adds to the Chart tab with a right click (not a GEX level, so it has no GexLevelKey). */
 export const CUSTOM_LEVEL_COLOR: GexLevelColor = { hex: '#38bdf8', dot: 'bg-sky-400' }; // sky-400
 
