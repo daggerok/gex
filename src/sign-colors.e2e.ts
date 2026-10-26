@@ -3,17 +3,21 @@
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
 import { noProxy, startTestSite } from './e2e-site';
+import { BOARD_PEAK_DOT } from './gex-colors';
 
 // ============================================================================
 // Browser check of the ONE source of truth for the sign colours (owner, 2026-10-25): a custom Net GEX (+) colour set in the
-// Metrics panel reaches the GEX bars, the Chart tab candles and the Board peak dots, and the Metrics panel's Reset brings
-// the default green and red back to all of them (nothing keeps a stale colour). Run: `bun run test:e2e`.
+// Metrics panel reaches the GEX bars and the Chart tab candles, and the Metrics panel's Reset brings the default green and
+// red back to all of them (nothing keeps a stale colour). The Board peak dots are NOT sign colours (owner 2026-10-25): they
+// keep the theme's blue (gex-colors.ts BOARD_PEAK_DOT) through a custom colour and a reset. Run: `bun run test:e2e`.
 // ============================================================================
 
 const CUSTOM = '#38bdf8';
 const GREEN = '#089981';
 const RED = '#f23645';
 const rgb = (hex: string) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
+/** The page runs in the light theme (no colour scheme set): every Board dot is the light token. */
+const DOTS = [rgb(BOARD_PEAK_DOT.light)];
 
 async function tab(page: Page, name: string): Promise<void> {
     await page.getByRole('button', { name, exact: true }).first().click();
@@ -54,7 +58,7 @@ async function main(): Promise<void> {
         assert.ok(before.bars.includes(GREEN), `default: green bars (${before.bars.join(', ')})`);
         assert.equal(before.candleUp, GREEN, 'default: green bull candles');
         assert.equal(before.candleDown, RED, 'default: red bear candles');
-        assert.ok(before.dots.includes(rgb(GREEN)), `default: green Board dots (${before.dots.join(', ')})`);
+        assert.deepEqual(before.dots, DOTS, 'default: the Board dots are the light blue token');
         assert.deepEqual(before.vars, [GREEN, RED], 'default: the CSS variables');
 
         // a custom positive colour, set where the user sets it: the Net GEX (+) swatch of the Metrics panel
@@ -65,7 +69,7 @@ async function main(): Promise<void> {
         assert.ok(custom.bars.includes(CUSTOM) && !custom.bars.includes(GREEN), `custom: the bars (${custom.bars.join(', ')})`);
         assert.equal(custom.candleUp, CUSTOM, 'custom: the bull candles');
         assert.equal(custom.candleDown, RED, 'custom: the bear candles keep red');
-        assert.ok(custom.dots.includes(rgb(CUSTOM)) && !custom.dots.includes(rgb(GREEN)), `custom: the Board dots (${custom.dots.join(', ')})`);
+        assert.deepEqual(custom.dots, DOTS, 'custom: the Board dots keep the blue token');
         assert.deepEqual(custom.vars, [CUSTOM, RED], 'custom: the CSS variables');
 
         // Reset of the Metrics panel: green and red everywhere again
@@ -75,7 +79,7 @@ async function main(): Promise<void> {
         const reset = await colorsInUse(page);
         assert.ok(reset.bars.includes(GREEN) && !reset.bars.includes(CUSTOM), `reset: the bars (${reset.bars.join(', ')})`);
         assert.equal(reset.candleUp, GREEN, 'reset: the bull candles');
-        assert.ok(reset.dots.includes(rgb(GREEN)) && !reset.dots.includes(rgb(CUSTOM)), `reset: the Board dots (${reset.dots.join(', ')})`);
+        assert.deepEqual(reset.dots, DOTS, 'reset: the Board dots keep the blue token');
         assert.deepEqual(reset.vars, [GREEN, RED], 'reset: the CSS variables');
         assert.deepEqual(errors, [], 'no page errors');
         console.log('sign colours e2e: ok');
