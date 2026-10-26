@@ -10,6 +10,10 @@ import {
   enrichFuturesPricedQuotes,
   impliedForward,
   impliedVolBlack76,
+  liveFuturesGreeks,
+  liveFuturesSpot,
+  liveGreeksCrossCheck,
+  type LiveGreeksCache,
 } from './vix-pricing';
 
 // ---------------------------------------------------------------------------
@@ -477,5 +481,59 @@ describe('enrichFuturesPricedQuotes', () => {
     const input: OptionQuote[] = [];
     const out = enrichFuturesPricedQuotes(input, R);
     expect(out).toBe(input);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live futures options (TradingView live mode): greeks from the streamed mids
+// ---------------------------------------------------------------------------
+describe('liveFuturesGreeks / liveFuturesSpot / liveGreeksCrossCheck', () => {
+  const F = 100;
+  const exp = expInDays(29);
+  /** a two-sided quote priced by Black-76 at sigma 0.2 on F, spread 0.02, with TradingView's own greeks attached (built
+   *  inside the tests: T needs the frozen clock of beforeAll) */
+  const priced = (side: 'call' | 'put', strike: number): OptionQuote => {
+    const p = black76Price(side, F, strike, yearsToExpiration(exp)!, 0.2);
+    return q({ side, strike, expiration: exp, bid: p - 0.01, ask: p + 0.01, iv: 0.5, delta: 0.1, gamma: 0.9, theta: -1, vega: 1, greeksSource: null });
+  };
+  let chain: OptionQuote[] = [];
+  beforeAll(() => { chain = [95, 98, 100, 102, 105].flatMap((k) => [priced('call', k), priced('put', k)]); });
+
+  test('every two-sided quote gets Black-76 greeks of its mid on the parity forward (sigma 0.2 recovered)', () => {
+    const out = liveFuturesGreeks(chain);
+    for (const o of out) {
+      expect(o.greeksSource).toBe('black-76');
+      expect(o.iv!).toBeCloseTo(0.2, 4);
+      const ref = black76Greeks(o, F, 0.2).greeks!;
+      expect(o.gamma!).toBeCloseTo(ref.gamma, 6);
+      expect(o.delta!).toBeCloseTo(ref.delta, 4);
+      expect(o.forward).toBeUndefined(); // stays in the Gamma Flip sweep
+    }
+    expect(liveFuturesSpot(chain)).toBeCloseTo(F, 1);
+  });
+
+  test('no two-sided quote: TradingView greeks kept, nothing invented', () => {
+    const oneSided = { ...priced('call', 110), bid: null };
+    const out = liveFuturesGreeks([...chain, oneSided]);
+    expect(out[out.length - 1]).toBe(oneSided);
+    expect(liveFuturesGreeks([])).toEqual([]);
+  });
+
+  test('the cache solves an unchanged quote once', () => {
+    const cache: LiveGreeksCache = new Map();
+    liveFuturesGreeks(chain, cache);
+    const size = cache.size;
+    expect(size).toBe(chain.length);
+    liveFuturesGreeks(chain, cache);
+    expect(cache.size).toBe(size);
+  });
+
+  test('cross-check: median |ours / TradingView - 1| near the money, null with too few', () => {
+    const out = liveFuturesGreeks(chain);
+    const theirs = new Map(out.map((o) => [o.symbol, o.gamma! * 1.1]));
+    const atm = out.filter((o) => Math.abs(o.delta!) >= 0.2 && Math.abs(o.delta!) <= 0.8);
+    expect(atm.length).toBeGreaterThanOrEqual(5);
+    expect(liveGreeksCrossCheck(out, theirs)!).toBeCloseTo(1 - 1 / 1.1, 6);
+    expect(liveGreeksCrossCheck(out.slice(0, 2), theirs)).toBeNull();
   });
 });
