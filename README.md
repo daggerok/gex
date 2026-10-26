@@ -10,8 +10,8 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 
 - [What you get](#what-you-get)
 - [Quick start](#quick-start)
+- [Documentation](#documentation)
 - [How to use](#how-to-use)
-- [Tabs: Desk, Board, GEX, Chart](#tabs-desk-board-gex-chart)
 - [Data sources](#data-sources)
 - [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)
 - [Ticker suggestions](#ticker-suggestions)
@@ -19,6 +19,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 - [Updating the data](#updating-the-data)
 - [Deploy to GitHub Pages](#deploy-to-github-pages)
 - [Companion infrastructure](#companion-infrastructure)
+- [Automations](#automations)
 - [Development](#development)
 - [Project structure](#project-structure)
 - [Privacy and keys](#privacy-and-keys)
@@ -36,7 +37,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 - **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Zero GEX, Max Pain, Spot, Max AG, the strike with the largest absolute gamma, while the AG metric is on, and Sigma, off until you turn it on) computed once and drawn on both tabs, plus your own custom levels. Zero GEX is the owner's own rule (from the Max Net GEX strike walking down to the Min Net GEX strike, or from Min Net GEX walking up to Max Net GEX when the total is negative; each step into the other sign is a candidate zone, with several the one with the highest average absolute gamma of its two strikes wins; the line is the zone's strike of the other sign), a switch in its chip draws it as a line or as the band between the two strikes. Sigma marks the strikes nearest to spot +/- 1, 2, 3 %, or with the switch in its chip +/- 1, 2, 3 statistical sigma (spot x ATM IV x sqrt(days / 365) of the nearest selected expiration); grey dotted lines, on the Chart tab from the next day to the right edge
 - **Themes:** light and dark (sun / moon button in the header) and two colour palettes in Settings
 - **Internationalization:** English and Russian UI with a language switcher in the header and in Settings
-- **Local browser state:** data source settings, theme, language, proxy URL, last ticker and expirations, active tab, desk columns, metric and level choices and colours, custom levels and the query cache are stored only in the browser (`localStorage` and IndexedDB)
+- **Local browser state:** data source settings, theme, language, proxy URL, last ticker and expirations, active tab, desk columns, metric choices, metric and level colours, the chip switches, custom levels, chart zoom and the query cache are stored only in the browser (`localStorage` and IndexedDB), see [Configuration](docs/configuration.md#what-the-browser-remembers)
 
 ## Quick start
 
@@ -83,35 +84,25 @@ GitHub Pages build, with the correct `/gex/` public URL:
 bun run build-github-pages
 ```
 
+## Documentation
+
+| Page | What is in it |
+|---|---|
+| [docs/usage.md](docs/usage.md) | the three ways to run it (published site, local with the proxy, your own cache), typical tasks, every tab and panel, custom levels, the As of backtest, full screen and touch |
+| [docs/levels.md](docs/levels.md) | how every number is computed: time to expiration, greeks, the GEX formula and dealer convention, every level (sourced or our own rule), the Gamma Flip IV repair and coverage gate, Board columns, expiration selection |
+| [docs/configuration.md](docs/configuration.md) | the data source rules, the Settings panel, every `localStorage` key and IndexedDB store with its default, environment variables, workflow settings, ports |
+| [docs/automations.md](docs/automations.md) | every GitHub Actions workflow (schedule, steps, what it commits or deploys, duration, what to do when it fails), the data fetcher and all its variables, the archive, data sizes, local run commands, tests |
+
 ## How to use
 
 1. Type a ticker or company name, pick a suggestion if useful, press Enter (or the search button): the expirations and the spot load, the nearest expiration is selected
-2. Select more expirations in the Expirations panel next to the tabs (or **All**, **Reset** goes back to the nearest one): each loads by itself
-3. Switch between the Desk, Board, GEX and Chart tabs, they all use the same selection
+2. Select more expirations in the Expirations panel next to the tabs (**All** selects every one and then reads **None**, **Reset** goes back to the nearest one): each loads by itself
+3. Switch between the **Desk** (the chain), **Board** (one row per strike), **GEX** (gamma exposure by strike with the levels) and **Chart** (daily candles with the same levels) tabs, they all use the same selection
+4. Add your own levels with a right click (two-finger click on a trackpad) on the GEX or Chart plot
 
-The source label next to the ticker shows where the data came from (`LIVE CBOE`, `CACHE 2026-10-23`, amber when the cached day is old). The data source is chosen automatically, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)
+Four ways to run it: the published site (cache), local with the proxy (live), local with your own cache, and local with your TradingView account for the futures `/ES`, `/NQ`, `/YM`, `/RTY` (needs the local proxy and a TradingView session imported from Chrome, full guide in the TradingView section of [PR #202](https://github.com/daggerok/gex/pull/202), being finished), see [docs/usage.md](docs/usage.md#four-ways-to-use-it)
 
-## Tabs: Desk, Board, GEX, Chart
-
-- **Desk:** the options chain described above
-- **Board:** one row per strike of the selected expirations: Net GEX, Abs GEX, notional delta (the dealer delta exposure in $, this app's own definition), total, call and put OI and volume, P/C ratios and each strike's share of the Abs GEX. A dot marks each column's peak (Net GEX: its largest positive and most negative strike) in the positive or negative colour by the value's sign and tints the row by its Net GEX sign, the runner-up of a column gets the same dot and a tinted cell; the ATM row has the Spot colour and opens in the middle of the table. A narrow strip of scroll marks right of the scrollbar maps the whole table (one tick per strike in its Net GEX colour, ATM, levels, peaks and runner-ups on top; hover for the strike, click to bring that row to the middle). The same Metrics and Levels panels as on the GEX tab choose the columns and mark the levels on their strikes. The Expirations panel shows each expiration's share of the open interest
-- **GEX:** gamma exposure by strike (the switch in the Net GEX chip shows "Abs GEX" instead: call GEX up and put GEX down at every strike; the AG line has a hollow ring in its colour at every strike) with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis (remembered for each ticker, the last 200 tickers, also after a reload)
-- **Chart:** daily candles (1 year loaded, the 1M / 3M / 6M / 1Y buttons next to the symbol in the top left corner of the chart only change the visible part; above the chart the same Metrics and Levels panels as on the GEX tab, in the same place) with the same GEX levels as price lines. It follows the data source: candles through the local proxy when it is found, otherwise the cached `api/charts/<SYM>.json` (no request to the proxy)
-
-### Custom levels
-
-You can add your own named levels on the **Chart** tab and on the **GEX** tab. They are stored per symbol in `localStorage` and show on both tabs as labelled lines on the charts and as chips of the Levels panel. They are not rows of the Levels and Values tables (on purpose, to keep those tables simple)
-
-- **How to click:** a right click with the mouse. On a MacBook trackpad it is a **two-finger click** (or a two-finger tap when tapping is on in System Settings), the browser sends the same event as for a right click. **Ctrl+click** works on macOS too. Not over the plot (on an axis, outside the chart), the browser's own menu opens as usual
-- **Add:** click where you want the level. The level goes on the **nearest strike**, never between two (on the GEX tab it is the strike under the pointer, on the Chart tab the strike nearest to the clicked price). A field opens at the pointer with the default name already selected: `Buyside` when the level is above the current price, `Sellside` when below it (`Buyside 2`, `Buyside 3`... when taken, each side counted apart), `Level 1`, `Level 2`... only when it is exactly at the price. Enter or the check button saves. Esc, the crossed-out pencil button or a click away cancels and creates nothing
-- **Edit:** click the same strike again (Chart tab: right click on the line). The same editor opens with its name, with save, cancel and a delete (X) button
-- **Move (Chart tab):** drag a custom line with the left mouse button, it follows the strikes and the new price is saved on drop
-- **Colour:** one small square left of the name. A level above the current price starts green, one below it red, one at it or with no price known a neutral colour, the shade picked at random among those the other levels do not use. Click the square to choose another (ready colours or any colour of your own), the editor stays otherwise minimal. The square on the level's chip in the Levels panel changes it later
-- **Show or hide:** the same **Levels panel** (the row of chips above the chart) is on the GEX tab and on the Chart tab and shares its choices: click a chip to show or hide that level (yours come first, then the built-in levels from the lowest price to the highest), click the square on it to change its colour. The Expirations panel next to the tabs is also on all three tabs
-- **Remove:** the delete button in the editor
-- The editor buttons sit in a row above the field, right-aligned on Windows and Linux, left-aligned on macOS and iOS
-- The "?" buttons of both tabs explain this too (in the corners of the GEX chart, next to the ticker on the Chart tab)
-- Custom levels are plain prices on a strike, they take no part in the GEX math
+The source label next to the ticker shows where the data came from (`LIVE CBOE`, `CACHE 2026-10-23`, amber when the cached day is old). The data source is chosen automatically, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery). Every tab, panel and control in detail: [docs/usage.md](docs/usage.md)
 
 ## Data sources
 
@@ -222,11 +213,9 @@ CONCURRENCY=3 DEFAULT_TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 - Every run covers the default set: the main indices and their ETFs (S&P 500, Nasdaq 100, Dow Jones, Russell 2000) and the mega caps, written once in `scripts/options-data.ts` (`DEFAULT_SYMBOLS`) and saved to `api/options/index.json` as `defaults`, where the app reads the hint of the empty ticker search field and the backup preset (an older index without the field: a plain "Ticker" hint, no preset). `TICKERS` adds tickers on top of it (it never replaces it, so a workflow can list the tickers being traded and they are refreshed with the default set), `DEFAULT_TICKERS` replaces the default set itself (rarely needed; blank keeps the built-in list). Pass `all` for the smart auto-universe run after the default set and `TICKERS`: missing symbols first, then the oldest cached files. Any other argument is an error
 - `COMP`, `DJIA`, `INDU` and `NYA` are not in the default set: on Yahoo and Cboe `COMP` is Compass, Inc. and `DJIA` the Global X Dow 30 Covered Call ETF, `INDU` and `NYA` have no listed options. The Dow is covered by `DJX` and `DIA`, the Nasdaq by `NDX` and `QQQ`
 - SPY, SPX, QQQ and NDX are always queued first
-- Every cache file carries `date`, the trading day its data belongs to (market time, before 9:30 and on weekends it is still the previous weekday). The **final runs of the trading day** (any scheduled run from 16:30 to 23:59 New York time, `HISTORY=1` in the workflow) writes the files of the default set into the zip of that day, `api/history/<YYYY-MM>/<YYYY-MM-DD>.zip` (entries `<day>/<SYM>.json` and `<day>/manifest.json`, the last state of the day), and `api/history/index.json` lists the days and tickers. Running again with the same files changes nothing. A day whose last run did not happen has no zip (the sources only give the current chain, a missed day cannot be fetched later). The daily zips of the last 14 days are kept (`HISTORY_KEEP_DAYS`, default 14, `0` = keep all), older ones are deleted by that same run; backups made on demand rotate the same way (`HISTORY_KEEP_BACKUP_DAYS`, default 14, by the date in their id, repository variables `HISTORY_KEEP_DAYS` and `HISTORY_KEEP_BACKUP_DAYS` override, `0` keeps forever). `HISTORY` is off by default (a local run does not write archives). The zips are deployed with the site (about 2 MB a day). Holidays are not known, a holiday run keeps the weekday label
+- Every cache file carries `date`, the trading day its data belongs to (market time, before 9:30 and on weekends it is still the previous weekday). The **final runs of the trading day** (any scheduled run from 16:30 to 23:59 New York time, `HISTORY=1` in the workflow) writes the files of the default set into the zip of that day, `api/history/<YYYY-MM>/<YYYY-MM-DD>.zip` (entries `<day>/<SYM>.json` and `<day>/manifest.json`, the last state of the day), and `api/history/index.json` lists the days and tickers. Running again with the same files changes nothing. A day whose last run did not happen has no zip (the sources only give the current chain, a missed day cannot be fetched later). The daily zips of the last 14 days are kept (`HISTORY_KEEP_DAYS`, default 14, `0` = keep all), older ones are deleted by that same run; backups made on demand rotate the same way (`HISTORY_KEEP_BACKUP_DAYS`, default 14, by the date in their id, repository variables `HISTORY_KEEP_DAYS` and `HISTORY_KEEP_BACKUP_DAYS` override, `0` keeps forever). `HISTORY` is off by default (a local run does not write archives). The zips are deployed with the site (about 3.4 MB a day with the 27 default tickers). Holidays are not known, a holiday run keeps the weekday label
 - **Backtest backups (on demand).** `bun run backtest:backup` copies the cache files into one zip, `api/history/<YYYY-MM>/<YYYY-MM-DD-HH-mm>.zip` (New York time, to the minute), and never overwrites: run it as often as you like, also for the same date, and every backup stays. With no arguments it backs up the preset of required tickers (`DEFAULT_SYMBOLS` of `scripts/options-data.ts`, the same 27 the partial refresh keeps fresh, one without a file is left out), with `all` all available data, with tickers (`bun run backtest:backup SPY NDX`, space or comma separated) only those; a ticker without a file is an error. The backup is a byte for byte copy of the files at that moment. In CI: the **Backtest backup** workflow (Actions tab, run by hand) takes `tickers` (empty = the preset of required tickers, `all` = all data) and `refresh` (fetch fresh data first, for those tickers or the preset); the hourly default refresh also makes a backup when the repository variable `BACKTEST_TICKERS` is set (`all` or a list like `SPY NDX`), off by default because a backup of everything every hour adds tens of MB per hour. A day's automatic end-of-day archive is `YYYY-MM-DD.zip`, a backup is `YYYY-MM-DD-HH-mm.zip`, they live side by side. Size: a ticker file is 0.1 to 3 MB, about 7 times less zipped
-- **Backtest in the app ("As of").** One selector in the top bar, for all tabs. Grey = not a backtest: "As of today" while a live provider answers, otherwise "As of <date>" (the newest cache file, `api/latest.json`). Pick "Latest" (not a backtest) or an archived day or backup (the ones on the site from `api/history/index.json`, plus the ones held in this browser) and the amber banner "Backtest: as of ..." shows: Desk, GEX and Chart read that snapshot (chain, spot, expirations, levels computed from it, model greeks valued on that day, Chart candles cut after that day), live providers are off, a ticker that is not in the archive shows an error, **Back to live** returns. The menu also has **Import zip** (a day zip, a backup or a bundle, read in the browser, nothing is uploaded), **Create backup** (the preset of required tickers is the default, the choice of the last backup is remembered, `Current ticker`, `All available data` and chosen tickers are the other options, Enter downloads `<id>.zip`, the same file the CI backup makes plus your custom levels as `custom-levels.json`, also kept in the browser) and **Backtest data** (list of what the browser holds with size and source, download one or several as ONE zip, remove selected, everything older than a date, or all). A snapshot's custom levels replace yours and are read-only while it is open. Held days stay in IndexedDB until you remove them and work offline
-- **Full screen.** The expand button on the chart card (left of the zoom buttons on the GEX tab, at the end of the SPY / Interval panel on the Chart tab) or the **F** key (not while typing in a field) shows the chart over the whole window; the same button, **F** or **Esc** brings it back. Zoom buttons, keys, intervals and the level editor work in full screen
-- **Touch screens.** On the GEX and Chart tabs a long press (one finger held still for half a second) opens the custom level editor at the finger, like a right click with a mouse (a short tap or a drag does not). On the GEX tab two fingers pinch to zoom around the middle between them, and one finger drags the zoomed chart sideways (a vertical drag still scrolls the page)
+- **Backtest in the app ("As of"):** archived days and backups open in the "As of" selector of the top bar, see [docs/usage.md](docs/usage.md#backtest-as-of)
 - **Cleaning up the archive is deleting files.** Drop a month with `rm -r api/history/2026-08`, a single snapshot with `rm api/history/2026-08/2026-08-14-15-42.zip`, then commit and push. `index.json` follows the disk: the next run drops the snapshots that are gone (one still listed whose zip is missing is shown as unavailable in the meantime). Never edit the zips or `index.json` by hand. A ticker whose own file has not been refreshed since that day would be archived into its day again by the next run, which only happens for a ticker that stopped being updated
 - `KEEP_EXPIRATIONS=1` (default off) keeps the later expirations that a ticker's file already holds: the nearest `MAX_EXPIRATIONS` dates are fetched again as usual, the rest stay, and only their Cboe greeks, open interest and volume are refreshed (their bid, ask, last and IV stay as of the last run that covered them). Without it a run keeps only the nearest `MAX_EXPIRATIONS` dates
 - After the options pass every cached ticker gets `api/charts/<SYM>.json` (1 year of daily bars, about 12 KB each, `CHART_MAX_FETCHES` per run), so the Chart tab works from CACHE without a proxy. Every run also writes the candles (only the candles) of the Yahoo futures `ES=F`, `NQ=F`, `YM=F`, `RTY=F`, `MES=F`, `MNQ=F`, `MYM=F`, `M2K=F` (`api/charts/ES=F.json`, ...)
@@ -238,19 +227,16 @@ CONCURRENCY=3 DEFAULT_TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 
 ## Deploy to GitHub Pages
 
-1. Enable Pages in repo **Settings, Pages**
+1. Enable Pages in repo **Settings, Pages** (source: GitHub Actions)
 2. Allow Actions to commit: **Settings, Actions, General, Workflow permissions, Read and write permissions**
-3. The **Update options data** workflow (every Saturday at 10:00 UTC, or by hand from the Actions tab) runs `scripts/options-data.ts` for the tickers listed in `api/All.txt`, then for the index options in `api/Indices.txt` as a separate step with a smaller budget, and commits the refreshed `api/options/*.json` back to `main`
-4. The **Update partial options data** workflow runs `scripts/options-data.ts` with no arguments (only the default set; a default ticker keeps its expirations by rule: every listed date up to 42 days, the Friday weeklies up to 92 days, the monthlies and quarter-ends up to one year, no LEAPS; other tickers keep `MAX_EXPIRATIONS`; `EXPIRATION_RULE=0` turns the rule off for a quick local run) every hour on weekdays at 8:45, 9:45, ..., 16:45 New York time, plus 17:15, 18:15 and 19:15 after the close (12 runs a day, 4 tickers at a time, about 20 s of fetching). **It does not commit the hourly data**: each run builds the site from the fresh files and deploys it to GitHub Pages itself (its `deploy` job), so the repository does not grow by about 2 MB a run. Only a final run commits: any scheduled run that starts from 16:30 to 23:59 New York time writes the day's archive zip and `api/latest.json` (and a backtest backup, from the run that made it); several final runs are fine, a ticker whose data did not change keeps its zip entry, so a later one commits only what changed after the close. Any other deploy (`github-pages.yml`, a code push or the weekly full refresh) refreshes the default tickers before building, so the site never shows the older committed files. The schedule runs in New York time (`timezone: America/New_York`); a step skips a scheduled run that starts before 8:40 or after midnight. GitHub drops some scheduled runs and starts others late, the three after-close slots make sure the day gets its archive. Market holidays are not skipped. It can also be started by hand from the Actions tab
-5. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`
+3. Every push to `main` deploys through `github-pages.yml`, the data workflows deploy by themselves, see [Automations](#automations)
 
 ## Companion infrastructure
 
 Optional files outside the core app source:
 
 - `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options, defaults }` and writes `api/charts/<SYM>.json`
-- `.github/workflows/update-data.yml`: weekly refresh (Saturday 10:00 UTC) of all tickers of `api/All.txt` and `api/Indices.txt`, also manual
-- `.github/workflows/update-partial-data.yml`: hourly refresh of the default set on weekdays during market hours
+- `.github/workflows/*`: see [Automations](#automations)
 - `scripts/options-local-proxy.ts`: local **Bun** proxy (`bun run proxy`, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)) serving:
   - `/health`: what the app's auto-discovery asks
   - `/api/options`: Yahoo optionChain with crumb and cookie handling
@@ -258,6 +244,27 @@ Optional files outside the core app source:
   - `/api/nasdaq`: NASDAQ option-chain relay
   - `/api/cboe`: CBOE delayed-options relay
   - `/api/search?provider=yahoo|nasdaq|cboe&q=...`: provider-native suggestions
+
+## Automations
+
+All of it in detail (steps, env, failure handling, durations, data sizes): [docs/automations.md](docs/automations.md). Times are New York time
+
+| Workflow | When | What | Commits | Deploys |
+|---|---|---|---|---|
+| `ci.yaml` | every pull request | unit tests, fetcher bundle, both builds, browser tests (jobs `build` and `e2e`), 2.5 to 3.5 min | nothing | no |
+| `github-pages.yml` | push to `main` (not archive-only pushes), manual, started by the data and dependency workflows | refreshes the 27 default tickers, builds with `/gex/`, deploys, 1 to 2 min | nothing | yes |
+| `update-partial-data.yml` | Mon-Fri 8:45 to 16:45 hourly, 17:15, 18:15, 19:15; manual | refreshes the 27 default tickers, builds and deploys, 1 to 1.5 min | final runs (from 16:30): the day zip and `api/latest.json`; a backup when `BACKTEST_TICKERS` is set | yes |
+| `update-data.yml` | Saturday 10:00; manual | the defaults plus `api/All.txt`, the 500 oldest other files (`ROTATE_STALE`), then `api/Indices.txt`, 9 to 14 min | `api/` | starts `github-pages.yml` |
+| `backtest-backup.yml` | manual | optional fresh fetch, one backup zip | the zip | no |
+| `dependency-updates.yml` | manual | bumps every dependency, tests and builds, pushes to the branch | `package.json`, `bun.lock` | starts `github-pages.yml` |
+| `npm-check-updates.yml` | manual | the same bump as a check only | nothing | no |
+
+- **Schedules are best effort:** GitHub drops many scheduled runs and starts others up to hours late, so every run from 16:30 to 23:59 counts as final and three after-close slots exist. Market holidays are not skipped
+- **Hourly data is not committed:** each hourly run builds the site from its fresh files and deploys it; only the day's archive is committed. Every other deploy refreshes the default tickers first, so the site never goes back to older data
+- **Default tickers** (27, `DEFAULT_SYMBOLS` in `scripts/options-data.ts`): SPX NDX DJX RUT IWM SPY QQQ DIA NVDA AAPL MSFT AMZN GOOGL TSM GOOG META AVGO LLY MU WMT AMD JPM V BRK-B XOM ASML JNJ. They keep every expiration up to 42 days, the weeklies up to 92 days, the monthlies and quarter-ends up to a year; other tickers their nearest `MAX_EXPIRATIONS`
+- **Stale cache rotation:** the weekly run also refreshes the 500 cached tickers outside its list with the oldest data, so all of the about 3,000 files are refreshed within about 6 weeks
+- **Futures candles:** every fetcher run also writes the daily candles of `ES=F NQ=F YM=F RTY=F MES=F MNQ=F MYM=F M2K=F` to `api/charts/`
+- **Size:** `api/` is about 240 MB and is deployed with the site; GitHub Pages allows 1 GB per site
 
 ## Development
 
@@ -290,6 +297,7 @@ Every UI string needs an `en` and a `ru` entry in `src/i18n.tsx`. Never commit `
 ## Project structure
 
 ```text
+docs/                         # usage, levels, configuration, automations (linked from Documentation above)
 src/
   index.html                  # Parcel entry shell
   index.css                   # Tailwind v4, theme tokens, scrollbar and table-desk CSS
@@ -312,7 +320,7 @@ src/
   views/                      # DeskView, BoardView, GexView, ChartView
   *.test.ts                   # unit tests
   history-zip.ts              # zip format of the daily archives (read in the app, built by the fetcher)
-  *.e2e.ts, e2e-site.ts       # browser tests and their site helper
+  *.e2e.ts, e2e-site.ts       # browser tests and their site helper (e2e-run.ts runs them, bun run test:e2e)
 api/
   options/                    # one option-chain cache file per ticker, plus index.json
   charts/                     # one file of 1 year of daily bars per ticker
@@ -325,6 +333,7 @@ scripts/
   # src/backtest/: snapshot format, zip reading and writing in the browser, controller (the logic of the As of feature), store (IndexedDB)
   options-local-proxy.ts      # local Bun proxy: health, Yahoo, chart, NASDAQ, CBOE, search
   proxy-cors.ts               # the proxy's CORS allowlist and private network preflight answer
+  check-ports.ts              # port pre-check of bun run app, proxy, all, start
 .github/workflows/
   ci.yaml                     # pull request checks
   update-data.yml             # data refresh of all tickers (weekly, also manual)

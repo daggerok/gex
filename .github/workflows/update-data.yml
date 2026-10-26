@@ -50,10 +50,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # The steps below pass a fixed list (TICKERS), so the script does not discover a universe here; UNIVERSE_SIZE and
-      # MIN_MARKET_CAP only matter for a manual `all` run. Files already refreshed today are skipped.
+      # MIN_MARKET_CAP only matter for a manual `all` run. Only files written after Friday 20:00 New York time count as
+      # fresh and are skipped until Sunday 18:00 (isFreshAt, the weekend window); on any other day every queued file is fetched.
       MAX_FETCHES: "500"          # writes per step for the fixed list (the rotation brings its own budget)
       UNIVERSE_SIZE: "5000"       # `all` runs only: the market-cap-ranked US universe considered
-      MIN_MARKET_CAP: "9000000"   # `all` runs only: microcap floor ($10M); drops nano-caps
+      MIN_MARKET_CAP: "9000000"   # `all` runs only: microcap floor ($9M); drops nano-caps
       MAX_EXPIRATIONS: "50"       # expirations stored per NON-default ticker; the defaults keep theirs by rule (selectDefaultExpirations)
       REQUEST_SLEEP: "0.5"        # politeness delay between fetches (seconds)
     steps:
@@ -81,6 +82,9 @@ jobs:
       # api/Indices.txt, or the last index silently waits for the next run.
       # Indices enter the cache ONLY through this explicit allowlist, never via
       # the script's live universe discovery.
+      # SPX, NDX, DJX and RUT are also default tickers: step 1 already fetched them with the expiration rule (which
+      # ignores MAX_EXPIRATIONS), so on the Saturday run they are still fresh here and skipped, and this step in effect
+      # refreshes XSP with 15 expirations. A manual weekday run (nothing fresh) fetches all five again.
       - name: Fetch index option chains
         env:
           MAX_EXPIRATIONS: "15"

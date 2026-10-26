@@ -7,7 +7,7 @@
 # the "As of" selector. Clean up by deleting the zip (or a month folder) and committing.
 #
 #   tickers  space or comma separated. Empty = the PRESET of required tickers (the default, the same
-#            18 the partial refresh keeps fresh), `all` = ALL available data (every ticker file of api/options)
+#            27 default tickers the partial refresh keeps fresh), `all` = ALL available data (every ticker file of api/options)
 #   refresh  fetch fresh data first: for the given tickers, or for the preset when tickers is empty
 #            (not with `all`, that would mean the whole universe, run update-data.yml for it)
 #
