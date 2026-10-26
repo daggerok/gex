@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { AG_DOT_HOVER_RING, AG_DOT_STROKE_WIDTH, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, mergeLevelColors } from './gex-colors';
+import { AG_DOT_HOVER_RING, AG_DOT_STROKE_WIDTH, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_BAR_COLORS, GEX_LEVEL_COLORS, mergeLevelColors } from './gex-colors';
 
 describe('mergeLevelColors: saved colors survive the level key rename', () => {
   test('nothing saved or garbage -> defaults', () => {
@@ -37,5 +37,22 @@ describe('AG dots v3: hollow rings in the AG line colour (owner 2026-10-25)', ()
     test('the ring stroke is 1.5-2 px', () => {
         expect(AG_DOT_STROKE_WIDTH).toBeGreaterThanOrEqual(1.5);
         expect(AG_DOT_STROKE_WIDTH).toBeLessThanOrEqual(2);
+    });
+});
+
+describe('default green #089981 and red #f23645 (owner 2026-10-25, TradingView up and down colours)', () => {
+    test('the sign colours and the Max / Min Net GEX levels use them, the OI / Volume metric colours stay', () => {
+        expect(GEX_BAR_COLORS.call).toBe('#089981');
+        expect(DEFAULT_METRIC_COLORS.netGexPos).toBe('#089981');
+        expect(GEX_LEVEL_COLORS.maxNetGex).toEqual({ hex: '#089981', dot: 'bg-[#089981]' });
+        expect(DEFAULT_LEVEL_COLORS.maxNetGex).toBe('#089981');
+        expect(GEX_BAR_COLORS.put).toBe('#f23645');
+        expect(DEFAULT_METRIC_COLORS.netGexNeg).toBe('#f23645');
+        expect(GEX_LEVEL_COLORS.minNetGex).toEqual({ hex: '#f23645', dot: 'bg-[#f23645]' });
+        expect(DEFAULT_LEVEL_COLORS.minNetGex).toBe('#f23645');
+        expect(DEFAULT_METRIC_COLORS.putOi).toBe('#ef4444');
+        expect(DEFAULT_METRIC_COLORS.putVolume).toBe('#fca5a5');
+        expect(DEFAULT_METRIC_COLORS.callOi).toBe('#22c55e');
+        expect(DEFAULT_METRIC_COLORS.callVolume).toBe('#86efac');
     });
 });

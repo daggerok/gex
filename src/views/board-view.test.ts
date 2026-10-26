@@ -20,10 +20,10 @@ describe('boardColumns: the Metrics chips show or hide Board columns (owner, 202
 });
 
 describe('signTint: one tint for a peak row and a runner-up cell (owner 2026-10-25)', () => {
-    const colors = { netGexPos: '#22c55e', netGexNeg: '#ef4444' };
+    const colors = { netGexPos: '#089981', netGexNeg: '#f23645' };
     test('by the sign of the row Net GEX, mixed into the opaque table base', () => {
-        expect(signTint(5, colors)).toBe('color-mix(in srgb, #22c55e 16%, var(--board-base))');
-        expect(signTint(-5, colors)).toBe('color-mix(in srgb, #ef4444 16%, var(--board-base))');
+        expect(signTint(5, colors)).toBe('color-mix(in srgb, #089981 16%, var(--board-base))');
+        expect(signTint(-5, colors)).toBe('color-mix(in srgb, #f23645 16%, var(--board-base))');
     });
     test('no tint for a zero Net GEX', () => {
         expect(signTint(0, colors)).toBeUndefined();

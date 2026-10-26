@@ -29,7 +29,7 @@ describe('sign colours: one source of truth (owner, 2026-10-25)', () => {
         resetMetricColors();
         expect(getMetricColors().netGexPos).toBe(DEFAULT_METRIC_COLORS.netGexPos);
         expect(getMetricColors().netGexNeg).toBe(DEFAULT_METRIC_COLORS.netGexNeg);
-        expect(signColor(1, getMetricColors())).toBe('#22c55e');
-        expect(signColor(-1, getMetricColors())).toBe('#ef4444');
+        expect(signColor(1, getMetricColors())).toBe('#089981');
+        expect(signColor(-1, getMetricColors())).toBe('#f23645');
     });
 });
