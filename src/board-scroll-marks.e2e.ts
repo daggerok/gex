@@ -7,7 +7,8 @@ import { noProxy, startTestSite } from './e2e-site';
 // ============================================================================
 // Browser check of the Board's scroll marks strip (components/ScrollMarks.tsx, src/scroll-marks.ts): the strip sits right
 // of the table card, as tall as it, outside the card (the table keeps its width, the page does not scroll); its ticks
-// cover every row exactly once; the frame follows the scroll; a click on a tick of a row out of view glides that row into
+// cover exactly what the table highlights (owner 2026-10-26): the ATM row (Spot colour) and the rows with a peak or a
+// runner-up dot (their Net GEX sign colour), no plain rows, no level colours; the frame follows the scroll; a click on a tick of a row out of view glides that row into
 // the middle of the table; hovering a tick shows the app's tooltip with the strike. Desktop light and phone dark.
 // Run: `bun run test:e2e`.
 // ============================================================================
@@ -59,15 +60,31 @@ async function main(): Promise<void> {
             assert.ok(fit.page <= fit.inner + 1, `${at}: the page does not scroll (${fit.page} in ${fit.inner})`);
             assert.ok(Math.abs(fit.footer - fit.inner) <= 1, `${at}: the footer is at the bottom of the window`);
 
-            // ---- every row is on the strip exactly once (ticks merge, none is lost) ----
+            // ---- only the highlighted rows are on the strip, each exactly once, in table order ----
             const rows = await page.locator('[data-board-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-board-row') ?? ''));
-            const ticks = await page.locator('[data-board] [data-scroll-tick]').evaluateAll((els) => els.map((e) => ({ kind: e.getAttribute('data-scroll-tick') ?? '', strikes: (e.getAttribute('data-scroll-strikes') ?? '').split(',') })));
-            assert.ok(ticks.length > 0 && ticks.length <= rows.length, `${at}: ${ticks.length} ticks for ${rows.length} rows`);
-            assert.deepEqual(ticks.flatMap((t) => t.strikes), rows, `${at}: the ticks cover every row once, in order`);
+            const marked = await page.locator('[data-board-row]').evaluateAll((els) => els
+                .filter((e) => e.hasAttribute('data-board-atm') || e.querySelector('[data-board-dot]'))
+                .map((e) => e.getAttribute('data-board-row') ?? ''));
+            const ticks = await page.locator('[data-board] [data-scroll-tick]').evaluateAll((els) => els.map((e) => ({ kind: e.getAttribute('data-scroll-tick') ?? '', strikes: (e.getAttribute('data-scroll-strikes') ?? '').split(','), color: (e.querySelector('span') as HTMLElement | null)?.style.backgroundColor ?? '' })));
+            assert.ok(marked.length > 1 && marked.length < rows.length, `${at}: ${marked.length} highlighted of ${rows.length} rows`);
+            assert.deepEqual(ticks.flatMap((t) => t.strikes), marked, `${at}: the ticks cover exactly the highlighted rows, in order`);
+            assert.ok(ticks.every((t) => t.kind === 'atm' || t.kind === 'peak' || t.kind === 'second'), `${at}: no plain or level ticks (${Array.from(new Set(ticks.map((t) => t.kind))).join(', ')})`);
+            const allowed = await page.evaluate(() => {
+                const probe = document.createElement('span');
+                document.body.appendChild(probe);
+                const css = (v: string) => { probe.style.backgroundColor = ''; probe.style.backgroundColor = v; return getComputedStyle(probe).backgroundColor; };
+                const root = getComputedStyle(document.documentElement);
+                const out = [css(root.getPropertyValue('--gex-pos').trim()), css(root.getPropertyValue('--gex-neg').trim())];
+                probe.remove();
+                return out;
+            });
+            const tickColors = await page.locator('[data-board] [data-scroll-tick]').evaluateAll((els) => els.map((e) => ({ kind: e.getAttribute('data-scroll-tick'), color: getComputedStyle(e.querySelector('span') as HTMLElement).backgroundColor })));
+            const signTicks = tickColors.filter((t) => t.kind !== 'atm');
+            assert.ok(signTicks.length > 0 && signTicks.every((t) => allowed.includes(t.color)), `${at}: peak and runner-up ticks use only the Net GEX sign colours ${allowed.join(' / ')} (${Array.from(new Set(signTicks.map((t) => t.color))).join(', ')})`);
             const atm = await page.locator('[data-board-atm]').getAttribute('data-board-row');
             const atmTick = ticks.find((t) => t.strikes.includes(atm ?? ''));
             assert.ok(atmTick && atmTick.kind !== 'row', `${at}: the ATM row's tick is marked (${atmTick?.kind})`);
-            console.log(`board scroll marks ${at}: ${ticks.length} ticks for ${rows.length} rows, ${ticks.filter((t) => t.kind !== 'row').length} marked`);
+            console.log(`board scroll marks ${at}: ${ticks.length} ticks for ${marked.length} highlighted of ${rows.length} rows`);
 
             // ---- the frame shows the rows in view: about the middle on open (the ATM row is centered) ----
             const frame = () => page.evaluate(() => {
@@ -78,14 +95,26 @@ async function main(): Promise<void> {
             const f0 = await frame();
             assert.ok(f0.top > 0 && f0.bottom < 1, `${at}: the frame is inside the strip on open (${f0.top.toFixed(2)}..${f0.bottom.toFixed(2)})`);
 
-            // ---- a click on the first tick (a row far above the view) glides that row to the middle ----
-            const firstStrike = rows[0];
-            assert.ok((await rowPlace(page, firstStrike))! < 0, `${at}: the first row is out of view above`);
-            // the first tick is the top row; when merged, its lead may be a neighbour - take the tick's lead row from its strikes
-            const tick = page.locator('[data-board] [data-scroll-tick]').nth(Math.floor(ticks.length * 0.12));
-            const target = (await tick.getAttribute('data-scroll-strikes'))!.split(',')[0];
-            const before = await rowPlace(page, target);
-            assert.ok(before !== null && (before < 0 || before > 1), `${at}: the target row ${target} is out of view (${before})`);
+            // ---- a click on a tick of a row out of view glides that row to the middle ----
+            // the strip holds only the highlighted rows and they are often near the ATM row, so scroll the table to an end
+            // first when every one of them is on screen
+            const outOfView = async (): Promise<number> => {
+                for (let i = 0; i < ticks.length; i++) {
+                    const p = await rowPlace(page, ticks[i].strikes[0]);
+                    if (p !== null && (p < 0 || p > 1)) return i;
+                }
+                return -1;
+            };
+            let pick = await outOfView();
+            for (const end of ['bottom', 'top'] as const) {
+                if (pick >= 0) break;
+                await page.evaluate((e) => { const b = document.querySelector('[data-board-scroll]')!; b.scrollTop = e === 'top' ? 0 : b.scrollHeight; }, end);
+                await page.waitForTimeout(300);
+                pick = await outOfView();
+            }
+            assert.ok(pick >= 0, `${at}: a highlighted row out of view to click`);
+            const fBefore = await frame();
+            const tick = page.locator('[data-board] [data-scroll-tick]').nth(pick);
             await tick.click();
             await page.waitForTimeout(1200);
             // the lead of a merged tick is its most important row, all of a tick's rows are within a few px of each other
@@ -93,7 +122,7 @@ async function main(): Promise<void> {
             const places = await Promise.all(strikes.map((s) => rowPlace(page, s)));
             assert.ok(places.some((p) => p !== null && p > 1 / 3 && p < 2 / 3), `${at}: after the click the row is in the middle third (${places.join(', ')})`);
             const f1 = await frame();
-            assert.ok(f1.top < f0.top, `${at}: the frame moved up with the scroll (${f1.top.toFixed(2)} < ${f0.top.toFixed(2)})`);
+            assert.ok(Math.abs(f1.top - fBefore.top) > 0.01, `${at}: the frame moved with the scroll (${fBefore.top.toFixed(2)} -> ${f1.top.toFixed(2)})`);
 
             // ---- hover: the app's tooltip with the strike ----
             await page.locator('[data-board] [data-scroll-tick]').nth(ticks.length - 1).hover();

@@ -74,8 +74,10 @@ export function tickY(index: number, count: number, height: number): number {
  * SPY data); a row that marks something
  * is fully opaque in the colour of what it marks: its first level, else the ATM colour, else its sign colour for a peak
  * or a runner-up. A section header (the Desk's expiration bar) is fully opaque in `colors.section` (else `colors.zero`).
+ * `markedOnly` (the Board, owner 2026-10-26: "only green and red rows and cells and the spot colour") drops the plain
+ * rows: only the rows that mark something get a tick, still placed by their row index.
  */
-export function scrollTicks(rows: readonly ScrollMarkRow[], height: number, colors: { pos: string; neg: string; zero: string; atm: string; section?: string }): ScrollTick[] {
+export function scrollTicks(rows: readonly ScrollMarkRow[], height: number, colors: { pos: string; neg: string; zero: string; atm: string; section?: string }, markedOnly = false): ScrollTick[] {
     let max = 0;
     for (const r of rows) if (Number.isFinite(r.netGex)) max = Math.max(max, Math.abs(r.netGex));
     return rows.map((r, index) => {
@@ -85,7 +87,7 @@ export function scrollTicks(rows: readonly ScrollMarkRow[], height: number, colo
         const strength = max > 0 && Number.isFinite(r.netGex) ? Math.sqrt(Math.abs(r.netGex) / max) : 0;
         const opacity = kind === 'row' ? SCROLL_TICK_MIN_OPACITY + (1 - SCROLL_TICK_MIN_OPACITY) * strength : 1;
         return { index, key: r.key ?? String(r.strike), strike: r.strike, y: tickY(index, rows.length, height), color, opacity, kind };
-    });
+    }).filter((t) => !markedOnly || t.kind !== 'row');
 }
 
 /**

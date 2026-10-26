@@ -190,3 +190,19 @@ describe('stickyPileHeight', () => {
         expect(stickyPileHeight([], 100, 30)).toBe(0);
     });
 });
+
+describe('markedOnly (the Board, owner 2026-10-26: only the ATM, peak and runner-up rows)', () => {
+    test('plain rows get no tick, the marked ones keep their place and colour', () => {
+        const rows = [
+            { strike: 1, netGex: 5 },
+            { strike: 2, netGex: -8, peaks: ['netGex'] },
+            { strike: 3, netGex: 1, atm: true },
+            { strike: 4, netGex: 2 },
+            { strike: 5, netGex: 3, seconds: ['callOi'] },
+        ];
+        const ticks = scrollTicks(rows, 500, COLORS, true);
+        expect(ticks.map((t) => [t.strike, t.kind, t.color])).toEqual([[2, 'peak', 'red'], [3, 'atm', 'spot'], [5, 'second', 'green']]);
+        expect(ticks.map((t) => t.y)).toEqual([150, 250, 450]);
+        expect(scrollTicks(rows, 500, COLORS).length).toBe(5);
+    });
+});
