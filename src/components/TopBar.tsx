@@ -260,7 +260,7 @@ export const TopBar: React.FC<{
     const sourceTip = !source ? '' : source.kind === 'archive' ? t('source.tip.archive', { date: source.date }) : source.kind === 'checking'
         ? t('source.tip.checking', { base })
         : source.kind === 'live'
-            ? (source.delayedMin ? t('source.tip.hybridTv', { at: source.at ?? '', base, min: String(source.delayedMin) }) : source.provider === 'TV' ? t('source.tip.liveTv', { at: source.at ?? '', base }) : source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
+            ? (source.delayedMin ? t('source.tip.hybridTv', { at: source.at ?? '', base, min: String(source.delayedMin) }) : source.provider === 'TV' ? t('source.tip.liveTv', { at: source.at ?? '', base }) + (source.progress ? ` ${t('source.tip.liveTvSubscribing', { progress: source.progress })}` : '') : source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
             : source.kind === 'tv'
                 ? t(source.state === 'starting' ? 'source.tip.tvStarting' : source.state === 'rate-limited' ? 'source.tip.tvPaused' : source.state === 'reconnecting' ? 'source.tip.tvReconnecting' : source.state === 'expired' || source.state === 'no-session' ? 'source.tip.tvLogin' : 'source.tip.tvError', { message: source.message, date: source.date ?? '', until: source.until ? new Date(source.until).toLocaleTimeString() : '' })
             : [source.date ? t('source.tip.cache', { date: source.date }) : t('source.tip.cacheNext'), cacheWhy].filter(Boolean).join('. ');
@@ -380,6 +380,7 @@ export const TopBar: React.FC<{
                                 <span
                                     data-source-label={source.kind}
                                     data-source-note={sourceNote || undefined}
+                                    data-source-progress={source.kind === 'live' && source.progress ? source.progress : undefined}
                                     className={`flex-shrink-0 whitespace-nowrap rounded-lg border px-2 py-1.5 font-mono text-[11px] font-bold leading-none tabular-nums ${sourceCls}`}
                                 >
                                     {sourceText}

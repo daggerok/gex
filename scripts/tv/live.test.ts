@@ -199,3 +199,31 @@ describe('futures file endpoint', () => {
         expect(futuresFileResponse('/api/futures/MES.json', '/nonexistent-dir').status).toBe(404);
     });
 });
+
+describe('live mode: focus (fast start, owner 2026-10-26)', () => {
+    test('what the pages asked for goes to the watcher (replayed when it is created), a new client focuses its root, unknown roots are refused', async () => {
+        const calls: string[] = [];
+        let w: FakeWatcher | null = null;
+        const engine = new TvLiveEngine({
+            roots: ['ES', 'NQ'], log: () => {}, flushMs: 100,
+            makeWatcher: (_r, hooks) => {
+                const fw = new FakeWatcher(hooks, null) as FakeWatcher & { focus: (root: string, exps?: readonly string[]) => void };
+                fw.focus = (root, exps) => calls.push(`${root}:${exps ? exps.join('|') : '-'}`);
+                return (w = fw);
+            },
+        });
+        expect(engine.focus('NQ', ['2026-10-27'])).toBe(true);
+        expect(engine.focus('es')).toBe(true);
+        expect(engine.focus('CL')).toBe(false);
+        engine.start();
+        await tick(20);
+        expect(w).not.toBeNull();
+        // replayed oldest first, so the most recent (ES) ends up first in the watcher's order
+        expect(calls).toEqual(['NQ:2026-10-27', 'ES:-']);
+        // a new client of NQ keeps the expirations NQ was focused with
+        const res = engine.response('NQ');
+        expect(calls[calls.length - 1]).toBe('NQ:2026-10-27');
+        void res.body?.cancel();
+        engine.stop();
+    });
+});

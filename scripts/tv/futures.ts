@@ -15,28 +15,32 @@
  *
  * How (one websocket, one quote session per root, both kept open):
  *  1. the logged-in chart page gives the auth token (a 4 h JWT, refreshed AUTH_REFRESH_BEFORE_MS before it expires)
- *  2. per root: the continuous future (ES1!) gives the front contract and `options-info` (every option series and its
- *     strikes); every date up to and including the nearest monthly (3rd Friday) on the front contract within
- *     +/- WINDOW_PCT of the forward is watched
- *     (chain.ts). OI (`oi`), volume, bid, ask and last arrive on the websocket and stay current through its pushes
- *  3. greeks (iv, delta, gamma, theta, vega, rho) come from one scanner POST per root, repeated every --refresh (5m),
- *     which also re-reads options-info so new strikes and series follow the forward (added / removed in the session)
- *  4. every --watch the latest values are written to api/futures/<ROOT>.json (and dist/api/futures/ when dist/api
+ *  2. per root (the root a page opened first, rootOrder): the continuous future (ES1!) gives the front contract and
+ *     `options-info` (every option series and its strikes); every date up to and including the nearest monthly (3rd
+ *     Friday) on the front contract within +/- WINDOW_PCT of the forward is watched (chain.ts)
+ *  3. fast start (owner 2026-10-26): one or two scanner POSTs per root give bid, ask, iv and greeks of the whole window;
+ *     with the open interest of the last file (equal to the CME Daily Bulletin) that is the first snapshot, about 1 s
+ *     per root after the websocket opened. The scanner is read again every --refresh (5m), which also re-reads
+ *     options-info so new strikes and series follow the forward (added / removed in the session)
+ *  4. in the background the options join the websocket 50 per message, the most important first (subscriptionOrder:
+ *     the page's root, its selected expirations, strikes nearest the forward of the nearest expirations); each one
+ *     streams OI (`oi`), volume, bid, ask and last from its first answer on (mergeOption: websocket over scanner)
+ *  5. every --watch the latest values are written to api/futures/<ROOT>.json (and dist/api/futures/ when dist/api
  *     exists, which is what `bun run start` serves), atomically, in exactly the fetcher's schema (chain.ts buildPayload)
- *  5. a dropped socket reconnects with backoff (RECONNECT_MIN_MS doubling to RECONNECT_MAX_MS); a 429 or 403 from
+ *  6. a dropped socket reconnects with backoff (RECONNECT_MIN_MS doubling to RECONNECT_MAX_MS); a 429 or 403 from
  *     TradingView pauses every HTTP request for RATE_LIMIT_BACKOFF_MS; the last values keep being written meanwhile
  *
  * The app opens the file through the CACHE provider: ticker `/ES` (or `ES1!`), see src/providers/cache.ts futuresFile.
  * Never touches api/options (index.json included). Never prints the session or the token.
  */
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { writeFileAtomic } from '../history-archive';
-import type { Payload } from '../options-data';
+import { marketDay, type Payload } from '../options-data';
 import {
-    buildPayload, oiDay, DEFAULT_ROOTS, DIST_FUTURES_DIR, familiesOf, FUTURES_DIR, futuresPrice, MICRO_ROOTS, payloadText,
-    allocateSessions, QUOTE_FIELDS, scanGreeks, TV_ROOTS, TvRateLimitError, WS_BATCH, WS_BATCH_PAUSE_MS, WS_BATCH_TIMEOUT_MS, wantedOptions,
-    type Family, type QuoteValues, type ScanRow, type WantedOption,
+    buildPayload, DEFAULT_ROOTS, DIST_FUTURES_DIR, familiesOf, fileRowsOf, FUTURES_DIR, futuresPrice, mergeOption, MICRO_ROOTS, payloadText,
+    allocateSessions, QUOTE_FIELDS, rootOrder, scanGreeks, subscriptionOrder, TV_ROOTS, TvRateLimitError, WS_BATCH, WS_BATCH_PAUSE_MS,
+    WS_BATCH_TIMEOUT_MS, wantedOptions, type Family, type FileRow, type QuoteValues, type ScanRow, type WantedOption,
 } from './chain';
 import { jwtExpiresAt, loadTvSession, redact, sleep, type TvSession } from './env';
 import { fetchAuthToken, randomId, type TvMessage, TvSocket } from './ws';
@@ -152,13 +156,25 @@ class RootFeed {
     subscribedFront: string | null = null;
     families: Family[] = [];
     wanted: WantedOption[] = [];
+    /** `wanted` by full symbol */
+    wantedBy = new Map<string, WantedOption>();
+    /** the options still to add to the websocket, in subscriptionOrder (the background subscription takes from the front) */
+    queue: string[] = [];
+    /** the forward the window and the subscription order are centered on */
+    center: number | null = null;
+    /** the expirations (YYYY-MM-DD) the page shows: subscribed first (focus) */
+    selected = new Set<string>();
     readonly values = new Map<string, QuoteValues>();
     readonly completed = new Set<string>();
     readonly failed = new Set<string>();
     greeks = new Map<string, ScanRow>();
     /** when the greeks were fetched last (0 = never) */
     greeksAt = 0;
-    /** the initial subscription is done: the file may be written */
+    /** the last file's rows (open interest, today's volume and last), read once at the first preview (null: not read yet) */
+    fileRows: Map<string, FileRow> | null = null;
+    /** the scanner snapshot is in (bid, ask, greeks of the whole window): a snapshot can be served before the subscription */
+    previewReady = false;
+    /** the whole window is subscribed: the file may be written */
     ready = false;
     /** last spot written (the parity forward), the center of the next window */
     lastSpot: number | null = null;
@@ -176,8 +192,6 @@ export type LiveValueRow = [string, number | null, number | null, number | null,
 /** One option's TradingView greeks: [name, iv, delta, gamma, theta, vega, rho]. */
 export type LiveGreekRow = [string, number | null, number | null, number | null, number | null, number | null, number | null];
 
-const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-
 /** What the watcher is doing, for the proxy's live mode (scripts/tv/live.ts) and the app's source label. */
 export type WatcherState = 'starting' | 'live' | 'reconnecting' | 'no-session' | 'expired' | 'rate-limited' | 'error';
 
@@ -189,15 +203,20 @@ export interface WatcherStatus {
     until: number | null;
     /** when this state began (epoch ms) */
     since: number;
-    /** starting / reconnecting: which root is being subscribed, e.g. "ES 1/4" (the app shows it in the label) */
+    /** starting / reconnecting: which root is being read, e.g. "ES 1/4" (the app shows it in the label) */
     progress?: string;
+    /**
+     * per root: options on the websocket (tick by tick) and options in the window, e.g. {"ES":[3200,5560]}; the rest come
+     * from the scanner snapshot (the app shows it in the label tooltip)
+     */
+    subscribed?: Record<string, [number, number]>;
 }
 
 /**
  * Hooks of the proxy's live mode (scripts/tv/live.ts); the CLI (`bun run tv:futures`) uses none. All optional.
  * - onStatus: every change of the state
- * - onValues: symbols of `root` whose websocket values changed (called per message, cheap)
- * - onWindow: the watched option list of `root` changed (first subscription, window moved, reconnect): a new snapshot
+ * - onValues: symbols of `root` whose values changed (websocket message or a new scanner read; called often, cheap)
+ * - onWindow: a new snapshot of `root` is ready (scanner snapshot, window moved, reconnect)
  * - writeOnlyOnChange: skip the file write of a root when nothing changed since the last one
  * - log: where the lines go (default console.log with the time)
  */
@@ -209,6 +228,16 @@ export interface WatcherHooks {
     onGreeks?: (root: string) => void;
     writeOnlyOnChange?: boolean;
     log?: (line: string) => void;
+}
+
+/** Where the watcher writes and how fast it subscribes (tests: a temp folder and a fast pace). */
+export interface WatcherOptions {
+    /** the files api/futures/<ROOT>.json (default FUTURES_DIR); the fast start reads the last ones from here too */
+    dir?: string;
+    /** the copy for the dev server (default dist/api/futures when dist/api exists; null: none) */
+    distDir?: string | null;
+    batchPauseMs?: number;
+    batchTimeoutMs?: number;
 }
 
 export class FuturesWatcher {
@@ -231,10 +260,16 @@ export class FuturesWatcher {
     private busy = false;
     /** connect() runs (first connection or a reconnect): the periodic refresh waits, so nothing subscribes twice */
     private connecting = false;
+    /** the socket a background subscription (drain) runs on: the periodic refresh only re-reads the scanner meanwhile */
+    private drainOf: TvSocket | null = null;
+    /** the background subscription of the last connect (runOnce waits for it) */
+    private draining: Promise<void> = Promise.resolve();
+    /** roots the pages opened, the most recent first (subscribed first) */
+    private focusOrder: string[] = [];
     private stopping = false;
     private waiters: (() => void)[] = [];
 
-    constructor(private readonly args: FuturesArgs, private readonly hooks: WatcherHooks = {}) {
+    constructor(private readonly args: FuturesArgs, private readonly hooks: WatcherHooks = {}, private readonly opts: WatcherOptions = {}) {
         this.feeds = args.roots.map((r) => new RootFeed(r));
     }
 
@@ -242,28 +277,85 @@ export class FuturesWatcher {
         return this.statusNow;
     }
 
-    private setStatus(state: WatcherState, message: string, until: number | null = null, progress?: string): void {
+    private setStatus(state: WatcherState, message: string, until: number | null = null, progress?: string, subscribed?: Record<string, [number, number]>): void {
         const s = this.statusNow;
-        if (s.state === state && s.message === message && s.until === until && s.progress === progress) return;
-        this.statusNow = { state, message, until, since: s.state === state ? s.since : Date.now(), ...(progress ? { progress } : {}) };
+        if (s.state === state && s.message === message && s.until === until && s.progress === progress && JSON.stringify(s.subscribed) === JSON.stringify(subscribed)) return;
+        this.statusNow = { state, message, until, since: s.state === state ? s.since : Date.now(), ...(progress ? { progress } : {}), ...(subscribed ? { subscribed } : {}) };
         this.hooks.onStatus?.(this.statusNow);
     }
 
+    /** Per root with a window: [options on the websocket, options in the window]. */
+    subscribedCounts(): Record<string, [number, number]> {
+        const out: Record<string, [number, number]> = {};
+        for (const f of this.feeds) if (f.wanted.length) out[f.root] = [Math.min(f.sessionOf.size, f.wanted.length), f.wanted.length];
+        return out;
+    }
+
+    /** "streaming ES NQ (websocket 4,150 of 11,800 options, the rest from the scanner)" */
+    private liveMessage(): string {
+        const counts = Object.values(this.subscribedCounts());
+        const on = counts.reduce((a, c) => a + c[0], 0);
+        const all = counts.reduce((a, c) => a + c[1], 0);
+        const roots = this.readyRoots().join(' ');
+        return on < all ? `streaming ${roots} (websocket ${on.toLocaleString('en-US')} of ${all.toLocaleString('en-US')} options, the rest from the scanner)` : `streaming ${roots}`;
+    }
+
     /**
-     * The live values of some option symbols of `root` as compact rows [name, bid, ask, last, volume, openInterest]
-     * (the delta of the live mode; null = not known). Symbols that are not watched options (the futures) are skipped.
+     * The status after a batch of the subscription: live with the counts once a root has data. Rate limited, expired, no
+     * session and error stay as they are (their message tells the user what to do).
+     */
+    private reportProgress(): void {
+        const s = this.statusNow.state;
+        if (this.paused() || (s !== 'live' && s !== 'starting' && s !== 'reconnecting')) return;
+        if (s === 'live' || this.readyRoots().length) this.setStatus('live', this.liveMessage(), null, undefined, this.subscribedCounts());
+    }
+
+    /**
+     * A page opened `root` (and shows the expirations `exps`, YYYY-MM-DD): it is read and subscribed before the other roots,
+     * its shown expirations before the rest. The subscription that runs picks it up at its next batch.
+     */
+    focus(root: string, exps?: readonly string[]): void {
+        const feed = this.feeds.find((f) => f.root === root);
+        if (!feed) return;
+        this.focusOrder = [root].concat(this.focusOrder.filter((r) => r !== root));
+        if (exps) feed.selected = new Set(exps);
+        if (feed.queue.length) this.orderQueue(feed, feed.queue);
+    }
+
+    /** Put `symbols` of `feed` into its queue in subscriptionOrder. */
+    private orderQueue(feed: RootFeed, symbols: readonly string[]): void {
+        const ws = symbols.map((s) => feed.wantedBy.get(s)).filter((w): w is WantedOption => w != null);
+        feed.queue = subscriptionOrder(ws, feed.center, feed.selected).map((w) => w.symbol);
+    }
+
+    /** The first feed in root order (focus first) that `pred` accepts. */
+    private pick(pred: (f: RootFeed) => boolean): RootFeed | null {
+        for (const r of rootOrder(this.feeds.map((f) => f.root), this.focusOrder)) {
+            const f = this.feeds.find((x) => x.root === r);
+            if (f && pred(f)) return f;
+        }
+        return null;
+    }
+
+    private merged(feed: RootFeed, sym: string, name: string) {
+        return mergeOption(feed.values.get(sym), feed.greeks.get(name), feed.fileRows?.get(name), feed.completed.has(sym), true);
+    }
+
+    /**
+     * The live values of some option symbols of `root` as compact rows [name, bid, ask, last, volume, openInterest, oiDate]
+     * (the delta of the live mode; null = not known): the websocket's once an option streams, before that the scanner's
+     * bid and ask with the last file's open interest (mergeOption). Symbols outside the window (the futures) are skipped.
      */
     valueRows(root: string, symbols: Iterable<string>): LiveValueRow[] {
         const feed = this.feeds.find((f) => f.root === root);
         if (!feed) return [];
         const out: LiveValueRow[] = [];
         for (const sym of Array.from(symbols)) {
-            if (!feed.sessionOf.has(sym) || feed.failed.has(sym)) continue;
-            const v = feed.values.get(sym) ?? {};
-            const rawOi = numOrNull((v.oi as { value?: unknown } | undefined)?.value);
-            const oiTime = numOrNull((v.oi as { time?: unknown } | undefined)?.time);
-            const oi = rawOi ?? (feed.completed.has(sym) ? 0 : null);
-            out.push([sym.slice(sym.indexOf(':') + 1), numOrNull(v.bid), numOrNull(v.ask), numOrNull(v.lp), numOrNull(v.volume), oi, rawOi != null && oiTime != null ? oiDay(oiTime) : null]);
+            if (!feed.wantedBy.has(sym) || feed.failed.has(sym)) continue;
+            const name = sym.slice(sym.indexOf(':') + 1);
+            if (!feed.values.has(sym) && !feed.greeks.has(name)) continue;
+            const m = this.merged(feed, sym, name);
+            out.push([name, m.bid, m.ask, m.last, m.volume, m.openInterest, m.openInterest != null ? m.oiDate : null]);
         }
         return out;
     }
@@ -277,22 +369,27 @@ export class FuturesWatcher {
         return out;
     }
 
-    /** The roots whose first subscription is done (a snapshot can be built). */
+    /** The roots with a snapshot (the scanner snapshot is in, or the whole window is subscribed). */
     readyRoots(): string[] {
-        return this.feeds.filter((f) => f.ready).map((f) => f.root);
+        return this.feeds.filter((f) => f.ready || f.previewReady).map((f) => f.root);
+    }
+
+    private payloadOf(feed: RootFeed, now: Date) {
+        return buildPayload({
+            root: feed.root, wanted: feed.wanted, values: feed.values, failed: feed.failed, completed: feed.completed, greeks: feed.greeks,
+            scanQuotes: true, fileRows: feed.fileRows ?? undefined,
+            futures: feed.front ? futuresPrice(feed.values.get(feed.front) ?? {}) : null, now,
+        });
     }
 
     /**
-     * The current chain of `root` in the fetcher's schema (the same object the file holds), null before the first
-     * subscription is done. Built from the in-memory values, no request.
+     * The current chain of `root` in the fetcher's schema (the same object the file holds), null before the scanner
+     * snapshot (or, without one, before the first subscription is done). Built from the in-memory values, no request.
      */
     snapshot(root: string, now: Date = new Date()): Payload | null {
         const feed = this.feeds.find((f) => f.root === root);
-        if (!feed || !feed.ready) return null;
-        return buildPayload({
-            root: feed.root, wanted: feed.wanted, values: feed.values, failed: feed.failed, completed: feed.completed, greeks: feed.greeks,
-            futures: feed.front ? futuresPrice(feed.values.get(feed.front) ?? {}) : null, now,
-        }).payload;
+        if (!feed || !(feed.ready || feed.previewReady)) return null;
+        return this.payloadOf(feed, now).payload;
     }
 
     /** --once: connect, subscribe every root, write the files, close. Returns the number of roots written. */
@@ -300,6 +397,7 @@ export class FuturesWatcher {
         await this.authenticate(true);
         try {
             await this.connect();
+            await this.draining;
             return this.writeAll();
         } finally {
             this.stop();
@@ -426,7 +524,11 @@ export class FuturesWatcher {
         } else if (msg.m === 'quote_completed') {
             const feed = this.byQs.get(String(msg.p[0]));
             if (!feed) return;
-            feed.completed.add(String(msg.p[1]));
+            const sym = String(msg.p[1]);
+            feed.completed.add(sym);
+            // from now on the option's values are the websocket's (mergeOption): the page gets them even when the first
+            // qsd came before the completion
+            if (feed.wantedBy.has(sym)) this.hooks.onValues?.(feed.root, [sym]);
             this.wake();
         } else if (msg.m === 'critical_error' || msg.m === 'protocol_error') {
             this.log(`websocket ${msg.m}: ${JSON.stringify(msg.p).slice(0, 200)}; reconnecting`);
@@ -443,10 +545,10 @@ export class FuturesWatcher {
         w.forEach((f) => f());
     }
 
-    /** Resolve when every symbol completed (or failed), the socket dropped, or the timeout passed. */
-    private async waitFor(feed: RootFeed, symbols: readonly string[], timeoutMs: number): Promise<void> {
+    /** Resolve when every symbol completed (or failed), `sock` dropped or was replaced, or the timeout passed. */
+    private async waitFor(feed: RootFeed, symbols: readonly string[], timeoutMs: number, sock: TvSocket | null = this.sock): Promise<void> {
         const deadline = Date.now() + timeoutMs;
-        while (!symbols.every((s) => feed.completed.has(s)) && Date.now() < deadline && this.sock && !this.sock.closed && !this.stopping) {
+        while (!symbols.every((s) => feed.completed.has(s)) && Date.now() < deadline && sock && this.sock === sock && !sock.closed && !this.stopping) {
             await new Promise<void>((resolve) => {
                 this.waiters.push(resolve);
                 setTimeout(resolve, 250);
@@ -454,7 +556,10 @@ export class FuturesWatcher {
         }
     }
 
-    /** Open the socket, authenticate it and subscribe every root, one after the other. */
+    /**
+     * Open the socket, authenticate it and read every root (front contract, window, scanner snapshot): a few seconds. The
+     * options then join the websocket in the background (drain), by importance; runOnce waits for that through `draining`.
+     */
     private async connect(): Promise<void> {
         if (!this.token) throw new Error('no auth token');
         this.connecting = true;
@@ -472,6 +577,11 @@ export class FuturesWatcher {
         } finally {
             this.connecting = false;
         }
+        const s = sock;
+        this.draining = this.drain(s).then(() => {
+            const st = this.statusNow.state;
+            if (this.sock === s && !s.closed && !this.paused() && (st === 'live' || st === 'starting' || st === 'reconnecting')) this.setStatus('live', this.liveMessage(), null, undefined, this.subscribedCounts());
+        }).catch((err: unknown) => this.log(`subscription: ${this.redact(err)}`));
     }
 
     private newSocket(): TvSocket {
@@ -490,36 +600,73 @@ export class FuturesWatcher {
         return sock;
     }
 
-    /** Authenticate a new socket and subscribe every root on it, each in fresh quote sessions. */
+    /**
+     * Authenticate a new socket and read every root on it (fresh quote sessions, the focused root first): the futures,
+     * the window and the scanner snapshot. Each root's snapshot goes to the pages as soon as it is in (onWindow).
+     */
     private async subscribeAll(sock: TvSocket): Promise<void> {
         await sock.opened;
         sock.send('set_auth_token', [this.token]);
         this.byQs.clear();
-        for (let k = 0; k < this.feeds.length; k++) {
-            const feed = this.feeds[k];
-            if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
-            // the app shows the progress while it waits (TV starting… ES 1/4); a reconnect keeps its own state
-            const progress = `${feed.root} ${k + 1}/${this.feeds.length}`;
-            if (this.statusNow.state === 'starting' || this.statusNow.state === 'reconnecting') {
-                this.setStatus(this.statusNow.state, `subscribing ${progress} (about 30-80 s per future)`, null, progress);
-            }
+        this.feeds.forEach((feed) => {
             feed.sessions = [];
             feed.sessionOf.clear();
             feed.subscribedFront = null;
             feed.completed.clear();
             feed.failed.clear();
+            feed.queue = [];
+        });
+        const pending = new Set(this.feeds);
+        for (let k = 1; pending.size; k++) {
+            if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
+            const feed = this.pick((f) => pending.has(f))!;
+            pending.delete(feed);
+            // the app shows the progress while it waits (TV starting… ES 1/4); a reconnect keeps its own state
+            const progress = `${feed.root} ${k}/${this.feeds.length}`;
+            if (this.statusNow.state === 'starting' || this.statusNow.state === 'reconnecting') {
+                this.setStatus(this.statusNow.state, `reading ${progress} (front contract, option list, scanner snapshot)`, null, progress);
+            }
             feed.qs = this.openSession(feed, sock);
             try {
-                await this.subscribe(feed, true);
-                this.hooks.onWindow?.(feed.root);
-                this.log(`${feed.root}: subscribed ${feed.sessionOf.size} options in ${feed.sessions.length} quote session(s) [${feed.sessions.map((x) => x.count).join(', ')}]`);
+                await this.prepare(feed, true);
+                if (feed.previewReady || feed.ready) this.hooks.onWindow?.(feed.root);
+                this.log(`${feed.root}: ${feed.wanted.length} options, scanner snapshot ${feed.previewReady ? `of ${feed.greeks.size} rows` : 'missing (the page waits for the subscription)'}; subscribing them in the background`);
             } catch (err) {
                 this.log(`${feed.root}: ${this.redact(err)}`);
             }
         }
         if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
         this.reconnectDelay = RECONNECT_MIN_MS;
-        if (!this.paused()) this.setStatus('live', `streaming ${this.readyRoots().join(' ')}`);
+        this.reportProgress();
+    }
+
+    /**
+     * Add the queued options of every root to the websocket, WS_BATCH at a time, WS_BATCH_PAUSE_MS apart, always from the
+     * root that matters most right now (rootOrder: the page's root first, re-picked before every batch). Each option
+     * streams as soon as its batch is in (the page gets it with the next delta). Stops when `sock` drops or is replaced.
+     */
+    private async drain(sock: TvSocket): Promise<void> {
+        this.drainOf = sock;
+        try {
+            let first = true;
+            for (;;) {
+                if (!first) await sleep(this.opts.batchPauseMs ?? WS_BATCH_PAUSE_MS);
+                first = false;
+                if (this.sock !== sock || sock.closed || this.stopping) return;
+                const feed = this.pick((f) => f.queue.length > 0);
+                if (!feed) return;
+                const batch = feed.queue.splice(0, WS_BATCH);
+                this.addOptions(feed, sock, batch);
+                await this.waitFor(feed, batch, this.opts.batchTimeoutMs ?? WS_BATCH_TIMEOUT_MS, sock);
+                if (!feed.queue.length && this.sock === sock) {
+                    feed.ready = true;
+                    this.log(`${feed.root}: subscribed ${feed.sessionOf.size} options in ${feed.sessions.length} quote session(s) [${feed.sessions.map((x) => x.count).join(', ')}]`);
+                }
+                if (this.sock === sock) this.reportProgress();
+            }
+        } finally {
+            if (this.drainOf === sock) this.drainOf = null;
+        }
     }
 
     /** A new quote session of `feed` on `sock`, with the quote fields; returns its id. */
@@ -589,21 +736,34 @@ export class FuturesWatcher {
         }, delay);
     }
 
+    /** The last file of `feed` (api/futures/<ROOT>.json): open interest, today's volume and last (fileRowsOf). */
+    private readFileRows(feed: RootFeed): Map<string, FileRow> {
+        const path = join(this.opts.dir ?? FUTURES_DIR, `${feed.root}.json`);
+        try {
+            return existsSync(path) ? fileRowsOf(JSON.parse(readFileSync(path, 'utf8')), marketDay(new Date())) : new Map();
+        } catch (err) {
+            this.log(`${feed.root}: the last file is unreadable (${this.redact(err)}), open interest comes with the subscription`);
+            return new Map();
+        }
+    }
+
     /**
-     * (Re)read the continuous future (front contract, options-info), work out the option window around the forward, add
-     * the new option symbols and remove the dropped ones, then fetch the greeks. `fresh`: a new quote session (everything
-     * is added again).
+     * (Re)read the continuous future (front contract, options-info), work out the option window around the forward, remove
+     * the dropped options, queue the new ones (subscriptionOrder) and read the scanner (bid, ask, greeks of the window:
+     * the snapshot the page shows until the options stream). `fresh`: a new quote session (everything is queued again).
+     * Returns whether the window changed.
      */
-    private async subscribe(feed: RootFeed, fresh: boolean): Promise<void> {
+    private async prepare(feed: RootFeed, fresh: boolean): Promise<boolean> {
         const sock = this.sock;
         if (!sock) throw new Error('no websocket');
+        if (!feed.fileRows) feed.fileRows = this.readFileRows(feed);
         // the continuous future: removed and added again so options-info and the front contract come fresh
         if (!fresh) sock.send('quote_remove_symbols', [feed.qs, feed.continuous]);
         feed.completed.delete(feed.continuous);
         feed.failed.delete(feed.continuous);
         feed.values.delete(feed.continuous);
         sock.send('quote_add_symbols', [feed.qs, feed.continuous]);
-        await this.waitFor(feed, [feed.continuous], FUTURE_TIMEOUT_MS);
+        await this.waitFor(feed, [feed.continuous], FUTURE_TIMEOUT_MS, sock);
         const cont = feed.values.get(feed.continuous);
         if (feed.failed.has(feed.continuous) || !cont?.front_contract) throw new Error(`${feed.continuous}: no quote (not found or no entitlement)`);
         const front = `${feed.prefix}:${String(cont.front_contract)}`;
@@ -615,7 +775,7 @@ export class FuturesWatcher {
             feed.front = front;
             feed.subscribedFront = front;
             sock.send('quote_add_symbols', [feed.qs, front]);
-            await this.waitFor(feed, [front], FUTURE_TIMEOUT_MS);
+            await this.waitFor(feed, [front], FUTURE_TIMEOUT_MS, sock);
         }
         const fut = futuresPrice(feed.values.get(front) ?? {}) ?? futuresPrice(cont);
         const center = feed.lastSpot ?? fut?.price ?? null;
@@ -624,12 +784,15 @@ export class FuturesWatcher {
         if (!next.length) throw new Error(`no option series on ${front} (TradingView lists none for this root)`);
 
         // what the quote sessions hold now (sessionOf is cleared on a new connection, and a retry of a failed or interrupted
-        // subscription keeps what it already added), so a reconnect adds the whole window again
+        // subscription keeps what it already added), so a reconnect queues the whole window again
         const before = new Set(feed.sessionOf.keys());
         const nextSet = new Set(next.map((w) => w.symbol));
         const removed = Array.from(before).filter((sym) => !nextSet.has(sym));
         const added = next.filter((w) => !before.has(w.symbol)).map((w) => w.symbol);
+        const changed = fresh || removed.length > 0 || next.length !== feed.wanted.length || next.some((w) => !feed.wantedBy.has(w.symbol));
         feed.wanted = next;
+        feed.wantedBy = new Map(next.map((w) => [w.symbol, w]));
+        feed.center = center;
         if (removed.length) {
             this.removeOptions(feed, sock, removed);
             removed.forEach((s) => {
@@ -638,21 +801,17 @@ export class FuturesWatcher {
                 feed.failed.delete(s);
             });
         }
+        this.orderQueue(feed, added);
         await this.refreshGreeks(feed);
-        for (let i = 0; i < added.length; i += WS_BATCH) {
-            if (i > 0) await sleep(WS_BATCH_PAUSE_MS);
-            if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
-            const batch = added.slice(i, i + WS_BATCH);
-            this.addOptions(feed, sock, batch);
-            await this.waitFor(feed, batch, WS_BATCH_TIMEOUT_MS);
-        }
-        if (!fresh && (added.length || removed.length)) {
-            this.log(`${feed.root}: window moved, +${added.length} -${removed.length} options`);
-            this.hooks.onWindow?.(feed.root);
-        }
-        feed.ready = true;
+        if (!feed.queue.length) feed.ready = true;
+        if (!fresh && (added.length || removed.length)) this.log(`${feed.root}: window moved, +${added.length} -${removed.length} options`);
+        return changed;
     }
 
+    /**
+     * Read the scanner for the window of `feed`: TradingView's greeks, and bid and ask of the options not on the websocket
+     * yet (their next delta carries them: onValues). The first good read makes the scanner snapshot (previewReady).
+     */
     private async refreshGreeks(feed: RootFeed): Promise<void> {
         if (!feed.front || !feed.wanted.length) return;
         if (this.paused()) return;
@@ -662,7 +821,11 @@ export class FuturesWatcher {
             if (greeks.size) {
                 feed.greeks = greeks;
                 feed.greeksAt = Date.now();
+                feed.previewReady = true;
+                feed.dirtySinceWrite = true;
                 this.hooks.onGreeks?.(feed.root);
+                const waiting = feed.wanted.map((w) => w.symbol).filter((s) => !feed.completed.has(s));
+                if (waiting.length) this.hooks.onValues?.(feed.root, waiting);
             }
         } catch (err) {
             if (err instanceof TvRateLimitError) this.pause(`${feed.root} greeks`);
@@ -670,7 +833,10 @@ export class FuturesWatcher {
         }
     }
 
-    /** Every --watch: write the files; renew the token when due; re-read the window and the greeks every --refresh. */
+    /**
+     * Every --watch: write the files; renew the token when due; every --refresh re-read the window and the greeks (while
+     * the background subscription runs: the scanner only, so the options not streaming yet stay fresh).
+     */
     private async tick(): Promise<void> {
         try {
             this.writeAll();
@@ -697,14 +863,20 @@ export class FuturesWatcher {
             // the timer may fire a few ms early: a refresh due within the next second counts as due
             if (Date.now() - this.lastRefresh >= this.args.refreshMs - 1000 && this.sock && !this.sock.closed && !this.connecting && !this.paused()) {
                 this.lastRefresh = Date.now();
+                const s = this.sock;
+                if (this.drainOf === s) {
+                    for (const feed of this.feeds) if (feed.wanted.length && this.sock === s) await this.refreshGreeks(feed);
+                    return;
+                }
                 for (const feed of this.feeds) {
                     if (!this.sock || this.sock.closed) break;
                     try {
-                        await this.subscribe(feed, !feed.ready);
+                        if (await this.prepare(feed, !feed.ready && !feed.previewReady)) this.hooks.onWindow?.(feed.root);
                     } catch (err) {
                         this.log(`${feed.root} refresh: ${this.redact(err)}`);
                     }
                 }
+                if (this.sock === s && !s.closed) await this.drain(s);
             }
         } finally {
             this.busy = false;
@@ -714,32 +886,29 @@ export class FuturesWatcher {
     /** Write the file of every ready root; returns how many were written. */
     writeAll(): number {
         let written = 0;
-        const distApi = join(REPO, 'dist', 'api');
-        const toDist = existsSync(distApi);
+        const dir = this.opts.dir ?? FUTURES_DIR;
+        const distDir = this.opts.distDir !== undefined ? this.opts.distDir : existsSync(join(REPO, 'dist', 'api')) ? DIST_FUTURES_DIR : null;
         for (const feed of this.feeds) {
             if (!feed.ready) continue;
             if (this.hooks.writeOnlyOnChange && !feed.dirtySinceWrite) continue;
             feed.dirtySinceWrite = false;
-            const { payload, stats } = buildPayload({
-                root: feed.root, wanted: feed.wanted, values: feed.values, failed: feed.failed, completed: feed.completed, greeks: feed.greeks,
-                futures: feed.front ? futuresPrice(feed.values.get(feed.front) ?? {}) : null, now: new Date(),
-            });
+            const { payload, stats } = this.payloadOf(feed, new Date());
             if (!stats.quotes) {
                 this.log(`${feed.root}: no quotes yet, file not written`);
                 continue;
             }
             const text = payloadText(payload);
-            mkdirSync(FUTURES_DIR, { recursive: true });
-            const path = join(FUTURES_DIR, `${feed.root}.json`);
+            mkdirSync(dir, { recursive: true });
+            const path = join(dir, `${feed.root}.json`);
             writeFileAtomic(path, text);
-            if (toDist) {
-                mkdirSync(DIST_FUTURES_DIR, { recursive: true });
-                writeFileAtomic(join(DIST_FUTURES_DIR, `${feed.root}.json`), text);
+            if (distDir) {
+                mkdirSync(distDir, { recursive: true });
+                writeFileAtomic(join(distDir, `${feed.root}.json`), text);
             }
             if (stats.spot != null && stats.spotSource === 'parity') feed.lastSpot = stats.spot;
             const mode = String(feed.wanted.map((w) => feed.values.get(w.symbol)?.update_mode).filter(Boolean)[0] ?? '');
             const live = mode === 'streaming' ? 'realtime' : mode.startsWith('delayed') ? 'DELAYED (no realtime CME entitlement)' : mode || 'update mode unknown';
-            this.log(`${feed.root.padEnd(3)} wrote ${relative(REPO, path)}${toDist ? ' + dist' : ''}: ${feed.front?.split(':')[1]} spot ${stats.spot?.toFixed(2) ?? '-'} (${stats.spotSource}), ${stats.expirations} exps, ${stats.quotes} quotes, OI ${stats.withOi}, gamma ${stats.withGamma} (greeks of ${feed.greeksAt ? clock(new Date(feed.greeksAt)) : 'never'}), ${live}`);
+            this.log(`${feed.root.padEnd(3)} wrote ${relative(REPO, path)}${distDir ? ' + dist' : ''}: ${feed.front?.split(':')[1]} spot ${stats.spot?.toFixed(2) ?? '-'} (${stats.spotSource}), ${stats.expirations} exps, ${stats.quotes} quotes, OI ${stats.withOi}, gamma ${stats.withGamma} (greeks of ${feed.greeksAt ? clock(new Date(feed.greeksAt)) : 'never'}), ${live}`);
             written++;
         }
         return written;

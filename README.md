@@ -148,7 +148,7 @@ The browser cannot call Cboe, Yahoo, NASDAQ or TradingView directly (no CORS, co
  │     session: ~/.config/gex/tradingview.env (600)     │    │
  │              or imported from Chrome by itself       │    │
  │     1 websocket, quote sessions of <= 3,000 options ─┼────┼──> data.tradingview.com (bid, ask, OI, volume)
- │     scanner every minute ────────────────────────────┼────┼──> scanner.tradingview.com (greeks)
+ │     scanner at start + every minute ─────────────────┼────┼──> scanner.tradingview.com (bid, ask, greeks)
  │     server-sent events to the page <─────────────────┘    │
  │     api/futures/<ROOT>.json rewritten on change (15 s)     │
  └────────────────────────────────────────────────────────────┘
@@ -175,7 +175,7 @@ Ports: `APP_PORT` moves the app, `PORT` the proxy; each command checks its ports
 2. Log in to https://www.tradingview.com in **Chrome** (the account needs CME data for realtime futures options; without it quotes are 10 minutes delayed)
 3. `bun run tv:session`: reads the session cookie of the Chrome profile that used TradingView last. macOS asks once to allow access to the Keychain item "Chrome Safe Storage" (click **Always Allow**); the value is written to `~/.config/gex/tradingview.env` (mode 600) and never printed. You can skip this step: the proxy imports the session by itself when the file is missing
 4. `bun run tv:check` must print `ok`
-5. `bun run all`, open http://localhost:1234, enter **`/ES`** (or `ES1!`, `/NQ`, `/YM`, `/RTY`, `/MES`...). A plain `ES` stays the Eversource Energy stock. Right after the start the label says `TV starting… ES 1/4` for up to 3 minutes (the proxy subscribes about 11,800 options); it turns `LIVE TV hh:mm:ss` by itself
+5. `bun run all`, open http://localhost:1234, enter **`/ES`** (or `ES1!`, `/NQ`, `/YM`, `/RTY`, `/MES`...). A plain `ES` stays the Eversource Energy stock. Right after the start the page shows the last file, and within a few seconds the label turns `LIVE TV hh:mm:ss` by itself (a TradingView scanner snapshot first, then the options join the stream one by one, see [fast start](#what-the-tradingview-live-mode-does))
 
 ### The source label next to the ticker
 
@@ -184,8 +184,8 @@ Ports: `APP_PORT` moves the app, `PORT` the proxy; each command checks its ports
 | `LIVE CBOE`, `LIVE YAHOO`, `LIVE NASDAQ` | an options ticker loaded through the proxy from that provider |
 | `CACHE 2026-10-23` | an options ticker from the cache published with the site, of that trading day (amber when it is not today's) |
 | `CACHE 2026-10-25 21:40` | a futures ticker from its file `api/futures/<ROOT>.json`, written at that New York time (no proxy, or before the live stream sent its first snapshot) |
-| `TV starting… ES 1/4` | the live mode is still subscribing after the proxy started (ES, NQ, YM, RTY one after the other; measured 1.5 to 3 minutes for all four, ES alone about 80 s): the file is shown meanwhile and the page switches to live by itself, no reload |
-| `LIVE TV 10:05:07` | a futures ticker in the TradingView live mode: the time (New York) of the last update, it changes every few seconds while the market moves; the Desk header says the same (`as of 2026-10-26 10:05:07 ET · LIVE TV`) |
+| `TV starting… ES 1/4` | the live mode is reading the futures right after the proxy started (front contract, option list, scanner snapshot, the open future first; a few seconds): the file is shown meanwhile and the page switches to live by itself, no reload |
+| `LIVE TV 10:05:07` | a futures ticker in the TradingView live mode: the time (New York) of the last update, it changes every few seconds while the market moves; the Desk header says the same (`as of 2026-10-26 10:05:07 ET · LIVE TV`). While the proxy still adds options to its stream the tooltip says how far it is (`ES 3,200/5,560`): those stream tick by tick, the rest show the scanner snapshot |
 | `TV 15m delayed 10:05:07` | a stock or index (SPY, SPX, NVDA...) through the TradingView hybrid: OPRA option quotes 15 minutes late, greeks from TradingView's scanner, open interest from Cboe; the time of the last update (New York). Before TradingView delivers, or when it cannot, the provider's own label stays (`LIVE CBOE`) |
 | `TV LOGIN` | the live mode has no valid session: log in to tradingview.com in Chrome, the proxy picks it up within 3 minutes (or run `bun run tv:session`); the last file is shown meanwhile |
 | `TV PAUSED` | TradingView answered 429 or 403: no requests for 15 minutes, then 30, 60, at most 120 if it repeats; it resumes by itself |
@@ -197,7 +197,8 @@ The tooltip of the label says the same in full sentences (English and Russian)
 ### What the TradingView live mode does
 
 - **Session:** the proxy reads `~/.config/gex/tradingview.env` on every token request (so a new `tv:session` needs no restart). Missing or rejected -> it imports the session from Chrome by itself, but only once per new Chrome login (it compares a hash of the encrypted Chrome cookie, so the Keychain dialog shows at most once), and looks again every 3 minutes. The 4-hour auth token is renewed 15 minutes before it expires and sent on the open websocket
-- **Data:** one websocket to TradingView, one or more quote sessions per future (at most 3,000 options each: ES about 5,600 options in 2 sessions, NQ about 4,900 in 2, YM and RTY one each), every expiration up to and including the nearest monthly, strikes within ±6% of the forward. Bid, ask, last, volume and open interest arrive as TradingView pushes them. The scanner (TradingView's own IV and greeks) is read once a minute per future
+- **Fast start:** right after the proxy starts it reads each future (the one a page has open first): front contract, option list, then one or two scanner requests with bid, ask, IV and greeks of the whole window. With the open interest of the last file (`api/futures/<ROOT>.json`, the exchange's daily figure, equal to the CME Daily Bulletin) that is the first snapshot, about a second per future, so the page is `LIVE TV` within a few seconds instead of 1.5 to 3 minutes. Volume and last of the file are used only when it is of the same trading day
+- **Data:** one websocket to TradingView, one or more quote sessions per future (at most 3,000 options each: ES about 5,600 options in 2 sessions, NQ about 4,900 in 2, YM and RTY one each), every expiration up to and including the nearest monthly, strikes within ±6% of the forward. The options join the websocket in the background, 50 per message half a second apart (about 3 minutes for all four futures), the most important first: the future the page has open (opening another one moves it to the front), the expirations selected on the page (`GET /api/futures/focus`), then the strikes nearest the forward of every expiration in 1% bands, the nearest expiration first. Each option streams bid, ask, last, volume and open interest from its first answer on; until then it keeps its scanner values. The scanner is read again once a minute per future (also during the subscription, so the options not streaming yet stay fresh)
 - **Greeks:** the websocket carries no IV or greeks, so the app prices every option with a two-sided quote itself, Black-76 on its expiration's put-call parity forward (`src/vix-pricing.ts` `liveFuturesGreeks`); options without a two-sided quote keep TradingView's scanner greeks, which also serve as a cross-check
 - **To the page:** server-sent events: the whole chain once (a snapshot), then only the changed options every 500 ms. The page applies them in place, keeps the tab, the expirations and the scroll position, and recalculates the levels at most once a second (slower when one update is heavy: it keeps itself under 5% of a CPU core); the Chart tab fetches its candles again every minute
 - **Files:** `api/futures/<ROOT>.json` (and `dist/api/futures/` when `dist/api` exists) are rewritten every 15 s when something changed, so a reload, `bun run app` or the published site after a commit show the latest state
@@ -267,7 +268,7 @@ They stay as of that commit until refreshed by hand again (CI has no session and
 
 ### Troubleshooting
 
-- `/ES` says its file is missing: the live mode has not written it yet (up to 3 minutes after the proxy starts for all four futures) or the session is missing (`curl http://localhost:8787/api/futures/status`)
+- `/ES` says its file is missing: the live mode has not written it yet (it writes a future's file once all its options stream, up to 3 minutes after the proxy starts for all four futures) or the session is missing (`curl http://localhost:8787/api/futures/status`)
 - The label stays `CACHE <time>` for `/ES` while the proxy runs: refresh the page (auto-discovery off looks for the proxy only on load), check `curl http://localhost:8787/api/futures/status` says `"state":"live"`; with **Always cache** the live mode is off on purpose
 - Debug: `kill -USR2 <pid of bun scripts/tv/futures.ts>` drops the websocket of a standalone `tv:futures` to see the reconnect (`websocket closed`, `reconnecting in 5 s`, `subscribed N options in K quote session(s)`, `reconnected`); `TV_RENEW_EVERY_MS=180000 bun run tv:futures` renews the token every 3 minutes instead of 15 minutes before it expires; `GEX_TV_ENV=<file>` reads another env file (a copy with a wrong value shows the "session expired" message without touching the real one)
 - Open interest is the exchange's daily figure and lags one or two sessions. TradingView keeps each contract's OI of the last day it changed (`oi.time`, about 9% of the ES OI is dated before the newest day): checked against the CME Daily Bulletin of 2026-10-23, every value is equal, an older day just means no trade changed it since. The Desk names that day in the tooltip of the OI cell (`OI unchanged since <date>`), the files keep it per option (`oiDate`)
@@ -357,7 +358,7 @@ Optional files outside the core app source:
   - `/api/nasdaq`: NASDAQ option-chain relay
   - `/api/cboe`: CBOE delayed-options relay
   - `/api/search?provider=yahoo|nasdaq|cboe&q=...`: provider-native suggestions
-  - `/api/futures/status`, `/api/futures/live?root=ES`, `/api/futures/<ROOT>.json`: the TradingView live mode (`scripts/tv/live.ts`, `GEX_TV=0` turns it off)
+  - `/api/futures/status`, `/api/futures/live?root=ES`, `/api/futures/focus?root=ES&exps=...` (the page's root and expirations join the stream first), `/api/futures/<ROOT>.json`: the TradingView live mode (`scripts/tv/live.ts`, `GEX_TV=0` turns it off)
 
 ## Automations
 
@@ -450,7 +451,7 @@ scripts/
   options-local-proxy.ts      # local Bun proxy: health, Yahoo, chart, NASDAQ, CBOE, search
   proxy-cors.ts               # the proxy's CORS allowlist and private network preflight answer
   check-ports.ts              # port pre-check of bun run app, proxy, all, start
-  tv/                         # TradingView futures options: tv:session, tv:check, tv:futures and the proxy's live mode (live.ts); on your computer, never in CI
+  tv/                         # TradingView futures options: tv:session, tv:check, tv:futures and the proxy's live mode (live.ts); on your computer, never in CI; fake-tv.ts is a local fake of TradingView for the tests
 .github/workflows/
   ci.yaml                     # pull request checks
   update-data.yml             # data refresh of all tickers (weekly, also manual)
