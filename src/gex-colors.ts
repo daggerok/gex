@@ -73,11 +73,11 @@ export const AG_DOT_STROKE_WIDTH = 1.75;
  * The Board's peak and runner-up dots (owner 2026-10-25, replaces the sign-coloured dots): one blue for every column and for
  * peaks and runner-ups alike, so the dot reads as "a top value" and never competes with the Net GEX sign colours of the row
  * and cell tints. Light blue on the dark table, a darker blue on the white one. Contrast of the dot against what it sits on
- * (WCAG 1.4.11 asks 3:1 for graphics): light sky-600 4.10 on white, 3.40 on the green peak tint, 3.28 on the red one, 3.47
+ * (WCAG 1.4.11 asks 3:1 for graphics): light sky-700 5.93 on white, 4.93 on the green peak tint, 4.75 on the red one, 5.03
  * on the ATM tint; dark sky-300 10.71 on slate-900, 8.77 green tint, 9.36 red tint, 5.91 ATM tint.
  */
 export const BOARD_PEAK_DOT: Readonly<Record<'light' | 'dark', string>> = {
-    light: '#0284c7', // sky-600
+    light: '#0369a1', // sky-700 (owner 2026-10-25, was sky-600 #0284c7: 3.28 on the red tint)
     dark: '#7dd3fc', // sky-300
 };
 
