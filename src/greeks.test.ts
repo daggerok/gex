@@ -546,7 +546,7 @@ describe('yearsToExpiration: real time to the 16:00 New York settlement', () => 
   });
 });
 
-describe('AM-settled SPX monthlies and expired quotes (batch 4, owner 2026-10-25)', () => {
+describe('AM-settled SPX, NDX and RUT monthlies and expired quotes (batch 4, owner 2026-10-25)', () => {
   const HOUR = 1 / (365 * 24);
   const ny = (y: number, m: number, d: number, h: number, min = 0) => new Date(zonedTimeToMs(y, m, d, h, min));
   // 2026-11-20 is the 3rd Friday of November
@@ -563,6 +563,23 @@ describe('AM-settled SPX monthlies and expired quotes (batch 4, owner 2026-10-25
     expect(isAmSettled('SPY261120C00600000')).toBe(false);
     expect(isAmSettled(undefined)).toBe(false);
     expect(AM_SETTLEMENT_ET).toEqual({ hour: 9, minute: 30 });
+  });
+
+  test('NDX and RUT monthlies are AM-settled too, their NDXP and RUTW twins are not (owner 2026-10-25)', () => {
+    expect(isAmSettled('NDX261120C21000000')).toBe(true);
+    expect(isAmSettled('RUT261120P02400000')).toBe(true);
+    expect(isAmSettled('NDXP261120C21000000')).toBe(false);
+    expect(isAmSettled('RUTW261120P02400000')).toBe(false);
+    expect(isAmSettled('QQQ261120C00500000')).toBe(false);
+    expect(isAmSettled('IWM261120C00200000')).toBe(false);
+    const ndx = { expiration: '2026-11-20', symbol: 'NDX261120C21000000' };
+    const ndxp = { expiration: '2026-11-20', symbol: 'NDXP261120C21000000' };
+    const rut = { expiration: '2026-11-20', symbol: 'RUT261120P02400000' };
+    const rutw = { expiration: '2026-11-20', symbol: 'RUTW261120P02400000' };
+    expect(quoteYearsToExpiration(ndx, ny(2026, 11, 20, 9, 20)) as number).toBeCloseTo(0.25 * HOUR, 12);
+    expect(quoteYearsToExpiration(rut, ny(2026, 11, 20, 9, 31))).toBeNull();
+    expect(quoteYearsToExpiration(ndxp, ny(2026, 11, 20, 15)) as number).toBeCloseTo(HOUR, 12);
+    expect(withoutExpiredQuotes([ndx, ndxp, rut, rutw], ny(2026, 11, 20, 10))).toEqual([ndxp, rutw]);
   });
 
   test('an AM-settled quote counts to 9:30 New York and is over after it, its SPXW twin to 16:00', () => {

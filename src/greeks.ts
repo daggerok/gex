@@ -115,12 +115,14 @@ export const SETTLEMENT_HOUR_ET = 16;
 /**
  * AM-settled options (batch 4, owner 2026-10-25): the SPX monthlies (root `SPX`, not the PM-settled `SPXW`) settle on the
  * opening prints of their expiration day (Cboe lists the standard SPX monthlies as AM-settled and the SPXW weeklies as
- * PM-settled), so the app treats them as settled at 9:30 New York time that day (the owner's rule, not an exchange time:
- * the settlement value is computed from the opening prices, published later in the morning).
+ * PM-settled); the same holds for the NDX monthlies (root `NDX`, not the PM-settled `NDXP`) and the RUT monthlies (root
+ * `RUT`, not the PM-settled `RUTW`) (owner 2026-10-25, after batch 4). The app treats them as settled at 9:30 New York
+ * time that day (the owner's rule, not an exchange time: the settlement value is computed from the opening prices,
+ * published later in the morning).
  */
 export const AM_SETTLEMENT_ET = { hour: 9, minute: 30 } as const;
-/** Option roots settled in the morning (the leading letters of an OCC symbol). Only SPX for now (owner 2026-10-25). */
-export const AM_SETTLED_ROOTS: ReadonlySet<string> = new Set(['SPX']);
+/** Option roots settled in the morning (the leading letters of an OCC symbol): the SPX, NDX and RUT monthlies (owner 2026-10-25). */
+export const AM_SETTLED_ROOTS: ReadonlySet<string> = new Set(['SPX', 'NDX', 'RUT']);
 /** Smallest time to expiration the model uses before the settlement: 15 minutes (GEX-M1), so gamma stays finite near it. */
 export const MIN_MINUTES_TO_EXPIRATION = 15;
 const YEAR_MS = 365 * 86_400_000;
@@ -141,7 +143,7 @@ export function optionRoot(symbol: string | null | undefined): string {
     return m ? m[1] : '';
 }
 
-/** True for an AM-settled option (AM_SETTLED_ROOTS: SPX monthlies, not SPXW), by its OCC symbol. */
+/** True for an AM-settled option (AM_SETTLED_ROOTS: SPX, NDX, RUT monthlies, not SPXW, NDXP, RUTW), by its OCC symbol. */
 export function isAmSettled(symbol: string | null | undefined): boolean {
     return AM_SETTLED_ROOTS.has(optionRoot(symbol));
 }
