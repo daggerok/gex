@@ -9,12 +9,12 @@ import { setValuationTime } from '../../src/greeks';
 import { chainFromCacheFile } from '../../src/providers/cache';
 import { rowsFromChain } from '../options-data';
 import {
-    allocateSessions, buildPayload, familiesOf, futuresPrice, isThirdFriday, MAX_EXPIRATIONS, optionSymbol, parseScan, payloadText, pickSeries, QUOTE_SESSION_LIMIT, SCAN_PAGE, scanBody, strikesInWindow,
-    wantedOptions, type Family, type QuoteValues, type ScanRow, type WantedOption,
+    allocateSessions, buildPayload, familiesOf, futuresPrice, isThirdFriday, MAX_EXPIRATIONS, optionSymbol, parseScan, payloadText, pickSeries, QUOTE_SESSION_LIMIT, SCAN_PAGE, scanBody, scanGreeks, strikesInWindow,
+    TV_SCAN, TvRateLimitError, wantedOptions, type Family, type QuoteValues, type ScanRow, type WantedOption,
 } from './chain';
 import { cookieHeader, jwtExpiresAt, parseEnv, redact } from './env';
-import { DEFAULT_REFRESH_MS, DEFAULT_WATCH_MS, parseArgs, parseDuration } from './futures';
-import { authTokenFromPage, decodeFrames, encodeFrame, type TvMessage } from './ws';
+import { AUTH_REFRESH_BEFORE_MS, DEFAULT_REFRESH_MS, DEFAULT_WATCH_MS, FuturesWatcher, parseArgs, parseDuration, RATE_LIMIT_BACKOFF_MS, renewDueAt } from './futures';
+import { authTokenFromPage, decodeFrames, encodeFrame, fetchAuthToken, TV_HTTP, type TvMessage } from './ws';
 
 const fx = (name: string) => readFileSync(join(__dirname, 'fixtures', name), 'utf8');
 
@@ -243,6 +243,16 @@ describe('tv:futures arguments', () => {
         expect(DEFAULT_WATCH_MS).toBe(60_000);
     });
 
+    test('token renewal: 15 minutes before it expires, sooner only with the debug TV_RENEW_EVERY_MS', () => {
+        const now = 1_000_000_000_000;
+        const exp = now + 4 * 3_600_000;
+        expect(renewDueAt(exp, now, null)).toBe(exp - AUTH_REFRESH_BEFORE_MS);
+        expect(exp - renewDueAt(exp, now, null)).toBe(15 * 60_000);
+        expect(renewDueAt(exp, now, 180_000)).toBe(now + 180_000);
+        // the debug interval never delays a renewal that is due earlier
+        expect(renewDueAt(now + 10 * 60_000, now, 3_600_000)).toBe(now - 5 * 60_000);
+    });
+
     test('--micros, --once, roots in any form, durations', () => {
         expect(parseArgs(['--micros']).roots).toEqual(['ES', 'NQ', 'YM', 'RTY', 'MES', 'MNQ', 'MYM', 'M2K']);
         expect(parseArgs(['--once', '/es', 'NQ1!,ym']).roots).toEqual(['ES', 'NQ', 'YM']);
@@ -270,5 +280,127 @@ describe('quote sessions and scanner pages (coverage through the nearest monthly
         const wanted = [{ symbol: 'CME_MINI:E4A261026C7630', root: 'E4A', exp: 20261026, side: 'call' as const, strike: 7630 }];
         expect((scanBody('CME_MINI:ESZ2026', wanted) as { range: number[] }).range).toEqual([0, SCAN_PAGE]);
         expect((scanBody('CME_MINI:ESZ2026', wanted, SCAN_PAGE) as { range: number[] }).range).toEqual([SCAN_PAGE, 2 * SCAN_PAGE]);
+    });
+});
+
+describe('HTTP errors from TradingView (local fake server, no real request)', () => {
+    let server: ReturnType<typeof Bun.serve>;
+    /** what the fake answers next: status and body per path */
+    const answers: Record<string, { status: number; body: string }> = {};
+    const hits: Record<string, number> = {};
+    const saved = { scan: TV_SCAN.url, chart: TV_HTTP.chartUrl, sessionid: process.env.TV_SESSIONID };
+    const logs: string[] = [];
+    const realLog = console.log;
+    const wanted: WantedOption[] = [{ symbol: 'CME_MINI:E4A261026C7630', root: 'E4A', exp: 20261026, side: 'call', strike: 7630 }];
+
+    beforeAll(() => {
+        server = Bun.serve({
+            port: 0,
+            fetch(req) {
+                const path = new URL(req.url).pathname;
+                hits[path] = (hits[path] ?? 0) + 1;
+                const a = answers[path] ?? { status: 404, body: 'not found' };
+                return new Response(a.body, { status: a.status });
+            },
+        });
+        TV_SCAN.url = `http://127.0.0.1:${server.port}/scan`;
+        TV_HTTP.chartUrl = `http://127.0.0.1:${server.port}/chart/`;
+        // a fake session value, so nothing reads the owner's env file
+        process.env.TV_SESSIONID = 'fake-session-for-tests-0001';
+        console.log = (...args: unknown[]) => { logs.push(args.map(String).join(' ')); };
+    });
+    afterAll(() => {
+        console.log = realLog;
+        TV_SCAN.url = saved.scan;
+        TV_HTTP.chartUrl = saved.chart;
+        if (saved.sessionid == null) delete process.env.TV_SESSIONID; else process.env.TV_SESSIONID = saved.sessionid;
+        server.stop(true);
+    });
+    const reset = () => {
+        for (const k of Object.keys(hits)) delete hits[k];
+        logs.length = 0;
+    };
+
+    /** The private parts of the watcher the tests drive (no websocket is opened). */
+    type WatcherInternals = {
+        feeds: { front: string | null; wanted: WantedOption[]; greeks: Map<string, ScanRow> }[];
+        refreshGreeks(feed: unknown): Promise<void>;
+        authenticate(fatal: boolean): Promise<void>;
+        pausedUntil: number;
+    };
+    const watcher = (): WatcherInternals => {
+        const w = new FuturesWatcher(parseArgs(['ES'])) as unknown as WatcherInternals;
+        w.feeds[0].front = 'CME_MINI:ESZ2026';
+        w.feeds[0].wanted = wanted;
+        return w;
+    };
+
+    test('scanner 429 and 403: TvRateLimitError after ONE request, no retry', async () => {
+        for (const status of [429, 403]) {
+            reset();
+            answers['/scan'] = { status, body: 'slow down' };
+            await expect(scanGreeks('CME_MINI:ESZ2026', wanted, null)).rejects.toBeInstanceOf(TvRateLimitError);
+            expect(hits['/scan']).toBe(1);
+        }
+    });
+
+    test('scanner 500: a plain error naming the status, the echoed body redacted, ONE request', async () => {
+        reset();
+        answers['/scan'] = { status: 500, body: `boom ${fakeJwt(1)} sessionid=fake-session-for-tests-0001` };
+        const err = await scanGreeks('CME_MINI:ESZ2026', wanted, { sessionid: 'fake-session-for-tests-0001', sessionidSign: null }).then(() => new Error('no error thrown'), (e: unknown) => e as Error);
+        expect(err).toBeInstanceOf(Error);
+        expect(err).not.toBeInstanceOf(TvRateLimitError);
+        expect(err.message).toContain('scanner 500');
+        expect(err.message).not.toContain('fake-session-for-tests-0001');
+        expect(err.message).not.toContain('eyJ');
+        expect(hits['/scan']).toBe(1);
+    });
+
+    test('watcher: a scanner 429 pauses every request for RATE_LIMIT_BACKOFF_MS with one clear log line', async () => {
+        reset();
+        answers['/scan'] = { status: 429, body: 'slow down' };
+        const w = watcher();
+        const before = Date.now();
+        await w.refreshGreeks(w.feeds[0]);
+        expect(hits['/scan']).toBe(1);
+        expect(w.pausedUntil).toBeGreaterThanOrEqual(before + RATE_LIMIT_BACKOFF_MS);
+        expect(logs.filter((l) => l.includes('ES greeks: rate limited, no requests to TradingView until'))).toHaveLength(1);
+        // during the pause: no request at all, neither greeks nor a token (no tight loop)
+        for (let i = 0; i < 5; i++) {
+            await w.refreshGreeks(w.feeds[0]);
+            await w.authenticate(false);
+        }
+        expect(hits['/scan']).toBe(1);
+        expect(hits['/chart/'] ?? 0).toBe(0);
+    });
+
+    test('watcher: a scanner 500 keeps the previous greeks, logs it, no pause and no retry', async () => {
+        reset();
+        answers['/scan'] = { status: 502, body: 'bad gateway' };
+        const w = watcher();
+        const old = new Map<string, ScanRow>([['E4A261026C7630', { name: 'E4A261026C7630', iv: 0.2, delta: 0.5, gamma: 0.01, theta: null, vega: null, rho: null }]]);
+        w.feeds[0].greeks = old;
+        await w.refreshGreeks(w.feeds[0]);
+        expect(hits['/scan']).toBe(1);
+        expect(w.feeds[0].greeks).toBe(old);
+        expect(w.pausedUntil).toBe(0);
+        expect(logs.some((l) => l.includes('ES greeks: scanner 502') && l.includes('keeping the previous ones'))).toBe(true);
+    });
+
+    test('auth page 429: rate limited message, paused, the next token request waits', async () => {
+        reset();
+        answers['/chart/'] = { status: 429, body: '' };
+        const w = watcher();
+        await expect(w.authenticate(true)).rejects.toThrow('tradingview.com answered 429: rate limited, wait 15 minutes');
+        await w.authenticate(false);
+        expect(hits['/chart/']).toBe(1);
+    });
+
+    test('auth page without a token (session expired): the "run bun run tv:session" message', async () => {
+        reset();
+        answers['/chart/'] = { status: 200, body: '<html>"auth_token":"","is_pro":false</html>' };
+        const w = watcher();
+        await expect(w.authenticate(true)).rejects.toThrow('session expired -> run bun run tv:session');
+        expect((await fetchAuthToken({ sessionid: 'x', sessionidSign: null })).token).toBeNull();
     });
 });
