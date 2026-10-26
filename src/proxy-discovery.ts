@@ -136,8 +136,21 @@ export function useProxyDiscovery(base: string, enabled: boolean, poll: boolean)
 /** What the source label next to the ticker says. */
 export type SourceLabel =
     | { kind: 'checking' }
-    | { kind: 'live'; provider: string | null }
-    | { kind: 'cache'; date: string | null };
+    /** `at`: the New York time (hh:mm:ss) of the last live update, for the TradingView live mode (LIVE TV 10:05:07) */
+    | { kind: 'live'; provider: string | null; at?: string }
+    | { kind: 'cache'; date: string | null }
+    /** the TradingView live mode cannot stream (session, rate limit, reconnect): the file of `date` is shown meanwhile */
+    | { kind: 'tv'; state: string; message: string; until: number | null; date: string | null };
+
+/** What the TradingView live stream of a loaded futures ticker says (src/futures-live.ts useTvLive). */
+export interface TvLiveLabelInput {
+    /** a snapshot arrived: the data on screen is live */
+    streaming: boolean;
+    /** New York time of the last applied update, hh:mm:ss */
+    at: string;
+    /** the engine's state; null before the stream answered */
+    status: { state: string; message: string; until: number | null } | null;
+}
 
 /**
  * The source label: the provider that served the loaded ticker (LIVE CBOE, CACHE 2026-10-23), or before a ticker is
@@ -153,7 +166,15 @@ export function sourceLabel(opts: {
      * of"), which replaces the trading day (owner bug: CACHE 2026-10-23 next to "as of 2026-10-25 21:40 ET").
      */
     futuresAt?: string | null;
+    /** a futures ticker with the proxy found: the TradingView live stream (null without one) */
+    tvLive?: TvLiveLabelInput | null;
 }): SourceLabel {
+    if (opts.servedBy === 'static' && opts.tvLive) {
+        const { streaming, at, status } = opts.tvLive;
+        const state = status?.state ?? null;
+        if (state && state !== 'live' && state !== 'starting') return { kind: 'tv', state, message: status!.message, until: status!.until, date: opts.futuresAt ?? opts.dataDate };
+        if (streaming) return { kind: 'live', provider: 'TV', ...(at ? { at } : {}) };
+    }
     if (opts.servedBy === 'static') return { kind: 'cache', date: opts.futuresAt ?? opts.dataDate };
     if (opts.servedBy) return { kind: 'live', provider: opts.servedBy.toUpperCase() };
     if (opts.probing) return { kind: 'checking' };
