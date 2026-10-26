@@ -143,10 +143,6 @@ export function trustedOi(tv: { time?: unknown; value?: unknown } | null | undef
     return t != null && oiDay(t) === latestDay ? value : null;
 }
 
-/** `oi.time` (epoch seconds) -> its UTC day "YYYY-MM-DD". */
-export function oiDay(epochSeconds: number): string {
-    return new Date(epochSeconds * 1000).toISOString().slice(0, 10);
-}
 
 /** Strikes within +/- `pct` of `center`, ascending. */
 export function strikesInWindow(strikes: readonly number[], center: number, pct: number = WINDOW_PCT): number[] {

@@ -1176,20 +1176,28 @@ const App: React.FC = () => {
     // ticker with the proxy found (on the published site after "Use my local proxy") follows the proxy's live stream. Each
     // new chain (at most once a second) goes into the CACHE provider's memory and becomes the meta, so the selected
     // expirations load from it in place: tabs, selection and scroll stay, levels follow. Not in a backtest or "Always cache".
-    const liveFuturesSymbol = !asOf && meta && servedBy === 'static' && proxyAllowed && proxy.up === true && settings.source !== 'static' && isFuturesTicker(meta.symbol) ? meta.symbol : null;
+    const liveAllowed = !asOf && !!meta && proxyAllowed && proxy.up === true && settings.source !== 'static';
+    const liveFuturesSymbol = liveAllowed && meta && servedBy === 'static' && isFuturesTicker(meta.symbol) ? meta.symbol : null;
+    // TradingView hybrid (scripts/tv/hybrid.ts): a stock or index ticker served live by a bulk provider (CBOE, NASDAQ) in
+    // Auto follows the proxy's TradingView stream once it delivers (OPRA 15 min delayed, scanner greeks, Cboe OI); until
+    // then, or when TradingView cannot (no session, rate limit), the provider's chain stays and so does its label
+    const liveHybridSymbol = liveAllowed && meta && settings.source === 'auto' && (servedBy === 'cboe' || servedBy === 'nasdaq') && !isFuturesTicker(meta.symbol) ? meta.symbol : null;
+    const liveSymbol = liveFuturesSymbol ?? liveHybridSymbol;
+    const liveKind = liveFuturesSymbol ? 'futures' as const : 'hybrid' as const;
+    const liveProviderId = liveFuturesSymbol ? 'static' : servedBy ?? 'static';
     // bumped at most once a minute while live: the Chart tab fetches its candles again (through the proxy)
     const [chartRefresh, setChartRefresh] = useState(0);
     const chartRefreshAt = useRef(0);
     // set by a live update until its chain is committed (loadChain measures 'futures-live-reload' then)
     const liveReloadPending = useRef(false);
     const liveApplying = useRef(false);
-    const tvLive = useTvLive(settings.proxyBase, liveFuturesSymbol, (chain) => {
+    const tvLive = useTvLive(settings.proxyBase, liveSymbol, (chain) => {
         if (liveApplying.current || metaAbort.current || loadedSymbolRef.current !== chain.symbol) return; // the next one comes in a second
         liveApplying.current = true;
         performance.mark('futures-live-start');
         void (async () => {
             try {
-                const m = await applyLiveChain(chain, settings.vixFuturesPricing);
+                const m = await applyLiveChain(chain, settings.vixFuturesPricing, liveProviderId);
                 if (metaAbort.current || loadedSymbolRef.current !== m.symbol || !m.expirations.length) return;
                 const picked = pickExpirations(selectedExpsRef.current, m.expirations);
                 if (picked.join(',') !== selectedExpsRef.current.join(',')) {
@@ -1208,7 +1216,7 @@ const App: React.FC = () => {
                 liveApplying.current = false;
             }
         })();
-    });
+    }, liveKind);
 
     // Entering, changing or leaving a backtest reloads a ticker from the new source. Opening a snapshot picks the ticker: the
     // only one of a single-ticker backup; with two or more, the stored last ticker when the snapshot has it, else the first one
@@ -1310,7 +1318,7 @@ const App: React.FC = () => {
     const live = liveLabel({ liveReachable: chain[0] !== 'static', latestDate: bt.latestDate });
     // a futures ticker shows its file's own time (the Desk's "as of"), not the trading day the file belongs to
     const futuresAt = meta && isFuturesTicker(meta.symbol) ? dataAge(meta.updated, meta.dataDate)?.at ?? null : null;
-    const tvLiveLabel = liveFuturesSymbol ? { streaming: tvLive.streaming, at: nyTime(tvLive.updated), status: tvLive.status } : null;
+    const tvLiveLabel = liveSymbol ? { streaming: tvLive.streaming, at: nyTime(tvLive.updated), status: tvLive.status, hybrid: liveKind === 'hybrid' } : null;
     const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null, futuresAt, tvLive: tvLiveLabel });
     const liveText = live.kind === 'today' ? tr('bt.asOfToday') : live.date ? tr('bt.asOfLatest', { date: live.date }) : tr('bt.asOfUnknown');
 

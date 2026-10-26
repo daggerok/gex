@@ -95,4 +95,11 @@ describe('sourceLabel', () => {
         const expired = { state: 'expired', message: 'log in to tradingview.com in Chrome', until: null };
         expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: expired } })).toEqual({ kind: 'tv', state: 'expired', message: 'log in to tradingview.com in Chrome', until: null, date: '2026-10-25 21:40' });
     });
+    test('TradingView hybrid (a stock through CBOE): TV 15m delayed while streaming, else the provider\'s own label', () => {
+        const base = { chain: ['cboe', 'static'] as ('cboe' | 'static')[], probing: false, servedBy: 'cboe' as const, dataDate: null };
+        const live = { state: 'live', message: 'streaming SPY', until: null };
+        expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: live, hybrid: true } })).toEqual({ kind: 'live', provider: 'TV', at: '10:05:07', delayedMin: 15 });
+        expect(sourceLabel({ ...base, tvLive: { streaming: false, at: '', status: null, hybrid: true } })).toEqual({ kind: 'live', provider: 'CBOE' });
+        expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: { state: 'expired', message: 'x', until: null }, hybrid: true } })).toEqual({ kind: 'live', provider: 'CBOE' });
+    });
 });

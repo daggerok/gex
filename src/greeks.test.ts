@@ -442,9 +442,9 @@ describe('vixFuturesPricing call-site parity', () => {
     expect(chainSrc).toContain('getBulk(provider.id, meta.symbol, vixFuturesPricing)');
     // the TradingView live mode (futures-live.ts, PR #202) writes and reads the bulk cache with the same setting
     const liveSrc = read('src/futures-live.ts');
-    expect(liveSrc).toContain("putBulk('static', chain, vixFuturesPricing, false)");
-    expect(liveSrc).toContain("getBulk('static', chain.symbol, vixFuturesPricing)");
-    expect(mainSrc).toContain('applyLiveChain(chain, settings.vixFuturesPricing)');
+    expect(liveSrc).toContain('putBulk(providerId, chain, vixFuturesPricing, false)');
+    expect(liveSrc).toContain('getBulk(providerId, chain.symbol, vixFuturesPricing)');
+    expect(mainSrc).toContain('applyLiveChain(chain, settings.vixFuturesPricing, liveProviderId)');
     // Sanity: exactly one real call site each (ignoring comments/changelog
     // prose, which also mention these names) — if a second call site is
     // ever added without updating this test, this count check (not the
