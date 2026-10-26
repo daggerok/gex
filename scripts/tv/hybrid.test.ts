@@ -3,7 +3,7 @@
 // TradingView hybrid for stock and index options (scripts/tv/hybrid.ts) and the shared OI rule (chain.ts trustedOi):
 // symbols, the window, scanner names, Cboe OI. No network.
 import { describe, expect, test } from 'bun:test';
-import { occSymbol, oiDay, opraStrike, optionSymbol, trustedOi, type Family, type ScanRow } from './chain';
+import { occSymbol, oiDay, openInterestOf, opraStrike, optionSymbol, type Family, type ScanRow } from './chain';
 import { fetchCboeOi, hybridWanted, underlyingCandidates, withOpraNames } from './hybrid';
 
 describe('OPRA symbols', () => {
@@ -26,16 +26,14 @@ describe('OPRA symbols', () => {
     });
 });
 
-describe('which open interest to trust (one rule for every TradingView chain)', () => {
+describe('which open interest to use (one rule for every TradingView chain, owner decision G10: keep and mark)', () => {
     const day = (iso: string) => Date.parse(`${iso}T02:40:00Z`) / 1000;
-    test('Cboe first; else TradingView only on the newest OI day; else unknown (null, not 0)', () => {
-        expect(trustedOi({ time: day('2026-10-23'), value: 100 }, '2026-10-23', 117)).toBe(117);
-        expect(trustedOi({ time: day('2026-10-23'), value: 100 }, '2026-10-23', null)).toBe(100);
-        expect(trustedOi({ time: day('2026-10-15'), value: 268 }, '2026-10-23', undefined)).toBeNull();
-        expect(trustedOi(undefined, '2026-10-23', undefined)).toBeNull();
-        expect(trustedOi({ time: day('2026-10-23') }, '2026-10-23', null)).toBeNull();
-        // no latest day given (the futures today, owner question G10): TradingView's value whatever its day
-        expect(trustedOi({ time: day('2026-09-21'), value: 5 }, null, null)).toBe(5);
+    test('Cboe first (current, no day); else TradingView with its own day (the app marks an old one); else null, not 0', () => {
+        expect(openInterestOf({ time: day('2026-10-15'), value: 100 }, 117)).toEqual({ value: 117, day: null });
+        expect(openInterestOf({ time: day('2026-10-15'), value: 268 }, undefined)).toEqual({ value: 268, day: '2026-10-15' });
+        expect(openInterestOf({ value: 5 }, null)).toEqual({ value: 5, day: null });
+        expect(openInterestOf(undefined, undefined)).toBeNull();
+        expect(openInterestOf({ time: day('2026-10-23') }, null)).toBeNull();
         expect(oiDay(day('2026-10-22'))).toBe('2026-10-22');
     });
 });

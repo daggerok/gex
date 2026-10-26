@@ -128,19 +128,17 @@ export function occSymbol(root: string, exp: number, side: 'call' | 'put', strik
 }
 
 /**
- * Which open interest to trust (one rule for every TradingView chain). TradingView keeps each contract's OI of the LAST
- * day it got one (`oi.time`); for US options that value is stale and low on most strikes (probe 2026-10-26: 9-30% below
- * Cboe). So: the Cboe OI when there is one; else TradingView's value only when its day is the newest OI day of the chain
- * (`latestDay`); else null (unknown, not 0). `latestDay` null (no Cboe source, the futures today) keeps TradingView's value
- * whatever its day, the owner's open question G10.
+ * The open interest of one option, one rule for every TradingView chain (owner decision G10, option C: keep and mark).
+ * TradingView keeps each contract's OI of the LAST day it got one (`oi.time`), on US options often weeks old and low
+ * (probe 2026-10-26: 9-30% below Cboe). So: the Cboe OI when there is one (`day` null: current); else TradingView's value
+ * with its day, which the app compares with the chain's newest day and shows pale when older (src/oi-dates.ts); else null.
  */
-export function trustedOi(tv: { time?: unknown; value?: unknown } | null | undefined, latestDay: string | null, cboe: number | null | undefined): number | null {
-    if (typeof cboe === 'number' && Number.isFinite(cboe)) return cboe;
+export function openInterestOf(tv: { time?: unknown; value?: unknown } | null | undefined, cboe: number | null | undefined): { value: number; day: string | null } | null {
+    if (typeof cboe === 'number' && Number.isFinite(cboe)) return { value: cboe, day: null };
     const value = numOrNull(tv?.value);
     if (value == null) return null;
-    if (latestDay == null) return value;
     const t = numOrNull(tv?.time);
-    return t != null && oiDay(t) === latestDay ? value : null;
+    return { value, day: t != null ? oiDay(t) : null };
 }
 
 

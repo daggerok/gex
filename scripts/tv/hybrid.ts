@@ -7,7 +7,7 @@
  * When the app has a stock or index ticker open through the proxy (SPY, QQQ, NVDA, SPX...), the proxy streams its chain
  * from TradingView: bid, ask, last and volume of OPRA options (15 minutes delayed without an OPRA subscription,
  * `delayed_streaming_900`), TradingView's scanner greeks every HYBRID_SCAN_MS, open interest from Cboe (TradingView's is
- * stale per contract, chain.ts trustedOi). Same server-sent events as the futures live mode (live.ts):
+ * stale per contract, chain.ts openInterestOf). Same server-sent events as the futures live mode (live.ts):
  *
  *   GET /api/tv/live?symbol=SPY   event: status | snapshot | delta | greeks (the shapes of live.ts)
  *   GET /api/tv/status            {"hybrid":true,"feeds":[{"symbol","state","options"}]}
@@ -18,8 +18,8 @@
  * personal use: it is never written to a file, never to api/, never committed. No session value or token is printed.
  */
 import {
-    allocateSessions, familiesOf, futuresPrice, occSymbol, oiDay, optionSymbol, QUOTE_FIELDS, QUOTE_SESSION_LIMIT, scanGreeks,
-    strikesInWindow, TvRateLimitError, trustedOi, WINDOW_PCT, WS_BATCH, WS_BATCH_PAUSE_MS, WS_BATCH_TIMEOUT_MS, buildPayload,
+    allocateSessions, familiesOf, futuresPrice, occSymbol, optionSymbol, QUOTE_FIELDS, QUOTE_SESSION_LIMIT, scanGreeks,
+    strikesInWindow, TvRateLimitError, openInterestOf, WINDOW_PCT, WS_BATCH, WS_BATCH_PAUSE_MS, WS_BATCH_TIMEOUT_MS, buildPayload,
     type Family, type QuoteValues, type ScanRow, type WantedOption,
 } from './chain';
 import { jwtExpiresAt, loadTvSession, redact, sleep, UA, type TvSession } from './env';
@@ -119,7 +119,6 @@ export class HybridFeed {
     private greeks = new Map<string, ScanRow>();
     private cboeOi = new Map<string, number>();
     private cboeAt = 0;
-    private latestOiDay: string | null = null;
     private readonly dirty = new Set<string>();
     private readonly timers: ReturnType<typeof setInterval>[] = [];
     private reconnectDelay = RECONNECT_MIN_MS;
@@ -339,33 +338,22 @@ export class HybridFeed {
         }
     }
 
-    private computeLatestOiDay(): string | null {
-        let latest: string | null = null;
-        this.values.forEach((v) => {
-            const t = (v.oi as { time?: unknown } | undefined)?.time;
-            if (typeof t === 'number') {
-                const d = oiDay(t);
-                if (!latest || d > latest) latest = d;
-            }
-        });
-        return latest;
-    }
-
-    private oiOf(w: WantedOption): number | null {
+    /** Cboe's OI, else TradingView's with its day (chain.ts openInterestOf; the app marks an old day pale). */
+    private oiOf(w: WantedOption): { value: number; day: string | null } | null {
         const tv = this.values.get(w.symbol)?.oi as { time?: unknown; value?: unknown } | undefined;
-        return trustedOi(tv, this.latestOiDay ?? '9999-12-31', this.cboeOi.get(occSymbol(w.root, w.exp, w.side, w.strike)));
+        return openInterestOf(tv, this.cboeOi.get(occSymbol(w.root, w.exp, w.side, w.strike)));
     }
 
     /** The chain in the file schema (never written to a file: OPRA data stays in memory). */
     snapshot(): Payload | null {
         if (!this.ready || !this.underlying) return null;
-        this.latestOiDay = this.computeLatestOiDay();
         const values = new Map<string, QuoteValues>();
         for (const w of this.wanted) {
             const v = this.values.get(w.symbol);
             if (!v) continue;
             const oi = this.oiOf(w);
-            values.set(w.symbol, { ...v, oi: oi == null ? undefined : { value: oi } });
+            // a Cboe value has no TradingView day (current); a TradingView one keeps its own day (buildPayload -> oiDate)
+            values.set(w.symbol, { ...v, oi: oi == null ? undefined : oi.day == null ? { value: oi.value } : v.oi });
         }
         return buildPayload({
             root: this.ticker, wanted: this.wanted, values, failed: this.failed, completed: new Set(), greeks: this.greeks,
@@ -381,7 +369,8 @@ export class HybridFeed {
             if (!w || this.failed.has(sym)) continue;
             const v = this.values.get(sym) ?? {};
             const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
-            out.push([sym.slice(sym.indexOf(':') + 1), n(v.bid), n(v.ask), n(v.lp), n(v.volume), this.oiOf(w)]);
+            const oi = this.oiOf(w);
+            out.push([sym.slice(sym.indexOf(':') + 1), n(v.bid), n(v.ask), n(v.lp), n(v.volume), oi?.value ?? null, oi?.day ?? null]);
         }
         return out;
     }
