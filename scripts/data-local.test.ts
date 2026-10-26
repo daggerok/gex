@@ -2,11 +2,15 @@
 /// <reference types="node" />
 
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   buildPlist,
   defaultRunnerPath,
+  defaultStateDir,
+  legacyPaths,
+  migrateLegacy,
+  migrationPlan,
   HELP,
   lockDecision,
   nextNyInstant,
@@ -80,9 +84,9 @@ describe('plist', () => {
     label: 'com.daggerok.gex-data',
     programArguments: ['/Users/me/.bun/bin/bun', '/w/data-runner/scripts/data-local.ts', 'run', 'partial', '--scheduled'],
     workingDirectory: '/w/data-runner',
-    env: { PATH: '/usr/bin:/bin', GEX_DATA_LOG: '/Users/me/Library/Logs/gex-data.log' },
+    env: { PATH: '/usr/bin:/bin', GEX_DATA_LOG: '/ws/gex-data-state/gex-data.log' },
     slots: [{ weekday: 1, hour: 8, minute: 45 }, { weekday: 5, hour: 19, minute: 15 }],
-    logPath: '/Users/me/Library/Logs/gex-data.log',
+    logPath: '/ws/gex-data-state/gex-data.log',
   });
 
   test('has the label, the program, one calendar dict per slot, the log for both streams and no RunAtLoad', () => {
@@ -150,10 +154,90 @@ describe('paths and help', () => {
     expect(resolvePaths({}, '/ws/gex').plist).toMatch(/Library\/LaunchAgents\/com\.daggerok\.gex-data\.plist$/);
   });
 
+  test('log, state and lock default to gex-data-state next to the main checkout (../gex-data-state from gex)', () => {
+    expect(defaultStateDir('/ws/gex')).toBe('/ws/gex-data-state');
+    const p = resolvePaths({}, '/ws/gex');
+    expect(p).toMatchObject({ home: '/ws/gex-data-state', log: '/ws/gex-data-state/gex-data.log', state: '/ws/gex-data-state/state.json', lock: '/ws/gex-data-state/run.lock' });
+    // GEX_DATA_HOME alone moves the log with it; GEX_DATA_LOG still overrides the log alone
+    expect(resolvePaths({ GEX_DATA_HOME: '/h' }, '/ws/gex').log).toBe('/h/gex-data.log');
+    expect(resolvePaths({ GEX_DATA_HOME: '/h', GEX_DATA_LOG: '/x/y.log' }, '/ws/gex')).toMatchObject({ home: '/h', log: '/x/y.log' });
+  });
+
   test('help lists every package.json data:* command', () => {
     const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> };
     const cmds = Object.keys(pkg.scripts).filter((k) => k.startsWith('data:'));
     expect(cmds.length).toBe(8);
     for (const c of cmds) expect(HELP).toContain(`bun run ${c}`);
+  });
+});
+
+describe('migration from ~/Library (first version)', () => {
+  const legacy = legacyPaths('/Users/me');
+  const p = resolvePaths({}, '/ws/gex');
+
+  test('the old paths are the ones PR #240 used', () => {
+    expect(legacy).toEqual({
+      dir: '/Users/me/Library/Application Support/gex-data',
+      log: '/Users/me/Library/Logs/gex-data.log',
+      state: '/Users/me/Library/Application Support/gex-data/state.json',
+      lock: '/Users/me/Library/Application Support/gex-data/run.lock',
+    });
+  });
+
+  test('moves the old log and state when the new place has none; never the lock', () => {
+    const plan = migrationPlan(p, legacy, (f) => f.startsWith('/Users/me/'));
+    expect(plan.moves).toEqual([
+      { from: legacy.log, to: '/ws/gex-data-state/gex-data.log' },
+      { from: legacy.state, to: '/ws/gex-data-state/state.json' },
+    ]);
+    expect(plan.kept).toEqual([]);
+  });
+
+  test('nothing old -> nothing to do; a file already at the new place wins and the old one is kept', () => {
+    expect(migrationPlan(p, legacy, () => false)).toEqual({ moves: [], kept: [] });
+    const plan = migrationPlan(p, legacy, (f) => f === legacy.state || f === p.state || f === legacy.log);
+    expect(plan.moves).toEqual([{ from: legacy.log, to: p.log }]);
+    expect(plan.kept).toEqual([{ from: legacy.state, to: p.state }]);
+  });
+
+  test('env overrides that point at the old paths mean no move', () => {
+    const same = resolvePaths({ GEX_DATA_HOME: legacy.dir, GEX_DATA_LOG: legacy.log }, '/ws/gex');
+    expect(migrationPlan(same, legacy, () => true).moves).toEqual([]);
+  });
+
+  test('migrateLegacy moves the files on disk, drops a stale old lock and the empty old folder', () => {
+    const root = join(__dirname, '..', '.temp', 'data-local-migrate');
+    rmSync(root, { recursive: true, force: true });
+    const old = legacyPaths(join(root, 'home'));
+    mkdirSync(old.dir, { recursive: true });
+    mkdirSync(join(root, 'home', 'Library', 'Logs'), { recursive: true });
+    writeFileSync(old.log, 'old log\n');
+    writeFileSync(old.state, '{"partial":{}}\n');
+    writeFileSync(old.lock, JSON.stringify({ pid: 2 ** 22 + 12345, job: 'partial', started: 'x' })); // no such pid
+    const np = resolvePaths({}, join(root, 'ws', 'gex'));
+    const lines: string[] = [];
+    expect(migrateLegacy(np, old, (l) => lines.push(l))).toBe(true);
+    expect(readFileSync(np.log, 'utf8')).toBe('old log\n');
+    expect(readFileSync(np.state, 'utf8')).toBe('{"partial":{}}\n');
+    expect(existsSync(old.log) || existsSync(old.state) || existsSync(old.lock) || existsSync(old.dir)).toBe(false);
+    expect(lines.length).toBe(2);
+    // a second run finds nothing to move
+    expect(migrateLegacy(np, old, (l) => lines.push(l))).toBe(true);
+    expect(lines.length).toBe(2);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test('migrateLegacy refuses while a live process holds the old lock', () => {
+    const root = join(__dirname, '..', '.temp', 'data-local-migrate-held');
+    rmSync(root, { recursive: true, force: true });
+    const old = legacyPaths(join(root, 'home'));
+    mkdirSync(old.dir, { recursive: true });
+    writeFileSync(old.state, '{}');
+    writeFileSync(old.lock, JSON.stringify({ pid: process.pid, job: 'partial', started: 'x' }));
+    const np = resolvePaths({}, join(root, 'ws', 'gex'));
+    expect(migrateLegacy(np, old, () => {})).toBe(false);
+    expect(existsSync(old.state)).toBe(true);
+    expect(existsSync(np.state)).toBe(false);
+    rmSync(root, { recursive: true, force: true });
   });
 });
