@@ -70,15 +70,16 @@ export const AG_DOT_HOVER_RING: Readonly<Record<'light' | 'dark', string>> = {
 export const AG_DOT_STROKE_WIDTH = 1.75;
 
 /**
- * The Board's peak and runner-up dots (owner 2026-10-25, replaces the sign-coloured dots): one blue for every column and for
- * peaks and runner-ups alike, so the dot reads as "a top value" and never competes with the Net GEX sign colours of the row
- * and cell tints. Light blue on the dark table, a darker blue on the white one. Contrast of the dot against what it sits on
- * (WCAG 1.4.11 asks 3:1 for graphics): light sky-700 5.93 on white, 4.93 on the green peak tint, 4.75 on the red one, 5.03
- * on the ATM tint; dark sky-300 10.71 on slate-900, 8.77 green tint, 9.36 red tint, 5.91 ATM tint.
+ * The Board's trophy cups (owner 2026-10-26, replaces the blue peak dots BOARD_PEAK_DOT): a GOLD cup marks each column's
+ * peak, a SILVER cup its runner-up (components/CupIcon.tsx). Light and dark values per theme. Contrast of the cup against
+ * what it sits on (WCAG 1.4.11 asks 3:1 for graphics; base, green peak tint, red peak tint, ATM tint), checked in
+ * gex-colors.test.ts: light gold #a17a00 3.96 / 3.29 / 3.17 / 3.36, light silver slate-500 4.76 / 3.95 / 3.81 / 4.03 (the
+ * suggested #d4a017 and #8a94a6 measured 1.90-2.38 and 2.45-3.06 on white and the tints, too faint); dark gold #f5c542
+ * 11.01 / 9.02 / 9.62 / 6.07, dark silver slate-300 12.02 / 9.85 / 10.51 / 6.63.
  */
-export const BOARD_PEAK_DOT: Readonly<Record<'light' | 'dark', string>> = {
-    light: '#0369a1', // sky-700 (owner 2026-10-25, was sky-600 #0284c7: 3.28 on the red tint)
-    dark: '#7dd3fc', // sky-300
+export const BOARD_CUP: Readonly<Record<'gold' | 'silver', Readonly<Record<'light' | 'dark', string>>>> = {
+    gold: { light: '#a17a00', dark: '#f5c542' },
+    silver: { light: '#64748b', dark: '#cbd5e1' }, // slate-500 / slate-300
 };
 
 /** Lines the user adds to the Chart tab with a right click (not a GEX level, so it has no GexLevelKey). */
