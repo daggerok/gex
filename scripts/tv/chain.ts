@@ -109,9 +109,43 @@ export function isoDate(yyyymmdd: number): string {
     return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 }
 
-/** TradingView option symbol: <prefix>:<root><YYMMDD><C|P><strike>, e.g. CME_MINI:E4A261026C7630 */
+/** An OPRA strike as TradingView writes it: always with a decimal (760 -> "760.0", 207.5 -> "207.5"); without it the quote session answers `error`. */
+export function opraStrike(strike: number): string {
+    return Number.isInteger(strike) ? `${strike}.0` : String(strike);
+}
+
+/**
+ * TradingView option symbol: <prefix>:<root><YYMMDD><C|P><strike>, e.g. CME_MINI:E4A261026C7630; US options (prefix OPRA)
+ * carry the strike with a decimal, OPRA:SPY261026C760.0 (reports/tv-opra-probe/summary.md).
+ */
 export function optionSymbol(prefix: string, root: string, exp: number, side: 'call' | 'put', strike: number): string {
-    return `${prefix}:${root}${String(exp).slice(2)}${side === 'call' ? 'C' : 'P'}${strike}`;
+    return `${prefix}:${root}${String(exp).slice(2)}${side === 'call' ? 'C' : 'P'}${prefix === 'OPRA' ? opraStrike(strike) : strike}`;
+}
+
+/** The OCC symbol Cboe uses for the same option: SPY261026C00760000 (strike x 1000, 8 digits). */
+export function occSymbol(root: string, exp: number, side: 'call' | 'put', strike: number): string {
+    return `${root}${String(exp).slice(2)}${side === 'call' ? 'C' : 'P'}${String(Math.round(strike * 1000)).padStart(8, '0')}`;
+}
+
+/**
+ * Which open interest to trust (one rule for every TradingView chain). TradingView keeps each contract's OI of the LAST
+ * day it got one (`oi.time`); for US options that value is stale and low on most strikes (probe 2026-10-26: 9-30% below
+ * Cboe). So: the Cboe OI when there is one; else TradingView's value only when its day is the newest OI day of the chain
+ * (`latestDay`); else null (unknown, not 0). `latestDay` null (no Cboe source, the futures today) keeps TradingView's value
+ * whatever its day, the owner's open question G10.
+ */
+export function trustedOi(tv: { time?: unknown; value?: unknown } | null | undefined, latestDay: string | null, cboe: number | null | undefined): number | null {
+    if (typeof cboe === 'number' && Number.isFinite(cboe)) return cboe;
+    const value = numOrNull(tv?.value);
+    if (value == null) return null;
+    if (latestDay == null) return value;
+    const t = numOrNull(tv?.time);
+    return t != null && oiDay(t) === latestDay ? value : null;
+}
+
+/** `oi.time` (epoch seconds) -> its UTC day "YYYY-MM-DD". */
+export function oiDay(epochSeconds: number): string {
+    return new Date(epochSeconds * 1000).toISOString().slice(0, 10);
 }
 
 /** Strikes within +/- `pct` of `center`, ascending. */
