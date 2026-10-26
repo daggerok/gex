@@ -3,10 +3,11 @@ import * as React from 'react';
 import { ChainTable, type ChainSection } from '../components/ChainTable';
 import { Icon } from '../components/Icon';
 import { KeyOnboarding } from '../components/KeyOnboarding';
+import { ToolbarRow } from '../components/ToolbarRow';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
 import type { GexMetric } from '../metric-prefs';
-import type { ChainMeta, DataProvider, Settings } from '../types';
+import type { ChainMeta, DataProvider, GexLevels, Settings } from '../types';
 import { fmt, type DataAge } from '../utils';
 
 // ============================================================================
@@ -41,14 +42,21 @@ export interface DeskViewProps {
     sections: ChainSection[];
     hasRows: boolean;
     /** The chosen metrics (shared with the Board): the scroll marks strip marks their Board columns' peaks and runner-ups */
-    metrics: readonly GexMetric[];
+    metrics: GexMetric[];
+    setMetrics: (metrics: GexMetric[]) => void;
+    /** the Levels panel of the shared toolbar row (shown disabled on the Desk) */
+    levels: GexLevels | null;
+    levelsSymbol: string;
+    /** the Desk tab is shown: the Desk stays mounted (hidden) on other tabs, its toolbar row only renders while shown, so
+     *  the page never holds two copies of the shared row's controls */
+    active: boolean;
 }
 
 export const DeskView: React.FC<DeskViewProps> = ({
     settings, provider, meta, loadChain, getDates,
     tickerInput, metaLoading, expLoading, anyLoading, cancelAll, chainSymbol, spot,
     spotIsEstimated, dataAge, notice, error, showOnboarding, setToken, setSecret, onboardingPreview,
-    previewLabel, sections, hasRows, metrics,
+    previewLabel, sections, hasRows, metrics, setMetrics, levels, levelsSymbol, active,
 }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(settings.colorTheme);
@@ -83,7 +91,10 @@ export const DeskView: React.FC<DeskViewProps> = ({
             comment for the bug this replaced). The onboarding/placeholder
             branches intentionally do NOT get flex-1 - they stay natural
             (centered, py-16) content, unchanged from before. */
-        <main className="mx-auto w-full px-4 pt-4 lg:px-6 h-full flex flex-col min-h-0">
+        <main className="mx-auto w-full px-4 pt-4 lg:px-6 h-full flex flex-col min-h-0" data-desk>
+            {/* the Metrics + Levels row of every tab (owner 2026-10-26: the upper part is identical on all four tabs, nothing
+                jumps on a tab switch); Metrics pick the scroll marks' peaks, Levels are shown disabled (no effect here) */}
+            {active && <ToolbarRow metrics={metrics} setMetrics={setMetrics} levels={levels} symbol={levelsSymbol} colorTheme={settings.colorTheme} spotEstimated={spotIsEstimated} levelsDisabled />}
             {/* ---- Controls: STEP 1 result (Cancel/spot) — the expiration
                 picker (STEP 2, selected dates load by themselves) lives in the
                 shared panel in main.tsx, in the same row as the tab pills,
