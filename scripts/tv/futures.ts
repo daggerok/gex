@@ -4,8 +4,8 @@
 /**
  * bun run tv:futures - futures options GEX data from the owner's TradingView session. Runs only on the owner's machine
  * (the session never goes to CI); the files api/futures/<ROOT>.json are committed by hand and published with the site
- * (owner 2026-10-25: `bun run tv:futures --once`, commit, push; may be removed later for space). scripts/tv/no-secrets.test.ts
- * checks that no file holds the session.
+ * (owner 2026-10-25: `bun run tv:futures --once`, commit, push; may be removed later for space). The session
+ * and the token never reach a file or a log line (env.ts redact()).
  *
  *   bun run tv:futures                 ES, NQ, YM, RTY; rewrites the files every minute until Ctrl+C (--watch 1m)
  *   bun run tv:futures --micros        also MES, MNQ, MYM, M2K (their option chains are separate)
@@ -540,7 +540,8 @@ export class FuturesWatcher {
         }
         this.busy = true;
         try {
-            if (Date.now() >= this.renewAt) {
+            // like the refresh below: the timer may fire a few ms before a renewal that is due now
+            if (Date.now() >= this.renewAt - 1000) {
                 try {
                     await this.authenticate(false);
                 } catch (err) {
