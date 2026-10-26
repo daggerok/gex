@@ -2,7 +2,8 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 /**
- * bun run tv:futures - futures options GEX data from the owner's TradingView session. Runs only on the owner's machine
+ * bun run tv:futures - futures options GEX data from the owner's TradingView session (README "Local proxy and TradingView
+ * live mode"; the proxy runs the same FuturesWatcher in its live mode, scripts/tv/live.ts). Runs only on the owner's machine
  * (the session never goes to CI); the files api/futures/<ROOT>.json are committed by hand and published with the site
  * (owner 2026-10-25: `bun run tv:futures --once`, commit, push; may be removed later for space). The session
  * and the token never reach a file or a log line (env.ts redact()).

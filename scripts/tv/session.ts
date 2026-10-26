@@ -3,6 +3,8 @@
 /// <reference types="bun" />
 /**
  * bun run tv:session - put the TradingView session cookies into ~/.config/gex/tradingview.env (mode 600). On the owner's machine only, the value is never printed.
+ * README "Local proxy and TradingView live mode" -> "First-time setup". The proxy's live mode (scripts/tv/live.ts) uses
+ * importSessionFromChrome and chromeSessionFingerprint below to import a new session by itself.
  *
  * 1. Import `sessionid` and `sessionid_sign` of .tradingview.com from the owner's Chrome profiles on macOS: each Cookies
  *    sqlite is read into memory (never copied to disk), the AES key comes from the Keychain item "Chrome Safe Storage"
