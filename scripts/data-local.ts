@@ -18,7 +18,7 @@
  *   run <job> [--dry-run] run a job now in the foreground (jobs: partial, weekly, backup [tickers], deps)
  *   pause | resume        unload or load the launchd agent, the plist stays
  *   uninstall             unload the agent and delete its plist
- *   advanced: install, unlock, runner (each also part of setup or of a run); --no-load and --dry-run never touch launchd
+ *   advanced: install, unlock, runner, migrate (each also part of setup or of a run); --no-load and --dry-run never touch launchd
  *
  * JOBS (the same work as the workflows):
  *   partial  update-partial-data.yml: the default tickers; from 16:30 New York time a FINAL run that writes and commits the
@@ -33,8 +33,14 @@
  * quietly when offline, a rejected push is retried once after a rebase on origin/main (the fresh data wins), a second
  * failure marks the run failed in the status and leaves the commit in the runner (the next run stops and says so).
  *
- * ENV: GEX_DATA_RUNNER (worktree path), GEX_DATA_HOME (lock and state, default ~/Library/Application Support/gex-data),
- * GEX_DATA_LOG (default ~/Library/Logs/gex-data.log), GEX_DATA_PLIST (default ~/Library/LaunchAgents/<label>.plist),
+ * STATE (owner, 2026-10-26): log, state and lock live in `gex-data-state/` next to the main checkout, outside every repo:
+ * if the checkout is `<workspace>/gex`, then `<workspace>/gex-data-state` (`../gex-data-state` from the gex folder), with
+ * `gex-data.log`, `state.json` and `run.lock` inside. It is resolved from the main checkout (`git rev-parse --git-common-dir`),
+ * never from the runner worktree, which is reset every run. `data:status` prints the resolved absolute path. `data:setup`
+ * moves the files of the first version (~/Library/Logs/gex-data.log, ~/Library/Application Support/gex-data/) there once.
+ *
+ * ENV: GEX_DATA_RUNNER (worktree path), GEX_DATA_HOME (lock and state, default `../gex-data-state` next to the checkout),
+ * GEX_DATA_LOG (default `<GEX_DATA_HOME>/gex-data.log`), GEX_DATA_PLIST (default ~/Library/LaunchAgents/<label>.plist),
  * GEX_DATA_LABEL (default com.daggerok.gex-data), HISTORY_KEEP_DAYS / HISTORY_KEEP_BACKUP_DAYS (passed to the fetcher).
  */
 
@@ -43,9 +49,9 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { lookup } from "node:dns/promises";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 export const NY_TZ = "America/New_York";
 export type Job = "partial" | "weekly" | "backup" | "deps";
@@ -245,13 +251,21 @@ function mainCheckout(): string {
     return common.ok ? dirname(common.out) : here;
 }
 
+/** Log, state and lock next to the main checkout, outside every repo: <workspace>/gex -> <workspace>/gex-data-state. */
+export const STATE_DIR = "gex-data-state";
+export const LOG_NAME = "gex-data.log";
+
+export function defaultStateDir(checkout: string): string {
+    return join(dirname(checkout), STATE_DIR);
+}
+
 export function resolvePaths(env: Env, checkout: string): Paths {
     const label = env.GEX_DATA_LABEL || "com.daggerok.gex-data";
-    const home = env.GEX_DATA_HOME || join(homedir(), "Library", "Application Support", "gex-data");
+    const home = resolve(env.GEX_DATA_HOME || defaultStateDir(checkout));
     return {
         label,
         plist: env.GEX_DATA_PLIST || join(homedir(), "Library", "LaunchAgents", `${label}.plist`),
-        log: env.GEX_DATA_LOG || join(homedir(), "Library", "Logs", "gex-data.log"),
+        log: resolve(env.GEX_DATA_LOG || join(home, LOG_NAME)),
         home,
         lock: join(home, "run.lock"),
         state: join(home, "state.json"),
@@ -336,6 +350,66 @@ export function unlockStale(p: Paths): { removed: boolean; held: LockInfo | null
         return { removed: true, held: null };
     }
     return { removed: false, held: d.action === "held" ? d.info : null };
+}
+
+// ---- Migration from the first version (PR #240 kept the files under ~/Library) -----------------
+
+/** Where the first version kept the log, state and lock. */
+export function legacyPaths(userHome: string): { dir: string; log: string; state: string; lock: string } {
+    const dir = join(userHome, "Library", "Application Support", "gex-data");
+    return { dir, log: join(userHome, "Library", "Logs", LOG_NAME), state: join(dir, "state.json"), lock: join(dir, "run.lock") };
+}
+
+export interface MigrationPlan {
+    moves: { from: string; to: string }[];
+    /** Old files left in place because the new place already has one (the new one wins). */
+    kept: { from: string; to: string }[];
+}
+
+/** Which old files move: each that exists, unless it is already the new path or the new path exists. The lock never moves. */
+export function migrationPlan(p: Paths, legacy: ReturnType<typeof legacyPaths>, exists: (path: string) => boolean): MigrationPlan {
+    const plan: MigrationPlan = { moves: [], kept: [] };
+    for (const [from, to] of [
+        [legacy.log, p.log],
+        [legacy.state, p.state],
+    ] as const) {
+        if (from === to || !exists(from)) continue;
+        (exists(to) ? plan.kept : plan.moves).push({ from, to });
+    }
+    return plan;
+}
+
+function moveFile(from: string, to: string): void {
+    mkdirSync(dirname(to), { recursive: true });
+    try {
+        renameSync(from, to);
+    } catch (e) {
+        if ((e as { code?: string }).code !== "EXDEV") throw e;
+        copyFileSync(from, to);
+        unlinkSync(from);
+    }
+}
+
+/** Moves the old files once (data:setup and `migrate`); refuses while an old run still holds the old lock. */
+export function migrateLegacy(p: Paths, legacy: ReturnType<typeof legacyPaths>, log: (s: string) => void): boolean {
+    const lock = lockDecision(readText(legacy.lock), pidAlive);
+    if (lock.action === "held") {
+        log(`migrate: a run of the old setup is going on (pid ${lock.info?.pid}); run bun run data:setup again when it ends`);
+        return false;
+    }
+    const plan = migrationPlan(p, legacy, existsSync);
+    for (const m of plan.moves) {
+        moveFile(m.from, m.to);
+        log(`migrate: moved ${m.from} -> ${m.to}`);
+    }
+    for (const k of plan.kept) log(`migrate: kept ${k.to}; the old ${k.from} stays, delete it by hand if you do not need it`);
+    if (lock.action === "stale") unlinkSync(legacy.lock);
+    try {
+        if (existsSync(legacy.dir) && readdirSync(legacy.dir).length === 0) rmdirSync(legacy.dir);
+    } catch {
+        /* not empty or not ours: leave it */
+    }
+    return true;
 }
 
 // ---- Runner worktree -------------------------------------------------------------------------
@@ -621,6 +695,9 @@ function status(p: Paths): void {
     console.log(`schedule   ${installed ? (loaded ? "installed and running" : "installed but PAUSED (bun run data:resume)") : "not installed (bun run data:setup)"}`);
     console.log(`           plist ${p.plist}`);
     console.log(`runner     ${existsSync(p.runner) ? p.runner : `${p.runner} (missing, data:setup creates it)`}`);
+    console.log(`state dir  ${p.home}${existsSync(p.home) ? "" : " (created by the first run)"}`);
+    const old = migrationPlan(p, legacyPaths(homedir()), existsSync);
+    if (old.moves.length) console.log(`           old files to move: ${old.moves.map((m) => m.from).join(", ")} (bun run data:setup moves them)`);
     const next = nextRun(partialSlotsNy(), new Date());
     const state = readState(p);
     console.log("jobs");
@@ -665,7 +742,7 @@ export const HELP = `gex local data runner (scripts/data-local.ts)
   bun run data:uninstall          remove the schedule
   bun run data:help               this list
 
-  advanced: bun scripts/data-local.ts install [--no-load] | unlock | runner   (setup does all three)
+  advanced: bun scripts/data-local.ts install [--no-load] | unlock | runner | migrate   (setup does all four)
 `;
 
 async function main(argv: string[]): Promise<void> {
@@ -708,6 +785,9 @@ async function main(argv: string[]): Promise<void> {
             if (cmd === "uninstall" && !dry) unlinkSync(p.plist);
             console.log(cmd === "pause" ? "schedule paused (bun run data:resume to start it again)" : `schedule removed${dry ? " (dry run, plist kept)" : ""}`);
         }
+    } else if (cmd === "migrate") {
+        if (!migrateLegacy(p, legacyPaths(homedir()), (s) => console.log(s))) process.exitCode = 1;
+        else console.log(`state dir  ${p.home}`);
     } else if (cmd === "unlock") {
         const r = unlockStale(p);
         console.log(r.removed ? "removed a stale lock" : r.held ? `the lock is held by a live process (pid ${r.held.pid}, ${r.held.job}); not removed` : "no lock");
@@ -733,6 +813,8 @@ async function main(argv: string[]): Promise<void> {
             return fail(e instanceof Error ? e.message : String(e));
         }
         console.log(`runner     ${p.runner}`);
+        if (!migrateLegacy(p, legacyPaths(homedir()), (s) => console.log(s))) return fail("the old files were not moved (see above)");
+        console.log(`state dir  ${p.home}`);
         if (!install(p, has("--no-load"))) return fail("the schedule was not installed (see above)");
         console.log("dry check of the partial job:");
         const r = await runJob(p, "partial", { dryRun: true, scheduled: false, tickers: [] });
