@@ -47,6 +47,32 @@ function rowPlace(page: Page, key: string): Promise<number | null> {
     }, key);
 }
 
+/**
+ * Starts counting, in separate tasks (a MessageChannel loop, the way Playwright's own polls see the page), the moments the
+ * section `exp` shows an open bar without any strike row; `stop` returns that count. ExpirationSection used to mount the rows
+ * one render after the bar opened (an effect flipped a `rendered` flag): when that render ran in a later task the desk showed
+ * an open, empty section while the strip already listed its strikes (CI flake on PR #239). The count must be 0.
+ */
+async function watchOpenWithoutRows(page: Page, exp: string): Promise<() => Promise<number>> {
+    await page.evaluate((e) => {
+        const w = window as unknown as { emptyOpen: number; stopWatch: boolean };
+        w.emptyOpen = 0;
+        w.stopWatch = false;
+        const ch = new MessageChannel();
+        ch.port1.onmessage = () => {
+            const sec = document.querySelector(`.od-sec[data-exp="${e}"]`);
+            if (sec?.querySelector('button.od-bar')?.getAttribute('aria-expanded') === 'true' && !sec.querySelector('[data-desk-row]')) w.emptyOpen++;
+            if (!w.stopWatch) ch.port2.postMessage(0);
+        };
+        ch.port2.postMessage(0);
+    }, exp);
+    return () => page.evaluate(() => {
+        const w = window as unknown as { emptyOpen: number; stopWatch: boolean };
+        w.stopWatch = true;
+        return w.emptyOpen;
+    });
+}
+
 async function main(): Promise<void> {
     const site = await startTestSite();
     const browser = await chromium.launch({ args: ['--mute-audio'] });
@@ -158,6 +184,7 @@ async function main(): Promise<void> {
             ticks = await ticksOf(page);
             assert.deepEqual(ticks.flatMap((t) => t.keys), exps.map((e) => `${e}|`), `${at}: all collapsed: one tick per expiration bar`);
             assert.ok(ticks.every((t) => t.kind === 'section'), `${at}: the bar ticks are section ticks`);
+            const stopOpen = await watchOpenWithoutRows(page, exps[1]);
             await page.locator(`.od-sec[data-exp="${exps[1]}"] > button.od-bar`).click();
             await page.waitForFunction((n) => document.querySelectorAll('.od-scroll-wrap [data-scroll-tick]').length > n && document.querySelectorAll('.od-scroll-wrap [data-scroll-tick="atm"]').length === 1, exps.length, { timeout: 10_000 });
             rows = await rowKeysOf(page);
@@ -165,7 +192,17 @@ async function main(): Promise<void> {
             const oneKeys = ticks.flatMap((t) => t.keys);
             assert.deepEqual(oneKeys, rows.filter((k) => oneKeys.includes(k)), `${at}: one expanded among collapsed: the ticks follow the rows`);
             assert.ok(oneKeys.filter((k) => !k.endsWith('|')).length > 1 && oneKeys.filter((k) => !k.startsWith(`${exps[1]}|`)).every((k) => k.endsWith('|')), `${at}: only ${exps[1]} has strike ticks`);
+            assert.equal(await stopOpen(), 0, `${at}: a bar click opens the bar and mounts its rows in one render`);
             if (shots) await page.screenshot({ path: join(shots, `desk-scroll-marks-${width}-${scheme}-one-expanded.png`) });
+
+            // ---- a chip change expands every section from an effect (a default-priority render, not a click): the rows of a
+            // section still mount in the same render as its open bar (before the fix one task in between showed it empty) ----
+            await page.getByRole('button', { name: 'Collapse all' }).click();
+            await page.waitForFunction(() => document.querySelectorAll('[data-desk-row]').length === 0, undefined, { timeout: 10_000 });
+            const stopChip = await watchOpenWithoutRows(page, exps[1]);
+            await chips.nth(exps.length).click();
+            await page.waitForFunction((e) => !!document.querySelector(`.od-sec[data-exp="${e}"] [data-desk-row]`), exps[1], { timeout: 10_000 });
+            assert.equal(await stopChip(), 0, `${at}: a chip change opens the bars and mounts their rows in one render`);
 
             assert.deepEqual(errors, [], `${at}: no page errors`);
             await page.context().close();

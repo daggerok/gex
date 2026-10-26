@@ -179,19 +179,24 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
     // the strike nearest to spot, ties to the lower one (the scroll marks use the same rule)
     const atmStrike = useMemo(() => (spot == null ? null : nearestStrikeTo(strikes, spot)), [spot, strikes]);
 
-    // Symmetric open/close animation: keep rows mounted during close to fade out.
-    const [rendered, setRendered] = useState(!collapsed);
+    // Symmetric open/close animation: keep rows mounted during close to fade out. The rows are mounted in the SAME render
+    // that flips the bar (no effect in between): an effect-driven `rendered` flag committed the open bar (and the scroll
+    // marks' strike ticks) one render before the rows, and when that second render ran in a later task (an expand from a
+    // default-priority render, e.g. a chip change, or a busy CI runner) the desk showed an open section with no rows for a
+    // moment (desk-scroll-marks e2e flake, PR #239). `closing` is adjusted during render when `collapsed` changes, the
+    // only effect left is the timer that ends the fade-out.
     const [closing, setClosing] = useState(false);
+    const [wasCollapsed, setWasCollapsed] = useState(collapsed);
+    if (collapsed !== wasCollapsed) {
+        setWasCollapsed(collapsed);
+        setClosing(collapsed);
+    }
     useEffect(() => {
-        if (!collapsed) { setClosing(false); setRendered(true); }
-        else if (rendered) {
-            setClosing(true);
-            const t = setTimeout(() => { setRendered(false); setClosing(false); }, 180);
-            return () => clearTimeout(t);
-        }
-        return undefined;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [collapsed]);
+        if (!closing) return undefined;
+        const t = setTimeout(() => setClosing(false), 180);
+        return () => clearTimeout(t);
+    }, [closing]);
+    const rendered = !collapsed || closing;
     const bodyAnim = closing ? 'od-row-out' : 'od-row-in';
 
     // Sticky offsets: the bar piles at index*--od-bar; the sub-headers (only when
@@ -364,9 +369,10 @@ export const ChainTable: React.FC<{
      * lands in the visible center, not underneath the pinned headers.
      *
      * IMPORTANT: when a section is EXPANDING from collapsed, its rows are NOT in
-     * the DOM yet on the next frame — ExpirationSection mounts them a couple of
-     * renders later (the `rendered` state flips in an effect, then the staggered
-     * rows paint). So we RETRY across animation frames until the ATM row actually
+     * the DOM yet when this is called from the toggle handler (React commits the
+     * expand later, then the staggered rows paint; ExpirationSection mounts the
+     * rows in the same render as the open bar since PR #239's flake fix). So we
+     * RETRY across animation frames until the ATM row actually
      * exists (bug: clicking a collapsed header only flipped the chevron because
      * the one-shot rAF found no row and bailed, leaving the desk off-screen).
      */
