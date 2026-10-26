@@ -86,6 +86,11 @@ export interface Family {
 
 export type QuoteValues = Record<string, unknown>;
 
+/** `oi.time` (epoch seconds) -> its UTC day "YYYY-MM-DD" (the exchange's OI publication day). */
+export function oiDay(epochSeconds: number): string {
+    return new Date(epochSeconds * 1000).toISOString().slice(0, 10);
+}
+
 /** One option the session watches. */
 export interface WantedOption {
     /** full TradingView symbol, e.g. CME_MINI:E4A261026C7630 */
@@ -311,6 +316,7 @@ export function buildPayload(input: FileInput): { payload: Payload; stats: FileS
         const bid = numOrNull(v?.bid);
         const ask = numOrNull(v?.ask);
         const oiValue = numOrNull((v?.oi as { value?: unknown } | undefined)?.value);
+        const oiTime = numOrNull((v?.oi as { time?: unknown } | undefined)?.time);
         const openInterest = oiValue ?? (input.completed.has(w.symbol) ? 0 : null);
         if (oiValue != null) withOi++;
         if (g?.gamma != null) withGamma++;
@@ -335,6 +341,9 @@ export function buildPayload(input: FileInput): { payload: Payload; stats: FileS
             greeksSource: g && g.delta != null && g.gamma != null ? 'tradingview' : null,
             greeksMissingReason: g && g.delta != null && g.gamma != null ? null : 'tradingview_missing',
         };
+        // futures files only (owner decision G10, 2026-10-26): the day of TradingView's OI value, so the app can mark an OI
+        // older than the newest day of the chain; an extra key after the fetcher's ones, api/options is not affected
+        (q as Quote & { oiDate: string | null }).oiDate = oiValue != null && oiTime != null ? oiDay(oiTime) : null;
         quotes.push(q);
         forParity.push({ symbol: name, expiration, side: w.side, strike: w.strike, bid, ask, mid: q.mid, last: q.last, volume: q.volume, openInterest, iv: q.iv, delta: q.delta, gamma: q.gamma, theta: q.theta, vega: q.vega });
     }

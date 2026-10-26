@@ -13,7 +13,7 @@
  *       event: status    {"state","message","until","since"}               on connect and on every change
  *       event: snapshot  {"root","payload":<the api/futures/ES.json object>} on connect, after a reconnect, when the
  *                                                                           option window moves
- *       event: delta     {"root","updated","rows":[[name, bid, ask, last, volume, openInterest], ...]}
+ *       event: delta     {"root","updated","rows":[[name, bid, ask, last, volume, openInterest, oiDate], ...]}
  *                        the options that changed, at most every LIVE_FLUSH_MS, only when something changed
  *       event: greeks    {"root","at","rows":[[name, iv, delta, gamma, theta, vega, rho], ...]}
  *                        TradingView's scanner greeks (the app's cross-check), after every scanner read
