@@ -16,11 +16,13 @@ export const Tip: React.FC<{
     text: string;
     side?: 'below' | 'left';
     wrap?: boolean;
+    /** keep the text's line breaks (`\n`), one line each, as wide as the longest */
+    multiline?: boolean;
     /** show only when the text inside is cut off (the tooltip repeats it) */
     onlyWhenCut?: boolean;
     wrapperClassName?: string;
     children: React.ReactNode;
-}> = ({ text, side = 'below', wrap = false, onlyWhenCut = false, wrapperClassName = 'inline-flex', children }) => {
+}> = ({ text, side = 'below', wrap = false, multiline = false, onlyWhenCut = false, wrapperClassName = 'inline-flex', children }) => {
     const host = usePortalHost();
     const wrapRef = useRef<HTMLSpanElement>(null);
     const tipRef = useRef<HTMLDivElement>(null);
@@ -75,7 +77,7 @@ export const Tip: React.FC<{
                     style={{ top: pos.top, left: pos.left, transform: pos.placement === 'left' ? 'translate(-100%, -50%)' : `translate(-50%, ${pos.placement === 'top' ? '-100%' : '0%'})` }}
                     className={
                         'pointer-events-none fixed z-[70] max-w-[calc(100vw-16px)] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-normal normal-case tracking-normal text-slate-100 shadow-lg ' +
-                        (wrap ? 'w-80 whitespace-normal ' : 'w-max whitespace-nowrap ') +
+                        (wrap ? 'w-80 whitespace-normal ' : multiline ? 'w-max whitespace-pre-line ' : 'w-max whitespace-nowrap ') +
                         'transition-opacity duration-200 ease-out dark:border-slate-600 ' +
                         (visible ? 'opacity-100' : 'opacity-0')
                     }

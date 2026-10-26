@@ -53,3 +53,13 @@ export function centerRowInScroll(
     frame = requestAnimationFrame(attempt);
     return () => { stopped = true; cancelAnimationFrame(frame); };
 }
+
+/**
+ * Scrolls `container` once so `row` sits in its vertical middle below `topInset` px of sticky content, smoothly by
+ * default (the Board's scroll marks: a click on a tick glides to its row). For a row that is already mounted and laid
+ * out; the browser clamps the target at the top and bottom of the table.
+ */
+export function scrollRowToMiddle(container: HTMLElement, row: HTMLElement, topInset = 0, behavior: ScrollBehavior = 'smooth'): void {
+    const delta = middleScrollDelta(container.getBoundingClientRect(), row.getBoundingClientRect(), topInset);
+    container.scrollTo({ top: container.scrollTop + delta, behavior });
+}
