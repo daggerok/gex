@@ -1,18 +1,16 @@
 /// <reference lib="esnext" />
 import { INDEX_SYMBOLS } from '../greeks';
 import type { DataProvider, OptionQuote } from '../types';
-import { computeMid, num, parseOccSymbol, proxied, UiError } from '../utils';
+import { computeMid, num, parseOccSymbol, UiError } from '../utils';
 import { proxyTickerSuggestions } from './proxy-search';
 
 /**
  * CBOE provider (BULK — free, no key, ALL equities + indices, richest data).
  * Cash indices are prefixed with "_" (_SPX, _VIX...). CBOE's CDN sends NO CORS
- * header, so the browser CANNOT call it directly — it must be relayed. Two ways:
- *   1) The local Bun proxy (scripts/options-local-proxy.ts, `bun run proxy`)
- *      serves /api/cboe; we call {base}/api/cboe?symbol=XXX. The app finds it by
- *      itself (src/proxy-discovery.ts), its URL is in Settings -> Advanced.
- *   2) A generic CORS proxy template ({url}) when no proxy base is set (kept as a
- *      code path, no longer offered in the UI; public ones are flaky).
+ * header, so the browser CANNOT call it directly — it is relayed by the local Bun
+ * proxy (scripts/options-local-proxy.ts, `bun run proxy`), which serves /api/cboe;
+ * we call {base}/api/cboe?symbol=XXX. The app finds it by itself
+ * (src/proxy-discovery.ts), its URL is in Settings -> Advanced.
  */
 // Cboe CDN spelling for cash indices is "_SYM" (bare and ^SYM both 403). This is
 // a SUPERSET of INDEX_SYMBOLS on purpose: the CBOE provider already routes these
@@ -29,8 +27,7 @@ export const cboeProvider: DataProvider = {
     mode: 'bulk',
     setup: 'proxy',
     supportsToken: false,
-    needsProxy: true,       // a generic CORS-proxy template would also work (fallback path)
-    needsProxyBase: true,   // the local proxy {base}/api/cboe (the normal path)
+    needsProxyBase: true,   // the local proxy {base}/api/cboe
     needsKeyFor() { return false; },
     async suggestTickers(query, ctx) {
         // CBOE's symbol book is a large no-CORS JSON file, so the proxy searches
@@ -40,17 +37,10 @@ export const cboeProvider: DataProvider = {
     async fetchAll(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
         const cboeSym = CBOE_INDEX_SYMBOLS.has(raw) ? `_${raw}` : raw;
-        const target = `https://cdn.cboe.com/api/global/delayed_quotes/options/${cboeSym}.json`;
-
-        // Prefer a request-handling proxy base ({base}/api/cboe) if configured;
-        // otherwise fall back to the generic CORS-proxy template.
+        // the local proxy relays https://cdn.cboe.com/api/global/delayed_quotes/options/<SYM>.json
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
-        const url = base
-            ? `${base}/api/cboe?symbol=${encodeURIComponent(cboeSym)}`
-            : proxied(target, ctx.proxyTemplate);
-        if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
-            throw new UiError('error.proxy.needed', { provider: 'CBOE' });
-        }
+        if (!base) throw new UiError('error.proxy.needed', { provider: 'CBOE' });
+        const url = `${base}/api/cboe?symbol=${encodeURIComponent(cboeSym)}`;
 
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
         if (!res.ok) throw new UiError('error.proxy.http', { provider: 'CBOE', status: res.status });

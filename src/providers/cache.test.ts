@@ -101,7 +101,7 @@ describe('a lazy expiration is fetched once while a request for it runs', () => 
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => { release = r; });
     const lazy = {
-      id: 'lazy-dedupe', label: 'lazy', description: '', mode: 'lazy', setup: 'none', supportsToken: false, needsProxy: false, needsKeyFor: () => false,
+      id: 'lazy-dedupe', label: 'lazy', description: '', mode: 'lazy', setup: 'none', supportsToken: false, needsKeyFor: () => false,
       fetchMeta: async (symbol: string) => ({ symbol, underlyingPrice: 50, expirations: ['2099-10-16'] }),
       fetchExpiration: async () => { calls++; await gate; return [] as OptionQuote[]; },
     } as unknown as DataProvider;

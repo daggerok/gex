@@ -58,22 +58,22 @@ describe('fmtDays', () => {
 describe('dataAge (GEX-H4)', () => {
   const ny = (iso: string) => new Date(iso);
   test('a file of today is current, shown at its New York time', () => {
-    expect(dataAge('2026-10-23T15:45:10.120000-04:00', '2026-10-23', ny('2026-10-23T16:10:00-04:00'))).toEqual({ at: '2026-10-23 15:45', day: '2026-10-23', daysOld: 0, stale: false });
+    expect(dataAge('2026-10-23T15:45:10.120000-04:00', '2026-10-23', ny('2026-10-23T16:10:00-04:00'))).toEqual({ at: '2026-10-23 15:45', day: '2026-10-23', stale: false });
   });
 
   test("Friday's close is not stale over the weekend or before Monday's open", () => {
     const fri = '2026-10-23T16:45:00-04:00';
     expect(dataAge(fri, '2026-10-23', ny('2026-10-25T12:00:00-04:00'))?.stale).toBe(false);
     expect(dataAge(fri, '2026-10-23', ny('2026-10-26T09:00:00-04:00'))?.stale).toBe(false);
-    expect(dataAge(fri, '2026-10-23', ny('2026-10-26T10:00:00-04:00'))).toEqual({ at: '2026-10-23 16:45', day: '2026-10-23', daysOld: 3, stale: true });
+    expect(dataAge(fri, '2026-10-23', ny('2026-10-26T10:00:00-04:00'))).toEqual({ at: '2026-10-23 16:45', day: '2026-10-23', stale: true });
   });
 
   test('a weeks old file (the review case: AAPL of 10-05 opened on 10-24)', () => {
-    expect(dataAge('2026-10-05T18:30:00-04:00', '2026-10-05', ny('2026-10-24T12:00:00-04:00'))).toEqual({ at: '2026-10-05 18:30', day: '2026-10-05', daysOld: 18, stale: true });
+    expect(dataAge('2026-10-05T18:30:00-04:00', '2026-10-05', ny('2026-10-24T12:00:00-04:00'))).toEqual({ at: '2026-10-05 18:30', day: '2026-10-05', stale: true });
   });
 
   test('without a date the trading day of updated counts; nothing readable -> null', () => {
-    expect(dataAge('2026-10-23T08:00:00-04:00', null, ny('2026-10-23T12:00:00-04:00'))).toEqual({ at: '2026-10-23 08:00', day: '2026-10-22', daysOld: 1, stale: true });
+    expect(dataAge('2026-10-23T08:00:00-04:00', null, ny('2026-10-23T12:00:00-04:00'))).toEqual({ at: '2026-10-23 08:00', day: '2026-10-22', stale: true });
     expect(dataAge(null, '2026-10-23')).toBeNull();
     expect(dataAge('garbage', null)).toBeNull();
   });
@@ -84,7 +84,7 @@ describe('UiError (GEX-H8): errors the user reads follow the app language', () =
     const e = new UiError('error.noOptionData', { symbol: 'ZZZ' });
     expect(e.message).toBe('No option data for "ZZZ". Check the ticker symbol.');
     expect(errorText(e, 'ru')).toBe('Нет данных об опционах для «ZZZ». Проверьте тикер.');
-    expect(friendlyError(e, { needsProxy: false } as unknown as DataProvider, 'ru')).toBe(errorText(e, 'ru'));
+    expect(friendlyError(e, {} as unknown as DataProvider, 'ru')).toBe(errorText(e, 'ru'));
     expect(errorText(new Error('plain'), 'ru')).toBe('plain');
   });
 

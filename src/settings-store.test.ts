@@ -231,19 +231,22 @@ describe('hasPersistedSettings', () => {
     });
 });
 
-describe('loadSettings: the removed Cloudflare Worker preset', () => {
-    test('a saved {worker} template falls back to the default and workerUrl is dropped, other templates are kept', () => {
+describe('loadSettings: the removed shared CORS proxy template and Cloudflare Worker', () => {
+    test('a saved proxyTemplate or workerUrl is ignored and dropped, the rest of the blob still loads', () => {
         const g = globalThis as unknown as { localStorage?: Pick<Storage, 'getItem'> };
         const saved = g.localStorage;
         let blob = '';
         g.localStorage = { getItem: (k) => (k === SETTINGS_KEY ? blob : null) };
         try {
-            blob = JSON.stringify({ proxyTemplate: '{worker}/raw?url={url}', workerUrl: 'https://x.workers.dev' });
+            blob = JSON.stringify({ proxyTemplate: '{worker}/raw?url={url}', workerUrl: 'https://x.workers.dev', lastTicker: 'SPY' });
             const s = loadSettings();
-            expect(s.proxyTemplate).toBe(DEFAULT_SETTINGS.proxyTemplate);
+            expect('proxyTemplate' in s).toBe(false);
             expect('workerUrl' in s).toBe(false);
-            blob = JSON.stringify({ proxyTemplate: 'https://corsproxy.io/?url={url}' });
-            expect(loadSettings().proxyTemplate).toBe('https://corsproxy.io/?url={url}');
+            expect(s.lastTicker).toBe('SPY');
+            blob = JSON.stringify({ proxyTemplate: 'https://corsproxy.io/?url={url}', proxyBase: 'http://localhost:9999' });
+            const t = loadSettings();
+            expect('proxyTemplate' in t).toBe(false);
+            expect(t.proxyBase).toBe('http://localhost:9999');
         } finally {
             g.localStorage = saved;
         }

@@ -70,7 +70,7 @@ All settings and what the browser remembers: [Configuration](configuration.md)
 - **Add a custom level:** right click (two-finger click on a trackpad, Ctrl+click on macOS, long press on a touch screen) on the GEX or Chart plot, type a name, Enter. Details below
 - **Switch to live:** start `bun run proxy` with **Auto** on in the top bar (on the published site turning it on also allows the site to contact your computer); the label goes live within 30 s or when you come back to the tab
 - **Settings menu holds everything of the top bar** (owner 2026-10-26, useful on a phone where some top bar items are hidden): theme and language at the top, then Data source (Auto first, the source label as a read-only line), then Backtest (As of), then the Desk columns and the rest
-- **See how old the data is:** the source label (`CACHE 2026-10-23`), the Desk toolbar (`as of <date time> ET`) and an amber age badge in the Expirations panel when the data is from an earlier day
+- **See how old the data is:** the source label in the top bar (`CACHE 2026-10-23`, amber when the data is from an earlier day) and the Desk toolbar (`as of <date time> ET`)
 - **Keep the published data fresh (owner):** the hourly data slots run on your Mac. Once: `bun run data:setup`. Then now and then `bun run data:status` (last run per job, next run, last data commit) and `bun run data:logs -n 200` when something says failed; details in [Automations](automations.md#local-data-runner-bun-run-data)
 - **Reset the look:** **Reset** in the Metrics panel (metrics, their colours, the Net GEX / Abs GEX switch) and in the Levels panel (level selection, colours, the Zero GEX and Sigma switches)
 
