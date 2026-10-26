@@ -1,6 +1,6 @@
 /// <reference lib="esnext" />
-import { enrichChainResult, enrichQuotesWithModelGreeks, hasFirstOrderGreeks, hasHigherOrderGreeks, isExpired } from '../greeks';
-import { bulkCache, bulkKey, cacheGet, cacheSet } from '../settings-store';
+import { enrichChainResult, enrichQuotesWithModelGreeks, hasFirstOrderGreeks, hasHigherOrderGreeks, isExpired, isFuturesPricedSymbol } from '../greeks';
+import { bulkCache, bulkKey, bulkRawKey, cacheGet, cacheSet, pricingKeySuffix } from '../settings-store';
 import { isAsOfProviderId } from './asof';
 import type { ChainMeta, ChainResult, DataProvider, OptionQuote, ProviderContext } from '../types';
 import { dbg, num } from '../utils';
@@ -32,15 +32,25 @@ export function chainLooksEnriched(result: ChainResult): boolean {
  * `vixFuturesPricing` (default false) is forwarded to enrichChainResult for
  * any re-enrich this performs — see enrichQuotesWithModelGreeks's doc comment
  * in src/greeks.ts for why default-false is behavior-preserving.
+ * VIX/VXN are cached per pricing (bulkKey): after the setting changes, the chain of the other pricing is re-priced from
+ * the raw chain putBulk kept in memory, so the greeks always match the setting without a new fetch.
  */
 export async function getBulk(providerId: string, symbol: string, vixFuturesPricing: boolean = false): Promise<ChainResult | null> {
-    const k = bulkKey(providerId, symbol);
+    const k = bulkKey(providerId, symbol, vixFuturesPricing);
     // An archived snapshot ("As of") lives in memory only: it must never fill or evict the shared query cache
     const persist = !isAsOfProviderId(providerId);
     const mem = bulkCache.get(k);
     if (mem) {
         if (chainLooksEnriched(mem)) return mem;
         const fixed = enrichChainResult(mem, vixFuturesPricing);
+        bulkCache.set(k, fixed);
+        if (persist) await cacheSet(k, fixed);
+        return fixed;
+    }
+    // the raw chain of this session's fetch beats a disk entry of an earlier one
+    const raw = bulkCache.get(bulkRawKey(providerId, symbol));
+    if (raw) {
+        const fixed = enrichChainResult(raw, vixFuturesPricing);
         bulkCache.set(k, fixed);
         if (persist) await cacheSet(k, fixed);
         return fixed;
@@ -57,7 +67,12 @@ export async function getBulk(providerId: string, symbol: string, vixFuturesPric
 /** Store a bulk result (always model-enriched) in memory + persistent cache. */
 export async function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false): Promise<void> {
     const enriched = enrichChainResult(result, vixFuturesPricing);
-    const k = bulkKey(providerId, enriched.symbol);
+    const k = bulkKey(providerId, enriched.symbol, vixFuturesPricing);
+    if (isFuturesPricedSymbol(enriched.symbol)) {
+        // VIX/VXN: keep the raw chain for the other pricing and drop that pricing's copy of an earlier fetch (getBulk)
+        bulkCache.set(bulkRawKey(providerId, enriched.symbol), result);
+        bulkCache.delete(bulkKey(providerId, enriched.symbol, !vixFuturesPricing));
+    }
     bulkCache.set(k, enriched);
     if (!isAsOfProviderId(providerId)) await cacheSet(k, enriched);
 }
@@ -77,9 +92,13 @@ export function lazyHit(entry: unknown, fetchedAt: number | null | undefined): O
     return e.fetchedAt === fetchedAt && Array.isArray(e.quotes) ? e.quotes : null;
 }
 
-/** Cache key for a single lazy expiration. */
-export const lazyKey = (providerId: string, symbol: string, exp: string) =>
-    `${providerId}:${symbol.toUpperCase()}:${exp}`;
+/**
+ * Cache key for a single lazy expiration (or `exp` = 'meta' for the chain meta). A VIX/VXN expiration priced with
+ * settings.vixFuturesPricing on gets the `:b76` suffix (pricingKeySuffix), like the bulk key: the cached quotes hold the
+ * greeks of the pricing they were loaded with. The meta does not depend on the pricing.
+ */
+export const lazyKey = (providerId: string, symbol: string, exp: string, vixFuturesPricing: boolean = false) =>
+    `${providerId}:${symbol.toUpperCase()}:${exp}${exp === 'meta' ? '' : pricingKeySuffix(symbol, vixFuturesPricing)}`;
 
 /** Load chain metadata (expirations + spot) for the active provider. */
 export async function loadMeta(provider: DataProvider, symbol: string, ctx: ProviderContext, vixFuturesPricing: boolean = false): Promise<ChainMeta> {
@@ -123,7 +142,7 @@ export async function loadExpiration(provider: DataProvider, symbol: string, exp
     if (!provider.fetchExpiration) throw new Error('Provider misconfigured (lazy without fetchExpiration).');
     // One request per expiration at a time: the background prefetch of every expiration and the Load of the selected one
     // asked for the same date at once and fetched it twice (review, LOW)
-    const key = lazyKey(provider.id, symbol, expiration);
+    const key = lazyKey(provider.id, symbol, expiration, vixFuturesPricing);
     const running = lazyInFlight.get(key);
     if (running) return running;
     const run = loadLazyExpiration(provider, symbol, expiration, ctx, vixFuturesPricing, key)

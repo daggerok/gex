@@ -1,4 +1,5 @@
 /// <reference lib="esnext" />
+import { isFuturesPricedSymbol } from './greeks';
 import { DEFAULT_LANGUAGE, LANGUAGES, type Language } from './i18n';
 import { PROXY_PRESETS } from './providers';
 import { DEFAULT_PROXY_BASE, sanitizeSourceOverride } from './proxy-discovery';
@@ -382,11 +383,22 @@ export async function clearAll(): Promise<void> {
 
 /**
  * In-memory cache for BULK providers (fast within a session), keyed by
- * `${providerId}:${SYMBOL}`. Backed by the persistent IndexedDB cache above
+ * `bulkKey`. Backed by the persistent IndexedDB cache above
  * so results also survive reloads.
  */
 export const bulkCache = new Map<string, ChainResult>();
-export const bulkKey = (providerId: string, symbol: string) => `${providerId}:${symbol.toUpperCase()}`;
+/**
+ * Key suffix for the VIX futures pricing: a VIX/VXN chain enriched with settings.vixFuturesPricing on (Black-76 greeks) is
+ * cached apart from the same chain enriched with it off, so switching the setting never serves the greeks of the other
+ * pricing. Every other symbol, and VIX/VXN with the setting off, keep the plain key.
+ */
+export const pricingKeySuffix = (symbol: string, vixFuturesPricing: boolean): string =>
+    vixFuturesPricing && isFuturesPricedSymbol(symbol) ? ':b76' : '';
+/** `${providerId}:${SYMBOL}`, plus `:b76` for a VIX/VXN chain priced with settings.vixFuturesPricing on. */
+export const bulkKey = (providerId: string, symbol: string, vixFuturesPricing: boolean = false) =>
+    `${providerId}:${symbol.toUpperCase()}${pricingKeySuffix(symbol, vixFuturesPricing)}`;
+/** Memory-only key of the provider's raw (not enriched) VIX/VXN chain, re-priced when the setting changes (loader.ts getBulk). */
+export const bulkRawKey = (providerId: string, symbol: string) => `${providerId}:${symbol.toUpperCase()}:raw`;
 
 // ============================================================================
 // SETTINGS STORE (persisted in localStorage)
