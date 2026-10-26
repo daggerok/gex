@@ -1,7 +1,6 @@
 /// <reference lib="esnext" />
 import { isFuturesPricedSymbol } from './greeks';
 import { DEFAULT_LANGUAGE, LANGUAGES, type Language } from './i18n';
-import { PROXY_PRESETS } from './providers';
 import { DEFAULT_PROXY_BASE, isLoopbackHost, sanitizeSourceOverride } from './proxy-discovery';
 import type { ChainResult, ColorThemeId, Settings } from './types';
 import { dbg } from './utils';
@@ -421,7 +420,6 @@ export const DEFAULT_SETTINGS: Settings = {
     language: DEFAULT_LANGUAGE,
     theme: 'system',
     colorTheme: DEFAULT_COLOR_THEME,
-    proxyTemplate: PROXY_PRESETS[0].template,
     proxyBase: DEFAULT_PROXY_BASE,    // local Bun proxy (`bun run proxy`)
     tokens: {},
     secrets: {},
@@ -526,8 +524,9 @@ export function loadSettings(): Settings {
             selectedExps: sanitizeSelectedExps(parsed.selectedExps),
             gexMetrics: sanitizeGexMetrics(parsed.gexMetrics),
         };
-        // The "Your Worker (/raw?url=)" preset was removed with the Cloudflare Worker: a saved {worker} template falls back to the default
-        if (typeof merged.proxyTemplate !== 'string' || merged.proxyTemplate.includes('{worker}')) merged.proxyTemplate = DEFAULT_SETTINGS.proxyTemplate;
+        // The shared CORS proxy template (`proxyTemplate`) and the Cloudflare Worker (`workerUrl`) are gone: an old saved
+        // value of either is ignored and dropped
+        delete (merged as Settings & { proxyTemplate?: unknown }).proxyTemplate;
         delete (merged as Settings & { workerUrl?: unknown }).workerUrl;
         // The provider menu is gone (auto proxy, owner 2026-10-25): an old saved `providerId` (cboe, static, a removed
         // marketdata / dolthub) is dropped, never mapped to an override, so every user starts on Auto

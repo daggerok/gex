@@ -20,7 +20,6 @@ export const yahooProvider: DataProvider = {
     mode: 'lazy',
     setup: 'proxy',
     supportsToken: false,
-    needsProxy: false,
     needsProxyBase: true,
     demoSymbol: undefined,
     needsKeyFor() { return false; },

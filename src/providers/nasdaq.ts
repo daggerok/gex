@@ -1,7 +1,7 @@
 /// <reference lib="esnext" />
 import { INDEX_SYMBOLS } from '../greeks';
 import type { DataProvider, OptionQuote } from '../types';
-import { computeMid, dbg, num, parseOccSymbol, proxied, UiError } from '../utils';
+import { computeMid, dbg, num, parseOccSymbol, UiError } from '../utils';
 import { proxyTickerSuggestions } from './proxy-search';
 
 /**
@@ -36,8 +36,7 @@ export const nasdaqProvider: DataProvider = {
     mode: 'bulk',
     setup: 'proxy',
     supportsToken: false,
-    needsProxy: true,       // generic CORS-proxy fallback allowed
-    needsProxyBase: true,   // recommended path: {base}/api/nasdaq
+    needsProxyBase: true,   // the local proxy {base}/api/nasdaq
     demoSymbol: 'AAPL',
     needsKeyFor() { return false; },
     async suggestTickers(query, ctx) {
@@ -53,14 +52,8 @@ export const nasdaqProvider: DataProvider = {
             throw new UiError('error.nasdaq.index', { symbol: raw });
         }
         const base = (ctx.proxyBase || '').replace(/\/$/, '');
-        // Direct NASDAQ URL (used only if routed via a generic {url} CORS proxy).
-        const direct = `https://api.nasdaq.com/api/quote/${encodeURIComponent(raw)}/option-chain?assetclass=stocks&limit=10000&fromdate=all`;
-        const url = base
-            ? `${base}/api/nasdaq?symbol=${encodeURIComponent(raw)}`
-            : proxied(direct, ctx.proxyTemplate);
-        if (!base && (!ctx.proxyTemplate || ctx.proxyTemplate === '{url}')) {
-            throw new UiError('error.proxy.needed', { provider: 'NASDAQ' });
-        }
+        if (!base) throw new UiError('error.proxy.needed', { provider: 'NASDAQ' });
+        const url = `${base}/api/nasdaq?symbol=${encodeURIComponent(raw)}`;
         dbg('nasdaq fetchAll', { raw, url });
 
         const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });

@@ -816,7 +816,6 @@ import type { ChainSection } from './components/ChainTable';
 import { AsOfMenuSection, AsOfSelect } from './components/AsOfSelect';
 import { BackupDialog } from './components/BackupDialog';
 import { BacktestManager } from './components/BacktestManager';
-import { DataAgeBadge } from './components/DataAgeBadge';
 import { ExpirationChips } from './components/ExpirationChips';
 import { type AppTab, TabSwitcher } from './components/TabSwitcher';
 import { TopBar } from './components/TopBar';
@@ -1052,7 +1051,7 @@ const App: React.FC = () => {
         }, delay);
         return () => { cancelled = true; ac.abort(); window.clearTimeout(timer); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchProvider.id, tickerInput, settings.proxyBase, settings.proxyTemplate]);
+    }, [searchProvider.id, tickerInput, settings.proxyBase]);
 
     // When the source changes (the proxy appears or goes away with auto-discovery ON, an override, a backtest), requests of
     // the old source are dropped (GEX-H2): a late answer would otherwise show its meta and load it through the new one.
@@ -1827,7 +1826,7 @@ const App: React.FC = () => {
                 value={activeTab}
                 onChange={changeTab}
                 colorTheme={settings.colorTheme}
-                /* ---- Shared expiration panel (data age, chips with OI share, Reset)
+                /* ---- Shared expiration panel (chips with OI share, Reset)
                     - one copy, used by Desk, Board, GEX AND Chart (on Chart the
                     selection decides which expirations the levels are computed
                     from, owner: the panel must be seen on every tab), rendered in
@@ -1843,7 +1842,6 @@ const App: React.FC = () => {
                     ExpirationChips.tsx's doc comment for the measured root cause). ---- */
                 endSlot={meta ? (
                     <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 lg:flex-nowrap" data-exp-panel>
-                        <DataAgeBadge age={asOf ? null : metaAge} />
                         <ExpirationChips
                             expirations={meta.expirations}
                             selected={selectedExps}

@@ -12,7 +12,7 @@ const q = (symbol: string, exp: string) => ({ symbol: `${symbol}${exp}`, expirat
 const chain = (symbol: string): ChainResult => ({ symbol, underlyingPrice: 100, expirations: ['2026-10-16'], quotes: [q(symbol, '2026-10-16')] });
 
 const bulkProvider = (id: string, tickers: string[], failFor: string[] = []): DataProvider => ({
-  id, label: id, description: '', mode: 'bulk', setup: 'none', supportsToken: false, needsProxy: false, needsKeyFor: () => false,
+  id, label: id, description: '', mode: 'bulk', setup: 'none', supportsToken: false, needsKeyFor: () => false,
   listTickers: async () => tickers,
   fetchAll: async (symbol) => {
     if (failFor.includes(symbol)) throw new Error(`${symbol} is broken`);
@@ -76,7 +76,7 @@ describe('loadFullChain', () => {
   // future dates: loadMeta leaves expired expirations out (GEX-H4)
   test('a lazy provider is assembled expiration by expiration', async () => {
     const lazy: DataProvider = {
-      id: 'lazy-test', label: 'lazy', description: '', mode: 'lazy', setup: 'none', supportsToken: false, needsProxy: false, needsKeyFor: () => false,
+      id: 'lazy-test', label: 'lazy', description: '', mode: 'lazy', setup: 'none', supportsToken: false, needsKeyFor: () => false,
       fetchMeta: async (symbol) => ({ symbol, underlyingPrice: 50, expirations: ['2099-10-16', '2099-10-23'] }),
       fetchExpiration: async (symbol, exp) => [q(symbol, exp)],
     };

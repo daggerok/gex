@@ -141,8 +141,6 @@ export interface DataAge {
     at: string;
     /** the trading day the data belongs to */
     day: string;
-    /** calendar days from that trading day to the current one (0 = current) */
-    daysOld: number;
     /** the data belongs to an earlier trading day than the current one */
     stale: boolean;
 }
@@ -158,8 +156,7 @@ export function dataAge(updated: string | null | undefined, dataDate: string | n
     const at = new Date(t);
     const day = dataDate && /^\d{4}-\d{2}-\d{2}$/.test(dataDate) ? dataDate : marketDay(at);
     const today = marketDay(now);
-    const daysOld = Math.max(0, Math.round((Date.parse(today) - Date.parse(day)) / 86_400_000));
-    return { at: snapshotLabel(backupStamp(at)), day, daysOld, stale: day < today };
+    return { at: snapshotLabel(backupStamp(at)), day, stale: day < today };
 }
 
 /** An expiration's OI share (0..1) as the Expirations panel shows it: "6.4%", "12.3%", "100%"; empty when there is none. */
@@ -188,15 +185,6 @@ export function fmtGreek(v: number | null | undefined, digits = 4): string {
 /** Convert a "YYYY-MM-DD" date to unix seconds (UTC midnight). */
 export function isoToUnix(iso: string): number {
     return Math.floor(new Date(`${iso}T00:00:00Z`).getTime() / 1000);
-}
-
-/**
- * Build a proxied URL from the user's proxy template.
- * The template must contain "{url}", which is replaced by the URL-encoded target.
- */
-export function proxied(target: string, template: string): string {
-    if (!template || !template.includes('{url}')) return target;
-    return template.replace('{url}', encodeURIComponent(target));
 }
 
 /**
@@ -270,12 +258,7 @@ export function friendlyError(e: unknown, provider: DataProvider, lang: Language
         return msg;
     }
     if (msg.includes('Failed to fetch') || msg.toLowerCase().includes('networkerror')) {
-        if (provider.needsProxyBase) {
-            return translate('error.friendly.networkProxy', lang);
-        }
-        return provider.needsProxy
-            ? translate('error.friendly.networkCors', lang)
-            : translate('error.friendly.networkGeneric', lang);
+        return translate(provider.needsProxyBase ? 'error.friendly.networkProxy' : 'error.friendly.networkGeneric', lang);
     }
     if (msg.includes('Unexpected token') || msg.toLowerCase().includes('json')) {
         return translate('error.friendly.unexpectedJson', lang);

@@ -9,7 +9,7 @@ import { yahooProvider } from './yahoo';
 import { providerForSymbol, PROVIDERS } from './index';
 
 const NEW_INDICES = ['XSP', 'NDX', 'DJX', 'RUT'];
-const ctx = { proxyTemplate: '{url}', proxyBase: 'http://localhost:8787', token: '' } as ProviderContext;
+const ctx = { proxyBase: 'http://localhost:8787', token: '' } as ProviderContext;
 const realFetch = globalThis.fetch;
 
 /** Record requested URLs and answer with an empty-but-valid body. */
@@ -65,5 +65,13 @@ describe('futures tickers route to the CACHE provider (futures PR, owner 2026-10
     for (const selected of PROVIDERS) {
       for (const sym of ['ES', 'SPY', 'SPX', '/ZZ', 'ZZ1!', '', null, undefined]) expect(providerForSymbol(selected, sym)).toBe(selected);
     }
+  });
+});
+
+describe('CBOE and NASDAQ need the local proxy (the shared CORS proxy template is gone)', () => {
+  test.each([['CBOE', cboeProvider], ['NASDAQ', nasdaqProvider]] as const)('%s without a proxy base asks for the proxy and fetches nothing', async (name, provider) => {
+    const seen = captureFetch({});
+    await expect(provider.fetchAll!('AAPL', { ...ctx, proxyBase: '' })).rejects.toMatchObject({ key: 'error.proxy.needed', params: { provider: name } });
+    expect(seen).toEqual([]);
   });
 });
