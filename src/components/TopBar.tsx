@@ -234,14 +234,14 @@ export const TopBar: React.FC<{
         : proxy.up === null ? t('settings.proxyChecking') : proxy.up ? t('settings.proxyFound') : t('settings.proxyNotFound');
     const base = settings.proxyBase || '—';
     const sourceText = !source ? '' : source.kind === 'checking' ? '…' : source.kind === 'live'
-        ? `LIVE${source.provider ? ` ${source.provider}` : ''}${source.at ? ` ${source.at}` : ''}`
+        ? (source.delayedMin ? `TV ${source.delayedMin}m delayed${source.at ? ` ${source.at}` : ''}` : `LIVE${source.provider ? ` ${source.provider}` : ''}${source.at ? ` ${source.at}` : ''}`)
         : source.kind === 'tv'
             ? (source.state === 'starting' ? `TV starting…${source.progress ? ` ${source.progress}` : ''}` : `TV ${TV_STATE_SHORT[source.state] ?? source.state.toUpperCase()}`)
             : `CACHE${source.date ? ` ${source.date}` : ''}`;
     const sourceTip = !source ? '' : source.kind === 'checking'
         ? t('source.tip.checking', { base })
         : source.kind === 'live'
-            ? (source.provider === 'TV' ? t('source.tip.liveTv', { at: source.at ?? '', base }) : source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
+            ? (source.delayedMin ? t('source.tip.hybridTv', { at: source.at ?? '', base, min: String(source.delayedMin) }) : source.provider === 'TV' ? t('source.tip.liveTv', { at: source.at ?? '', base }) : source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
             : source.kind === 'tv'
                 ? t(source.state === 'starting' ? 'source.tip.tvStarting' : source.state === 'rate-limited' ? 'source.tip.tvPaused' : source.state === 'reconnecting' ? 'source.tip.tvReconnecting' : source.state === 'expired' || source.state === 'no-session' ? 'source.tip.tvLogin' : 'source.tip.tvError', { message: source.message, date: source.date ?? '', until: source.until ? new Date(source.until).toLocaleTimeString() : '' })
             : (source.date ? t('source.tip.cache', { date: source.date }) : t('source.tip.cacheNext'));

@@ -137,7 +137,7 @@ export function useProxyDiscovery(base: string, enabled: boolean, poll: boolean)
 export type SourceLabel =
     | { kind: 'checking' }
     /** `at`: the New York time (hh:mm:ss) of the last live update, for the TradingView live mode (LIVE TV 10:05:07) */
-    | { kind: 'live'; provider: string | null; at?: string }
+    | { kind: 'live'; provider: string | null; at?: string; delayedMin?: number }
     | { kind: 'cache'; date: string | null }
     /** the TradingView live mode cannot stream (session, rate limit, reconnect): the file of `date` is shown meanwhile */
     | { kind: 'tv'; state: string; message: string; until: number | null; date: string | null; progress?: string };
@@ -150,6 +150,8 @@ export interface TvLiveLabelInput {
     at: string;
     /** the engine's state; null before the stream answered */
     status: { state: string; message: string; until: number | null; progress?: string } | null;
+    /** a stock or index through the TradingView hybrid: 15 minutes delayed; its failures keep the provider's own label */
+    hybrid?: boolean;
 }
 
 /**
@@ -169,6 +171,11 @@ export function sourceLabel(opts: {
     /** a futures ticker with the proxy found: the TradingView live stream (null without one) */
     tvLive?: TvLiveLabelInput | null;
 }): SourceLabel {
+    if (opts.tvLive?.hybrid && opts.servedBy) {
+        const { streaming, at, status } = opts.tvLive;
+        if (streaming && (!status || status.state === 'live')) return { kind: 'live', provider: 'TV', ...(at ? { at } : {}), delayedMin: 15 };
+        return { kind: 'live', provider: opts.servedBy.toUpperCase() };
+    }
     if (opts.servedBy === 'static' && opts.tvLive) {
         const { streaming, at, status } = opts.tvLive;
         const state = status?.state ?? null;

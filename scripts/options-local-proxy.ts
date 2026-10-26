@@ -44,6 +44,9 @@
  *       GET {base}/api/futures/status       engine state (live, expired, rate-limited...) and the ready roots
  *       GET {base}/api/futures/live?root=ES server-sent events: status, snapshot, then batched deltas
  *       GET {base}/api/futures/ES.json      the file
+ *     and the TradingView hybrid for stock and index options (scripts/tv/hybrid.ts, on demand, never written to a file):
+ *       GET {base}/api/tv/live?symbol=SPY   the same events for a stock or index chain (OPRA 15 min delayed, Cboe OI)
+ *       GET {base}/api/tv/status            the running hybrid feeds
  *   - Ticker suggestions for providers that expose a searchable universe call:
  *       GET {base}/api/search?provider=yahoo&q=apple
  *       GET {base}/api/search?provider=nasdaq&q=tesla
@@ -59,6 +62,7 @@
 import { proxyPort } from "./check-ports";
 import { asksPrivateNetwork, corsFor } from "./proxy-cors";
 import { engineDecision, futuresFileResponse, TvLiveEngine } from "./tv/live";
+import { HybridEngine } from "./tv/hybrid";
 
 /** PORT, else 8787; `bun run proxy` / `all` / `start` check it is free before starting (scripts/check-ports.ts). */
 const PORT = proxyPort(process.env);
@@ -387,8 +391,10 @@ async function handleOptions(url: URL): Promise<Response> {
 const tvDecision = engineDecision(process.env);
 // started only once the server listens (below): a taken port must not leave a websocket behind
 const tvEngine = tvDecision.start ? new TvLiveEngine() : null;
+const hybrid = tvDecision.start ? new HybridEngine() : null;
 const shutdown = () => {
     tvEngine?.stop();
+    hybrid?.stop();
     process.exit(0);
 };
 process.on("SIGINT", shutdown);
@@ -400,7 +406,8 @@ const server = Bun.serve({
     hostname: HOST,
     async fetch(req, srv) {
         // a live stream stays open: no idle timeout for it (keepalive comments every 15 s)
-        if (new URL(req.url).pathname === "/api/futures/live") srv.timeout(req, 0);
+        const live = new URL(req.url).pathname;
+        if (live === "/api/futures/live" || live === "/api/tv/live") srv.timeout(req, 0);
         // CORS allowlist (scripts/proxy-cors.ts): the local app and the published site only, any other page gets 403; an
         // allowed page asking for private network access (Chrome's preflight from the published site) gets it
         const cors = corsFor(req.headers.get("origin"), asksPrivateNetwork(req.headers));
@@ -437,12 +444,17 @@ async function route(req: Request): Promise<Response> {
         return tvEngine.response(url.searchParams.get("root") || "");
     }
     if (url.pathname.startsWith("/api/futures/")) return futuresFileResponse(url.pathname);
+    if (url.pathname === "/api/tv/status") return json(hybrid ? hybrid.statusJson() : { hybrid: false });
+    if (url.pathname === "/api/tv/live") {
+        if (!hybrid) return json({ error: "TradingView live mode off (GEX_TV=0)" }, 404);
+        return hybrid.response(url.searchParams.get("symbol") || "");
+    }
     if (url.pathname === "/api/search") {
         try { return await handleSearch(url); }
         catch (e) { return json({ error: String(e) }, 502); }
     }
     if (url.pathname === "/" || url.pathname === "/health") {
-        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/api/futures/status", "/api/futures/live?root=ES", "/api/futures/ES.json"], tradingviewLive: tvDecision.start });
+        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/api/futures/status", "/api/futures/live?root=ES", "/api/futures/ES.json", "/api/tv/live?symbol=SPY", "/api/tv/status"], tradingviewLive: tvDecision.start });
     }
     return json({ error: "not found" }, 404);
 }

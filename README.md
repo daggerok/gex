@@ -186,6 +186,7 @@ Ports: `APP_PORT` moves the app, `PORT` the proxy; each command checks its ports
 | `CACHE 2026-10-25 21:40` | a futures ticker from its file `api/futures/<ROOT>.json`, written at that New York time (no proxy, or before the live stream sent its first snapshot) |
 | `TV starting… ES 1/4` | the live mode is still subscribing after the proxy started (ES, NQ, YM, RTY one after the other; measured 1.5 to 3 minutes for all four, ES alone about 80 s): the file is shown meanwhile and the page switches to live by itself, no reload |
 | `LIVE TV 10:05:07` | a futures ticker in the TradingView live mode: the time (New York) of the last update, it changes every few seconds while the market moves; the Desk header says the same (`as of 2026-10-26 10:05:07 ET · LIVE TV`) |
+| `TV 15m delayed 10:05:07` | a stock or index (SPY, SPX, NVDA...) through the TradingView hybrid: OPRA option quotes 15 minutes late, greeks from TradingView's scanner, open interest from Cboe; the time of the last update (New York). Before TradingView delivers, or when it cannot, the provider's own label stays (`LIVE CBOE`) |
 | `TV LOGIN` | the live mode has no valid session: log in to tradingview.com in Chrome, the proxy picks it up within 3 minutes (or run `bun run tv:session`); the last file is shown meanwhile |
 | `TV PAUSED` | TradingView answered 429 or 403: no requests for 15 minutes, then 30, 60, at most 120 if it repeats; it resumes by itself |
 | `TV RECONNECTING` | the websocket dropped (network, sleep): the proxy reconnects by itself (5 s, doubling to 5 min) and subscribes everything again |
@@ -203,6 +204,17 @@ The tooltip of the label says the same in full sentences (English and Russian)
 - **Without the stream** (no proxy, an older proxy, `GEX_TV=0`): the futures ticker reads its file once per load, as before
 
 Measured on 2026-10-25 (Sunday evening session, ES, MacBook): proxy with the live mode of 4 futures about 2% of one CPU core and 200 MB; the browser tab with one ES expiration 3.8% of a core (an update takes about 15 ms from the event to the redrawn Desk), with all 20 ES expirations 8% (about 115 ms per update, paced to every 2 s); the standalone `tv:futures` about 0.8% of a core and 125 MB
+
+### Stocks and indices (TradingView hybrid)
+
+With the proxy running and a TradingView session, a stock or index ticker that loaded live from CBOE (or NASDAQ) switches to a TradingView stream of its options once it delivers (under a minute for SPY, about 2 minutes for SPX), label `TV 15m delayed hh:mm:ss`:
+
+- **What comes from where:** bid, ask, last and volume from TradingView's OPRA feed, **15 minutes delayed** without an OPRA subscription (`delayed_streaming_900`); IV and greeks from TradingView's scanner every 45 s (the websocket has none); open interest from **Cboe** (TradingView keeps each contract's OI of the last day it changed, often weeks old and 9-30% low; where Cboe has no value TradingView's is used and shown pale on the Desk when older than the newest day); spot = the put-call parity forward of the options, so it matches their 15-minute delay
+- **Window:** expirations within 42 days, strikes within ±6% (SPX about 7,000 options in 3 quote sessions, SPY about 2,400); the window follows the price every 5 minutes
+- **Limits:** on demand only (the stream starts when a page opens the ticker and stops 2 minutes after the last page leaves), at most 2 tickers at once, each its own websocket; scanner 429 / 403 back off 15 minutes and more
+- **Never stored:** OPRA data is for personal use: the proxy keeps it in memory only, never writes it to `api/` or any file, nothing is committed or published
+- `GET /api/tv/live?symbol=SPY` (the same events as the futures stream) and `GET /api/tv/status` (the running feeds); `GEX_TV=0` turns it off together with the futures live mode
+- Measured (SPX, 7,002 options, Sunday night GTH session): browser tab 2.6% of a CPU core, about 25 ms per update
 
 ### What auto-discovery does
 

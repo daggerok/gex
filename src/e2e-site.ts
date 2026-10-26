@@ -191,7 +191,7 @@ export function startFakeProxy(): FakeProxy {
             if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
             if (url.pathname === '/health') return new Response(up ? 'ok' : 'down', { status: up ? 200 : 503, headers: cors });
             if (!up) return new Response('down', { status: 503, headers: cors });
-            if (url.pathname === '/api/futures/live') {
+            if (url.pathname === '/api/futures/live' || url.pathname === '/api/tv/live') {
                 srv.timeout(req, 0);
                 let self: ReadableStreamDefaultController<Uint8Array> | null = null;
                 const stream = new ReadableStream<Uint8Array>({
