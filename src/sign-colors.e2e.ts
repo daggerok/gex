@@ -11,8 +11,8 @@ import { noProxy, startTestSite } from './e2e-site';
 // ============================================================================
 
 const CUSTOM = '#38bdf8';
-const GREEN = '#22c55e';
-const RED = '#ef4444';
+const GREEN = '#089981';
+const RED = '#f23645';
 const rgb = (hex: string) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
 
 async function tab(page: Page, name: string): Promise<void> {

@@ -38,11 +38,11 @@ export interface GexLevelColor {
 }
 
 export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
-    maxNetGex: { hex: '#22c55e', dot: 'bg-green-500' },   // green-500
+    maxNetGex: { hex: '#089981', dot: 'bg-[#089981]' },  // TradingView's default up green (owner 2026-10-25, was green-500)
     netGexPlus: { hex: '#86efac', dot: 'bg-green-300' },  // green-300 (Net GEX+)
     gammaFlip: { hex: '#a78bfa', dot: 'bg-violet-400' }, // violet-400
     zeroGex: { hex: '#d946ef', dot: 'bg-fuchsia-500' }, // fuchsia-500 (Zero GEX, the owner's per-strike sign change; violet is the Gamma Flip)
-    minNetGex: { hex: '#ef4444', dot: 'bg-red-500' },      // red-500
+    minNetGex: { hex: '#f23645', dot: 'bg-[#f23645]' },  // TradingView's default down red (owner 2026-10-25, was red-500)
     netGexMinus: { hex: '#fca5a5', dot: 'bg-red-300' },     // red-300 (Net GEX-)
     sumNetGexPlus: { hex: '#22d3ee', dot: 'bg-cyan-400' },  // cyan-400
     sumNetGexMinus: { hex: '#f472b6', dot: 'bg-pink-400' },   // pink-400
@@ -75,8 +75,8 @@ export const CUSTOM_LEVEL_COLOR: GexLevelColor = { hex: '#38bdf8', dot: 'bg-sky-
 /** Bar fills for the GEX tab: call-side (positive) vs put-side (negative).
  *  Used by the signed netGex pos/neg stacked bars. */
 export const GEX_BAR_COLORS = {
-    call: '#22c55e', // green-500
-    put: '#ef4444',  // red-500
+    call: '#089981', // TradingView's default up green (owner 2026-10-25, was green-500 #22c55e)
+    put: '#f23645',  // TradingView's default down red (owner 2026-10-25, was red-500 #ef4444)
 } as const;
 
 /**
@@ -88,9 +88,9 @@ export const GEX_BAR_COLORS = {
  * netGexPlus/netGexMinus, instead of inventing new colors.
  */
 export const GEX_METRIC_COLORS: Record<'callOi' | 'putOi' | 'callVolume' | 'putVolume', string> = {
-    callOi: GEX_LEVEL_COLORS.maxNetGex.hex,       // green-500
+    callOi: '#22c55e',                            // green-500 (kept when the default sign green became #089981)
     callVolume: GEX_LEVEL_COLORS.netGexPlus.hex,  // green-300
-    putOi: GEX_LEVEL_COLORS.minNetGex.hex,         // red-500
+    putOi: '#ef4444',                             // red-500 (kept when the default sign red became #f23645)
     putVolume: GEX_LEVEL_COLORS.netGexMinus.hex,    // red-300
 };
 
