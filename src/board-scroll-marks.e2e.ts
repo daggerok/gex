@@ -63,7 +63,7 @@ async function main(): Promise<void> {
             // ---- only the highlighted rows are on the strip, each exactly once, in table order ----
             const rows = await page.locator('[data-board-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-board-row') ?? ''));
             const marked = await page.locator('[data-board-row]').evaluateAll((els) => els
-                .filter((e) => e.hasAttribute('data-board-atm') || e.querySelector('[data-board-dot]'))
+                .filter((e) => e.hasAttribute('data-board-atm') || e.querySelector('[data-board-cup]'))
                 .map((e) => e.getAttribute('data-board-row') ?? ''));
             const ticks = await page.locator('[data-board] [data-scroll-tick]').evaluateAll((els) => els.map((e) => ({ kind: e.getAttribute('data-scroll-tick') ?? '', strikes: (e.getAttribute('data-scroll-strikes') ?? '').split(','), color: (e.querySelector('span') as HTMLElement | null)?.style.backgroundColor ?? '' })));
             assert.ok(marked.length > 1 && marked.length < rows.length, `${at}: ${marked.length} highlighted of ${rows.length} rows`);
