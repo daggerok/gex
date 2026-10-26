@@ -20,8 +20,8 @@ export const TabSwitcher: React.FC<{
     onChange: (tab: AppTab) => void;
     colorTheme: ColorThemeId;
     /** Rendered in the SAME row as the tab pills, after them (main.tsx's
-     *  shared expiration picker + Load button) - one horizontal bar:
-     *  [Desk | GEX | Chart]  [expiration chips... All] [Load]. The row wraps
+     *  shared expiration picker + Reset button) - one horizontal bar:
+     *  [Desk | Board | GEX | Chart]  [expiration chips... All] [Reset]. The row wraps
      *  (flex-wrap) so this drops to its own line on narrow viewports instead
      *  of squeezing/clipping next to the pills. Omit (or pass null/undefined)
      *  where it doesn't apply, e.g. the Chart tab. */
@@ -48,10 +48,10 @@ export const TabSwitcher: React.FC<{
                 scrolls, so the four tab pills and the panel stay on one line (2026-10-25, the Board pill pushed it down) */}
             <div className="flex flex-wrap items-center justify-between gap-2 lg:flex-nowrap">
                 {/* size="md": the shared <Pill/> (TopBar.tsx) defaults to a
-                    compact 28px-tall rendering sized for TopBar's own CACHE/
-                    LIVE and language switches - noticeably SHORTER than the
-                    Expirations row's own bordered form (px-3 py-1.5,
-                    ExpirationChips/Load button at text-xs, 38px tall).
+                    compact 28px-tall rendering sized for TopBar's own language
+                    and theme switches - noticeably SHORTER than the
+                    Expirations row's own bordered box (px-3 py-1.5,
+                    ExpirationChips and Reset at text-xs, 38px tall).
                     size="md" is an opt-in Pill variant (TopBar.tsx's own doc
                     comment) that widens Pill's OUTER wrapper padding so its
                     actual VISIBLE bordered box renders at 38px, matching the

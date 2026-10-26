@@ -243,7 +243,7 @@ export const staticProvider: DataProvider = {
     label: 'CACHE',
     description:
         'Local static cache — same-origin api/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS greeks). ' +
-        'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
+        'No proxy, no keys. Used when no local proxy is found (and always on the published site before its opt-in). Only cached tickers are listed.',
     mode: 'bulk',
     setup: 'none',
     supportsToken: false,

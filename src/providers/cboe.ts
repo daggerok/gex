@@ -8,10 +8,11 @@ import { proxyTickerSuggestions } from './proxy-search';
  * CBOE provider (BULK — free, no key, ALL equities + indices, richest data).
  * Cash indices are prefixed with "_" (_SPX, _VIX...). CBOE's CDN sends NO CORS
  * header, so the browser CANNOT call it directly — it must be relayed. Two ways:
- *   1) A request-handling proxy base (RECOMMENDED): the local Bun server
- *      (scripts/options-local-proxy.ts also serves /api/cboe).
- *      Set "Proxy base URL" in Settings; we call {base}/api/cboe?symbol=XXX.
- *   2) A generic CORS proxy template ({url}) as a fallback (public ones flaky).
+ *   1) The local Bun proxy (scripts/options-local-proxy.ts, `bun run all:proxy`)
+ *      serves /api/cboe; we call {base}/api/cboe?symbol=XXX. The app finds it by
+ *      itself (src/proxy-discovery.ts), its URL is in Settings -> Advanced.
+ *   2) A generic CORS proxy template ({url}) when no proxy base is set (kept as a
+ *      code path, no longer offered in the UI; public ones are flaky).
  */
 // Cboe CDN spelling for cash indices is "_SYM" (bare and ^SYM both 403). This is
 // a SUPERSET of INDEX_SYMBOLS on purpose: the CBOE provider already routes these
@@ -24,12 +25,12 @@ export const cboeProvider: DataProvider = {
     label: 'CBOE',
     description:
         'CBOE delayed options via proxy (/api/cboe) — equities & indices, greeks/IV/OI + spot. ' +
-        'Default on localhost when proxy is available. Needs Proxy base URL.',
+        'First choice when the local proxy is found. Needs the local proxy.',
     mode: 'bulk',
     setup: 'proxy',
     supportsToken: false,
-    needsProxy: true,       // shows the CORS-proxy dropdown (fallback path)
-    needsProxyBase: true,   // shows the Proxy base URL field (recommended path)
+    needsProxy: true,       // a generic CORS-proxy template would also work (fallback path)
+    needsProxyBase: true,   // the local proxy {base}/api/cboe (the normal path)
     needsKeyFor() { return false; },
     async suggestTickers(query, ctx) {
         // CBOE's symbol book is a large no-CORS JSON file, so the proxy searches

@@ -1,26 +1,20 @@
 # =============================================================================
 # GEX — SMART build-time data cache (GitHub Action)
 # -----------------------------------------------------------------------------
-# INFRASTRUCTURE (not part of the 3-file app source). Implements the
-# "GitHub Actions build-time caching" strategy:
-#   1. Runs scripts/options-data.ts (Bun, raw Yahoo calls) on a schedule.
-#   2. The script SELF-DISCOVERS a market-cap-ranked US universe, then (v4) works
-#      COVERAGE-FIRST: it fetches every MISSING ticker down the cap-ranked list
-#      (resuming where the last run stopped), and only once nothing is missing
-#      does it ROTATE-REFRESH the OLDEST cached files first. It skips files still
-#      fresh today and stops at its budget or when the source rate-limits it.
-#      Each run does NEW work; the next run resumes — so we cache ALL tickers
-#      before re-looping, and never re-loop only the top-cap names.
-#   3. Fetches index option chains (api/Indices.txt, e.g. SPX, NDX) in a SEPARATE
-#      step with a smaller MAX_EXPIRATIONS / MAX_FETCHES budget, so large index
-#      chains stay bounded in size and never eat into the equity budget.
-#   4. Commits the fresh api/options/*.json back to the repo.
-# The site (GitHub Pages) then reads its OWN api/options/*.json via the app's
-# "Static cache" provider — zero CORS issues, zero exposed keys.
+# INFRASTRUCTURE (not part of the app source). What it does:
+#   1. Runs scripts/options-data.ts (Bun, raw Yahoo calls, Cboe greeks overlay) with TICKERS = the list in api/All.txt
+#      (about 360 tickers), added on top of the built-in default list (DEFAULT_SYMBOLS). It does NOT pass `all`, so the
+#      auto-universe is not discovered and the other cached files of api/options (about 2,700 more) are not refreshed by
+#      this workflow; they keep the data of the run that last wrote them.
+#   2. Fetches the index option chains (api/Indices.txt, e.g. SPX, NDX) in a SEPARATE step with a smaller
+#      MAX_EXPIRATIONS / MAX_FETCHES budget, so large index chains stay bounded in size.
+#   3. Commits the fresh api/options/*.json and api/charts/*.json back to the repo and starts the Pages deploy.
+# The site (GitHub Pages) then reads its OWN api/options/*.json through the app's CACHE provider (used whenever no local
+# proxy is found) - zero CORS issues, zero exposed keys.
 #
 # SETUP:
 #   - Commit this repo with Pages enabled (Settings → Pages).
-#   - No ticker list to maintain — tune the env vars in the job below.
+#   - The ticker list is api/All.txt (and api/Indices.txt for the index step); tune the env vars in the job below.
 #   - Ensure Actions has write permission: Settings → Actions → General →
 #     Workflow permissions → "Read and write permissions".
 #

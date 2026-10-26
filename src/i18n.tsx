@@ -145,16 +145,16 @@ export const translations: Record<Language, Record<string, string>> = {
 
         'providerDescription.static':
             'Local static cache — same-origin api/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS greeks). ' +
-            'No proxy, no keys. Best default on GitHub Pages. Only cached tickers are listed.',
+            'No proxy, no keys. Used when no local proxy is found (and always on the published site before its opt-in). Only cached tickers are listed.',
         'providerDescription.yahoo':
             'Yahoo Finance via proxy (/api/options) — crumb/cookie handled by scripts/options-local-proxy.ts. ' +
             'Lazy per-expiration. No provider greeks; client Black-Scholes fills them when IV is present.',
         'providerDescription.nasdaq':
             'NASDAQ option chain via proxy (/api/nasdaq) — full chain one call (bid/ask/last/volume/OI). ' +
-            'No IV/greeks in feed (higher-order stay empty). Needs Proxy base URL.',
+            'No IV/greeks in feed (higher-order stay empty). Needs the local proxy.',
         'providerDescription.cboe':
             'CBOE delayed options via proxy (/api/cboe) — equities & indices, greeks/IV/OI + spot. ' +
-            'Default on localhost when proxy is available. Needs Proxy base URL.',
+            'First choice when the local proxy is found. Needs the local proxy.',
 
         'onboarding.title': 'One quick step: add your free {{provider}} {{keys}}',
         'onboarding.description': '{{hint}}',
@@ -233,7 +233,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'error.cache.noOptions': '"{{symbol}}" is a valid ticker, but api/options/index.json marks it as (no options) in the latest static-cache scan.',
         'error.proxy.baseMissing': 'Set the proxy URL in Settings -> Advanced (e.g. http://localhost:8787).',
         'error.proxy.needed': '{{provider}} needs a proxy. Start it with bun run all:proxy (default http://localhost:8787) or set its URL in Settings -> Advanced.',
-        'error.proxy.http': '{{provider}} proxy request failed (HTTP {{status}}). Check the Proxy base URL / CORS proxy in Settings, or switch provider.',
+        'error.proxy.http': '{{provider}} proxy request failed (HTTP {{status}}). Check that the proxy runs and its URL in Settings -> Advanced, or pick another source there.',
         'error.proxy.notJson': 'The proxy returned a non-JSON page for {{provider}}. Check the proxy URL in Settings -> Advanced, or choose Always cache there.',
         'error.noOptionData': 'No option data for "{{symbol}}". Check the ticker symbol.',
         'error.nasdaq.index': 'NASDAQ does not support index options ({{symbol}}). Switch to CBOE, YAHOO, or CACHE.',
@@ -639,16 +639,16 @@ export const translations: Record<Language, Record<string, string>> = {
 
         'providerDescription.static':
             'Локальный статический кэш — same-origin api/options/{TICKER}.json (GitHub Action + Yahoo + CBOE/BS греки). ' +
-            'Без прокси и ключей. Лучший default для GitHub Pages. Показываются только закэшированные тикеры.',
+            'Без прокси и ключей. Используется, когда локальный прокси не найден (и всегда на опубликованном сайте до разрешения). Показываются только закэшированные тикеры.',
         'providerDescription.yahoo':
             'Yahoo Finance через прокси (/api/options) — crumb/cookie обрабатывает scripts/options-local-proxy.ts. ' +
             'Lazy по expiration. Нет провайдерских греков; клиентский Black-Scholes считает их при наличии IV.',
         'providerDescription.nasdaq':
             'Цепочка NASDAQ через прокси (/api/nasdaq) — полная цепочка за один запрос (bid/ask/last/volume/OI). ' +
-            'Нет IV/греков в фиде (higher-order остаются пустыми). Нужен Proxy base URL.',
+            'Нет IV/греков в фиде (higher-order остаются пустыми). Нужен локальный прокси.',
         'providerDescription.cboe':
             'CBOE delayed options через прокси (/api/cboe) — акции и индексы, греки/IV/OI + spot. ' +
-            'Default на localhost, если прокси доступен. Нужен Proxy base URL.',
+            'Первый выбор, когда найден локальный прокси. Нужен локальный прокси.',
 
         'onboarding.title': 'Один простой шаг: добавь бесплатный {{keys}} для {{provider}}',
         'onboarding.description': '{{hint}}',
@@ -727,7 +727,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'error.cache.noOptions': '«{{symbol}}» - существующий тикер, но api/options/index.json помечает его как (без опционов) в последнем сканировании кэша.',
         'error.proxy.baseMissing': 'Укажите URL прокси в Настройки -> Дополнительно (например, http://localhost:8787).',
         'error.proxy.needed': '{{provider}} нужен прокси. Запустите его командой bun run all:proxy (по умолчанию http://localhost:8787) или укажите его URL в Настройки -> Дополнительно.',
-        'error.proxy.http': 'Запрос {{provider}} через прокси не удался (HTTP {{status}}). Проверьте базовый URL прокси / CORS-прокси в настройках или смените источник.',
+        'error.proxy.http': 'Запрос {{provider}} через прокси не удался (HTTP {{status}}). Проверьте, что прокси запущен, и его URL в Настройки -> Дополнительно, или выберите там другой источник.',
         'error.proxy.notJson': 'Прокси вернул для {{provider}} страницу не в формате JSON. Проверьте URL прокси в Настройки -> Дополнительно или выберите там «Всегда кэш».',
         'error.noOptionData': 'Нет данных об опционах для «{{symbol}}». Проверьте тикер.',
         'error.nasdaq.index': 'NASDAQ не поддерживает индексные опционы ({{symbol}}). Переключитесь на CBOE, YAHOO или CACHE.',
