@@ -8,6 +8,7 @@ import type { GexLevels, Settings } from '../types';
 import { fmt, fmtDays } from '../utils';
 import { useCustomLevels } from '../use-custom-levels';
 import { ChipSwitch, StableLabel } from './ChipSwitch';
+import { EdgeScrollRow } from './EdgeScrollRow';
 import { ToggleChip } from './ToggleChip';
 
 // ============================================================================
@@ -59,8 +60,9 @@ export const LevelsPanel: React.FC<{
         <div className={BOX + ' ' + className + (disabled ? ' opacity-50 grayscale' : '')} role="group" aria-label={tr('gex.sidebar.keyLevels')} inert={disabled} aria-disabled={disabled || undefined} data-levels-disabled={disabled || undefined}>
             <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.sidebar.keyLevels')}</span>
             {/* A spacer as the first child, not `justify-end` on the row: with `justify-end` an overflowing row cannot be
-                scrolled back to its first chips; the spacer pushes the chips to the right when they fit and gives way when not. */}
-            <div className="scrollbar-hidden flex items-center gap-2 overflow-x-auto">
+                scrolled back to its first chips; the spacer pushes the chips to the right when they fit and gives way when not.
+                No scrollbar: fades and < / > buttons on the side(s) with more chips, like the Expirations panel (EdgeScrollRow). */}
+            <EdgeScrollRow scope="levels" rowClassName="gap-2" prevLabel={tr('gex.level.scrollPrev')} nextLabel={tr('gex.level.scrollNext')}>
                 <div aria-hidden="true" className="flex-1" />
                 {entries.map((entry) => {
                     if (entry.builtin) {
@@ -126,7 +128,7 @@ export const LevelsPanel: React.FC<{
                         </ToggleChip>
                     );
                 })}
-            </div>
+            </EdgeScrollRow>
             <button
                 type="button"
                 onClick={reset}
