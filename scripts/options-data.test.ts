@@ -25,9 +25,12 @@ import {
   outputTickerLine,
   runPool,
   type PoolResult,
+  type ChartFile,
   applyCboeRows,
   buildChartFile,
   buildChartQueue,
+  chartOutcome,
+  ChartHttpError,
   FUTURES_CHART_SYMBOLS,
   buildQueue,
   queuePhase,
@@ -1019,7 +1022,7 @@ describe('chart cache', () => {
 
   test('chart queue: priority, then no chart file, then stale oldest first, fresh skipped', () => {
     const updated: Record<string, string> = { OLD: '2026-10-01', NEWER: '2026-10-05' };
-    const q = buildChartQueue(['AAPL', 'MSFT', 'NEWER', 'OLD', 'FRESH'], {
+    const { queue: q } = buildChartQueue(['AAPL', 'MSFT', 'NEWER', 'OLD', 'FRESH'], {
       cached: ['AAPL', 'MSFT', 'NEWER', 'OLD', 'FRESH', 'SPY'],
       explicit: false,
       hasChart: (s) => s in updated || s === 'FRESH',
@@ -1030,7 +1033,7 @@ describe('chart cache', () => {
   });
 
   test('chart queue with an explicit list stays inside it and still puts priority symbols first', () => {
-    const q = buildChartQueue(['AAPL', 'QQQ'], {
+    const { queue: q } = buildChartQueue(['AAPL', 'QQQ'], {
       cached: ['AAPL', 'QQQ', 'OTHER'], explicit: true, hasChart: () => false, isFresh: () => false, updatedOf: () => '',
     });
     expect(q).toEqual(['QQQ', ...FUTURES_CHART_SYMBOLS, 'AAPL']);
@@ -1038,7 +1041,7 @@ describe('chart cache', () => {
 
   test('chart queue: the futures candles are queued on every run after the priority symbols, a fresh one is skipped', () => {
     expect(FUTURES_CHART_SYMBOLS).toEqual(['ES=F', 'NQ=F', 'YM=F', 'RTY=F', 'MES=F', 'MNQ=F', 'MYM=F', 'M2K=F']);
-    const q = buildChartQueue(['AAPL'], {
+    const { queue: q } = buildChartQueue(['AAPL'], {
       cached: ['AAPL'], explicit: true, hasChart: () => true, isFresh: (s) => s === 'NQ=F', updatedOf: () => '',
       futures: ['ES=F', 'NQ=F'],
     });
@@ -1046,6 +1049,34 @@ describe('chart cache', () => {
     // a futures symbol never gets a caret (it is not a cash index) and is never an options ticker
     for (const s of FUTURES_CHART_SYMBOLS) expect(yahooChartCandidates(s)).toEqual([s]);
     expect(DEFAULT_SYMBOLS.some((s) => s.endsWith('=F'))).toBe(false);
+  });
+
+  // t20 (owner 2026-10-26): the ROTATE_STALE tickers get candles too, after the fixed list, with their own budget
+  test('chart queue: the rotation follows the list in its own order, counted in nRotate, queued or fresh ones left out', () => {
+    const cq = buildChartQueue(['AAPL'], {
+      cached: ['AAPL', 'OLD1', 'OLD2', 'MID', 'FRESH'], explicit: true, priority: [], futures: [],
+      hasChart: (s) => s === 'MID', isFresh: (s) => s === 'FRESH', updatedOf: () => '',
+      rotation: ['OLD2', 'AAPL', 'FRESH', 'MID', 'OLD1', 'OLD2'],
+    });
+    // rotation order kept (oldest options first), no missing-first reordering inside it, AAPL already queued, FRESH fresh, OLD2 once
+    expect(cq.queue).toEqual(['AAPL', 'OLD2', 'MID', 'OLD1']);
+    expect(cq.nRotate).toBe(3);
+  });
+
+  test('chart queue: no rotation, no rotate segment (the hourly and `all` runs are unchanged)', () => {
+    const cq = buildChartQueue(['AAPL'], { cached: ['AAPL', 'X'], explicit: true, hasChart: () => false, isFresh: () => false, updatedOf: () => '' });
+    expect(cq.nRotate).toBe(0);
+    expect(cq.queue).toEqual([...FUTURES_CHART_SYMBOLS, 'AAPL']);
+  });
+
+  test('chart outcome: a file wins, 404 or an empty body is a definitive no data, other errors throw (they count toward the stop streak)', () => {
+    const file = { symbol: 'SPX' } as unknown as ChartFile;
+    expect(chartOutcome([{ status: 404, file: null, parsed: false }, { status: 200, file, parsed: true }])).toBe(file);
+    expect(chartOutcome([{ status: 404, file: null, parsed: false }])).toBeNull();
+    expect(chartOutcome([{ status: 200, file: null, parsed: true }])).toBeNull();
+    expect(chartOutcome([])).toBeNull();
+    expect(() => chartOutcome([{ status: 404, file: null, parsed: false }, { status: 503, file: null, parsed: false }])).toThrow(ChartHttpError);
+    expect(() => chartOutcome([{ status: 200, file: null, parsed: false }])).toThrow('not JSON');
   });
 });
 
