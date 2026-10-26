@@ -22,10 +22,18 @@ export function middleScrollDelta(container: { top: number; bottom: number }, ro
     return row.top + row.height / 2 - usableCenter;
 }
 
+/** User input that scrolls a container (mouse wheel, touchpad, a finger, a press on its scroll bar): a centering yields to it. */
+export const USER_SCROLL_EVENTS = ['wheel', 'touchstart', 'pointerdown'] as const;
+
 /**
  * Scrolls `container()` so `row()` sits in its vertical middle, retrying across animation frames while the row is not
  * mounted yet or still moves. Returns a function that stops the retries (call it when the view unmounts or a newer
  * centering starts).
+ *
+ * The user wins: a wheel, touch or pointer press inside the container stops the retries. Each retry re-reads the row and
+ * scrolls by the whole distance to the middle, so a retry still pending after the user scrolled (the frame after the first
+ * scroll, or longer while rows settle) put the view back on the ATM row: the futures-live e2e flake (2026-10-26) scrolled
+ * the Desk by 37 px in that frame and saw it undone (1827 -> 1790).
  */
 export function centerRowInScroll(
     container: () => HTMLElement | null,
@@ -36,22 +44,35 @@ export function centerRowInScroll(
     let tries = 0;
     let frame = 0;
     let stopped = false;
+    const stop = () => {
+        stopped = true;
+        cancelAnimationFrame(frame);
+        for (const type of USER_SCROLL_EVENTS) window.removeEventListener(type, onUser, true);
+    };
+    // on the window (capture): the container may not exist yet when the centering starts
+    function onUser(e: Event): void {
+        const box = container();
+        if (box && box.contains(e.target as Node | null)) stop();
+    }
+    for (const type of USER_SCROLL_EVENTS) window.addEventListener(type, onUser, { capture: true, passive: true });
     const attempt = () => {
         if (stopped) return;
         const box = container();
-        if (!box) return;
+        if (!box) { stop(); return; }
         const el = row();
         if (!el) {
             if (tries++ < maxFrames) frame = requestAnimationFrame(attempt);
+            else stop();
             return;
         }
         const delta = middleScrollDelta(box.getBoundingClientRect(), el.getBoundingClientRect(), topInset());
         box.scrollTop += delta;
         // far off-screen rows may still be settling (staggered fade-in changes heights): nudge again next frame
         if (Math.abs(delta) > 1 && tries++ < maxFrames) frame = requestAnimationFrame(attempt);
+        else stop();
     };
     frame = requestAnimationFrame(attempt);
-    return () => { stopped = true; cancelAnimationFrame(frame); };
+    return stop;
 }
 
 /**

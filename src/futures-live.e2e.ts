@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { startFakeProxy, startTestSite } from './e2e-site';
+import { scrollSettled, slowCpu, startFakeProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the TradingView live mode (src/futures-live.ts, README "Local proxy and TradingView live mode"): with
@@ -32,7 +32,22 @@ async function main(): Promise<void> {
     const browser = await chromium.launch({ args: ['--mute-audio'] });
     try {
         const page = await (await browser.newContext({ viewport: { width: 1400, height: 800 } })).newPage();
+        await slowCpu(page);
         await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [SETTINGS_KEY, JSON.stringify({ proxyBase: proxy.base, lastTicker: '/YM' })] as const);
+        // The user scrolls the Desk WHILE it centers its ATM row: on the first scroll event of the desk (the centering's first
+        // step; its next retry is due in the coming animation frame) a wheel scrolls 37 px. Before the fix that retry put the
+        // view back on the ATM row (1827 -> 1790, the 2026-10-26 flake when the check's own scroll landed in that frame);
+        // done here on purpose, the race is the same on every run instead of now and then.
+        await page.addInitScript(() => {
+            const w = window as unknown as { __userScroll?: number };
+            document.addEventListener('scroll', (e) => {
+                const box = e.target as HTMLElement;
+                if (w.__userScroll !== undefined || !box.hasAttribute?.('data-desk-scroll')) return;
+                box.dispatchEvent(new WheelEvent('wheel', { deltaY: 37, bubbles: true }));
+                box.scrollTop += 37;
+                w.__userScroll = box.scrollTop;
+            }, true);
+        });
         await page.goto(site.url);
         const label = page.locator('[data-source-label]');
         const waitLabel = (re: RegExp, what: string) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-source-label]')?.textContent ?? ''), re.source, { timeout: 10000 })
@@ -44,12 +59,11 @@ async function main(): Promise<void> {
         for (let i = 0; i < 50 && proxy.liveClients() === 0; i++) await page.waitForTimeout(100);
         assert.equal(proxy.liveClients(), 1, 'the app subscribed to the live stream of the proxy');
 
-        await page.evaluate(() => {
-            (window as unknown as { __noReload: boolean }).__noReload = true;
-            const box = document.querySelector<HTMLElement>('[data-desk-scroll]');
-            if (box) box.scrollTop += 37;
-        });
-        const scrollBefore = await page.evaluate(() => document.querySelector<HTMLElement>('[data-desk-scroll]')?.scrollTop ?? -1);
+        await page.waitForFunction(() => (window as unknown as { __userScroll?: number }).__userScroll !== undefined, null, { timeout: 10000 });
+        const userScroll = await page.evaluate(() => (window as unknown as { __userScroll: number }).__userScroll);
+        const scrollBefore = await scrollSettled(page, '[data-desk-scroll]');
+        assert.ok(Math.abs(scrollBefore - userScroll) <= 2, `a wheel while the Desk centers its ATM row wins (${userScroll} -> ${scrollBefore})`);
+        await page.evaluate(() => { (window as unknown as { __noReload: boolean }).__noReload = true; });
         const atmBefore = await page.locator('.od-atm').first().textContent();
 
         // the engine is still subscribing: the label says so (owner acceptance finding 2026-10-26), then goes live by itself
