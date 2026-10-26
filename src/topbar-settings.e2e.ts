@@ -6,14 +6,15 @@ import { eventually, startFakeProxy, startTestSite, type FakeProxy } from './e2e
 
 // ============================================================================
 // Browser check of the top bar against the settings menu (owner 2026-10-26):
-//   - the "Auto" switch of the top bar and "Proxy auto-discovery" in the menu are one setting: either one flips both, and
-//     ON probes the proxy again on tab focus, OFF does not
+//   - the "Auto" switch of the top bar and "Proxy auto-discovery" in the menu are one setting, the only proxy control
+//     (owner 2026-10-26): either one flips both, ON probes the proxy at once and again on tab focus, OFF never does
 //   - every top bar control has its counterpart in the menu with the same state: theme, language, As of, the source
 //     label (read-only status line), Auto
-//   - the published site: Auto ON is the consent to contact this computer (it turns "Use my local proxy" on, the first
-//     localhost request comes only after the click), "Use my local proxy" OFF turns Auto off; nothing reaches this
-//     machine while both are off
-//   - Chrome denied local network access: the menu and the CACHE tooltip say so
+//   - the published site: Auto ON is the consent to contact this computer (the first localhost request comes only after
+//     the click), nothing reaches this machine while it is off; there is no "Use my local proxy" button, a saved one
+//     (localProxyOptIn) starts Auto ON
+//   - Chrome denied local network access: the menu and the CACHE tooltip say so; a probe that fails with a network error
+//     on the published site names both causes (proxy not running, or Chrome blocked the site)
 // A fake proxy (e2e-site.ts) stands in for scripts/options-local-proxy.ts. Run: `bun run test:e2e topbar-settings`.
 // ============================================================================
 
@@ -63,14 +64,15 @@ async function main(): Promise<void> {
         {
             proxy.setUp(true);
             proxy.setCboe(true);
-            const page = await pageWith(browser, { proxyBase: proxy.base, lastTicker: 'SPY' });
+            const page = await pageWith(browser, { proxyBase: proxy.base, lastTicker: 'SPY', proxyAutoPoll: false });
             await page.goto(site.url);
-            await waitText(page, '[data-source-label]', /^LIVE CBOE$/, 'local, proxy up');
+            await waitText(page, '[data-source-label]', /^CACHE \d{4}-\d{2}-\d{2}$/, 'local, proxy up, Auto off: the cache');
 
             // Auto: top bar -> menu
-            assert.equal(await page.locator('[data-topbar-auto]').getAttribute('data-topbar-auto'), 'off', 'Auto is off by default');
+            assert.equal(await page.locator('[data-topbar-auto]').getAttribute('data-topbar-auto'), 'off', 'Auto is off as saved');
             await topAuto(page).click();
             await waitAttr(page, '[data-topbar-auto]', 'data-topbar-auto', 'on', 'the top bar switch turns Auto on');
+            await waitText(page, '[data-source-label]', /^LIVE CBOE$/, 'local, Auto on: live');
             await openMenu(page);
             assert.equal(await menuAuto(page).getAttribute('aria-checked'), 'true', 'the menu shows Auto on');
             await closeMenu(page);
@@ -83,6 +85,7 @@ async function main(): Promise<void> {
             await menuAuto(page).click();
             await waitAttr(page, '[data-proxy-autopoll] [role=switch]', 'aria-checked', 'false', 'the menu switch turns Auto off');
             assert.equal(await page.locator('[data-topbar-auto]').getAttribute('data-topbar-auto'), 'off', 'the top bar shows Auto off');
+            await waitText(page, '[data-source-label]', /^CACHE \d{4}-\d{2}-\d{2}$/, 'local, Auto off again: the cache');
             await closeMenu(page);
             // OFF: no probe on focus (the request would be sent at once; a poll over 300 ms proves it was not)
             const off = healthHits(proxy);
@@ -119,6 +122,20 @@ async function main(): Promise<void> {
             await page.close();
         }
 
+        // 1b. the scrollbars follow the app theme (owner 2026-10-26: a white scrollbar in the dark Settings menu)
+        for (const theme of ['dark', 'light'] as const) {
+            const page = await pageWith(browser, { proxyBase: proxy.base, lastTicker: 'SPY', theme });
+            await page.goto(site.url);
+            await openMenu(page);
+            const style = await page.locator('[data-settings-menu]').evaluate((el) => {
+                const cs = getComputedStyle(el);
+                return { scheme: cs.colorScheme, color: cs.scrollbarColor };
+            });
+            assert.equal(style.scheme, theme, `${theme} theme: color-scheme of the menu`);
+            assert.notEqual(style.color, 'auto', `${theme} theme: a themed scrollbar-color on the menu`);
+            await page.close();
+        }
+
         // 2. published site: nothing reaches this machine while Auto and the opt-in are off; Auto ON is the opt-in
         {
             proxy.setUp(true);
@@ -131,23 +148,27 @@ async function main(): Promise<void> {
                 await page.goto(site.url.replace('localhost', 'gex.test'));
                 await waitText(page, '[data-source-label]', /^CACHE \d{4}-\d{2}-\d{2}$/, 'published, before Auto');
                 await openMenu(page);
-                assert.equal(await page.locator('[data-proxy-optin]').getAttribute('data-proxy-optin'), 'off');
+                assert.equal(await page.locator('[data-proxy-optin]').count(), 0, 'no "Use my local proxy" button');
+                assert.match(await page.locator('[data-proxy-status]').textContent() ?? '', /not in use \(Auto is off\)/);
                 await closeMenu(page);
                 assert.equal(local.length, 0, `no localhost request with Auto off: ${local.join(', ')}`);
                 await topAuto(page).click();
                 assert.ok(await eventually(async () => local.includes('/health')), 'the first /health request comes after Auto on');
                 await waitText(page, '[data-source-label]', /^LIVE CBOE$/, 'published, after Auto on');
                 await openMenu(page);
-                assert.equal(await page.locator('[data-proxy-optin]').getAttribute('data-proxy-optin'), 'on', 'Auto on turned Use my local proxy on');
-                await page.locator('[data-proxy-optin] button').click();
-                await waitAttr(page, '[data-proxy-optin]', 'data-proxy-optin', 'off', 'opt-in off');
-                assert.equal(await menuAuto(page).getAttribute('aria-checked'), 'false', 'opt-in off turned Auto off (menu)');
-                assert.equal(await page.locator('[data-topbar-auto]').getAttribute('data-topbar-auto'), 'off', 'and the top bar');
+                assert.equal(await menuAuto(page).getAttribute('aria-checked'), 'true', 'the menu shows Auto on');
+                await menuAuto(page).click();
+                assert.equal(await page.locator('[data-topbar-auto]').getAttribute('data-topbar-auto'), 'off', 'the menu switch turned the top bar off');
+                await waitText(page, '[data-source-label]', /^CACHE \d{4}-\d{2}-\d{2}$/, 'published, Auto off again: the cache');
+                const n = local.length;
+                await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+                assert.equal(await eventually(async () => local.length > n, 300), false, 'published, Auto off: nothing more reaches this machine');
                 await page.close();
 
-                // 3. Chrome denied local network access: the menu and the CACHE tooltip say so
+                // 3. Chrome denied local network access: the menu and the CACHE tooltip say so. The saved removed "Use my local
+                //    proxy" (localProxyOptIn true) starts Auto ON
                 proxy.setUp(false);
-                const denied = await pageWith(pages, { proxyBase: proxy.base, lastTicker: 'SPY', localProxyOptIn: true });
+                const denied = await pageWith(pages, { proxyBase: proxy.base, lastTicker: 'SPY', proxyAutoPoll: false, localProxyOptIn: true });
                 await denied.addInitScript(() => {
                     const query = navigator.permissions.query.bind(navigator.permissions);
                     navigator.permissions.query = ((d: { name: string }) => (d.name === 'loopback-network' || d.name === 'local-network-access'
@@ -156,6 +177,9 @@ async function main(): Promise<void> {
                 });
                 await denied.goto(site.url.replace('localhost', 'gex.test'));
                 await waitText(denied, '[data-source-label]', /^CACHE \d{4}-\d{2}-\d{2}$/, 'denied: cache');
+                assert.equal(await denied.locator('[data-topbar-auto]').getAttribute('data-topbar-auto'), 'on', 'a saved localProxyOptIn starts Auto ON');
+                const saved = await denied.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}'), SETTINGS_KEY);
+                assert.equal(saved.localProxyOptIn, undefined, 'the old key is dropped from the saved settings');
                 await openMenu(denied);
                 await denied.locator('[data-lna-denied]').waitFor();
                 assert.match(await denied.locator('[data-lna-denied]').textContent() ?? '', /Chrome blocked access to your computer/);
@@ -163,6 +187,20 @@ async function main(): Promise<void> {
                 await denied.locator('[data-source-label]').hover();
                 assert.ok(await eventually(async () => (await denied.locator('[role=tooltip]').allTextContents()).some((t) => t.includes('Chrome blocked access'))), 'the CACHE tooltip names the blocked access');
                 await denied.close();
+
+                // 4. Chrome blocks the fetch but navigator.permissions still says "prompt" (seen on the real site, Chrome 153):
+                //    a probe that fails with a network error names both causes, in the menu and the CACHE tooltip
+                const blocked = await pageWith(pages, { proxyBase: proxy.base, lastTicker: 'SPY', proxyAutoPoll: true });
+                await blocked.route(`${proxy.base}/**`, (route) => route.abort('blockedbyclient'));
+                await blocked.goto(site.url.replace('localhost', 'gex.test'));
+                await waitText(blocked, '[data-source-label]', /^CACHE \d{4}-\d{2}-\d{2}$/, 'blocked: cache');
+                await openMenu(blocked);
+                await waitAttr(blocked, '[data-lna-denied]', 'data-lna-denied', 'maybe', 'the menu hint of a failed probe');
+                assert.match(await blocked.locator('[data-lna-denied]').textContent() ?? '', /did not answer, or Chrome blocked this site from reaching your computer: start bun run proxy, and in the address bar's site settings allow Local network access/);
+                await closeMenu(blocked);
+                await blocked.locator('[data-source-label]').hover();
+                assert.ok(await eventually(async () => (await blocked.locator('[role=tooltip]').allTextContents()).some((t) => t.includes('or Chrome blocked this site'))), 'the CACHE tooltip names both causes');
+                await blocked.close();
             } finally {
                 await pages.close();
             }

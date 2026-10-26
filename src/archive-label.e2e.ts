@@ -89,7 +89,7 @@ async function main(): Promise<void> {
             const page = await pageWith(browser, { proxyBase: proxy.base, lastTicker: 'SPY' });
             await page.goto(site.url);
             await waitLabel(page, /^CACHE \d{4}-\d{2}-\d{2}$/, 'proxy down');
-            await waitTip(page, `the local proxy at ${proxy.base} did not answer when the page loaded`, 'cache tooltip');
+            await waitTip(page, `the local proxy at ${proxy.base} does not answer`, 'cache tooltip');
             await page.close();
         }
         console.log('archive label e2e: ok');

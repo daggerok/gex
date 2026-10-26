@@ -125,9 +125,9 @@ export const TopBar: React.FC<{
     setTickerSuggestionsOpen: (v: boolean) => void;
     /** Auto proxy discovery state (src/proxy-discovery.ts). */
     proxy: ProxyDiscovery;
-    /** False on a page not served from this machine before "Use my local proxy": no request goes to the proxy. */
+    /** Auto is ON: the app may look for and use the local proxy (OFF: no request goes to it). */
     proxyAllowed: boolean;
-    /** The page is served from this machine (no opt-in needed). */
+    /** The page is served from this machine (the Chrome Local Network Access hints do not apply). */
     localPage: boolean;
     /** The data source is live (proxy found or a live provider fixed), else the cache. */
     live: boolean;
@@ -156,7 +156,7 @@ export const TopBar: React.FC<{
         (!provider.supportsSecret || !!(settings.secrets[provider.id]));
     const ax = accentOf(settings.colorTheme);
     const isCache = !live;
-    // the proxy is probed at all: allowed on this page and not the "always cache" override
+    // the proxy is probed at all: Auto ON and not the "always cache" override
     const probing = proxyAllowed && settings.source !== 'static';
     const isDark = settings.theme === 'dark' || (
         settings.theme === 'system' &&
@@ -232,17 +232,22 @@ export const TopBar: React.FC<{
                 ? (settings.colorTheme === 'fundamentals' ? 'bg-emerald-500' : 'bg-indigo-500')
                 : 'bg-slate-400';
     const proxyStatusCls = probing && proxy.up ? statusOk : mt;
-    const proxyStatusText = !probing
-        ? (proxyAllowed ? t('settings.proxyOff') : t('settings.proxyLocalOnly'))
-        : proxy.up === null ? t('settings.proxyChecking') : proxy.up ? t('settings.proxyFound') : t('settings.proxyNotFound');
     const base = settings.proxyBase || '—';
+    const pollSec = String(PROXY_POLL_MS / 1000);
+    // read-only status of the local proxy in Settings, where the "Use my local proxy" button was (owner 2026-10-26)
+    const proxyStatusText = !proxyAllowed ? t('settings.proxyUsage.autoOff')
+        : !probing ? t('settings.proxyUsage.alwaysCache')
+        : proxy.up === null ? t('settings.proxyUsage.checking', { base })
+        : proxy.up ? t('settings.proxyUsage.inUse', { base })
+        : t('settings.proxyUsage.notFound', { sec: pollSec });
     // Chrome denied this published page access to the local network: the probe can never answer, say so (owner 2026-10-26)
-    const lnaDenied = useLocalNetworkDenied(!localPage && settings.localProxyOptIn);
-    // One switch on the published site (owner 2026-10-26): "Proxy auto-discovery" ON is the user's consent to contact this
-    // computer, so it turns "Use my local proxy" on too, and that one OFF turns auto-discovery off. Locally the two are apart.
-    const setAutoPoll = (on: boolean) => onChange(!localPage && on ? { proxyAutoPoll: true, localProxyOptIn: true } : { proxyAutoPoll: on });
-    const toggleOptIn = () => onChange(settings.localProxyOptIn ? { localProxyOptIn: false, proxyAutoPoll: false } : { localProxyOptIn: true });
-    const autoTip = t('topBar.autoTip', { sec: String(PROXY_POLL_MS / 1000) });
+    const lnaDenied = useLocalNetworkDenied(!localPage && probing);
+    // Chrome 153 reports "prompt" while it blocks the fetch, so a published page whose probe failed with a network error
+    // (TypeError, not an HTTP status) names both causes: the proxy is not running, or Chrome blocked the site
+    const lnaMaybe = !localPage && probing && !lnaDenied && proxy.up === false && proxy.failure === 'network';
+    // the one proxy control (owner 2026-10-26): Auto, in the top bar and mirrored in Settings
+    const setAutoPoll = (on: boolean) => onChange({ proxyAutoPoll: on });
+    const autoTip = t('topBar.autoTip', { sec: pollSec });
     const sourceText = !source ? '' : source.kind === 'checking' ? '…' : source.kind === 'live'
         ? (source.delayedMin ? `TV ${source.delayedMin}m delayed${source.at ? ` ${source.at}` : ''}` : `LIVE${source.provider ? ` ${source.provider}` : ''}${source.at ? ` ${source.at}` : ''}`)
         : source.kind === 'tv'
@@ -253,9 +258,10 @@ export const TopBar: React.FC<{
     // why the cache is shown and not live data (owner 2026-10-26: CACHE on the published site with the proxy running and
     // nothing said why); empty when the proxy is up and the cache is still the answer (a futures file, live providers failed)
     const cacheWhy = settings.source === 'static' ? t('source.why.alwaysCache')
-        : !proxyAllowed ? t('source.why.optIn')
+        : !proxyAllowed ? t('source.why.autoOff')
         : lnaDenied ? t('source.why.lnaDenied')
-        : proxy.up === false ? (settings.proxyAutoPoll ? t('source.why.downPoll', { base, sec: String(PROXY_POLL_MS / 1000) }) : t('source.why.downOnce', { base }))
+        : lnaMaybe ? t('source.why.lnaMaybe')
+        : proxy.up === false ? t('source.why.downPoll', { base, sec: pollSec })
         : '';
     const sourceTip = !source ? '' : source.kind === 'archive' ? t('source.tip.archive', { date: source.date }) : source.kind === 'checking'
         ? t('source.tip.checking', { base })
@@ -444,6 +450,7 @@ export const TopBar: React.FC<{
                         </Tip>
                         {openSettings && (
                             <div
+                                data-settings-menu
                                 className={`absolute right-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3 max-h-[calc(100dvh-5rem)] overflow-y-auto`}
                             >
                                 <div className={`font-bold text-sm ${t1}`}>⚙️ {t('settings.title')}</div>
@@ -506,33 +513,19 @@ export const TopBar: React.FC<{
                                             />
                                         </span>
                                     </div>
-                                    <div className={`flex items-center gap-2 text-xs font-semibold ${proxyStatusCls}`} data-proxy-status={!probing ? 'off' : proxy.up === null ? 'checking' : proxy.up ? 'up' : 'down'}>
-                                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${proxyDotCls}`} />
-                                        <span>{proxyStatusText}</span>
-                                    </div>
                                     <div className={`text-[10px] ${mt}`}>
                                         {settings.proxyAutoPoll ? t('settings.autoDiscoveryHint.on') : t('settings.autoDiscoveryHint.off')}
                                     </div>
-                                    {lnaDenied && (
-                                        <div className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300" data-lna-denied>
-                                            {t('settings.lnaDenied')}
+                                    {/* read-only status where the "Use my local proxy" button was (owner 2026-10-26): Auto is the only toggle */}
+                                    <Tip text={sourceTip || proxyStatusText} wrapperClassName="flex">
+                                        <div className={`flex items-center gap-2 text-xs font-semibold ${proxyStatusCls}`} data-proxy-status={!proxyAllowed ? 'off' : !probing ? 'cache' : proxy.up === null ? 'checking' : proxy.up ? 'up' : 'down'}>
+                                            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${proxyDotCls}`} />
+                                            <span>{proxyStatusText}</span>
                                         </div>
-                                    )}
-                                    {/* Published site: the proxy is used only after this one click (persisted), see proxy-discovery.ts */}
-                                    {!localPage && (
-                                        <div className="space-y-1" data-proxy-optin={settings.localProxyOptIn ? 'on' : 'off'}>
-                                            <button
-                                                type="button"
-                                                onClick={toggleOptIn}
-                                                className={`w-full rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
-                                                    settings.localProxyOptIn
-                                                        ? dark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                                        : pillActive
-                                                }`}
-                                            >
-                                                {settings.localProxyOptIn ? t('settings.localProxyOptOut') : t('settings.localProxyOptIn')}
-                                            </button>
-                                            <div className={`text-[10px] ${mt}`}>{settings.localProxyOptIn ? t('settings.localProxyOptInOnHint') : t('settings.localProxyOptInHint')}</div>
+                                    </Tip>
+                                    {(lnaDenied || lnaMaybe) && (
+                                        <div className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300" data-lna-denied={lnaDenied ? 'denied' : 'maybe'}>
+                                            {lnaDenied ? t('settings.lnaDenied') : t('settings.lnaMaybe')}
                                         </div>
                                     )}
                                     <details className="group" data-source-advanced>

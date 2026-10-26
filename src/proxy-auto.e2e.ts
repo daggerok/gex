@@ -2,15 +2,16 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Browser, type Page } from 'playwright';
-import { noProxy, startFakeProxy, startTestSite, type FakeProxy } from './e2e-site';
+import { eventually, noProxy, startFakeProxy, startTestSite, type FakeProxy } from './e2e-site';
 
 // ============================================================================
 // Browser check of the auto proxy (owner 2026-10-25, src/proxy-discovery.ts): no provider menu and no cache / live switch;
 // the app looks for the local proxy and loads live data through it (CBOE first) or the cache when there is none, with a
-// source label next to the ticker. Proxy down -> CACHE <date>; up -> LIVE CBOE; "Proxy auto-discovery" OFF needs a
-// reload to notice a change, ON switches by itself; CBOE failing -> the cache in the end; on a host not served from this
-// machine (the published site) no request at all reaches this machine before "Use my local proxy". A fake proxy
-// (e2e-site.ts) stands in for scripts/options-local-proxy.ts. Run: `bun run test:e2e proxy-auto`.
+// source label next to the ticker. Proxy down -> CACHE <date>; up -> LIVE CBOE. "Auto" is the one control (owner
+// 2026-10-26): OFF never contacts the proxy (the cache only, also on a page served from this machine), ON probes at once
+// after the click, every 30 s and on focus and switches by itself; CBOE failing -> the cache in the end; on a host not
+// served from this machine (the published site) Auto starts OFF and no request at all reaches this machine before it is
+// turned on. A fake proxy (e2e-site.ts) stands in for scripts/options-local-proxy.ts. Run: `bun run test:e2e proxy-auto`.
 // ============================================================================
 
 const SETTINGS_KEY = 'gex.settings.v5';
@@ -64,7 +65,7 @@ async function main(): Promise<void> {
             await waitLabel(page, /^CACHE \d{4}-\d{2}-\d{2}$/, 'no proxy, SPY loaded');
             await page.locator('button[aria-label="Settings"]').click();
             assert.equal(await page.locator('[data-proxy-status]').getAttribute('data-proxy-status'), 'down');
-            assert.equal(await page.locator('[data-proxy-autopoll]').getAttribute('data-proxy-autopoll'), 'off', 'auto-discovery polling is OFF by default');
+            assert.equal(await page.locator('[data-proxy-autopoll]').getAttribute('data-proxy-autopoll'), 'on', 'Auto is ON by default on a page served from this machine');
             await page.locator('[data-source-advanced] summary').click();
             const override = page.locator('[data-source-override]');
             assert.deepEqual(await override.locator('option').allInnerTexts(), ['Auto', 'Always cache', 'CBOE only', 'YAHOO only', 'NASDAQ only']);
@@ -73,25 +74,34 @@ async function main(): Promise<void> {
             await page.close();
         }
 
-        // 2. proxy up, polling OFF: live CBOE on load (the restored ticker too), a stop is noticed only after a reload
+        // 2. Auto OFF (owner 2026-10-26: "if I disable Auto ... we are not using it"): the cache with the proxy running and
+        //    not one request to it, also from the Chart tab; Auto ON probes right after the click and goes live; OFF again
+        //    returns to the cache at once
         {
             proxy.setUp(true);
             proxy.setCboe(true);
-            const page = await pageWith(browser, { proxyBase: proxy.base, lastTicker: 'SPY' });
+            await drained(proxy);
+            const before = proxy.hits.length;
+            const page = await pageWith(browser, { proxyBase: proxy.base, lastTicker: 'SPY', proxyAutoPoll: false });
+            const local: string[] = [];
+            page.on('request', (r) => { if (r.url().startsWith(proxy.base)) local.push(new URL(r.url()).pathname); });
             await page.goto(site.url);
-            await waitLabel(page, /^LIVE CBOE$/, 'proxy up, SPY restored');
-            assert.ok(proxy.hits.some((h) => h.path === '/api/cboe'), 'SPY came through the proxy');
+            await waitLabel(page, /^CACHE \d{4}-\d{2}-\d{2}$/, 'Auto off, proxy up');
+            const cached = page.waitForResponse((r) => r.url().includes('/api/charts/'));
             await page.getByRole('button', { name: 'Chart' }).first().click();
-            await page.waitForTimeout(800);
-            assert.ok(proxy.hits.some((h) => h.path === '/api/chart'), 'the Chart tab asks the proxy for candles too');
-            const probes = healthHits(proxy);
-            proxy.setUp(false);
+            await cached;
+            await page.getByRole('button', { name: 'Desk' }).first().click();
             await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-            await page.waitForTimeout(1500);
-            assert.equal(healthHits(proxy), probes, 'OFF: no probe after the one on load');
-            assert.match(await label(page).textContent() ?? '', /^LIVE CBOE$/, 'OFF: still live until a reload');
-            await page.reload();
-            await waitLabel(page, /^CACHE \d{4}-\d{2}-\d{2}$/, 'OFF: after a reload with the proxy stopped');
+            assert.equal(await eventually(async () => local.length > 0, 300), false, `Auto off: no request to the proxy: ${local.join(', ')}`);
+            assert.deepEqual(proxy.hits.slice(before).filter((h) => h.origin === new URL(site.url).origin), [], 'the proxy saw nothing from this page');
+            await page.locator('[data-topbar-auto] [role=switch]').click();
+            assert.ok(await eventually(async () => local.includes('/health'), 2000), 'Auto on: the first /health right after the click');
+            await waitLabel(page, /^LIVE CBOE$/, 'Auto on, proxy up');
+            await page.locator('[data-topbar-auto] [role=switch]').click();
+            await waitLabel(page, /^CACHE \d{4}-\d{2}-\d{2}$/, 'Auto off again: back to the cache');
+            const probes = local.filter((p) => p === '/health').length;
+            await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+            assert.equal(await eventually(async () => local.filter((p) => p === '/health').length > probes, 300), false, 'Auto off: no probe on focus');
             await page.close();
         }
 
@@ -149,7 +159,7 @@ async function main(): Promise<void> {
             assert.equal(saved.source, 'auto');
             await page.close();
         }
-        // 7. published site (any host not served from this machine): no request to this machine before "Use my local proxy"
+        // 7. published site (any host not served from this machine): Auto starts OFF, no request to this machine before Auto ON
         {
             proxy.setUp(true);
             proxy.setCboe(true);
@@ -162,14 +172,15 @@ async function main(): Promise<void> {
                 page.on('request', (r) => { const h = new URL(r.url()).hostname; if (h === 'localhost' || h === '127.0.0.1') local.push(r.url()); });
                 const url = site.url.replace('localhost', 'gex.test');
                 await page.goto(url);
-                await waitLabel(page, /^CACHE \d{4}-\d{2}-\d{2}$/, 'published site, before the opt-in');
+                await waitLabel(page, /^CACHE \d{4}-\d{2}-\d{2}$/, 'published site, Auto off');
+                const cached = page.waitForResponse((r) => r.url().includes('/api/charts/'));
                 await page.getByRole('button', { name: 'Chart' }).first().click();
-                await page.waitForTimeout(1500);
+                await cached;
                 await page.getByRole('button', { name: 'Desk' }).first().click();
                 const ticker = page.locator('input[role=combobox]');
                 await ticker.fill('QQ');
-                await page.waitForTimeout(800);
-                assert.deepEqual(local, [], 'no request to this machine before the opt-in (no probe, no search, no candles)');
+                // the search is debounced: watch the wire for a while, any request to this machine fails the check at once
+                assert.equal(await eventually(async () => local.length > 0, 1000), false, `no request to this machine with Auto off (no probe, no search, no candles): ${local.join(', ')}`);
                 // only what came from the published origin counts: a request of the page of step 6 (it was loading SPY live
                 // when it closed) may still reach the proxy now (CI, 2026-10-26: 18 hits instead of 17)
                 const published = new URL(url).origin;
@@ -177,15 +188,16 @@ async function main(): Promise<void> {
                 await ticker.fill('SPY');
                 await page.keyboard.press('Escape');
                 await page.locator('button[aria-label="Settings"]').click();
-                const optIn = page.locator('[data-proxy-optin] button');
-                assert.equal(await page.locator('[data-proxy-optin]').getAttribute('data-proxy-optin'), 'off');
+                assert.equal(await page.locator('[data-proxy-optin]').count(), 0, 'no "Use my local proxy" button any more');
                 assert.equal(await page.locator('[data-proxy-status]').getAttribute('data-proxy-status'), 'off');
-                await optIn.click();
-                await waitLabel(page, /^LIVE CBOE$/, 'published site, after "Use my local proxy"');
+                assert.match(await page.locator('[data-proxy-status]').textContent() ?? '', /Local proxy: not in use \(Auto is off\)/);
+                await page.locator('[data-proxy-autopoll] [role=switch]').click();
+                await waitLabel(page, /^LIVE CBOE$/, 'published site, after Auto on');
+                assert.match(await page.locator('[data-proxy-status]').textContent() ?? '', /Local proxy: in use \(.+, live\)/);
                 const seen = proxy.hits.slice(before);
                 assert.ok(seen.some((h) => h.path === '/health' && h.origin === new URL(url).origin), 'the probe came from the published origin');
                 await page.reload();
-                await waitLabel(page, /^LIVE CBOE$/, 'the opt-in is remembered after a reload');
+                await waitLabel(page, /^LIVE CBOE$/, 'Auto on is remembered after a reload');
                 await page.close();
             } finally {
                 await pages.close();

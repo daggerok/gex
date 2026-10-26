@@ -23,6 +23,10 @@
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
  * ---------------------------------------------------------------------------
+ * v0.9.41 - Theme-following scrollbars (owner 2026-10-26: white scrollbar in the dark
+ *          Settings menu): `color-scheme` light on :root, dark on `.dark`, and an
+ *          inherited `scrollbar-color` on html from the --od-scroll-* tokens, so
+ *          every scroll container and native control follows the app theme.
  * v0.9.40 - Strike column containment: `.od-strike-cell` now forces the value to
  *          stay inside its grid track (`min-width: 0`, `overflow: hidden`,
  *          `text-overflow: ellipsis`, `white-space: nowrap`, `box-sizing:
@@ -332,6 +336,9 @@ button:not(:disabled):active { transform: translateY(0.5px) scale(0.985); }
  * source of truth referenced by the scrollbar rules and any custom surfaces.
  * ------------------------------------------------------------------------- */
 :root {
+    /* native scrollbars and form controls follow the app theme, not the OS (owner 2026-10-26: a white scrollbar in the
+     * dark Settings menu); color-scheme and scrollbar-color are inherited, so every scroll container gets them */
+    color-scheme: light;
     --od-bg: #f8fafc;          /* slate-50  : app background (light)          */
     --od-fg: #0f172a;          /* slate-900 : primary text  (light)          */
     --od-scroll-thumb: #cbd5e1;      /* slate-300 */
@@ -340,6 +347,7 @@ button:not(:disabled):active { transform: translateY(0.5px) scale(0.985); }
 }
 
 .dark {
+    color-scheme: dark;
     --od-bg: #0f172a;          /* slate-900 : app background (dark)           */
     --od-fg: #e2e8f0;          /* slate-200 : primary text  (dark)           */
     --od-scroll-thumb: #334155;      /* slate-700 */
@@ -401,6 +409,10 @@ html[data-palette='fundamentals'].dark {
 
 /* Base body binding. Uses the CSS variables above so the whole page reacts to
  * the `.dark` class instantly with a soft transition. */
+html {
+    /* themed thumb on a transparent track for every scrollable area (menu, Desk, Board, sidebars), see the tokens above */
+    scrollbar-color: var(--od-scroll-thumb) var(--od-scroll-track);
+}
 html, body {
     height: 100%;
     /* Only the Values table may scroll sideways, never the page (mobile). */

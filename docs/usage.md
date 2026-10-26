@@ -33,7 +33,7 @@ bun run all              # app http://localhost:1234 + proxy http://localhost:87
 
 Open http://localhost:1234: the app finds the proxy by itself and loads each ticker live from CBOE, else YAHOO, else NASDAQ, else the cache. The label says `LIVE CBOE` (or the provider that answered). `bun run start` does the same in the background under pm2
 
-To use your proxy from the published site instead: start it (`bun run proxy`), turn on **Auto** in the top bar (or Settings -> Data source -> **Use my local proxy**; on the published site Auto on includes it, remembered in this browser) and allow the browser's prompt for local network access (Chrome). A blocked prompt is shown in Settings and in the `CACHE` tooltip: allow Local network access for the site in the address bar site settings. Safari blocks `http://localhost` from an https page, there the published site stays on the cache
+To use your proxy from the published site instead: start it (`bun run proxy`), turn on **Auto** in the top bar (on the published site that is the consent to contact your computer, remembered in this browser) and allow the browser's prompt for local network access (Chrome). When the proxy does not answer, Settings and the `CACHE` tooltip say: your local proxy did not answer, or Chrome blocked this site from reaching your computer; start `bun run proxy`, and in the address bar's site settings allow Local network access. Safari blocks `http://localhost` from an https page, there the published site stays on the cache
 
 ### 3. Local with your own cache
 
@@ -55,10 +55,10 @@ Without a running proxy the app uses this cache by itself; with one, choose Sett
 ## Where the data comes from
 
 - **Auto (default):** the app asks the proxy's `/health`. Found -> per ticker CBOE, YAHOO, NASDAQ, then the cache; not found -> the cache, never an error
-- **Proxy auto-discovery** (the **Auto** switch in the top bar between As of and the source label, the same setting as Settings -> Data source, off by default): off, the proxy is looked for once when the page loads, so refresh the page after starting or stopping it; on, every 30 s and when you come back to the tab, and the open ticker reloads from the new source
-- **Advanced:** fix the source (**Always cache** or one provider only) and change the proxy URL
+- **Auto** (the switch in the top bar between As of and the source label, the same setting as Settings -> Data source -> Proxy auto-discovery) is the only proxy control: on, the proxy is looked for at once, every 30 s and when you come back to the tab, live while it answers and the cache as soon as it stops, the open ticker reloads from the new source; off, the proxy is never contacted and all data comes from the cache. On by default in the app served from this machine, off on the published site. Settings shows the read-only line `Local proxy: in use (...)`, `not in use (Auto is off)` or `not found (Auto is on, checking every 30 s)` where the old **Use my local proxy** button was
+- **Advanced:** fix the source (**Always cache**, which works like Auto off and is kept only as an advanced override, or one provider only, which applies while Auto is on) and change the proxy URL
 - The Chart tab follows the same result: candles through the proxy when live, else the cached `api/charts/<SYM>.json`
-- The source label next to the ticker: `LIVE <provider>`, `CACHE <date>` or `ARCHIVE <day>` (an As of day is open). On `CACHE` its tooltip says why live is off: Always cache is set, the published site has no **Use my local proxy** yet, or the proxy did not answer (when the page loaded, or on the last check with auto-discovery on)
+- The source label next to the ticker: `LIVE <provider>`, `CACHE <date>` or `ARCHIVE <day>` (an As of day is open). On `CACHE` its tooltip says why live is off: Always cache is set, Auto is off, Chrome blocked local network access, the proxy did not answer or Chrome may have blocked it (published site, network error), or the proxy did not answer on the last check
 
 All settings and what the browser remembers: [Configuration](configuration.md)
 
@@ -68,7 +68,7 @@ All settings and what the browser remembers: [Configuration](configuration.md)
 - **Pick expirations:** click the chips in the Expirations panel next to the tabs, each loads by itself; **All** selects every one (then the button says **None**), **Reset** goes back to the nearest one. The arrows on the faded edges scroll the chip row. Each chip shows its share of the open interest; all tabs use the same selection. A switch to another ticker keeps the same dates where it can
 - **Read the levels:** GEX tab: the Levels table in the sidebar lists every shown level with its strike, the Values table beside it (open it with its button) shows each metric at that strike; hover a level chip for what it means. Chart tab: the same levels as price lines on the candles. Board: the level strikes are marked in the table
 - **Add a custom level:** right click (two-finger click on a trackpad, Ctrl+click on macOS, long press on a touch screen) on the GEX or Chart plot, type a name, Enter. Details below
-- **Switch to live:** start `bun run proxy`, then refresh the page (or turn **Auto** on in the top bar; on the published site that also allows the site to contact your computer)
+- **Switch to live:** start `bun run proxy` with **Auto** on in the top bar (on the published site turning it on also allows the site to contact your computer); the label goes live within 30 s or when you come back to the tab
 - **Settings menu holds everything of the top bar** (owner 2026-10-26, useful on a phone where some top bar items are hidden): theme and language at the top, then Data source (Auto first, the source label as a read-only line), then Backtest (As of), then the Desk columns and the rest
 - **See how old the data is:** the source label (`CACHE 2026-10-23`), the Desk toolbar (`as of <date time> ET`) and an amber age badge in the Expirations panel when the data is from an earlier day
 - **Keep the published data fresh (owner):** the hourly data slots run on your Mac. Once: `bun run data:setup`. Then now and then `bun run data:status` (last run per job, next run, last data commit) and `bun run data:logs -n 200` when something says failed; details in [Automations](automations.md#local-data-runner-bun-run-data)

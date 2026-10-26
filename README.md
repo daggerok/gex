@@ -228,8 +228,8 @@ CME publishes, free on its anonymous FTP, the preliminary open interest of every
 ### What auto-discovery does
 
 - The app asks `{proxy URL}/health` (default `http://localhost:8787`, 500 ms timeout). Found -> live data: each options ticker tries **CBOE -> YAHOO -> NASDAQ -> cache**, a futures ticker subscribes to the live stream. Not found -> the cache, never an error
-- **Proxy auto-discovery** (the **Auto** switch in the top bar, the same switch as Settings -> Data source, default **off**): off, the proxy is looked for **once when the page loads**, so after you start or stop it, refresh the page. On, it is looked for every 30 s and whenever you come back to the tab, and the data switches between live and cache by itself
-- **Settings -> Data source -> Advanced:** the manual override (**Auto**, **Always cache**, or one provider only) and the **proxy URL**. Always cache never contacts the proxy, also when it runs, and turns the live mode off in the page
+- **Auto** (the switch in the top bar, the same setting as Settings -> Data source -> Proxy auto-discovery) is the only proxy control. **On:** the proxy is looked for at once, every 30 s and whenever you come back to the tab; live as soon as it answers, back to the cache as soon as it stops, no reload. **Off:** the app never contacts the proxy and uses only the cache, locally and on the published site. Default: on for the app served from this machine (`bun run all`), off on the published site. Settings shows a read-only status line: `Local proxy: in use (...)`, `not in use (Auto is off)` or `not found (Auto is on, checking every 30 s)`
+- **Settings -> Data source -> Advanced:** the manual override (**Auto**, **Always cache**, or one provider only) and the **proxy URL**. Always cache works like Auto off (never contacts the proxy, turns the live mode off) and is kept only as an advanced override; a fixed provider applies only while Auto is on
 - The **Chart tab** follows the same result: candles through the proxy (`/api/chart`, futures as `ES=F` from Yahoo) when the source is live, otherwise the cached `api/charts/<SYM>.json`
 
 ### On GitHub Pages
@@ -237,8 +237,8 @@ CME publishes, free on its anonymous FTP, the preliminary open interest of every
 The published site (https://daggerok.github.io/gex/) never contacts your computer by itself: Chrome 142+ asks every visitor for permission to access the local network as soon as a site calls `localhost`. To use your proxy (and the live mode) from the published site:
 
 1. Start the proxy (`bun run proxy`)
-2. Turn on **Auto** in the top bar (or Settings -> Data source -> **Use my local proxy**). On the published site Auto on is the same consent: it turns Use my local proxy on too, and **Stop using my local proxy** turns Auto off. Remembered in this browser
-3. Allow Chrome's prompt to access devices on your local network. If you blocked it, Settings and the `CACHE` tooltip say "Chrome blocked access to your computer": allow Local network access for the site in the address bar site settings
+2. Turn on **Auto** in the top bar (or in Settings -> Data source): on the published site that is your consent to contact this computer. Remembered in this browser; Auto off and the site never contacts your computer again
+3. Allow Chrome's prompt to access devices on your local network. When the proxy does not answer, Settings and the `CACHE` tooltip say "Your local proxy did not answer, or Chrome blocked this site from reaching your computer": start `bun run proxy`, and in the address bar's site settings allow Local network access (the page cannot tell the two apart: Chrome reports the permission as "prompt" also when it blocks). When Chrome does report a denial, the text says "Chrome blocked access to your computer"
 
 The proxy answers browsers only for pages served from `localhost` or `127.0.0.1` (any port) and from `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`, any other page gets 403), and answers Chrome's private network preflight only for those. **Safari is not supported** here (it blocks `http://localhost` from an https page): use the local app (`bun run all`)
 
@@ -269,7 +269,7 @@ They stay as of that commit until refreshed by hand again (CI has no session and
 ### Troubleshooting
 
 - `/ES` says its file is missing: the live mode has not written it yet (it writes a future's file once all its options stream, up to 3 minutes after the proxy starts for all four futures) or the session is missing (`curl http://localhost:8787/api/futures/status`)
-- The label stays `CACHE <time>` for `/ES` while the proxy runs: refresh the page (auto-discovery off looks for the proxy only on load), check `curl http://localhost:8787/api/futures/status` says `"state":"live"`; with **Always cache** the live mode is off on purpose
+- The label stays `CACHE <time>` for `/ES` while the proxy runs: turn **Auto** on (off never uses the proxy), check `curl http://localhost:8787/api/futures/status` says `"state":"live"`; with **Always cache** the live mode is off on purpose
 - Debug: `kill -USR2 <pid of bun scripts/tv/futures.ts>` drops the websocket of a standalone `tv:futures` to see the reconnect (`websocket closed`, `reconnecting in 5 s`, `subscribed N options in K quote session(s)`, `reconnected`); `TV_RENEW_EVERY_MS=180000 bun run tv:futures` renews the token every 3 minutes instead of 15 minutes before it expires; `GEX_TV_ENV=<file>` reads another env file (a copy with a wrong value shows the "session expired" message without touching the real one)
 - Open interest is the exchange's daily figure and lags one or two sessions. TradingView keeps each contract's OI of the last day it changed (`oi.time`, about 9% of the ES OI is dated before the newest day): checked against the CME Daily Bulletin of 2026-10-23, every value is equal, an older day just means no trade changed it since. The Desk names that day in the tooltip of the OI cell (`OI unchanged since <date>`), the files keep it per option (`oiDate`)
 
@@ -467,12 +467,12 @@ package.json                  # Bun and Parcel scripts
 - Browser settings and tokens are stored in the browser only
 - No application backend exists unless you run or deploy the optional proxy
 - On shared computers, clear keys and settings from the app settings or the browser storage
-- The published site never contacts your computer unless you click **Use my local proxy**; the proxy listens on `127.0.0.1` only and answers browsers only for the local app and the published site
+- The published site never contacts your computer unless you turn **Auto** on; the proxy listens on `127.0.0.1` only and answers browsers only for the local app and the published site
 
 ## Troubleshooting
 
 - **Nothing loads on open:** expected on the first visit. Type a ticker and press Enter
-- **The label says CACHE although the proxy runs:** with Proxy auto-discovery off the proxy is looked for only when the page loads, refresh the page (or turn auto-discovery on). Check `curl http://localhost:8787/health`, the proxy URL in Settings -> Advanced, and that the override there is **Auto**. On the published site turn on **Auto** (or **Use my local proxy**) first; if Settings says Chrome blocked access, allow Local network access in the address bar site settings
+- **The label says CACHE although the proxy runs:** turn **Auto** on in the top bar (off never uses the proxy). Check `curl http://localhost:8787/health`, the proxy URL in Settings -> Advanced, and that the override there is **Auto**. On the published site, if Settings says the proxy did not answer or Chrome blocked the site, allow Local network access in the address bar site settings
 - **403 "origin not allowed" from the proxy:** the page is not served from `localhost` / `127.0.0.1` or `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`)
 - **`Unexpected token '<'`:** a proxy or server returned HTML instead of JSON. Check the proxy URL in Settings -> Advanced
 - **CACHE says not cached:** the ticker is absent from `api/options/*.json`. Start the local proxy, or run the fetcher for it (`TICKERS=XYZ ./scripts/options-data.ts`)

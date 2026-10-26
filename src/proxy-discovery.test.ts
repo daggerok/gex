@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
 import {
-    AUTO_LIVE_ORDER, isLoopbackHost, normalizeProxyBase, probeProxy, sanitizeSourceOverride, sourceChain, sourceLabel,
+    AUTO_LIVE_ORDER, isLoopbackHost, normalizeProxyBase, probeProxy, probeProxyDetailed, sanitizeSourceOverride, sourceChain, sourceLabel,
 } from './proxy-discovery';
 
 const fetchOf = (fn: (url: string, init?: RequestInit) => Promise<Response>) => fn as unknown as typeof fetch;
@@ -65,6 +65,21 @@ describe('probeProxy', () => {
         const t0 = Date.now();
         expect(await probeProxy('http://localhost:8787', slow, 50)).toBe(false);
         expect(Date.now() - t0).toBeLessThan(500);
+    });
+});
+
+describe('probeProxyDetailed: why the proxy did not answer (Chrome hint, owner 2026-10-26)', () => {
+    test('a network error (TypeError) is "network", an HTTP status is "http", no base is "no-base"', async () => {
+        expect(await probeProxyDetailed('http://localhost:8787', fetchOf(async () => new Response('ok')))).toEqual({ up: true, failure: null });
+        expect(await probeProxyDetailed('http://localhost:8787', fetchOf(async () => { throw new TypeError('Failed to fetch'); }))).toEqual({ up: false, failure: 'network' });
+        expect(await probeProxyDetailed('http://localhost:8787', fetchOf(async () => new Response('x', { status: 403 })))).toEqual({ up: false, failure: 'http' });
+        expect(await probeProxyDetailed('', fetchOf(async () => new Response('ok')))).toEqual({ up: false, failure: 'no-base' });
+    });
+    test('no answer within the timeout is "timeout", not "network"', async () => {
+        const hang = fetchOf((_url, init) => new Promise((_res, rej) => {
+            init?.signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError')));
+        }));
+        expect(await probeProxyDetailed('http://localhost:8787', hang, 20)).toEqual({ up: false, failure: 'timeout' });
     });
 });
 
