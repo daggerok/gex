@@ -268,10 +268,8 @@ describe('loadSettings: the provider menu became the auto source (owner 2026-10-
                 expect(s.proxyAutoPoll).toBe(false);
                 expect(s.lastTicker).toBe('SPY');
             }
-            expect(DEFAULT_SETTINGS.localProxyOptIn).toBe(false);
-            blob = JSON.stringify({ source: 'static', proxyAutoPoll: true, proxyBase: 'http://127.0.0.1:9000', localProxyOptIn: true });
+            blob = JSON.stringify({ source: 'static', proxyAutoPoll: true, proxyBase: 'http://127.0.0.1:9000' });
             const s = loadSettings();
-            expect(s.localProxyOptIn).toBe(true);
             expect(s.source).toBe('static');
             expect(s.proxyAutoPoll).toBe(true);
             expect(s.proxyBase).toBe('http://127.0.0.1:9000');
@@ -279,10 +277,44 @@ describe('loadSettings: the provider menu became the auto source (owner 2026-10-
             const bad = loadSettings();
             expect(bad.source).toBe('auto');
             expect(bad.proxyAutoPoll).toBe(false);
-            expect(bad.localProxyOptIn).toBe(false);
+            expect('localProxyOptIn' in bad).toBe(false);
             expect(bad.proxyBase).toBe('http://localhost:8787');
         } finally {
             g.localStorage = saved;
         }
+    });
+});
+
+describe('loadSettings: Auto is the one proxy control (owner 2026-10-26)', () => {
+    const g = globalThis as unknown as { localStorage?: Pick<Storage, 'getItem'>; location?: { hostname: string } };
+    const withPage = (hostname: string | null, blob: string | null, fn: () => void) => {
+        const savedLs = g.localStorage;
+        const savedLoc = g.location;
+        g.localStorage = { getItem: (k) => (k === SETTINGS_KEY ? blob : null) };
+        if (hostname === null) delete g.location; else g.location = { hostname };
+        try { fn(); } finally {
+            g.localStorage = savedLs;
+            if (savedLoc === undefined) delete g.location; else g.location = savedLoc;
+        }
+    };
+    test('a saved "Use my local proxy" (localProxyOptIn true) starts Auto ON and the old key is dropped', () => {
+        withPage('daggerok.github.io', JSON.stringify({ proxyAutoPoll: false, localProxyOptIn: true }), () => {
+            const s = loadSettings();
+            expect(s.proxyAutoPoll).toBe(true);
+            expect('localProxyOptIn' in s).toBe(false);
+        });
+        withPage('daggerok.github.io', JSON.stringify({ proxyAutoPoll: false, localProxyOptIn: false }), () => {
+            expect(loadSettings().proxyAutoPoll).toBe(false);
+        });
+    });
+    test('nothing saved: Auto ON on a page served from this machine, OFF on the published site', () => {
+        withPage('localhost', null, () => expect(loadSettings().proxyAutoPoll).toBe(true));
+        withPage('127.0.0.1', JSON.stringify({ lastTicker: 'SPY' }), () => expect(loadSettings().proxyAutoPoll).toBe(true));
+        withPage('daggerok.github.io', null, () => expect(loadSettings().proxyAutoPoll).toBe(false));
+        withPage(null, null, () => expect(loadSettings().proxyAutoPoll).toBe(false));
+    });
+    test('a saved Auto OFF stays OFF, also on a page served from this machine', () => {
+        withPage('localhost', JSON.stringify({ proxyAutoPoll: false }), () => expect(loadSettings().proxyAutoPoll).toBe(false));
+        expect('localProxyOptIn' in DEFAULT_SETTINGS).toBe(false);
     });
 });

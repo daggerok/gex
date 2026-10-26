@@ -264,13 +264,13 @@ export interface Settings {
      * `providerId` menu; a saved `providerId` is dropped on load.
      */
     source: SourceOverride;
-    /** "Proxy auto-discovery": OFF (default) probes the proxy once on page load, ON every 30 s and on tab focus. */
-    proxyAutoPoll: boolean;
     /**
-     * "Use my local proxy" on a page not served from this machine (GitHub Pages): until the user clicks it once, no request
-     * goes to the proxy at all, not even the probe on load (Chrome 142+ Local Network Access would prompt every visitor).
+     * "Auto" (Proxy auto-discovery), the one proxy control (owner 2026-10-26): ON looks for the local proxy at once, every
+     * 30 s and on tab focus and uses it while it answers; OFF never contacts it (the cache only). On the published site ON
+     * is also the consent to contact this computer. Default when nothing is saved: ON on a page served from this machine,
+     * OFF elsewhere. Replaces the removed `localProxyOptIn` ("Use my local proxy"): a saved true starts Auto ON.
      */
-    localProxyOptIn: boolean;
+    proxyAutoPoll: boolean;
     language: Language;
     theme: ThemeMode;
     /** Shared product color palette (Emerald Ledger / Indigo Desk). */

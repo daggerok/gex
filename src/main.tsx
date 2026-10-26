@@ -915,13 +915,14 @@ const App: React.FC = () => {
     }, [patchSettings]);
 
     // ---- Data source: auto proxy discovery (src/proxy-discovery.ts, owner 2026-10-25) -------------------------------
-    // A page served from this machine probes the proxy by itself; elsewhere (GitHub Pages) no request goes to it until the
-    // user clicks "Use my local proxy" once (persisted): Chrome 142+ would otherwise ask every visitor for local network access
+    // One control, "Auto" (owner 2026-10-26): ON looks for the proxy now, every 30 s and on tab focus and uses it while it
+    // answers; OFF never contacts it (the cache only), here and on the published site, where ON is also the consent that
+    // Chrome 142+ asks for. localPage only decides whether the Chrome hints apply.
     const localPage = useMemo(() => isLoopbackHost(window.location.hostname), []);
-    const proxyAllowed = localPage || settings.localProxyOptIn;
-    // the "always cache" override needs no probe; the probe runs once on load, or periodically with auto-discovery ON
+    const proxyAllowed = settings.proxyAutoPoll;
+    // the "always cache" override needs no probe either
     const probeEnabled = proxyAllowed && settings.source !== 'static';
-    const proxy = useProxyDiscovery(settings.proxyBase, probeEnabled, settings.proxyAutoPoll);
+    const proxy = useProxyDiscovery(settings.proxyBase, probeEnabled);
     // providers to try for a ticker, first to last (Auto + proxy up: CBOE, YAHOO, NASDAQ, CACHE; no proxy: CACHE)
     const chain = useMemo(() => sourceChain(settings.source, proxy.up, proxyAllowed), [settings.source, proxy.up, proxyAllowed]);
     const chainKey = chain.join('>');

@@ -2,7 +2,7 @@
 import { isFuturesPricedSymbol } from './greeks';
 import { DEFAULT_LANGUAGE, LANGUAGES, type Language } from './i18n';
 import { PROXY_PRESETS } from './providers';
-import { DEFAULT_PROXY_BASE, sanitizeSourceOverride } from './proxy-discovery';
+import { DEFAULT_PROXY_BASE, isLoopbackHost, sanitizeSourceOverride } from './proxy-discovery';
 import type { ChainResult, ColorThemeId, Settings } from './types';
 import { dbg } from './utils';
 
@@ -416,8 +416,8 @@ export const SETTINGS_KEY = 'gex.settings.v5';
 export const DEFAULT_SETTINGS: Settings = {
     // Auto: the local proxy is found by itself (src/proxy-discovery.ts), the cache when there is none
     source: 'auto',
+    // Auto OFF here; freshDefaultSettings() and loadSettings() turn it ON on a page served from this machine
     proxyAutoPoll: false,
-    localProxyOptIn: false,
     language: DEFAULT_LANGUAGE,
     theme: 'system',
     colorTheme: DEFAULT_COLOR_THEME,
@@ -493,9 +493,15 @@ export function sanitizeGexMetrics(v: unknown): Settings['gexMetrics'] {
     return filtered.length > 0 ? filtered : [...DEFAULT_SETTINGS.gexMetrics];
 }
 
-/** Fresh settings object (not a shared mutable ref). */
+/** The page is served from this machine (localhost): Auto starts ON there, OFF on the published site. */
+function pageIsLocal(): boolean {
+    const host = (globalThis as { location?: { hostname?: string } }).location?.hostname;
+    return typeof host === 'string' && isLoopbackHost(host);
+}
+
+/** Fresh settings object (not a shared mutable ref); Auto ON when the page is served from this machine. */
 export function freshDefaultSettings(): Settings {
-    return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, proxyAutoPoll: pageIsLocal() };
 }
 
 /** Load settings from localStorage, merged over defaults (forward-compatible). */
@@ -527,8 +533,12 @@ export function loadSettings(): Settings {
         // marketdata / dolthub) is dropped, never mapped to an override, so every user starts on Auto
         delete (merged as Settings & { providerId?: unknown }).providerId;
         merged.source = sanitizeSourceOverride(parsed.source);
-        merged.proxyAutoPoll = parsed.proxyAutoPoll === true;
-        merged.localProxyOptIn = parsed.localProxyOptIn === true;
+        // One proxy control (owner 2026-10-26): the removed "Use my local proxy" (`localProxyOptIn`) was the published
+        // site's consent, which Auto ON is now, so a saved true starts Auto ON; the old key is dropped. No saved Auto: the
+        // default of this page (ON locally, OFF on the published site)
+        merged.proxyAutoPoll = parsed.proxyAutoPoll === true || parsed.localProxyOptIn === true
+            || (typeof parsed.proxyAutoPoll !== 'boolean' && pageIsLocal());
+        delete (merged as Settings & { localProxyOptIn?: unknown }).localProxyOptIn;
         if (typeof merged.proxyBase !== 'string') merged.proxyBase = DEFAULT_SETTINGS.proxyBase;
         return merged;
     } catch {
