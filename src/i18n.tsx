@@ -167,6 +167,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'onboarding.previewCache': 'or switch to CACHE (AAPL static data)',
 
         'controls.expirations': 'Expirations',
+        'controls.expPrev': 'Show the previous expiration',
+        'controls.expNext': 'Show the next expiration',
         'controls.loading': 'Loading…',
         'controls.reset': 'Reset',
         'controls.resetTooltip': 'Back to the nearest expiration. Data loads as soon as you click a date.',
@@ -665,6 +667,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'onboarding.previewCache': 'или переключиться на CACHE (статичные данные AAPL)',
 
         'controls.expirations': 'Экспирации',
+        'controls.expPrev': 'Показать предыдущую экспирацию',
+        'controls.expNext': 'Показать следующую экспирацию',
         'controls.loading': 'Загрузка…',
         'controls.reset': 'Сбросить',
         'controls.resetTooltip': 'Вернуться к ближайшей экспирации. Данные загружаются сразу по клику на дату.',
