@@ -1,7 +1,7 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
 import { useEffect, useRef } from 'react';
-import { centerRowInScroll } from '../center-row';
+import { centerRowInScroll, scrollRowToMiddle } from '../center-row';
 import { HelpButton } from '../components/HelpButton';
 import { ScrollMarks } from '../components/ScrollMarks';
 import { ToolbarRow } from '../components/ToolbarRow';
@@ -153,7 +153,11 @@ export const BoardView: React.FC<{
     })), [board, marks, columns, peakSets, secondSets]);
     const markColors = React.useMemo(() => ({ pos: colors.netGexPos, neg: colors.netGexNeg, zero: NEUTRAL_DOT, atm: atmColor }), [colors.netGexPos, colors.netGexNeg, atmColor]);
     const headHeight = React.useCallback(() => headRef.current?.getBoundingClientRect().height ?? 0, []);
-    const rowOf = React.useCallback((strike: number) => scrollRef.current?.querySelector<HTMLElement>(`[data-board-row="${strike}"]`) ?? null, []);
+    const pickRow = React.useCallback((r: ScrollMarkRow) => {
+        const box = scrollRef.current;
+        const row = box?.querySelector<HTMLElement>(`[data-board-row="${r.strike}"]`);
+        if (box && row) scrollRowToMiddle(box, row, headHeight());
+    }, [headHeight]);
     const describeMark = React.useCallback((r: ScrollMarkRow): string => {
         const parts = [`${fmt(r.strike)}   ${tr('board.col.netGex')} ${fmtSignedCompact(r.netGex)}`];
         if (r.atm) parts.push(tr('board.atm'));
@@ -256,7 +260,7 @@ export const BoardView: React.FC<{
                         </table>
                     )}
                 </div>
-                {hasRows && <ScrollMarks scrollRef={scrollRef} headHeight={headHeight} rows={markRows} colors={markColors} rowOf={rowOf} describe={describeMark} label={tr('board.marks.label')} />}
+                {hasRows && <ScrollMarks scrollRef={scrollRef} headHeight={headHeight} rows={markRows} colors={markColors} onPick={pickRow} describe={describeMark} label={tr('board.marks.label')} />}
             </div>
         </main>
     );

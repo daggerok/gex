@@ -187,6 +187,10 @@ export const translations: Record<Language, Record<string, string>> = {
         'chain.strike': 'Strike',
         'chain.strikeSymbol': '$',
         'chain.strikes': '{{count}} strikes',
+        'desk.marks.label': 'Scroll marks: every row of the desk',
+        'desk.marks.collapsed': 'collapsed',
+        'desk.help.label': 'What the desk shows',
+        'desk.help.marks': 'The narrow strip right of the scrollbar is a map of the whole desk: one tick per row on screen, top to bottom. Each expiration bar is a grey tick (a collapsed expiration is only that tick), then each strike of an expanded expiration in the positive or negative colour of its Net GEX (the call and put of that expiration at that strike), the stronger the larger its |Net GEX|. The ATM strike of each expiration (Spot colour) and the enabled levels and your own levels (their colours, on the nearest strike) are drawn on top at full strength. The frame shows the rows in view. Hover a tick to see its expiration, strike and what it marks (ticks closer than 3 px share one tooltip), click it to bring that row to the middle of the desk (a bar: to the top of its expiration).',
 
         'spot.label': 'Spot',
         'spot.estimated': '(est.)',
@@ -681,6 +685,10 @@ export const translations: Record<Language, Record<string, string>> = {
         'chain.strike': 'Страйк',
         'chain.strikeSymbol': '$',
         'chain.strikes': '{{count}} страйков',
+        'desk.marks.label': 'Метки прокрутки: все строки Деска',
+        'desk.marks.collapsed': 'свёрнута',
+        'desk.help.label': 'Что показывает Деск',
+        'desk.help.marks': 'Узкая полоса справа от полосы прокрутки: карта всего Деска. Одна метка на каждую строку на экране сверху вниз. Плашка каждой экспирации: серая метка (у свёрнутой экспирации только она), затем каждый страйк развёрнутой экспирации цветом знака его Нетто GEX (колл и пут этой экспирации на этом страйке), тем ярче, чем больше |Нетто GEX|. Страйк ATM каждой экспирации (цвет Спота), включённые уровни и ваши уровни (их цвета, на ближайшем страйке) нарисованы поверх в полную силу. Рамка показывает строки на экране. Наведите на метку, чтобы увидеть экспирацию, страйк и что он отмечает (метки ближе 3 px делят одну подсказку), щёлкните, чтобы прокрутить эту строку в середину Деска (плашку: к началу её экспирации).',
 
         'spot.label': 'Спот',
         'spot.estimated': '(оценка)',
