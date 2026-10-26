@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { mergeScrollTicks, SCROLL_TICK_MIN_OPACITY, scrollTicks, stickyPileHeight, tickY, visibleRowWindow, visibleWindow, type ScrollMarkRow } from './scroll-marks';
+import { mergeScrollTicks, SCROLL_TICK_MIN_OPACITY, scrollTicks, tickY, type ScrollMarkRow } from './scroll-marks';
 
 const COLORS = { pos: 'green', neg: 'red', zero: 'grey', atm: 'spot' };
 
@@ -101,19 +101,6 @@ describe('mergeScrollTicks', () => {
     });
 });
 
-describe('visibleWindow', () => {
-    test('fractions of the rows in view below the sticky header', () => {
-        // header 30, 100 rows of 30 px (3000), viewport 330 -> 300 px of rows in view
-        expect(visibleWindow({ scrollTop: 0, clientHeight: 330, scrollHeight: 3030 }, 30)).toEqual({ top: 0, bottom: 0.1 });
-        expect(visibleWindow({ scrollTop: 1500, clientHeight: 330, scrollHeight: 3030 }, 30)).toEqual({ top: 0.5, bottom: 0.6 });
-    });
-
-    test('clamped, and the whole table when it does not scroll', () => {
-        expect(visibleWindow({ scrollTop: 0, clientHeight: 900, scrollHeight: 330 }, 30)).toEqual({ top: 0, bottom: 1 });
-        expect(visibleWindow({ scrollTop: 0, clientHeight: 0, scrollHeight: 0 })).toEqual({ top: 0, bottom: 1 });
-    });
-});
-
 describe('Desk rows (sections, repeated strikes)', () => {
     // two expirations, both with strike 100: the first expanded (header + 2 rows), the second collapsed (header only)
     const rows: ScrollMarkRow[] = [
@@ -144,50 +131,6 @@ describe('Desk rows (sections, repeated strikes)', () => {
         expect(mergeScrollTicks(scrollTicks(rows.slice(0, 2), 2, COLORS))[0].lead.key).toBe('A|100');
         const [g] = mergeScrollTicks(scrollTicks([{ key: 'x', strike: 1, netGex: 1, peaks: ['a'] }, { key: 'h', strike: Number.NaN, netGex: Number.NaN, header: 'B' }], 2, COLORS));
         expect(g.lead.key).toBe('h');
-    });
-});
-
-describe('visibleRowWindow', () => {
-    // a 30 px bar, a 50 px gap (sub-headers, not on the strip), then 4 rows of 20 px: 0-30 | 80-100 | 100-120 | 120-140 | 140-160
-    const edges = [{ top: 0, bottom: 30 }, { top: 80, bottom: 100 }, { top: 100, bottom: 120 }, { top: 120, bottom: 140 }, { top: 140, bottom: 160 }];
-    const at = (i: number) => edges[i];
-
-    test('the whole table in view', () => {
-        expect(visibleRowWindow(5, at, 0, 200)).toEqual({ top: 0, bottom: 1 });
-    });
-
-    test('partial rows count by how far into the row the edge is', () => {
-        // top at 15 = half of row 0, bottom at 110 = half of row 2
-        expect(visibleRowWindow(5, at, 15, 110)).toEqual({ top: 0.5 / 5, bottom: 2.5 / 5 });
-    });
-
-    test('an edge in a gap counts as the start of the next row', () => {
-        expect(visibleRowWindow(5, at, 50, 140)).toEqual({ top: 1 / 5, bottom: 4 / 5 });
-    });
-
-    test('past the last row, empty, and a zero-height row', () => {
-        expect(visibleRowWindow(5, at, 150, 400)).toEqual({ top: 4.5 / 5, bottom: 1 });
-        expect(visibleRowWindow(0, at, 0, 10)).toEqual({ top: 0, bottom: 1 });
-        expect(visibleRowWindow(2, (i) => [{ top: 0, bottom: 0 }, { top: 0, bottom: 10 }][i], 0, 5)).toEqual({ top: 0.5, bottom: 1.5 / 2 });
-    });
-});
-
-describe('stickyPileHeight', () => {
-    // three bars of 30 px; natural tops 0, 500, 1000; the sections' sub-header rows are 56 px (the second collapsed: 0)
-    const bars = [{ top: 0, sub: 56 }, { top: 500, sub: 0 }, { top: 1000, sub: 56 }];
-
-    test('at the top only the first bar is pinned, with its sub-headers', () => {
-        expect(stickyPileHeight(bars, 0, 30)).toBe(30 + 56);
-    });
-
-    test('a bar is pinned once it reaches its slot (index x bar height)', () => {
-        expect(stickyPileHeight(bars, 468, 30)).toBe(86);
-        expect(stickyPileHeight(bars, 470, 30)).toBe(60);
-        expect(stickyPileHeight(bars, 940, 30)).toBe(90 + 56);
-    });
-
-    test('no bars', () => {
-        expect(stickyPileHeight([], 100, 30)).toBe(0);
     });
 });
 

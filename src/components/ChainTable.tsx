@@ -10,7 +10,7 @@ import { useI18n } from '../i18n';
 import { LEVEL_LABEL_SEPARATOR, levelMarksByStrike } from '../level-labels';
 import { LEVEL_CHART_LABEL_KEY, levelLabelItems, sigmaMode, useLevelPrefs } from '../level-prefs';
 import { useMetricColors } from '../metric-prefs';
-import { stickyPileHeight, visibleRowWindow, type ScrollMarkRow } from '../scroll-marks';
+import type { ScrollMarkRow } from '../scroll-marks';
 import { DEFAULT_COLOR_THEME } from '../settings-store';
 import { accentOf } from '../theme';
 import type { ColorThemeId, DeskColumnSettings, GexLevels, OptionQuote, SideColumnSettings } from '../types';
@@ -598,54 +598,6 @@ export const ChainTable: React.FC<{
         if (r.levels?.length) parts.push(r.levels.map((l) => l.text).join(LEVEL_LABEL_SEPARATOR));
         return parts.join(' · ');
     }, [sections, collapsed, markOf, t]);
-    // The frame: the desk's rows differ in height (bars, sub-headers, strikes), so it comes from the rows' real positions
-    // in the scroll content, measured once per layout (cached until the desk's height or the rows change) and read per frame.
-    // A sticky row reports its stuck place, so positions are walked top to bottom: a strike row (never sticky) gives its
-    // real top, a bar or a sub-header row follows the row before it.
-    const layoutRef = useRef<{ height: number; rows: ScrollMarkRow[]; edges: { top: number; bottom: number }[]; bars: { top: number; sub: number }[] } | null>(null);
-    const viewWindow = useCallback(() => {
-        const box = scrollRef.current;
-        const desk = box?.firstElementChild as HTMLElement | null | undefined;
-        if (!box || !desk || !markRows.length) return { top: 0, bottom: 1 };
-        let layout = layoutRef.current;
-        if (!layout || layout.height !== desk.offsetHeight || layout.rows !== markRows) {
-            const deskTop = desk.getBoundingClientRect().top;
-            const at = new Map<string, { top: number; bottom: number }>();
-            const bars: { top: number; sub: number }[] = [];
-            let y = 0;
-            for (const sec of Array.from(desk.children)) {
-                const exp = sec.getAttribute('data-exp') ?? '';
-                const bar = { top: y, sub: 0 };
-                for (const el of Array.from(sec.children) as HTMLElement[]) {
-                    const r = el.getBoundingClientRect();
-                    const strike = el.getAttribute('data-desk-row');
-                    if (strike != null) {
-                        y = r.top - deskTop;
-                        at.set(`${exp}|${strike}`, { top: y, bottom: y + r.height });
-                    } else if (el.classList.contains('od-bar')) {
-                        bar.top = y;
-                        at.set(`${exp}|`, { top: y, bottom: y + r.height });
-                    } else if (el.classList.contains('od-sub')) {
-                        bar.sub += r.height;
-                    }
-                    y += r.height;
-                }
-                bars.push(bar);
-            }
-            // a row not laid out (yet) sits where the row before it ends, so the edges stay ascending
-            let last = 0;
-            const edges = markRows.map((m) => {
-                const e = at.get(m.key ?? '') ?? { top: last, bottom: last };
-                last = e.bottom;
-                return e;
-            });
-            layout = { height: desk.offsetHeight, rows: markRows, edges, bars };
-            layoutRef.current = layout;
-        }
-        const top = box.scrollTop;
-        const edges = layout.edges;
-        return visibleRowWindow(edges.length, (i) => edges[i], top + stickyPileHeight(layout.bars, top, barPxOf(box)), top + box.clientHeight);
-    }, [markRows]);
 
     return (
         /* `flex-1 min-h-0 flex flex-col`: this root claims exactly the remaining
@@ -727,7 +679,7 @@ export const ChainTable: React.FC<{
                     ))}
                 </div>
             </div>
-            <ScrollMarks scrollRef={scrollRef} viewWindow={viewWindow} rows={markRows} colors={markColors} onPick={pickMark} describe={describeMark} label={t('desk.marks.label')} />
+            <ScrollMarks scrollRef={scrollRef} rows={markRows} colors={markColors} onPick={pickMark} describe={describeMark} label={t('desk.marks.label')} />
             </div>
         </div>
     );

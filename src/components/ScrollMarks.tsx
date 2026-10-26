@@ -1,16 +1,16 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { mergeScrollTicks, scrollTicks, visibleWindow, type ScrollMarkRow, type ScrollTickGroup } from '../scroll-marks';
+import { mergeScrollTicks, scrollTicks, type ScrollMarkRow, type ScrollTickGroup } from '../scroll-marks';
 import { Tip } from './Tip';
 
 // ============================================================================
 // SCROLL MARKS STRIP (owner 2026-10-25, "variant B") - a narrow minimap right of a table's vertical scrollbar: one tick
-// per row (src/scroll-marks.ts places, colours and merges them), a frame over the rows in view (the ticks under it are
-// dimmed, the hidden ones stay bright), a click on a tick glides its row to the middle of the table (center-row.ts),
-// hovering shows the strike(s) and what they mark (Tip). It is an absolute overlay in the gutter right of the card, so the
-// layout does not change. Used by the Board and the Desk (ChainTable): each says what a click does (`onPick`) and the Desk,
-// whose rows differ in height under a sticky pile of expiration bars, measures its own frame (`viewWindow`).
+// per row (src/scroll-marks.ts places, colours and merges them), a click on a tick glides its row to the middle of the
+// table (center-row.ts), hovering shows the strike(s) and what they mark (Tip). No frame over the rows in view and no
+// dimming under it (owner 2026-10-25: less overwhelming), so the ticks do not change with the scroll. It is an absolute
+// overlay in the gutter right of the card, so the layout does not change. Used by the Board and the Desk (ChainTable):
+// each says what a click does (`onPick`).
 // ============================================================================
 
 /** Width of the strip (px) and its gap to the card's right edge. */
@@ -24,10 +24,6 @@ const HIT_PX = 7;
 export const ScrollMarks: React.FC<{
     /** the scroll container of the table */
     scrollRef: React.RefObject<HTMLElement | null>;
-    /** height of the sticky header covering the top of the scroll area (for the default frame) */
-    headHeight?: () => number;
-    /** the rows in view as fractions of all rows; default: visibleWindow (rows of one height below `headHeight`) */
-    viewWindow?: () => { top: number; bottom: number };
     rows: readonly ScrollMarkRow[];
     colors: { pos: string; neg: string; zero: string; atm: string; section?: string };
     /** a click on a tick: bring this row (the tick's most important one) to the middle of the table */
@@ -37,12 +33,11 @@ export const ScrollMarks: React.FC<{
     label: string;
     /** only the rows that mark something get a tick (the Board: ATM, peaks, runner-ups), no plain rows */
     markedOnly?: boolean;
-}> = ({ scrollRef, headHeight, viewWindow, rows, colors, onPick, describe, label, markedOnly = false }) => {
+}> = ({ scrollRef, rows, colors, onPick, describe, label, markedOnly = false }) => {
     const stripRef = useRef<HTMLDivElement>(null);
     const [height, setHeight] = useState(0);
-    const [view, setView] = useState({ top: 0, bottom: 1 });
 
-    // the strip's height follows the card; the frame follows the scroll (one update per frame)
+    // the strip's height follows the card (one update per frame); the ticks do not depend on the scroll position
     useEffect(() => {
         const box = scrollRef.current;
         const strip = stripRef.current;
@@ -51,23 +46,17 @@ export const ScrollMarks: React.FC<{
         const measure = () => {
             frame = 0;
             setHeight(strip.clientHeight);
-            const w = viewWindow ? viewWindow() : visibleWindow(box, headHeight?.() ?? 0);
-            setView((v) => (v.top === w.top && v.bottom === w.bottom ? v : w));
         };
         const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
         measure();
-        box.addEventListener('scroll', schedule, { passive: true });
         const ro = new ResizeObserver(schedule);
         ro.observe(box);
         ro.observe(strip);
-        const table = box.firstElementChild;
-        if (table) ro.observe(table);
-        return () => { box.removeEventListener('scroll', schedule); ro.disconnect(); cancelAnimationFrame(frame); };
-    }, [scrollRef, headHeight, viewWindow, rows]);
+        return () => { ro.disconnect(); cancelAnimationFrame(frame); };
+    }, [scrollRef]);
 
     const groups = useMemo(() => (height > 0 ? mergeScrollTicks(scrollTicks(rows, height, colors, markedOnly)) : []), [rows, height, colors, markedOnly]);
 
-    // the ticks do not depend on the scroll position, so scrolling re-renders only the frame
     const ticks = useMemo(() => {
         const go = (g: ScrollTickGroup) => onPick(rows[g.lead.index]);
         const centers = groups.map((g) => (g.top + g.bottom) / 2);
@@ -112,14 +101,6 @@ export const ScrollMarks: React.FC<{
             data-scroll-marks
         >
             {ticks}
-            {/* the rows in view: a frame that dims the ticks under it (they are on the screen already) */}
-            {height > 0 && (
-                <div
-                    className="pointer-events-none absolute -inset-x-[2px] rounded-sm border border-slate-400/80 bg-white/60 dark:border-slate-500/80 dark:bg-slate-950/60"
-                    style={{ top: view.top * height, height: Math.max(4, (view.bottom - view.top) * height) }}
-                    data-scroll-frame
-                />
-            )}
         </div>
     );
 };
