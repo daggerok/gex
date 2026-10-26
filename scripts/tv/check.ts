@@ -2,7 +2,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 /**
- * bun run tv:check - is the TradingView session usable for futures options GEX? LOCAL ONLY.
+ * bun run tv:check - is the TradingView session usable for futures options GEX? Runs on the owner's machine.
  * Requests: 1 GET tradingview.com/chart/ (auth token), 1 websocket with 3 symbols, 1 scanner POST (2 rows).
  * Prints one status line, then details:
  *   ok

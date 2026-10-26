@@ -47,6 +47,5 @@ package-lock.json
 # half-written files of an interrupted fetcher run (scripts write <file>.tmp, then rename it)
 *.tmp
 
-# LOCAL-ONLY futures options from the owner's TradingView session (bun run tv:futures): CME data under a personal
-# licence, never committed, never deployed (scripts/tv/local-only.test.ts guards it). dist/ is ignored above
-api/futures/
+# api/futures/ (bun run tv:futures) IS committed and published (owner 2026-10-25, may be removed later for space);
+# scripts/tv/no-secrets.test.ts checks that no file holds the TradingView session

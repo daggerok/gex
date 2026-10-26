@@ -1,8 +1,8 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 /**
- * TradingView futures options (ES, NQ, YM, RTY and the micros) as gex cache files, LOCAL ONLY (CME personal licence, the
- * owner's own TradingView session; never in CI, never published). Pure helpers of `bun run tv:futures` (futures.ts):
+ * TradingView futures options (ES, NQ, YM, RTY and the micros) as gex cache files, made on the owner's machine from the
+ * owner's own TradingView session (never in CI); the files are committed by hand and published with the site (owner 2026-10-25). Pure helpers of `bun run tv:futures` (futures.ts):
  * which option symbols to watch, the scanner request for the greeks, and the cache file in exactly the schema
  * scripts/options-data.ts writes (its own Payload / Quote types and its Python-compatible JSON writer).
  *
@@ -15,7 +15,7 @@ import type { OptionQuote } from '../../src/types';
 import { isoWithOffset, marketDay, mid, PyInt, pyJsonDumps, type GreeksStats, type Payload, type Quote } from '../options-data';
 import { cookieHeader, redact, type TvSession, UA } from './env';
 
-/** Where the files go: api/futures/<ROOT>.json (gitignored). `api/options/ES.json` is the Eversource stock, so not there. */
+/** Where the files go: api/futures/<ROOT>.json (committed by hand). `api/options/ES.json` is the Eversource stock, so not there. */
 export const FUTURES_DIR = join(__dirname, '..', '..', 'api', 'futures');
 /** The dev server (`bun run start` -> preserve -> ncp api dist/api, then parcel) serves dist/, so the files go there too. */
 export const DIST_FUTURES_DIR = join(__dirname, '..', '..', 'dist', 'api', 'futures');

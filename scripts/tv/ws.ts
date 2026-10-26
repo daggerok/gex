@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 /**
- * Minimal TradingView realtime websocket client (quote sessions only), LOCAL ONLY.
+ * Minimal TradingView realtime websocket client (quote sessions only), used by tv:futures on the owner's machine.
  * Frames are "~m~<len>~m~<payload>"; heartbeats "~h~N" are echoed back. The auth token (a JWT bound to the session) is a
  * secret: it is sent to TradingView and never printed.
  */

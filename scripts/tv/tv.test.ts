@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /// <reference types="bun" />
-// Offline tests of the LOCAL-ONLY TradingView futures scripts over recorded, redacted fixtures (no network, no session).
+// Offline tests of the TradingView futures scripts over recorded, redacted fixtures (no network, no session).
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -2,7 +2,7 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 /**
- * bun run tv:session - put the TradingView session cookies into ~/.config/gex/tradingview.env (mode 600). LOCAL ONLY.
+ * bun run tv:session - put the TradingView session cookies into ~/.config/gex/tradingview.env (mode 600). On the owner's machine only, the value is never printed.
  *
  * 1. Import `sessionid` and `sessionid_sign` of .tradingview.com from the owner's Chrome profiles on macOS: each Cookies
  *    sqlite is read into memory (never copied to disk), the AES key comes from the Keychain item "Chrome Safe Storage"

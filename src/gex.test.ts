@@ -1315,7 +1315,7 @@ describe('boardPeakMarks (Desk scroll marks: the peaks and runner-ups of one exp
   });
 });
 
-describe('contract multiplier per symbol (futures options, LOCAL-ONLY TradingView files)', () => {
+describe('contract multiplier per symbol (futures options, TradingView files)', () => {
   test('the table: E-mini / Micro point values, every other symbol 100', () => {
     expect(CONTRACT_MULTIPLIER_BY_FUTURES_ROOT).toEqual({ ES: 50, MES: 5, NQ: 20, MNQ: 2, YM: 5, MYM: 0.5, RTY: 50, M2K: 5 });
     expect(['/ES', 'ES1!', ' /mes ', 'mes1!', '/NQ', 'MNQ1!', '/YM', 'MYM1!', '/RTY', 'M2K1!'].map(contractMultiplier)).toEqual([50, 50, 5, 5, 20, 2, 5, 0.5, 50, 5]);

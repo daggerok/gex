@@ -143,7 +143,7 @@ describe('CACHE provider: local futures files (bun run tv:futures, never in inde
     expect(chain.underlyingPrice).toBe(70);
   });
 
-  test('a missing futures file says how to make it (local only), not "not in the static cache"', async () => {
+  test('a missing futures file says how to make it, not "not in the static cache"', async () => {
     serve({ 'api/options/index.json': INDEX });
     await expect(staticProvider.fetchAll!('/NQ', ctx)).rejects.toThrow('bun run tv:futures');
   });

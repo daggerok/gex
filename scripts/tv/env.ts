@@ -1,8 +1,9 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 /**
- * The owner's TradingView session for the LOCAL-ONLY futures options scripts (tv:session, tv:check, tv:futures).
- * Never imported by scripts/options-data.ts or anything that runs in GitHub Actions (scripts/tv/local-only.test.ts guards it).
+ * The owner's TradingView session for the futures options scripts (tv:session, tv:check, tv:futures), on the owner's
+ * machine only. Never imported by scripts/options-data.ts or anything that runs in GitHub Actions; its value never goes into
+ * a file of the repo (scripts/tv/no-secrets.test.ts).
  *
  * The session lives in ~/.config/gex/tradingview.env (mode 600): TV_SESSIONID, optional TV_SESSIONID_SIGN. The values and
  * the auth token derived from them are NEVER printed, logged or written anywhere else: run redact() on any text that could

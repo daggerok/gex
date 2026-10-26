@@ -38,7 +38,7 @@ import type { GexLevels, GexPoint, IvRepair, OptionQuote, SigmaLevel, SigmaLevel
 export const CONTRACT_MULTIPLIER = 100;
 
 /**
- * Contract multiplier ($ per index point of one option) of the futures options gex reads from the LOCAL-ONLY TradingView
+ * Contract multiplier ($ per index point of one option) of the futures options gex reads from the TradingView
  * files (`bun run tv:futures`, api/futures/<ROOT>.json): one option is one futures contract, so its multiplier is the
  * futures point value (CME contract specs: E-mini S&P 500 $50, Micro $5; E-mini Nasdaq-100 $20, Micro $2; E-mini Dow $5,
  * Micro $0.50; E-mini Russell 2000 $50, Micro $5). Every symbol not listed here uses CONTRACT_MULTIPLIER (100). A constant

@@ -227,8 +227,9 @@ export function chainFromCacheFile(raw: string, j: any, where: string): ChainRes
 
 /**
  * The local futures file of a futures ticker (`/ES`, `ES1!`, any case; gex.ts futuresRoot), null for every other ticker.
- * `bun run tv:futures` writes api/futures/<ROOT>.json from the owner's TradingView session on the owner's machine only
- * (CME personal licence): gitignored, never in index.json, never deployed, so on the public site it is always missing.
+ * `bun run tv:futures` writes api/futures/<ROOT>.json from the owner's TradingView session on the owner's machine; the
+ * owner commits it by hand and it is published with the site (owner 2026-10-25), so the public site has it as of that
+ * commit. Never in index.json. A missing file says how to make it.
  * Not api/options/ES.json: that is the Eversource Energy stock. `symbol` is the one canonical ticker, `/ES`.
  */
 export function futuresFile(ticker: string): { root: string; symbol: string; url: string } | null {
@@ -278,7 +279,7 @@ export const staticProvider: DataProvider = {
     },
     async fetchAll(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
-        // futures tickers (/ES, ES1!) read the LOCAL-ONLY TradingView file, never listed in index.json (see futuresFile)
+        // futures tickers (/ES, ES1!) read the TradingView file, never listed in index.json (see futuresFile)
         const future = futuresFile(raw);
         if (future) {
             let j: any;

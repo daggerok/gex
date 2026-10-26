@@ -36,10 +36,10 @@ export function isFuturesTicker(symbol: string | null | undefined): boolean {
 
 /**
  * The provider that serves `symbol` (futures PR, owner 2026-10-25: "futures tickers auto-route to the local cache provider,
- * no manual switch"): a futures ticker (`/ES`, `ES1!`, cache.ts futuresFile) is read by the CACHE provider from the
- * LOCAL-ONLY api/futures/<ROOT>.json that `bun run tv:futures` writes, whatever provider is selected; every other ticker
- * keeps the selected one. The list and order of PROVIDERS are unchanged (R2). On a host without the file (the public site)
- * the CACHE provider answers with the clear "run bun run tv:futures" message instead of a live provider's confusing error.
+ * no manual switch"): a futures ticker (`/ES`, `ES1!`, cache.ts futuresFile) is read by the CACHE provider from
+ * api/futures/<ROOT>.json that `bun run tv:futures` writes (committed and published by hand), whatever the data source;
+ * every other ticker keeps `selected`. main.tsx getDates uses isFuturesTicker for the same rule. Without the file the
+ * CACHE provider answers with the clear "run bun run tv:futures" message instead of a live provider's confusing error.
  */
 export function providerForSymbol(selected: DataProvider, symbol: string | null | undefined): DataProvider {
     return isFuturesTicker(symbol) ? staticProvider : selected;

@@ -2,9 +2,10 @@
 /// <reference types="node" />
 /// <reference types="bun" />
 /**
- * bun run tv:futures - futures options GEX data for the local app from the owner's TradingView session. LOCAL ONLY:
- * CME data under a personal licence, so it never runs in CI and the files are never committed or published
- * (api/futures/ is gitignored; scripts/tv/local-only.test.ts guards it).
+ * bun run tv:futures - futures options GEX data from the owner's TradingView session. Runs only on the owner's machine
+ * (the session never goes to CI); the files api/futures/<ROOT>.json are committed by hand and published with the site
+ * (owner 2026-10-25: `bun run tv:futures --once`, commit, push; may be removed later for space). scripts/tv/no-secrets.test.ts
+ * checks that no file holds the session.
  *
  *   bun run tv:futures                 ES, NQ, YM, RTY; rewrites the files every minute until Ctrl+C (--watch 1m)
  *   bun run tv:futures --micros        also MES, MNQ, MYM, M2K (their option chains are separate)
@@ -523,7 +524,7 @@ async function main(): Promise<void> {
         console.log(HELP);
         return;
     }
-    console.log(`tv:futures ${args.roots.join(' ')}: ${args.once ? 'one pass' : `files every ${args.watchMs / 1000} s, greeks and option list every ${args.refreshMs / 1000} s, Ctrl+C stops`}. LOCAL ONLY, never commit or publish the files`);
+    console.log(`tv:futures ${args.roots.join(' ')}: ${args.once ? 'one pass' : `files every ${args.watchMs / 1000} s, greeks and option list every ${args.refreshMs / 1000} s, Ctrl+C stops`}. To publish: commit api/futures and push`);
     const watcher = new FuturesWatcher(args);
     if (args.once) {
         const n = await watcher.runOnce();
