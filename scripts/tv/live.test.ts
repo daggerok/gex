@@ -34,7 +34,7 @@ class FakeWatcher implements WatcherLike {
     valueRows(_root: string, symbols: Iterable<string>): LiveValueRow[] {
         return Array.from(symbols).map((sym) => quoteName(sym)).filter((n) => this.quotes.has(n)).map((n) => {
             const q = this.quotes.get(n)!;
-            return [n, q.bid, q.ask, q.last, q.volume, q.openInterest];
+            return [n, q.bid, q.ask, q.last, q.volume, q.openInterest, '2026-10-23'];
         });
     }
     greekRows(): LiveGreekRow[] {
@@ -94,7 +94,7 @@ describe('live mode: event stream', () => {
         expect(events[1].data.payload.quotes).toHaveLength(2);
         expect(events[1].data.payload.underlyingPrice).toBe(7650.25);
         expect(events[2].data.root).toBe('ES');
-        expect(events[2].data.rows).toEqual([['E4A261030C7600', 11, 11.5, null, 1, 10]]);
+        expect(events[2].data.rows).toEqual([['E4A261030C7600', 11, 11.5, null, 1, 10, '2026-10-23']]);
         expect(events[3].data.rows).toEqual([['E4A261030C7600', 0.2, 0.5, 0.001, null, null, null], ['E4A261030P7600', 0.2, 0.5, 0.001, null, null, null]]);
         expect(engine.stats.deltas).toBe(1);
     });

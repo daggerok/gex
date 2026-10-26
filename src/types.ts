@@ -47,6 +47,14 @@ export interface OptionQuote {
     last: number | null;
     volume: number | null;
     openInterest: number | null;
+    /**
+     * TradingView futures files and live mode only (owner decision G10, 2026-10-26): the day ("YYYY-MM-DD") of the
+     * open interest value. TradingView keeps each contract's OI of the last day it changed, so an older day than the
+     * newest of the chain marks `oiStale` (src/oi-dates.ts): the value stays in the levels, the Desk shows it pale.
+     */
+    oiDate?: string | null;
+    /** `oiDate` is older than the newest OI day of the loaded chain (markStaleOi). */
+    oiStale?: boolean;
     /** Implied volatility as a decimal (0.25 = 25%), when provided. */
     iv: number | null;
     /**

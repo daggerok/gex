@@ -175,7 +175,7 @@ Ports: `APP_PORT` moves the app, `PORT` the proxy; each command checks its ports
 2. Log in to https://www.tradingview.com in **Chrome** (the account needs CME data for realtime futures options; without it quotes are 10 minutes delayed)
 3. `bun run tv:session`: reads the session cookie of the Chrome profile that used TradingView last. macOS asks once to allow access to the Keychain item "Chrome Safe Storage" (click **Always Allow**); the value is written to `~/.config/gex/tradingview.env` (mode 600) and never printed. You can skip this step: the proxy imports the session by itself when the file is missing
 4. `bun run tv:check` must print `ok`
-5. `bun run all`, open http://localhost:1234, enter **`/ES`** (or `ES1!`, `/NQ`, `/YM`, `/RTY`, `/MES`...). A plain `ES` stays the Eversource Energy stock
+5. `bun run all`, open http://localhost:1234, enter **`/ES`** (or `ES1!`, `/NQ`, `/YM`, `/RTY`, `/MES`...). A plain `ES` stays the Eversource Energy stock. Right after the start the label says `TV starting… ES 1/4` for up to 3 minutes (the proxy subscribes about 11,800 options); it turns `LIVE TV hh:mm:ss` by itself
 
 ### The source label next to the ticker
 
@@ -184,7 +184,8 @@ Ports: `APP_PORT` moves the app, `PORT` the proxy; each command checks its ports
 | `LIVE CBOE`, `LIVE YAHOO`, `LIVE NASDAQ` | an options ticker loaded through the proxy from that provider |
 | `CACHE 2026-10-23` | an options ticker from the cache published with the site, of that trading day (amber when it is not today's) |
 | `CACHE 2026-10-25 21:40` | a futures ticker from its file `api/futures/<ROOT>.json`, written at that New York time (no proxy, or before the live stream sent its first snapshot) |
-| `LIVE TV 10:05:07` | a futures ticker in the TradingView live mode: the time (New York) of the last update, it changes every second or two while the market moves |
+| `TV starting… ES 1/4` | the live mode is still subscribing after the proxy started (ES, NQ, YM, RTY one after the other; measured 1.5 to 3 minutes for all four, ES alone about 80 s): the file is shown meanwhile and the page switches to live by itself, no reload |
+| `LIVE TV 10:05:07` | a futures ticker in the TradingView live mode: the time (New York) of the last update, it changes every few seconds while the market moves; the Desk header says the same (`as of 2026-10-26 10:05:07 ET · LIVE TV`) |
 | `TV LOGIN` | the live mode has no valid session: log in to tradingview.com in Chrome, the proxy picks it up within 3 minutes (or run `bun run tv:session`); the last file is shown meanwhile |
 | `TV PAUSED` | TradingView answered 429 or 403: no requests for 15 minutes, then 30, 60, at most 120 if it repeats; it resumes by itself |
 | `TV RECONNECTING` | the websocket dropped (network, sleep): the proxy reconnects by itself (5 s, doubling to 5 min) and subscribes everything again |
@@ -246,10 +247,10 @@ They stay as of that commit until refreshed by hand again (CI has no session and
 
 ### Troubleshooting
 
-- `/ES` says its file is missing: the live mode has not written it yet (about 1.5 minutes after the proxy starts for all four futures) or the session is missing (`curl http://localhost:8787/api/futures/status`)
+- `/ES` says its file is missing: the live mode has not written it yet (up to 3 minutes after the proxy starts for all four futures) or the session is missing (`curl http://localhost:8787/api/futures/status`)
 - The label stays `CACHE <time>` for `/ES` while the proxy runs: refresh the page (auto-discovery off looks for the proxy only on load), check `curl http://localhost:8787/api/futures/status` says `"state":"live"`; with **Always cache** the live mode is off on purpose
 - Debug: `kill -USR2 <pid of bun scripts/tv/futures.ts>` drops the websocket of a standalone `tv:futures` to see the reconnect (`websocket closed`, `reconnecting in 5 s`, `subscribed N options in K quote session(s)`, `reconnected`); `TV_RENEW_EVERY_MS=180000 bun run tv:futures` renews the token every 3 minutes instead of 15 minutes before it expires; `GEX_TV_ENV=<file>` reads another env file (a copy with a wrong value shows the "session expired" message without touching the real one)
-- Open interest is the exchange's daily figure and lags one or two sessions; TradingView keeps each contract's OI of the last day it changed (`oi.time`)
+- Open interest is the exchange's daily figure and lags one or two sessions. TradingView keeps each contract's OI of the last day it changed (`oi.time`): about 9% of the ES open interest (13% NQ, 30% RTY) is dated before the newest day. Those values stay in every level, but the Desk shows their OI cell pale with a tooltip `OI from <date>, TradingView has no newer value`, and the tooltip of the source label counts them (`OI older than 2026-10-23: 9.1% of total OI (1,501 contracts)`); the files keep the day per option (`oiDate`)
 
 ### Security
 

@@ -88,7 +88,9 @@ describe('sourceLabel', () => {
         const base = { chain: ['cboe', 'static'] as ('cboe' | 'static')[], probing: false, servedBy: 'static' as const, dataDate: '2026-10-23', futuresAt: '2026-10-25 21:40' };
         const live = { state: 'live', message: 'streaming ES', until: null };
         expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: live } })).toEqual({ kind: 'live', provider: 'TV', at: '10:05:07' });
-        expect(sourceLabel({ ...base, tvLive: { streaming: false, at: '', status: { state: 'starting', message: 'starting', until: null } } })).toEqual({ kind: 'cache', date: '2026-10-25 21:40' });
+        expect(sourceLabel({ ...base, tvLive: { streaming: false, at: '', status: { state: 'starting', message: 'subscribing NQ 2/4', until: null, progress: 'NQ 2/4' } } })).toEqual({ kind: 'tv', state: 'starting', message: 'subscribing NQ 2/4', until: null, date: '2026-10-25 21:40', progress: 'NQ 2/4' });
+        // ES is ready while NQ still subscribes: ES streams, the label is live
+        expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: { state: 'starting', message: 'x', until: null, progress: 'NQ 2/4' } } })).toEqual({ kind: 'live', provider: 'TV', at: '10:05:07' });
         expect(sourceLabel({ ...base, tvLive: { streaming: false, at: '', status: null } })).toEqual({ kind: 'cache', date: '2026-10-25 21:40' });
         const expired = { state: 'expired', message: 'log in to tradingview.com in Chrome', until: null };
         expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: expired } })).toEqual({ kind: 'tv', state: 'expired', message: 'log in to tradingview.com in Chrome', until: null, date: '2026-10-25 21:40' });

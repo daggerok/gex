@@ -189,7 +189,8 @@ describe('the cache file', () => {
         const { payload } = buildPayload(input);
         expect(Object.keys(payload)).toEqual(['symbol', 'updated', 'date', 'underlyingPrice', 'greeks', 'expirations', 'quotes']);
         const fetcherQuote = rowsFromChain([{ contractSymbol: 'X', strike: 1, bid: 1, ask: 2 }], '2026-10-26', 'call')[0];
-        payload.quotes.forEach((q) => expect(Object.keys(q)).toEqual(Object.keys(fetcherQuote)));
+        // the fetcher's keys in its order, plus the OI day of the futures files at the end (owner decision G10)
+        payload.quotes.forEach((q) => expect(Object.keys(q)).toEqual(Object.keys(fetcherQuote).concat('oiDate')));
         expect(payloadText(payload)).not.toContain('forward');
         expect(Object.keys(payload.greeks)).toEqual(['enabled', 'primarySource', 'fallbackSource', 'riskFreeRate', 'dividendYield', 'total', 'cboeMatched', 'computed', 'missing', 'cboeContracts']);
     });
@@ -204,6 +205,15 @@ describe('the cache file', () => {
         expect(payload.quotes[0].greeksSource).toBe('tradingview');
         expect(stats).toMatchObject({ quotes: 4, withOi: 3, withGamma: 3, expirations: 1 });
         expect(payload.date).toBe('2026-10-23'); // a Sunday belongs to Friday's trading day
+    });
+
+    test('each quote keeps the day of its OI value (oi.time), null without a value (owner decision G10)', () => {
+        const day = (iso: string) => Date.parse(`${iso}T02:40:00Z`) / 1000;
+        const dated = new Map(values);
+        dated.set(wanted[0].symbol, { ...values.get(wanted[0].symbol), oi: { time: day('2026-10-23'), value: 100 } });
+        dated.set(wanted[1].symbol, { ...values.get(wanted[1].symbol), oi: { time: day('2026-10-15'), value: 300 } });
+        const { payload } = buildPayload({ ...input, values: dated });
+        expect(payload.quotes.map((q) => (q as typeof q & { oiDate: string | null }).oiDate)).toEqual(['2026-10-23', '2026-10-15', null, '1970-01-01']);
     });
 
     test('no parity (one-sided quotes) -> the futures price', () => {

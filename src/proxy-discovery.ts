@@ -140,7 +140,7 @@ export type SourceLabel =
     | { kind: 'live'; provider: string | null; at?: string }
     | { kind: 'cache'; date: string | null }
     /** the TradingView live mode cannot stream (session, rate limit, reconnect): the file of `date` is shown meanwhile */
-    | { kind: 'tv'; state: string; message: string; until: number | null; date: string | null };
+    | { kind: 'tv'; state: string; message: string; until: number | null; date: string | null; progress?: string };
 
 /** What the TradingView live stream of a loaded futures ticker says (src/futures-live.ts useTvLive). */
 export interface TvLiveLabelInput {
@@ -149,7 +149,7 @@ export interface TvLiveLabelInput {
     /** New York time of the last applied update, hh:mm:ss */
     at: string;
     /** the engine's state; null before the stream answered */
-    status: { state: string; message: string; until: number | null } | null;
+    status: { state: string; message: string; until: number | null; progress?: string } | null;
 }
 
 /**
@@ -174,6 +174,8 @@ export function sourceLabel(opts: {
         const state = status?.state ?? null;
         if (state && state !== 'live' && state !== 'starting') return { kind: 'tv', state, message: status!.message, until: status!.until, date: opts.futuresAt ?? opts.dataDate };
         if (streaming) return { kind: 'live', provider: 'TV', ...(at ? { at } : {}) };
+        // the engine is still subscribing (1.5-3 minutes after the proxy starts): say so, the page goes live by itself
+        if (state === 'starting') return { kind: 'tv', state, message: status!.message, until: null, date: opts.futuresAt ?? opts.dataDate, ...(status!.progress ? { progress: status!.progress } : {}) };
     }
     if (opts.servedBy === 'static') return { kind: 'cache', date: opts.futuresAt ?? opts.dataDate };
     if (opts.servedBy) return { kind: 'live', provider: opts.servedBy.toUpperCase() };

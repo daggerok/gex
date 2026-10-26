@@ -15,7 +15,7 @@ import { type LiveGreeksCache, liveFuturesGreeks, liveFuturesSpot, liveGreeksCro
 //   GET {proxyBase}/api/futures/live?root=ES   server-sent events
 //     status    {state, message, until, since}            engine state: live, reconnecting, expired, no-session...
 //     snapshot  {root, payload}                           the whole chain, the api/futures/ES.json object
-//     delta     {root, updated, rows: [[name, bid, ask, last, volume, openInterest]]}   changed options, batched
+//     delta     {root, updated, rows: [[name, bid, ask, last, volume, openInterest, oiDate]]}   changed options, batched
 //     greeks    {root, at, rows: [[name, iv, delta, gamma, theta, vega, rho]]}          TradingView's scanner greeks
 // The page keeps the chain in memory, applies every event in place and hands a new ChainResult to the app at most once per
 // LIVE_APPLY_MS: the greeks of every two-sided option come from its own mid (Black-76 on the parity forward,
@@ -53,8 +53,8 @@ export function futuresLiveUrl(base: string, root: string): string {
     return `${normalizeProxyBase(base)}/api/futures/live?root=${encodeURIComponent(root)}`;
 }
 
-/** A value row of a delta: [name, bid, ask, last, volume, openInterest]. */
-export type LiveValueRow = [string, number | null, number | null, number | null, number | null, number | null];
+/** A value row of a delta: [name, bid, ask, last, volume, openInterest, oiDate] (oiDate may be missing: an older proxy). */
+export type LiveValueRow = [string, number | null, number | null, number | null, number | null, number | null, (string | null)?];
 /** A row of TradingView greeks: [name, iv, delta, gamma, theta, vega, rho]. */
 export type LiveGreekRow = [string, number | null, number | null, number | null, number | null, number | null, number | null];
 
@@ -97,7 +97,7 @@ export class LiveChainState {
 
     applyDelta(updated: string | null, rows: readonly LiveValueRow[]): void {
         if (!this.base) return;
-        for (const [name, bid, ask, last, volume, oi] of rows) {
+        for (const [name, bid, ask, last, volume, oi, oiDate] of rows) {
             const q = this.byName.get(name);
             if (!q) continue; // a new option comes with the next snapshot
             q.bid = bid;
@@ -106,6 +106,7 @@ export class LiveChainState {
             q.last = last;
             q.volume = volume;
             q.openInterest = oi;
+            if (oiDate !== undefined) q.oiDate = oiDate;
             this.dirty = true;
         }
         if (updated) this.updated = updated;

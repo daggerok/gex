@@ -1,6 +1,7 @@
 /// <reference lib="esnext" />
 import { futuresRoot } from '../gex';
 import type { ChainResult, DataProvider, GreeksSummary, OptionQuote, ProviderContext, TickerSuggestion } from '../types';
+import { markStaleOi } from '../oi-dates';
 import { asArray, computeMid, num, UiError } from '../utils';
 
 // ============================================================================
@@ -186,7 +187,7 @@ export function chainFromCacheFile(raw: string, j: any, where: string): ChainRes
     if (!j || !Array.isArray(j.quotes)) {
         throw new UiError('error.cache.noQuotes', { url: where });
     }
-    const quotes: OptionQuote[] = j.quotes.map((q: any) => ({
+    const parsed: OptionQuote[] = j.quotes.map((q: any) => ({
         symbol: String(q.symbol ?? ''),
         expiration: String(q.expiration ?? ''),
         side: q.side === 'put' ? 'put' : 'call',
@@ -197,6 +198,7 @@ export function chainFromCacheFile(raw: string, j: any, where: string): ChainRes
         last: num(q.last),
         volume: num(q.volume),
         openInterest: num(q.openInterest),
+        ...(typeof q.oiDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(q.oiDate) ? { oiDate: q.oiDate } : {}),
         iv: num(q.iv),
         delta: num(q.delta),
         gamma: num(q.gamma),
@@ -215,6 +217,8 @@ export function chainFromCacheFile(raw: string, j: any, where: string): ChainRes
             : null,
         greeksMissingReason: q.greeksMissingReason == null ? null : String(q.greeksMissingReason),
     }));
+    // TradingView futures quotes carry the day of their OI: an older one than the newest of the chain is marked (G10)
+    const quotes = markStaleOi(parsed);
     const expirations = asArray<string>(j.expirations).length
         ? asArray<string>(j.expirations).map(String)
         : Array.from(new Set(quotes.map((q) => q.expiration).filter(Boolean))).sort();
