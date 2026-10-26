@@ -6,12 +6,12 @@
 # scripts/options-data.ts and reaches the app through api/options/index.json `defaults`), not the whole universe.
 # The full refresh stays in update-data.yml.
 #
-# WHEN: Mon-Fri at 8:45, 9:45, ..., 16:45 New York time (9 runs, the first one before the open) plus 17:15, 18:15 and
-# 19:15 after the close (12 runs a day). The schedule has its own time zone (`timezone: America/New_York`, the owner's fix,
+# WHEN: Mon-Fri at 9:45 and 16:45 New York time (since 2026-10-26; the hourly slots 8:45 .. 16:45 and 17:15, 18:15, 19:15 run
+# on the owner's Mac through `bun run data:setup`, see docs/automations.md "Local data runner"). The schedule has its own time zone (`timezone: America/New_York`, the owner's fix,
 # 2026-10-12), so the summer and winter time switch needs no extra UTC slots and no skipped runs. The "Market window" step
 # below stays as a guard: it skips a scheduled run that starts before 8:40 or after midnight New York time. GitHub drops
 # many scheduled runs and starts others late (review GEX-H7: no archive for 2026-10-13, 10-16 and 10-19, the runs came at
-# 16:03 and 18:59), so the three extra slots and the open end of the window make sure at least one final run happens.
+# 16:03 and 18:59); the open end of the window lets a late 16:45 run still be final, the local runner adds the other slots.
 # Market holidays are not skipped (the data is simply refreshed with the last prices).
 #
 # WHAT IS COMMITTED (owner's decision, keeps the repository small): the hourly data is NOT committed. Each run fetches
@@ -33,9 +33,9 @@ name: Update partial options data
 on:
   workflow_dispatch: {} # manual run, always refreshes
   schedule:
-    - cron: "45 8-16 * * 1-5" # 8:45, 9:45, ..., 16:45 in the time zone below, summer and winter alike
-      timezone: America/New_York
-    - cron: "15 17-19 * * 1-5" # 17:15, 18:15, 19:15: final runs after the close, in case GitHub drops or delays the 16:45 one
+    # Rare on purpose (owner, 2026-10-26): the owner's Mac runs every hourly slot (scripts/data-local.ts, launchd), GitHub
+    # only a safety net after the open and a final run after the close, in the time zone below, summer and winter alike
+    - cron: "45 9,16 * * 1-5" # 9:45 and 16:45 (final: writes and commits the day zip)
       timezone: America/New_York
 
 permissions:

@@ -16,6 +16,7 @@ TradingView futures and live mode: see [PR #202](https://github.com/daggerok/gex
 - [The data fetcher `scripts/options-data.ts`](#the-data-fetcher-scriptsoptions-datats)
 - [Archive and backups (`api/history`)](#archive-and-backups-apihistory)
 - [Data sizes and the Pages limit](#data-sizes-and-the-pages-limit)
+- [Local data runner (`bun run data:*`)](#local-data-runner-bun-run-data)
 - [Local run commands](#local-run-commands)
 - [Tests](#tests)
 
@@ -27,17 +28,17 @@ Times are New York time (ET). Durations are wall-clock times of the last runs (`
 |---|---|---|---|---|---|
 | `ci.yaml` (CI) | every pull request to `main`, manual | unit tests, fetcher bundle, both builds (job `build`), browser tests (job `e2e`) | nothing | nothing | 2.5 to 3.5 min |
 | `github-pages.yml` (GitHub Pages) | every push to `main` except archive-only pushes, manual, started by `update-data.yml` and `dependency-updates.yml` | refreshes the 27 default tickers, builds with `/gex/`, deploys `dist/` | nothing | yes | 1 to 2 min |
-| `update-partial-data.yml` (Update partial options data) | Mon-Fri 8:45, 9:45 ... 16:45 and 17:15, 18:15, 19:15 ET; manual | refreshes the 27 default tickers, builds and deploys the site itself | only the day zip and `api/latest.json` (final runs from 16:30 ET), a backtest backup when `BACKTEST_TICKERS` is set | yes (own `deploy` job) | 1 to 1.5 min, 8 s when the window guard skips |
+| `update-partial-data.yml` (Update partial options data) | Mon-Fri 9:45 and 16:45 ET (the other hourly slots run on the owner's Mac, see [Local data runner](#local-data-runner-bun-run-data)); manual | refreshes the 27 default tickers, builds and deploys the site itself | only the day zip and `api/latest.json` (final runs from 16:30 ET), a backtest backup when `BACKTEST_TICKERS` is set | yes (own `deploy` job) | 1 to 1.5 min, 8 s when the window guard skips |
 | `update-data.yml` (Update options data) | Saturday 10:00 ET; manual | the default list plus `api/All.txt`, 500 stale other files (`ROTATE_STALE`) | `api/` (options, charts, index) | starts `github-pages.yml` when it pushed | 9 to 14 min |
-| `backtest-backup.yml` (Backtest backup) | manual only | optional fresh fetch, then one backup zip | the zip and `api/history/index.json` | no (archive-only pushes are not deployed) | not run yet |
+| `backtest-backup.yml` (Backtest backup) | Saturday 12:00 ET (the preset, from the committed files); manual | optional fresh fetch, then one backup zip | the zip and `api/history/index.json` | no (archive-only pushes are not deployed) | not run yet |
 | `dependency-updates.yml` (Dependency Updates) | manual only | `npm-check-updates -u`, install, tests, both builds, push to the branch | `package.json`, `bun.lock` | starts `github-pages.yml` when it pushed | not run yet |
-| `npm-check-updates.yml` | manual only | the same bump as a dry check, nothing is pushed | nothing | nothing | not run yet |
+| `npm-check-updates.yml` | Sunday 10:00 ET; manual | the same bump as a dry check, nothing is pushed | nothing | nothing | not run yet |
 
 Common to all: `ubuntu-latest`, Bun pinned to `1.4.x` (`oven-sh/setup-bun@v2`) so a new Bun release cannot break the unattended data runs. The three data workflows share the concurrency group `data-refresh` (a run waits for the other, none is cancelled); the two deploys share the group `pages`
 
 ### Schedules are best effort
 
-GitHub drops many scheduled runs and starts others late. Observed in October 2026: the hourly workflow fired 2 or 3 of its 9 weekday slots, 40 minutes to almost 3 hours late (runs at 13:25, 16:37 and 19:28 ET on 2026-10-23), and the weekly run started at 12:50 and 13:12 ET instead of 10:00. That is why every run from 16:30 to 23:59 ET counts as final (the day archive is idempotent) and there are three after-close slots. The cron lines carry `timezone: America/New_York`, so daylight saving time needs no extra UTC slots
+GitHub drops many scheduled runs and starts others late. Observed in October 2026: the hourly workflow fired 2 or 3 of its 9 weekday slots, 40 minutes to almost 3 hours late (runs at 13:25, 16:37 and 19:28 ET on 2026-10-23), and the weekly run started at 12:50 and 13:12 ET instead of 10:00. That is why every run from 16:30 to 23:59 ET counts as final (the day archive is idempotent). Since 2026-10-26 GitHub keeps only rare schedules (the hourly workflow at 9:45 and 16:45, the weekly refresh and the backup on Saturday, the dependency check on Sunday) and the owner's Mac runs every hourly slot through the [local data runner](#local-data-runner-bun-run-data); its pushes also keep the repository active, so GitHub never disables the schedules (it does after 60 days without activity in a public repository). The cron lines carry `timezone: America/New_York`, so daylight saving time needs no extra UTC slots
 
 ## CI (`ci.yaml`)
 
@@ -60,7 +61,7 @@ GitHub drops many scheduled runs and starts others late. Observed in October 202
 
 The hourly refresh of the default tickers during the trading day
 
-- **Schedule:** `45 8-16 * * 1-5` and `15 17-19 * * 1-5` in `America/New_York`: 8:45 (before the open), 9:45 ... 16:45, then 17:15, 18:15, 19:15 after the close, 12 slots Monday to Friday. Market holidays are not skipped, a holiday run refreshes the last prices
+- **Schedule:** `45 9,16 * * 1-5` in `America/New_York`: 9:45 (after the open) and 16:45 (final), Monday to Friday, since 2026-10-26 (before: every hour 8:45 to 16:45 plus 17:15, 18:15, 19:15; those slots now run on the owner's Mac, `bun run data:setup`). Market holidays are not skipped, a holiday run refreshes the last prices
 - **Market window guard (first step):** a scheduled run that starts before 8:40 ET is skipped (`run=false`, the whole job takes about 8 s). There is no upper bound before midnight; a run GitHub starts after midnight is already the next day (or Saturday) and is skipped by the same check. A manual run always runs
 - **Final run:** any run that starts at 16:30 ET or later (`final=true`). Several final runs a day are fine
 - **Env:** `MAX_EXPIRATIONS=15` and `KEEP_EXPIRATIONS=1` (they only matter for tickers outside the default list; the defaults keep their expirations by rule, see [Default tickers and their expirations](#default-tickers-and-their-expirations)), `CONCURRENCY=4`, `REQUEST_SLEEP=0.1`, and in the fetch step `HISTORY=1` only on a final run, `HISTORY_KEEP_DAYS` and `HISTORY_KEEP_BACKUP_DAYS` from the repository variables of the same names (default 14)
@@ -84,7 +85,7 @@ The weekly full refresh of everything the published cache holds
 
 ## Backtest backup (`backtest-backup.yml`)
 
-- **Trigger:** `workflow_dispatch` only, inputs `tickers` (space or comma separated; empty = the preset, the 27 default tickers; `all` = every file of `api/options`) and `refresh` (fetch fresh data first; refused together with `all`, that would be the whole universe)
+- **Trigger:** Saturday 12:00 ET (`0 12 * * 6`, after the weekly refresh; with empty inputs: the preset from the committed files, no fresh fetch) and `workflow_dispatch` with the inputs `tickers` (space or comma separated; empty = the preset, the 27 default tickers; `all` = every file of `api/options`) and `refresh` (fetch fresh data first; refused together with `all`, that would be the whole universe)
 - **Steps:** input check, checkout, setup Bun, with `refresh` `bun scripts/options-data.ts` (with `TICKERS` = the input, or no `TICKERS` for the preset), `bun scripts/backtest-backup.ts $BACKUP_TICKERS | tee -a $GITHUB_STEP_SUMMARY` (with `pipefail`), commit `chore(data): backtest backup [skip ci]` and push with up to 3 rebase retries (`git rebase -X theirs`)
 - **Result:** `api/history/<YYYY-MM>/<YYYY-MM-DD-HH-mm>.zip` (ET, to the minute, never overwritten; a taken minute moves forward) and `api/history/index.json`. Not deployed by itself (archive-only push), it reaches the site with the next deploy
 - **Timeout:** 30 min. **Concurrency:** `data-refresh`
@@ -93,7 +94,7 @@ The weekly full refresh of everything the published cache holds
 ## Dependency Updates and npm-check-updates
 
 - **`dependency-updates.yml`:** manual, inputs `target_branch` (default `main`) and `commit_message` (default `chore(deps): update dependencies`). Runs `bunx npm-check-updates -u`, `bun install -E`, `bun run test`, `bun run build`, `bun run build-github-pages`; when anything changed, commits `package.json` and `bun.lock` and pushes straight to the target branch, then starts `github-pages.yml` for that branch (`curl --fail-with-body`, an API error fails the step). A rejected push is retried once after `git pull --rebase`; a rebase conflict (`package.json`, `bun.lock`) or a second failed push fails the run. It does not run the browser tests and opens no PR: a PR with auto-merge needs repository settings that are off today (see the open question below)
-- **`npm-check-updates.yml`:** manual, the same bump followed by `bun install -E` (exact versions, like CI), tests, build, `clean`, Pages build; nothing is committed. Use it to see whether the newest versions still pass before running `dependency-updates.yml`
+- **`npm-check-updates.yml`:** Sunday 10:00 ET (`0 10 * * 0`) and manual, the same bump followed by `bun install -E` (exact versions, like CI), tests, build, `clean`, Pages build; nothing is committed. Use it to see whether the newest versions still pass before running `dependency-updates.yml`
 - **Open question (2026-10-26): dependency updates through a PR with auto-merge.** Not possible with today's repository settings (checked with `gh api`): `allow_auto_merge` is `false`; "Allow GitHub Actions to create and approve pull requests" is off (`can_approve_pull_request_reviews: false`), so `gh pr create` with `GITHUB_TOKEN` is refused; `main` has no branch protection or ruleset, so `gh pr merge --auto` would merge at once without waiting for CI; and a PR opened with `GITHUB_TOKEN` starts no `pull_request` workflow, so `ci.yaml` would not run on it at all. It needs the owner's decision on all four (enable auto-merge, allow Actions to create PRs, a ruleset that requires the `build` and `e2e` checks, and a PAT or GitHub App token for the PR so CI starts)
 
 ## The data fetcher `scripts/options-data.ts`
@@ -211,6 +212,71 @@ Measured on `main` 2026-10-26:
 **Candles for every cached ticker:** since the chart pass covers the rotation, the 2,278 cached tickers without a chart file get one within about 6 weeks: 2,278 x 10.8 KB = about 25 MB more, so `api/charts` ends near 33 MB (3 % of the 1 GB limit). Each weekly run then rewrites about 870 chart files (the list plus 500 rotated), about 9 MB of JSON, which grows the git history (not the site) by a few MB a week. The weekly run gets about 5 minutes longer (500 more chart requests at `REQUEST_SLEEP=0.5`)
 
 The site deploys all of `api/` with the app (`bun run build` copies it to `dist/api`). GitHub Pages publishes at most 1 GB per site, so about 750 MB are left. Watch the daily zips (about 3.4 MB a day with the 27 defaults, kept 14 days, so about 50 MB) and especially `BACKTEST_TICKERS=all` (tens of MB per hour, rotated after 14 days): with hourly backups of everything the limit is reached within days
+
+## Local data runner (`bun run data:*`)
+
+The frequent data work runs on the owner's Mac (owner, 2026-10-26): every hourly slot of the old schedule, while GitHub keeps the rare ones above. One module, `scripts/data-local.ts` (Bun, node built-ins only, tests in `scripts/data-local.test.ts`). All fetch logic stays in `scripts/options-data.ts`; the runner only schedules it, commits the same files the workflows commit and pushes them
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `bun run data:setup` | first time and repair, safe to run again: checks bun, git, `gh auth status` and the network, creates or repairs the runner worktree, writes the launchd agent, checks it with `plutil -lint` and loads it, runs a dry check of the partial job, prints the status |
+| `bun run data:status` | one screen: schedule installed, running or paused; next partial run (New York and local time); last run of every job (start, duration, ok / failed / skipped and why); last data commit on `origin/main`; the lock; the log size |
+| `bun run data:logs` | follows the log (`tail -f`); `bun run data:logs -n 200` prints the last 200 lines and stops |
+| `bun run data:run <job>` | runs a job now in the foreground with live output, exactly what launchd runs (also appended to the log); `--dry-run` fetches and commits nothing |
+| `bun run data:pause` / `data:resume` | unloads / loads the launchd agent, the plist stays |
+| `bun run data:uninstall` | unloads the agent and deletes its plist |
+| `bun run data:help` | this list |
+
+Advanced (part of setup or of every run, rarely needed by hand): `bun scripts/data-local.ts install [--no-load]` (rewrite the plist; `--no-load` leaves launchd alone), `unlock` (removes a lock whose process is gone), `runner` (create or repair the worktree only). `pause`, `resume` and `uninstall` take `--dry-run` (print the `launchctl` command only)
+
+### Jobs
+
+| Job | Same work as | Scheduled here | Commits | Then |
+|---|---|---|---|---|
+| `partial` | `update-partial-data.yml` | Mon-Fri 8:45, 9:45 ... 16:45, 17:15, 18:15, 19:15 New York time | from 16:30 New York time (final run): the day zip in `api/history` and `api/latest.json`, like the workflow; the hourly JSON never | asks GitHub for a Pages deploy (`gh workflow run github-pages.yml`), which refreshes the default tickers itself and publishes |
+| `weekly` | `update-data.yml` (defaults + `api/All.txt` + `ROTATE_STALE=500`) | no (GitHub, Saturday) | all of `api/` | Pages deploy when it pushed |
+| `backup [tickers]` | `backtest-backup.yml` | no (GitHub, Saturday) | `api/history` | nothing (reaches the site with the next deploy) |
+| `deps` | `npm-check-updates.yml` | no (GitHub, Sunday) | nothing, lists newer versions | nothing |
+
+### How a run works
+
+1. A scheduled partial run first checks the New York window (the workflow's guard): weekdays from 8:40, final from 16:30; outside it the run is `skipped` (a slot launchd catches up on Saturday after the Mac slept)
+2. Lock `run.lock` with the pid: a run that finds a live lock is `skipped` (`locked by pid ...`); a lock whose process is gone is removed and the run goes on
+3. Offline (github.com or Yahoo cannot be resolved): `skipped`, nothing else happens
+4. The runner worktree (default `.worktrees/gex/data-runner` next to the checkout, a detached HEAD, never your own `gex/` checkout) is created when missing, re-linked when broken, then reset to the newest `origin/main` and its untracked `api/` files removed. When it holds a commit that is not on `origin/main` (a push failed twice earlier) the run stops (`failed`) and prints the two commands to push or drop it: data commits are never thrown away silently
+5. The fetcher runs with the workflow's settings (`bun scripts/options-data.ts`), output live in the terminal or in the log
+6. Commit of the job's paths (nothing changed -> no commit), push to `main`; a rejected push is retried once after `git rebase -X theirs origin/main` (the fresh data wins a conflict), a second failure marks the run `failed`
+7. The Pages deploy request (needs `gh auth login`; a failure is only a warning), the runner is reset to `origin/main`, the result goes to `state.json` (what `data:status` shows)
+
+### launchd
+
+- **Agent:** `~/Library/LaunchAgents/com.daggerok.gex-data.plist`, label `com.daggerok.gex-data`, domain `gui/<uid>`. It runs `bun <runner>/scripts/data-local.ts run partial --scheduled` in the runner (so the runner's script, always `origin/main`, updates itself), `PATH` with the folders of bun, git and gh, no `RunAtLoad`
+- **Slots:** `StartCalendarInterval`, 60 entries (5 weekdays x 12 slots) in the Mac's local time. The Mac is on New York time (`date +%Z` -> EDT / EST), so they are the New York slots as written and daylight saving needs nothing. On a Mac in another zone `data:setup` converts them for the current DST state; in the weeks when the two zones switch on different dates they are an hour off and the New York window guard skips the early ones; run `data:setup` again after a switch
+- **Sleep:** launchd runs a slot missed while the Mac slept once after it wakes (several missed slots give one run); a Mac that is off misses them
+- **Logs:** stdout and stderr to `~/Library/Logs/gex-data.log` (`data:logs`); state and lock in `~/Library/Application Support/gex-data/` (`state.json`, `run.lock`)
+
+### First-time setup
+
+1. `cd gex && git pull` (the runner scripts must be on `main`)
+2. `gh auth status` (else `gh auth login`): the Pages deploy after a run uses it
+3. `bun run data:setup` and read its last screen: `schedule installed and running`, the next partial run, `partial ... ok: dry run`
+4. Wait for the next slot, or try one real run now: `bun run data:run partial` (outside the market hours it runs too: a manual run skips the window guard; from 16:30 it is a final run and commits the archive)
+5. Check `bun run data:status` from time to time; `bun run data:logs -n 200` shows the last runs
+
+### Troubleshooting
+
+| You see | Do |
+|---|---|
+| `schedule not installed` | `bun run data:setup` |
+| `installed but PAUSED` | `bun run data:resume` |
+| `skipped - offline` | nothing, the next slot runs when online |
+| `skipped - locked by pid N` | a run is still going (`bun run data:logs`); a lock left by a crash is removed by the next run |
+| `failed - the runner holds 1 commit(s) that are not on origin/main` | run one of the two printed commands (push or drop), then `bun run data:run partial` |
+| `failed - ... exited with 1` | the fetcher failed (Yahoo or Cboe blocked): `bun run data:logs -n 200`, the next slot retries |
+| `pages: WARNING the deploy request failed` | `gh auth login`; the data was pushed anyway, the next deploy publishes it |
+| `<runner> exists but is not a worktree` | move that folder away (it is never deleted for you), `bun run data:setup` |
 
 ## Local run commands
 

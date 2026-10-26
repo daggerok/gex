@@ -72,6 +72,17 @@ Nothing was started (bun run all).
 error: script "all" exited with code 1
 ```
 
+Data runner on your Mac (the hourly data slots, see [Automations](docs/automations.md#local-data-runner-bun-run-data)):
+
+| Command | Does |
+|---------|------|
+| `bun run data:setup` | first time and repair: checks, runner worktree, launchd schedule, dry check, status |
+| `bun run data:status` | schedule, next and last run per job, last data commit, lock, log size |
+| `bun run data:logs` | follows `~/Library/Logs/gex-data.log` (`-n 200`: the last lines) |
+| `bun run data:run <job>` | runs `partial`, `weekly`, `backup [tickers]` or `deps` now with live output (`--dry-run`: nothing fetched or committed) |
+| `bun run data:pause` / `data:resume` / `data:uninstall` | stop, restart or remove the schedule |
+| `bun run data:help` | the list |
+
 Production build:
 
 ```bash
@@ -91,7 +102,7 @@ bun run build-github-pages
 | [docs/usage.md](docs/usage.md) | the three ways to run it (published site, local with the proxy, your own cache), typical tasks, every tab and panel, custom levels, the As of backtest, full screen and touch |
 | [docs/levels.md](docs/levels.md) | how every number is computed: time to expiration, greeks, the GEX formula and dealer convention, every level (sourced or our own rule), the Gamma Flip IV repair and coverage gate, Board columns, expiration selection |
 | [docs/configuration.md](docs/configuration.md) | the data source rules, the Settings panel, every `localStorage` key and IndexedDB store with its default, environment variables, workflow settings, ports |
-| [docs/automations.md](docs/automations.md) | every GitHub Actions workflow (schedule, steps, what it commits or deploys, duration, what to do when it fails), the data fetcher and all its variables, the archive, data sizes, local run commands, tests |
+| [docs/automations.md](docs/automations.md) | every GitHub Actions workflow (schedule, steps, what it commits or deploys, duration, what to do when it fails), the local data runner (`bun run data:*`, launchd, troubleshooting), the data fetcher and all its variables, the archive, data sizes, local run commands, tests |
 
 ## How to use
 
@@ -253,13 +264,13 @@ All of it in detail (steps, env, failure handling, durations, data sizes): [docs
 |---|---|---|---|---|
 | `ci.yaml` | every pull request | unit tests, fetcher bundle, both builds, browser tests (jobs `build` and `e2e`), 2.5 to 3.5 min | nothing | no |
 | `github-pages.yml` | push to `main` (not archive-only pushes), manual, started by the data and dependency workflows | refreshes the 27 default tickers, builds with `/gex/`, deploys, 1 to 2 min | nothing | yes |
-| `update-partial-data.yml` | Mon-Fri 8:45 to 16:45 hourly, 17:15, 18:15, 19:15; manual | refreshes the 27 default tickers, builds and deploys, 1 to 1.5 min | final runs (from 16:30): the day zip and `api/latest.json`; a backup when `BACKTEST_TICKERS` is set | yes |
+| `update-partial-data.yml` | Mon-Fri 9:45 and 16:45 (the other hourly slots run on the owner's Mac, `bun run data:setup`); manual | refreshes the 27 default tickers, builds and deploys, 1 to 1.5 min | final runs (from 16:30): the day zip and `api/latest.json`; a backup when `BACKTEST_TICKERS` is set | yes |
 | `update-data.yml` | Saturday 10:00; manual | the defaults plus `api/All.txt`, the 500 oldest other files (`ROTATE_STALE`), 9 to 14 min | `api/` | starts `github-pages.yml` |
-| `backtest-backup.yml` | manual | optional fresh fetch, one backup zip | the zip | no |
+| `backtest-backup.yml` | Saturday 12:00; manual | optional fresh fetch, one backup zip | the zip | no |
 | `dependency-updates.yml` | manual | bumps every dependency, tests and builds, pushes to the branch | `package.json`, `bun.lock` | starts `github-pages.yml` |
-| `npm-check-updates.yml` | manual | the same bump as a check only | nothing | no |
+| `npm-check-updates.yml` | Sunday 10:00; manual | the same bump as a check only | nothing | no |
 
-- **Schedules are best effort:** GitHub drops many scheduled runs and starts others up to hours late, so every run from 16:30 to 23:59 counts as final and three after-close slots exist. Market holidays are not skipped
+- **Schedules are best effort:** GitHub drops many scheduled runs and starts others up to hours late, so every run from 16:30 to 23:59 counts as final. Since 2026-10-26 GitHub keeps only rare schedules and the owner's Mac runs every hourly slot (`bun run data:setup`, [local data runner](docs/automations.md#local-data-runner-bun-run-data)). Market holidays are not skipped
 - **Hourly data is not committed:** each hourly run builds the site from its fresh files and deploys it; only the day's archive is committed. Every other deploy refreshes the default tickers first, so the site never goes back to older data
 - **Default tickers** (27, `DEFAULT_SYMBOLS` in `scripts/options-data.ts`): SPX NDX DJX RUT IWM SPY QQQ DIA NVDA AAPL MSFT AMZN GOOGL TSM GOOG META AVGO LLY MU WMT AMD JPM V BRK-B XOM ASML JNJ. They keep every expiration up to 42 days, the weeklies up to 92 days, the monthlies and quarter-ends up to a year; other tickers their nearest `MAX_EXPIRATIONS`
 - **Stale cache rotation:** the weekly run also refreshes the 500 cached tickers outside its list with the oldest data, so all of the about 3,000 files are refreshed within about 6 weeks

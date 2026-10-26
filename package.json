@@ -22,7 +22,15 @@
     "stop": "pm2 kill",
     "test": "bun test",
     "backtest:backup": "bun scripts/backtest-backup.ts",
-    "test:e2e": "bun src/e2e-run.ts"
+    "test:e2e": "bun src/e2e-run.ts",
+    "data:setup": "bun scripts/data-local.ts setup",
+    "data:status": "bun scripts/data-local.ts status",
+    "data:logs": "bun scripts/data-local.ts logs",
+    "data:run": "bun scripts/data-local.ts run",
+    "data:pause": "bun scripts/data-local.ts pause",
+    "data:resume": "bun scripts/data-local.ts resume",
+    "data:uninstall": "bun scripts/data-local.ts uninstall",
+    "data:help": "bun scripts/data-local.ts help"
   },
   "keywords": [
     "npm-run-all",
