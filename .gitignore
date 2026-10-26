@@ -48,4 +48,4 @@ package-lock.json
 *.tmp
 
 # api/futures/ (bun run tv:futures) IS committed and published (owner 2026-10-25, may be removed later for space);
-# scripts/tv/no-secrets.test.ts checks that no file holds the TradingView session
+# the TradingView session never goes into a file of the repo (scripts/tv/env.ts redact())
