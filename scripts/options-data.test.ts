@@ -324,6 +324,22 @@ describe('work queue', () => {
     expect(q.queue).toEqual(['OLD', 'NEW']);
   });
 
+  test('with an explicit list an active skiplist entry is not queued as stale either (SKIP_RECHECK_DAYS applies)', () => {
+    const skip = { 'NYSE:TTE': '2026-10-24', OLD: '2026-01-01' };
+    const d = { ...base, explicit: true, cached: ['AAPL'], skip, skipActive: (last: unknown) => last === '2026-10-24', updatedOf: () => '1' };
+    const q = buildQueue(['NYSE:TTE', 'OLD', 'AAPL'], d);
+    // expired entry OLD is re-checked as missing, the active one is skipped, the cached file stays a refresh candidate
+    expect(q.queue).toEqual(['OLD', 'AAPL']);
+    expect([q.nMissing, q.nStale]).toEqual([1, 1]);
+    // same result as without an explicit list for an uncached skiplisted symbol
+    expect(buildQueue(['NYSE:TTE', 'OLD', 'AAPL'], { ...d, explicit: false }).queue).toEqual(['OLD', 'AAPL']);
+  });
+
+  test('a cached file keeps being refreshed even while its symbol is on the skiplist', () => {
+    const q = buildQueue(['AAPL'], { ...base, explicit: true, cached: ['AAPL'], skip: { AAPL: '2026-10-24' }, updatedOf: () => '1' });
+    expect(q.queue).toEqual(['AAPL']);
+  });
+
   test('fresh files are skipped and counted', () => {
     const q = buildQueue([], { ...base, cached: ['A', 'B'], isFresh: (s) => s === 'A', updatedOf: () => 'x' });
     expect(q.queue).toEqual(['B']);
