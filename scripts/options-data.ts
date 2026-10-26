@@ -14,6 +14,9 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t18 - Futures candles (owner, 2026-10-25): the chart pass also writes api/charts/<SYM>.json for the Yahoo futures
+ *        ES=F, NQ=F, YM=F, RTY=F, MES=F, MNQ=F, MYM=F, M2K=F (FUTURES_CHART_SYMBOLS) on every run, right after the priority
+ *        symbols, so the Chart tab has futures candles without a proxy. Candles only, no options file for them.
  *   t17 - Default tickers keep their expirations by RULE (owner, 2026-10-25, selectDefaultExpirations / EXPIRATION_RULE): every
  *        expiration up to 42 days, Fridays (weeklies) up to 92 days, monthlies and quarter-ends up to 366 days, no LEAPS.
  *        Other tickers keep MAX_EXPIRATIONS. KEEP_EXPIRATIONS never keeps for a default what the rule drops. EXPIRATION_RULE=0
@@ -136,7 +139,7 @@
  *   SYMBOL_ALIASES     default ""        "SCREENER=YAHOO" pairs, comma separated
  *   TIMEZONE           default America/New_York   market tz for today / working days
  *   CHART_CACHE        default 1         also write api/charts/<SYM>.json (1Y of daily bars) after the options pass
- *   CHART_MAX_FETCHES  default 500       chart files written per run (missing first, then oldest)
+ *   CHART_MAX_FETCHES  default 500       chart files written per run (priority and futures first, then missing, then oldest)
  *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
  *   SOFT_DEADLINE_SECONDS default 0      stop starting new tickers after N seconds (0 = off)
  *   VERBOSE            default off       also print the legacy timestamped progress lines
@@ -2035,6 +2038,13 @@ export function buildChartFile(symbol: string, updated: string, body: unknown): 
     return out.timestamp.length ? out : null;
 }
 
+/**
+ * Yahoo continuous front-month futures (E-mini and Micro S&P 500, Nasdaq-100, Dow, Russell 2000). Only their daily candles are
+ * cached (api/charts/ES=F.json, ...), no options file: the futures options come from the local TradingView tool, never from
+ * this public cache. The file name is the Yahoo symbol itself, so the app finds them by it (src/providers/chart.ts).
+ */
+export const FUTURES_CHART_SYMBOLS = ["ES=F", "NQ=F", "YM=F", "RTY=F", "MES=F", "MNQ=F", "MYM=F", "M2K=F"];
+
 export interface ChartQueueDeps {
     /** Symbols that have an options file. */
     cached: string[];
@@ -2044,12 +2054,17 @@ export interface ChartQueueDeps {
     isFresh: (sym: string) => boolean;
     updatedOf: (sym: string) => string;
     priority?: string[];
+    /** Candles-only symbols queued on every run, right after the priority ones (default FUTURES_CHART_SYMBOLS). */
+    futures?: string[];
 }
 
-/** Priority symbols, then tickers without a chart file (universe order), then stale ones oldest first. Fresh ones are skipped. */
+/**
+ * Priority symbols and the futures (every run, also with an explicit list), then tickers without a chart file (universe
+ * order), then stale ones oldest first. Fresh ones are skipped.
+ */
 export function buildChartQueue(universe: string[], d: ChartQueueDeps): string[] {
     const cachedSet = new Set(d.cached);
-    const priority = (d.priority ?? PRIORITY_SYMBOLS).filter((s) => !d.explicit || universe.includes(s));
+    const priority = [...(d.priority ?? PRIORITY_SYMBOLS).filter((s) => !d.explicit || universe.includes(s)), ...(d.futures ?? FUTURES_CHART_SYMBOLS)];
     const candidates = d.explicit
         ? dedupe([...priority, ...universe])
         : dedupe([...priority, ...universe.filter((s) => cachedSet.has(s)), ...[...d.cached].sort()]);

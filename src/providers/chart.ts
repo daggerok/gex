@@ -112,13 +112,23 @@ export async function fetchOhlc(
 }
 
 /**
+ * Relative URL of the cached chart file of `symbol`. The futures are cached under their Yahoo symbol (api/charts/ES=F.json,
+ * scripts/options-data.ts FUTURES_CHART_SYMBOLS); `=` is legal in a URL path and stays literal, because a static server that
+ * does not decode the path (the e2e site) would look for a file named `ES%3DF.json`.
+ */
+export function cachedChartPath(symbol: string): string {
+    const raw = symbol.toUpperCase().trim().replace(/^[.^]/, '');
+    return `api/charts/${encodeURIComponent(raw).replace(/%3D/g, '=')}.json`;
+}
+
+/**
  * Chart file written by scripts/options-data.ts: api/charts/<SYM>.json with 1Y of daily bars, compact column arrays
  * (`timestamp`, `open`, `high`, `low`, `close`, `volume`, `gmtoffset`). Rebuilt into the Yahoo body shape so
  * parseYahooChart stays the only place that turns candles into OhlcBar.
  */
 export async function fetchCachedOhlc(symbol: string, ctx: Pick<ProviderContext, 'signal'> = {}): Promise<OhlcBar[]> {
     const raw = symbol.toUpperCase().trim().replace(/^[.^]/, '');
-    const file = await fetchStaticJson(`api/charts/${encodeURIComponent(raw)}.json`, ctx.signal, `charts/${raw}`);
+    const file = await fetchStaticJson(cachedChartPath(raw), ctx.signal, `charts/${raw}`);
     const body = {
         chart: {
             result: [{
