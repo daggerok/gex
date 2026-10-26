@@ -116,7 +116,7 @@ The run prints a `[ config   ]` block with every setting, `[ universe ]`, `[ que
 - **Queue:** SPY, SPX, QQQ, NDX first (unless fresh; with a fixed list only those in it), then missing files (universe order), then stale files oldest `updated` first, then with `ROTATE_STALE=N` the N rotation picks. Tickers on the no-options skiplist without a cached file are not retried for `SKIP_RECHECK_DAYS`, also when a fixed list (`TICKERS`) names them
 - **Stops:** at `MAX_FETCHES` written files (plus N for the rotation), after `RATE_LIMIT_HITS` consecutive failures (the chart pass is then skipped too), or after `SOFT_DEADLINE_SECONDS`
 - **Per ticker:** the expirations (by rule for a default ticker, else the nearest `MAX_EXPIRATIONS`), one Yahoo request per expiration, the spot from the last daily close, the Cboe overlay. A rate limit, an HTTP error (except 404), a timeout or a non-JSON answer fails the whole ticker (its old file stays); only an answer of the wrong shape skips one expiration. "No options" is recorded only when the chain is really empty
-- **Chart pass:** after the options pass, priority symbols and the 8 futures first, then tickers without a chart file, then stale ones oldest first, at most `CHART_MAX_FETCHES`. With a fixed list (every workflow run) only the list itself gets charts, the rotation picks do not
+- **Chart pass:** after the options pass, priority symbols and the 8 futures first, then tickers without a chart file, then stale ones oldest first, at most `CHART_MAX_FETCHES`. With a fixed list (every workflow run) the list itself, then the `ROTATE_STALE` picks whose chain the run wrote, with their own budget on top of `CHART_MAX_FETCHES` (t20, same file format and pacing), so within the ~6 week rotation cycle every cached ticker gets candles. A `failed no chart data` line (Yahoo answered 404 or an empty body, often a delisted ticker) does not count toward `RATE_LIMIT_HITS`, only HTTP errors, timeouts and rate limits stop the pass
 
 ### Default tickers and their expirations
 
@@ -161,7 +161,7 @@ A file counts as fresh only inside the weekend window: from Friday 20:00 to Sund
 | `CBOE_BACKOFF` | 30 | first pause after a Cboe 429 (doubles per retry, every worker waits) |
 | `CBOE_RETRIES` | 3 | retries after a 429; then the ticker fails and keeps its old file |
 | `CHART_CACHE` | 1 | 0 = no chart pass |
-| `CHART_MAX_FETCHES` | 500 | chart files written per run |
+| `CHART_MAX_FETCHES` | 500 | chart files written per run; the rotation picks bring their own budget on top |
 | `HISTORY` | 0 | 1 = write the default tickers into the day zip and rotate old zips |
 | `HISTORY_KEEP_DAYS` | 14 | daily zips older than this many days are deleted (0 = keep all) |
 | `HISTORY_KEEP_BACKUP_DAYS` | 14 | the same for backups (by the date in their name) |
@@ -203,10 +203,12 @@ Measured on `main` 2026-10-26:
 | Part | Size |
 |---|---|
 | `api/options` (3,060 ticker files) | 212 MB |
-| `api/charts` (792 files) | 9.3 MB |
+| `api/charts` (792 files) | 9.3 MB on disk, 8.6 MB of JSON, about 10.8 KB a file (one year of daily bars) |
 | `api/history` (6 day zips) | 18 MB, 2.9 to 3.4 MB a day |
 | `api/` in total | 240 MB |
 | one chain file | 0.1 to 3 MB (SPY 2.7 MB, SPX 1.3 MB in the committed weekly state), about 7 times less zipped |
+
+**Candles for every cached ticker:** since the chart pass covers the rotation, the 2,278 cached tickers without a chart file get one within about 6 weeks: 2,278 x 10.8 KB = about 25 MB more, so `api/charts` ends near 33 MB (3 % of the 1 GB limit). Each weekly run then rewrites about 870 chart files (the list plus 500 rotated), about 9 MB of JSON, which grows the git history (not the site) by a few MB a week. The weekly run gets about 5 minutes longer (500 more chart requests at `REQUEST_SLEEP=0.5`)
 
 The site deploys all of `api/` with the app (`bun run build` copies it to `dist/api`). GitHub Pages publishes at most 1 GB per site, so about 750 MB are left. Watch the daily zips (about 3.4 MB a day with the 27 defaults, kept 14 days, so about 50 MB) and especially `BACKTEST_TICKERS=all` (tens of MB per hour, rotated after 14 days): with hourly backups of everything the limit is reached within days
 

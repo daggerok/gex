@@ -14,6 +14,11 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t20 - Candles for the rotation (owner, 2026-10-26): the chart pass also covers the ROTATE_STALE tickers whose chain this run
+ *        wrote, queued after the fixed list with their own budget on top of CHART_MAX_FETCHES (same compact file, same
+ *        pacing), so over the ~6 week cycle every cached ticker gets api/charts/<SYM>.json. A definitive "no chart data"
+ *        (404 or an empty body) no longer counts toward RATE_LIMIT_HITS: only HTTP errors, timeouts and rate limits do, so a
+ *        few delisted tickers in a row cannot stop the pass.
  *   t19 - Stale cache rotation (owner, 2026-10-25): ROTATE_STALE=N appends to a fixed-list run the N cached tickers outside
  *        that list (default list + TICKERS, so api/All.txt is never counted twice) with the oldest `updated`, after the list
  *        itself, with their own N writes on top of MAX_FETCHES (selectRotation; fresh files and the Cboe cash indices left
@@ -103,8 +108,8 @@
  *   4. Rewrites api/options/index.json only when the ticker set, names or
  *      skiplist changed.
  *   5. Writes api/charts/{SYMBOL}.json (1Y of daily bars): the priority symbols and FUTURES_CHART_SYMBOLS first, then with a
- *      fixed list only that list (not the ROTATE_STALE picks), with `all` every cached ticker; missing files first, then the
- *      oldest (CHART_CACHE, CHART_MAX_FETCHES). With HISTORY=1 the day zip. Files count as fresh only inside the weekend
+ *      fixed list that list plus the ROTATE_STALE picks written in step 3b (own budget, t20), with `all` every cached ticker;
+ *      missing files first, then the oldest (CHART_CACHE, CHART_MAX_FETCHES). With HISTORY=1 the day zip. Files count as fresh only inside the weekend
  *      window (isFreshAt: written after Friday 20:00, until Sunday 18:00 market time), every other time all are refetched.
  *
  * YAHOO ENDPOINT MAPPING (what yfinance did, now done directly)
@@ -149,7 +154,7 @@
  *   SYMBOL_ALIASES     default ""        "SCREENER=YAHOO" pairs, comma separated
  *   TIMEZONE           default America/New_York   market tz for today / working days
  *   CHART_CACHE        default 1         also write api/charts/<SYM>.json (1Y of daily bars) after the options pass
- *   CHART_MAX_FETCHES  default 500       chart files written per run (priority and futures first, then missing, then oldest)
+ *   CHART_MAX_FETCHES  default 500       chart files written per run (priority and futures first, then missing, then oldest; the rotation adds its own)
  *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
  *   SOFT_DEADLINE_SECONDS default 0      stop starting new tickers after N seconds (0 = off)
  *   VERBOSE            default off       also print the legacy timestamped progress lines
@@ -2136,13 +2141,21 @@ export interface ChartQueueDeps {
     priority?: string[];
     /** Candles-only symbols queued on every run, right after the priority ones (default FUTURES_CHART_SYMBOLS). */
     futures?: string[];
+    /** ROTATE_STALE tickers whose chain this run wrote (t20): queued last in their own order, anything already queued or fresh left out. */
+    rotation?: string[];
+}
+
+export interface ChartQueue {
+    queue: string[];
+    /** Entries of the rotation segment at the end of `queue`; they bring their own budget on top of CHART_MAX_FETCHES. */
+    nRotate: number;
 }
 
 /**
  * Priority symbols and the futures (every run, also with an explicit list), then tickers without a chart file (universe
- * order), then stale ones oldest first. Fresh ones are skipped.
+ * order), then stale ones oldest first, then the rotation (t20). Fresh ones are skipped.
  */
-export function buildChartQueue(universe: string[], d: ChartQueueDeps): string[] {
+export function buildChartQueue(universe: string[], d: ChartQueueDeps): ChartQueue {
     const cachedSet = new Set(d.cached);
     const priority = [...(d.priority ?? PRIORITY_SYMBOLS).filter((s) => !d.explicit || universe.includes(s)), ...(d.futures ?? FUTURES_CHART_SYMBOLS)];
     const candidates = d.explicit
@@ -2154,43 +2167,72 @@ export function buildChartQueue(universe: string[], d: ChartQueueDeps): string[]
     const rest = todo.filter((s) => !prioritySet.has(s));
     const missing = rest.filter((s) => !d.hasChart(s));
     const stale = rest.filter((s) => d.hasChart(s)).map((s): [string, string] => [s, d.updatedOf(s)]).sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
-    return [...head, ...missing, ...stale.map(([s]) => s)];
+    const queued = new Set(candidates);
+    const rotation = dedupe(d.rotation ?? []).filter((s) => !queued.has(s) && !d.isFresh(s));
+    return { queue: [...head, ...missing, ...stale.map(([s]) => s), ...rotation], nRotate: rotation.length };
 }
 
+/** Thrown by fetchChartFile when Yahoo answered with an error (not a 404): counts toward RATE_LIMIT_HITS in the chart pass. */
+export class ChartHttpError extends Error {}
+
+/**
+ * The outcome of the answers for one chart symbol (one per Yahoo candidate): a chart file, a definitive "no data" (null:
+ * every candidate answered 404 or a body without complete rows), or a ChartHttpError when a candidate failed with another
+ * HTTP error or a non-JSON body and none gave a file. Pure, for tests.
+ */
+export function chartOutcome(answers: Array<{ status: number; file: ChartFile | null; parsed: boolean }>): ChartFile | null {
+    for (const a of answers) if (a.file) return a.file;
+    const bad = answers.find((a) => (a.status >= 400 && a.status !== 404) || (a.status < 400 && !a.parsed));
+    if (bad) throw new ChartHttpError(bad.status >= 400 ? `HTTP ${bad.status}` : "not JSON");
+    return null;
+}
+
+/** One symbol's chart file, null for a definitive "no data"; throws on an HTTP error, a timeout or a rate limit (chartOutcome). */
 export async function fetchChartFile(symbol: string): Promise<ChartFile | null> {
+    const answers: Array<{ status: number; file: ChartFile | null; parsed: boolean }> = [];
     for (const cand of yahooChartCandidates(symbol)) {
         const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(cand)}?range=${CHART_RANGE}&interval=1d&includePrePost=false`;
         const r = await yahooGet(url, 15000);
-        if (r.status >= 400) continue;
+        if (r.status >= 400) {
+            answers.push({ status: r.status, file: null, parsed: false });
+            continue;
+        }
         let body: unknown;
         try {
             body = JSON.parse(r.text);
         } catch {
+            answers.push({ status: r.status, file: null, parsed: false });
             continue;
         }
         const file = buildChartFile(symbol, nowIso(), body);
-        if (file) return file;
+        answers.push({ status: r.status, file, parsed: true });
+        if (file) break;
     }
-    return null;
+    return chartOutcome(answers);
 }
 
-/** Writes api/charts/<SYM>.json for the queue with CONCURRENCY workers. A streak of RATE_LIMIT_HITS failures stops the pass. */
-async function runChartPass(queue: string[]): Promise<{ written: number; failed: number; stopped: boolean }> {
+/**
+ * Writes api/charts/<SYM>.json for the queue with CONCURRENCY workers, at most `budget` files. A streak of RATE_LIMIT_HITS
+ * errors stops the pass; a definitive "no chart data" is counted as failed but is not part of the streak (t20).
+ */
+async function runChartPass(queue: string[], budget: number): Promise<{ written: number; failed: number; stopped: boolean }> {
     mkdirSync(CHARTS_DIR, { recursive: true });
     let next = 0, reserved = 0, written = 0, failed = 0, streak = 0, stopped = false;
     const worker = async () => {
         for (;;) {
-            if (stopped || next >= queue.length || reserved >= cfg.CHART_MAX_FETCHES) return;
+            if (stopped || next >= queue.length || reserved >= budget) return;
             const index = next++;
             const sym = queue[index];
             reserved++;
             const started = performance.now();
             let file: ChartFile | null = null;
             let reason = "";
+            let error = false;
             try {
                 file = await fetchChartFile(sym);
                 if (!file) reason = "no chart data";
             } catch (e) {
+                error = true;
                 reason = e instanceof Error ? e.message : String(e);
             }
             const secs = pyFixed1((performance.now() - started) / 1000);
@@ -2204,7 +2246,8 @@ async function runChartPass(queue: string[]): Promise<{ written: number; failed:
             } else {
                 reserved--;
                 failed++;
-                streak++;
+                // a definitive "no data" answer means Yahoo is reachable: it ends an error streak instead of extending it
+                streak = error ? streak + 1 : 0;
                 console.log(`${outputLabel("chart")} ${pos} ${sym.padEnd(5)} failed     ${reason} in=${secs}s`);
                 if (streak >= cfg.RATE_LIMIT_HITS) stopped = true;
             }
@@ -2212,6 +2255,27 @@ async function runChartPass(queue: string[]): Promise<{ written: number; failed:
     };
     await Promise.all(Array.from({ length: Math.max(1, Math.min(cfg.CONCURRENCY, queue.length)) }, worker));
     return { written, failed, stopped };
+}
+
+function chartQueueFor(universe: string[], rotation: string[]): ChartQueue {
+    return buildChartQueue(universe, {
+        cached: cachedSymbols(),
+        explicit: explicitUniverse(),
+        hasChart: (s) => existsSync(join(CHARTS_DIR, `${s}.json`)),
+        isFresh: (s) => isFresh(join(CHARTS_DIR, `${s}.json`)),
+        updatedOf: (s) => fileUpdated(join(CHARTS_DIR, `${s}.json`)),
+        rotation,
+    });
+}
+
+/** Prints the chart queue line; returns the queue and its budget (CHART_MAX_FETCHES plus the rotation's own). */
+function logChartQueue(cq: ChartQueue): [string[], number] {
+    const budget = cfg.CHART_MAX_FETCHES + cq.nRotate;
+    console.log(
+        `${outputLabel("charts")} ${cq.queue.length} queued${cq.nRotate ? ` (${cq.nRotate} rotate)` : ""}, budget=${cfg.CHART_MAX_FETCHES}` +
+            `${cq.nRotate ? `+${cq.nRotate}` : ""} writes`,
+    );
+    return [cq.queue, budget];
 }
 
 export async function main(): Promise<void> {
@@ -2251,6 +2315,8 @@ export async function main(): Promise<void> {
     }
     if (cfg.DRY_RUN) {
         queue.forEach((sym, i) => console.log(`${outputLabel("dry run")} ${String(i + 1).padStart(4)}/${queue.length} ${queuePhase(i + 1, wq).padEnd(8)} ${sym}`));
+        // as if every rotation pick were written
+        if (cfg.CHART_CACHE) logChartQueue(chartQueueFor(universe, queue.slice(queue.length - nRotate)));
         console.log(`${outputLabel("dry run")} nothing fetched or written (DRY_RUN=1)`);
         return;
     }
@@ -2367,15 +2433,10 @@ export async function main(): Promise<void> {
     }
 
     if (cfg.CHART_CACHE && pool.stopped !== "rate-limit") {
-        const chartQueue = buildChartQueue(universe, {
-            cached: cachedSymbols(),
-            explicit: explicitUniverse(),
-            hasChart: (s) => existsSync(join(CHARTS_DIR, `${s}.json`)),
-            isFresh: (s) => isFresh(join(CHARTS_DIR, `${s}.json`)),
-            updatedOf: (s) => fileUpdated(join(CHARTS_DIR, `${s}.json`)),
-        });
-        console.log(`${outputLabel("charts")} ${chartQueue.length} queued, budget=${cfg.CHART_MAX_FETCHES} writes`);
-        const charts = await runChartPass(chartQueue);
+        // the rotation picks whose chain this run wrote (a failed or delisted one keeps its old file and gets no candles either)
+        const rotStart = queue.length - nRotate;
+        const rotatedWritten = queue.slice(rotStart).filter((_, i) => pool.results[rotStart + i]?.kind === "written");
+        const charts = await runChartPass(...logChartQueue(chartQueueFor(universe, rotatedWritten)));
         console.log(`${outputLabel("charts")} written=${charts.written} failed=${charts.failed}${charts.stopped ? " (stopped: consecutive failures)" : ""}`);
     }
 
