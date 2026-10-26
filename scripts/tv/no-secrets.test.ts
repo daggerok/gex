@@ -11,12 +11,14 @@ import { parseEnv, TV_ENV_PATH } from './env';
 
 const REPO = join(__dirname, '..', '..');
 const SKIP = /^(api\/(options|charts|history)\/|.*\.(png|jpe?g|gif|ico|zip|woff2?)$)/;
+/** This file names the patterns it looks for, so it is not scanned itself. */
+const SELF = 'scripts/tv/no-secrets.test.ts';
 
 function filesToScan(): string[] {
     const tracked = Bun.spawnSync(['git', 'ls-files'], { cwd: REPO }).stdout.toString().split('\n').filter(Boolean);
     const futuresDir = join(REPO, 'api', 'futures');
     const futures = existsSync(futuresDir) ? readdirSync(futuresDir).filter((f) => f.endsWith('.json')).map((f) => `api/futures/${f}`) : [];
-    return Array.from(new Set(tracked.concat(futures))).filter((f) => !SKIP.test(f) && existsSync(join(REPO, f)));
+    return Array.from(new Set(tracked.concat(futures))).filter((f) => f !== SELF && !SKIP.test(f) && existsSync(join(REPO, f)));
 }
 
 describe('no TradingView secret in the repository', () => {
