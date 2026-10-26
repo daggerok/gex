@@ -48,7 +48,7 @@ Everything stays in this browser (`localStorage` and IndexedDB), nothing is sent
 
 | Key | What | Default |
 |---|---|---|
-| `gex.settings.v5` | the settings blob: `source` (`auto`, `static`, `cboe`, `yahoo`, `nasdaq`), `proxyAutoPoll`, `localProxyOptIn`, `proxyBase`, `language`, `theme`, `colorTheme`, `deskColumns`, `lastTicker`, `selectedExps`, `activeTab`, `gexMetrics`, `vixFuturesPricing` (no UI, off) and leftovers `tokens`, `secrets`, `proxyTemplate` of removed providers | Auto, off, off, `http://localhost:8787`, `en`, `system`, `gex`, see above, `AAPL`, none, `desk`, Net GEX and AG |
+| `gex.settings.v5` | the settings blob: `source` (`auto`, `static`, `cboe`, `yahoo`, `nasdaq`), `proxyAutoPoll`, `localProxyOptIn`, `proxyBase`, `language`, `theme`, `colorTheme`, `deskColumns`, `lastTicker`, `selectedExps`, `activeTab`, `gexMetrics`, `vixFuturesPricing` (Settings -> VIX futures-priced greeks, off) and leftovers `tokens`, `secrets`, `proxyTemplate` of removed providers | Auto, off, off, `http://localhost:8787`, `en`, `system`, `gex`, see above, `AAPL`, none, `desk`, Net GEX and AG |
 | `gex.metricColors.v1` | colours of the metrics (Net GEX (+) and (-), AG, OI, volume, P/C) | built-in palette |
 | `gex.levelColors.v1` | colours of the built-in levels | built-in palette |
 | `gex.netGexView.v1` | the switch in the Net GEX chip: `net` or `split` (Abs GEX) | `net` |
