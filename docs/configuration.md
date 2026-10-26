@@ -93,8 +93,8 @@ The full table with defaults is in [Automations: environment variables](automati
 | Variable or path | Default | Meaning |
 |---|---|---|
 | `GEX_DATA_RUNNER` | `<parent of the checkout>/.worktrees/<repo>/data-runner` | the worktree the runs use (detached HEAD on `origin/main`) |
-| `GEX_DATA_HOME` | `~/Library/Application Support/gex-data` | `state.json` (last run per job, read by `data:status`) and `run.lock` (`{pid, job, started}`, one run at a time) |
-| `GEX_DATA_LOG` | `~/Library/Logs/gex-data.log` | the log (launchd stdout and stderr; foreground runs append too) |
+| `GEX_DATA_HOME` | `../gex-data-state` next to the main gex checkout (outside every repo) | `state.json` (last run per job, read by `data:status`) and `run.lock` (`{pid, job, started}`, one run at a time) |
+| `GEX_DATA_LOG` | `<GEX_DATA_HOME>/gex-data.log` | the log (launchd stdout and stderr; foreground runs append too) |
 | `GEX_DATA_PLIST` | `~/Library/LaunchAgents/com.daggerok.gex-data.plist` | the launchd agent written by `data:setup` |
 | `GEX_DATA_LABEL` | `com.daggerok.gex-data` | the launchd label |
 | `HISTORY_KEEP_DAYS`, `HISTORY_KEEP_BACKUP_DAYS` | 14 | passed to the fetcher on a final partial run, like the repository variables of the same names |

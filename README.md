@@ -77,8 +77,8 @@ Data runner on your Mac (the hourly data slots, see [Automations](docs/automatio
 | Command | Does |
 |---------|------|
 | `bun run data:setup` | first time and repair: checks, runner worktree, launchd schedule, dry check, status |
-| `bun run data:status` | schedule, next and last run per job, last data commit, lock, log size |
-| `bun run data:logs` | follows `~/Library/Logs/gex-data.log` (`-n 200`: the last lines) |
+| `bun run data:status` | schedule, next and last run per job, the state folder (absolute path), last data commit, lock, log size |
+| `bun run data:logs` | follows `../gex-data-state/gex-data.log` (the folder next to `gex/`, `-n 200`: the last lines) |
 | `bun run data:run <job>` | runs `partial`, `weekly`, `backup [tickers]` or `deps` now with live output (`--dry-run`: nothing fetched or committed) |
 | `bun run data:pause` / `data:resume` / `data:uninstall` | stop, restart or remove the schedule |
 | `bun run data:help` | the list |
