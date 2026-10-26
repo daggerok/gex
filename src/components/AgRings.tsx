@@ -15,8 +15,9 @@ import { AG_DOT_STROKE_WIDTH } from '../gex-colors';
 // - holes: white everywhere, a black disc of the ring radius at every point, plus the hover hole. CSS puts it on the AG
 //   area layer (`.gex-ag-area { mask: var(--gex-ag-holes) }`, the id comes through the chart's style), so line and fill
 //   disappear inside the rings. The disc edge lies under the opaque ring stroke, so no fringe of the line shows
-// - hover: white everywhere plus the hover hole, on every small ring (`mask` attribute), so the small ring of the hovered
-//   strike vanishes inside the big one
+// - hover: white everywhere plus the hover hole, on the layer of the small rings (`.recharts-area-dots:has([data-ag-dot])
+//   { mask: var(--gex-ag-hover) }`), so the small ring of the hovered strike vanishes inside the big one
+// Only these two masked layers: a mask per ring (108 offscreen buffers) slowed the whole page on CI's software renderer.
 // The hovered ring renders its own hole as a `<defs>` disc that both masks `<use>`: it exists only while a dot is hovered
 // and moves with it. Positions come from recharts on every render, so they follow zoom, pan and resize.
 // ============================================================================
@@ -26,8 +27,8 @@ export const AG_DOT_RADIUS = 3.5;
 export const AG_DOT_ACTIVE_RADIUS = 5.5;
 /** className of the AG <Area>: index.css masks that layer with the holes mask. */
 export const AG_AREA_CLASS = 'gex-ag-area';
-/** Masks cover the whole user space of the chart svg (any chart size). */
-const MASK_EXTENT = 100000;
+/** Masks cover the chart svg's viewport, nothing more (a bigger region costs offscreen pixels). */
+const MASK_VIEWPORT = { x: 0, y: 0, width: '100%', height: '100%' } as const;
 
 export interface AgRingIds { holes: string; hover: string; hoverHole: string }
 
@@ -37,9 +38,9 @@ export function agRingIds(base: string): AgRingIds {
     return { holes: `${id}-ag-holes`, hover: `${id}-ag-hover`, hoverHole: `${id}-ag-hover-hole` };
 }
 
-/** Style of the chart that hands the holes mask to the AG area layer (index.css reads the variable). */
+/** Style of the chart that hands the masks to the AG area and rings layers (index.css reads the variables). */
 export function agHolesStyle(ids: AgRingIds): React.CSSProperties {
-    return { ['--gex-ag-holes' as string]: `url(#${ids.holes})` } as React.CSSProperties;
+    return { ['--gex-ag-holes' as string]: `url(#${ids.holes})`, ['--gex-ag-hover' as string]: `url(#${ids.hover})` } as React.CSSProperties;
 }
 
 /** What recharts passes to a custom Area dot (the fields used here). */
@@ -51,11 +52,11 @@ export interface AgDotProps {
 }
 
 function maskArea(): React.ReactElement {
-    return <rect x={-MASK_EXTENT} y={-MASK_EXTENT} width={2 * MASK_EXTENT} height={2 * MASK_EXTENT} fill="white" />;
+    return <rect {...MASK_VIEWPORT} fill="white" />;
 }
 
 function agMasks(ids: AgRingIds, points: AgDotProps['points']): React.ReactElement {
-    const extent = { maskUnits: 'userSpaceOnUse', x: -MASK_EXTENT, y: -MASK_EXTENT, width: 2 * MASK_EXTENT, height: 2 * MASK_EXTENT } as const;
+    const extent = { maskUnits: 'userSpaceOnUse', ...MASK_VIEWPORT } as const;
     return (
         <defs>
             <mask id={ids.holes} {...extent} data-ag-mask="holes">
@@ -74,8 +75,8 @@ function agMasks(ids: AgRingIds, points: AgDotProps['points']): React.ReactEleme
 /** What recharts passes to the custom active (hovered) dot: its `points` is the SVG attribute, not the point list. */
 export interface AgActiveDotProps { cx?: number; cy?: number; index?: number }
 
-function ring(cx: number, cy: number, r: number, stroke: string, active: boolean, ids: AgRingIds): React.ReactElement {
-    return <circle cx={cx} cy={cy} r={r} fill="none" stroke={stroke} strokeWidth={AG_DOT_STROKE_WIDTH} mask={active ? undefined : `url(#${ids.hover})`} data-ag-dot={active ? 'active' : 'ring'} />;
+function ring(cx: number, cy: number, r: number, stroke: string, active: boolean): React.ReactElement {
+    return <circle cx={cx} cy={cy} r={r} fill="none" stroke={stroke} strokeWidth={AG_DOT_STROKE_WIDTH} data-ag-dot={active ? 'active' : 'ring'} />;
 }
 
 /** The `dot` renderer of the AG <Area>: a hollow ring in `stroke`; the first dot also renders the masks (see the header). */
@@ -83,7 +84,7 @@ export function agDotRenderer(ids: AgRingIds, stroke: string) {
     return (props: AgDotProps): React.ReactElement => (
         <g key={`ag-dot-${props.index}`}>
             {props.index === 0 && agMasks(ids, props.points)}
-            {props.cx != null && props.cy != null && ring(props.cx, props.cy, AG_DOT_RADIUS, stroke, false, ids)}
+            {props.cx != null && props.cy != null && ring(props.cx, props.cy, AG_DOT_RADIUS, stroke, false)}
         </g>
     );
 }
@@ -96,7 +97,7 @@ export function agActiveDotRenderer(ids: AgRingIds, stroke: string) {
         return (
             <g key={key}>
                 <defs><circle id={ids.hoverHole} cx={props.cx} cy={props.cy} r={AG_DOT_ACTIVE_RADIUS} fill="black" /></defs>
-                {ring(props.cx, props.cy, AG_DOT_ACTIVE_RADIUS, stroke, true, ids)}
+                {ring(props.cx, props.cy, AG_DOT_ACTIVE_RADIUS, stroke, true)}
             </g>
         );
     };

@@ -625,3 +625,7 @@ body {
 .gex-ag-area {
     mask: var(--gex-ag-holes, none);
 }
+/* the small AG rings: the one of the hovered strike vanishes inside the hovered ring (only the AG Area has dots) */
+.recharts-area-dots:has([data-ag-dot]) {
+    mask: var(--gex-ag-hover, none);
+}
