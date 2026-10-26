@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the Desk's ATM row (the strike nearest to spot, owner 2026-10-25): it is tinted with the Spot level
@@ -32,8 +32,8 @@ async function main(): Promise<void> {
             const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme })).newPage();
             const errors: string[] = [];
             page.on('pageerror', (e) => errors.push(e.message));
+            await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
             await page.goto(site.url);
-            await page.getByText('💾').first().click(); // CACHE provider
             const ticker = page.locator('input[role=combobox]');
             await ticker.fill('SPY');
             await ticker.press('Enter');
@@ -84,8 +84,8 @@ async function main(): Promise<void> {
         // ---- a ticker loaded on another tab (the Desk is hidden, no height): opening the Desk shows its ATM row in the middle ----
         {
             const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+            await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
             await page.goto(site.url);
-            await page.getByText('💾').first().click();
             await page.getByRole('button', { name: 'GEX', exact: true }).first().click();
             const ticker = page.locator('input[role=combobox]');
             await ticker.fill('SPY');
@@ -102,8 +102,8 @@ async function main(): Promise<void> {
         // the table scrolls sideways (batch 4 item 6) ----
         {
             const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+            await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
             await page.goto(site.url);
-            await page.getByText('💾').first().click();
             const ticker = page.locator('input[role=combobox]');
             await ticker.fill('SPY');
             await ticker.press('Enter');

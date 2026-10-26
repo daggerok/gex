@@ -3,6 +3,7 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Page } from 'playwright';
 import { buildBackupZip } from './backtest/backup';
 import { siteZipPath } from './backtest/entries';
 
@@ -68,4 +69,75 @@ export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?:
         },
     });
     return { url: `http://localhost:${server.port}/`, close: () => { server.stop(true); rmSync(dir, { recursive: true, force: true }); } };
+}
+
+/** Any request to the default local proxy (http://localhost:8787, also as 127.0.0.1) fails, as when no proxy runs. */
+const LOCAL_PROXY_URL = /^https?:\/\/(localhost|127\.0\.0\.1):8787\//;
+
+/**
+ * Auto proxy (src/proxy-discovery.ts): the app looks for the local proxy on load and uses live data when it answers.
+ * Checks that want the CACHE provider call this before `page.goto`, so a proxy running on the developer's machine does
+ * not turn them live; with the proxy "down" the app uses the cache by itself (this replaced the old 💾 click).
+ */
+export async function noProxy(page: Page): Promise<void> {
+    await page.route(LOCAL_PROXY_URL, (route) => route.abort());
+}
+
+export interface FakeProxy {
+    /** http://localhost:<port> */
+    base: string;
+    /** /health answers 200 (true) or the server refuses (false: 503, as if not running) */
+    setUp: (up: boolean) => void;
+    /** /api/cboe serves SPY and QQQ (true) or answers 500 (false), to check the fallback */
+    setCboe: (ok: boolean) => void;
+    /** paths requested so far (with the Origin header seen) */
+    hits: Array<{ path: string; origin: string | null }>;
+    close: () => void;
+}
+
+/**
+ * A stand-in for scripts/options-local-proxy.ts: /health, and /api/cboe with the cached SPY / QQQ chains in the Cboe
+ * shape; every other /api route answers 500 (so YAHOO and NASDAQ fail and the cache is the last fallback). CORS for
+ * any Origin plus the private network preflight answer, like the real proxy for its allowed origins.
+ */
+export function startFakeProxy(): FakeProxy {
+    let up = true;
+    let cboe = true;
+    const hits: FakeProxy['hits'] = [];
+    const cboeBody = (symbol: string): string | null => {
+        const file = join(ROOT, 'api', 'options', `${symbol}.json`);
+        if (!existsSync(file)) return null;
+        const j = JSON.parse(readFileSync(file, 'utf8'));
+        const options = (j.quotes as Array<Record<string, unknown>>).map((q) => ({
+            option: q.symbol, bid: q.bid, ask: q.ask, last_trade_price: q.last, volume: q.volume, open_interest: q.openInterest,
+            iv: q.iv, delta: q.delta, gamma: q.gamma, theta: q.theta, vega: q.vega, rho: q.rho,
+        }));
+        return JSON.stringify({ data: { current_price: j.underlyingPrice, options } });
+    };
+    const server = Bun.serve({
+        port: 0,
+        fetch(req) {
+            const url = new URL(req.url);
+            const origin = req.headers.get('origin');
+            hits.push({ path: url.pathname, origin });
+            const cors: Record<string, string> = origin
+                ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Private-Network': 'true', Vary: 'Origin' }
+                : {};
+            if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+            if (url.pathname === '/health') return new Response(up ? 'ok' : 'down', { status: up ? 200 : 503, headers: cors });
+            if (!up) return new Response('down', { status: 503, headers: cors });
+            if (url.pathname === '/api/cboe' && cboe) {
+                const body = cboeBody(String(url.searchParams.get('symbol') ?? '').replace(/^_/, ''));
+                if (body) return new Response(body, { headers: { ...cors, 'Content-Type': 'application/json' } });
+            }
+            return new Response(JSON.stringify({ error: 'fake proxy: not served' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
+        },
+    });
+    return {
+        base: `http://localhost:${server.port}`,
+        setUp: (v) => { up = v; },
+        setCboe: (v) => { cboe = v; },
+        hits,
+        close: () => server.stop(true),
+    };
 }

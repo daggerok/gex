@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Locator, type Page } from 'playwright';
 import { defaultLevelName } from './custom-levels';
-import { startTestSite } from './e2e-site';
+import { noProxy, startTestSite } from './e2e-site';
 
 // The default name of a new level is Buyside above the current price and Sellside below it (then Buyside 2...): the same function
 // the app uses decides what to expect, the price comes from the label of the editor, the spot from the cache file
@@ -30,8 +30,8 @@ async function main(): Promise<void> {
         const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
         const errors: string[] = [];
         page.on('pageerror', (e) => errors.push(String(e)));
+        await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);
-        await page.getByText('💾').first().click(); // CACHE provider
         const ticker = page.locator('input[role=combobox]');
         await ticker.fill('SPY');
         await ticker.press('Enter');
