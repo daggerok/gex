@@ -38,8 +38,12 @@
  *   - OHLC price history (src/providers/chart.ts, not a chain provider) calls:
  *       GET {base}/api/chart?symbol=SPY&range=6mo&interval=1d   (Yahoo v8 chart, no crumb)
  *       GET {base}/api/chart?symbol=^SPX&range=6mo&interval=1d  (indices use the "^" prefix)
- *   - Futures (scripts/tv/live.ts): with the TradingView session file present the proxy also runs the tv:futures
- *     watcher as a child (GEX_TV=0 turns it off), which rewrites api/futures/<ROOT>.json every minute
+ *   - TradingView live mode (scripts/tv/live.ts, README "Local proxy and TradingView live mode"): the proxy runs
+ *     the futures engine in this process (GEX_TV=0 turns it off): session from ~/.config/gex/tradingview.env or
+ *     imported from Chrome, one websocket to TradingView, the files api/futures/<ROOT>.json rewritten on change, and
+ *       GET {base}/api/futures/status       engine state (live, expired, rate-limited...) and the ready roots
+ *       GET {base}/api/futures/live?root=ES server-sent events: status, snapshot, then batched deltas
+ *       GET {base}/api/futures/ES.json      the file
  *   - Ticker suggestions for providers that expose a searchable universe call:
  *       GET {base}/api/search?provider=yahoo&q=apple
  *       GET {base}/api/search?provider=nasdaq&q=tesla
@@ -54,9 +58,7 @@
 
 import { proxyPort } from "./check-ports";
 import { asksPrivateNetwork, corsFor } from "./proxy-cors";
-import { existsSync } from "node:fs";
-import { TV_ENV_PATH } from "./tv/env";
-import { spawnFuturesWatcher, watcherDecision } from "./tv/live";
+import { engineDecision, futuresFileResponse, TvLiveEngine } from "./tv/live";
 
 /** PORT, else 8787; `bun run proxy` / `all` / `start` check it is free before starting (scripts/check-ports.ts). */
 const PORT = proxyPort(process.env);
@@ -381,12 +383,12 @@ async function handleOptions(url: URL): Promise<Response> {
     return new Response(await res.text(), { status: res.status, headers: { "Content-Type": "application/json" } });
 }
 
-// ─── Futures: the tv:futures watcher as a child (scripts/tv/live.ts) ─────────────────────────────────────────────────
-const tvDecision = watcherDecision(process.env, existsSync(TV_ENV_PATH));
-// started only once the server listens (below): a taken port must not leave a watcher behind
-let tvWatcher: { stop: () => void } | null = null;
+// ─── TradingView live mode (scripts/tv/live.ts) ──────────────────────────────────────────────────────────────────────
+const tvDecision = engineDecision(process.env);
+// started only once the server listens (below): a taken port must not leave a websocket behind
+const tvEngine = tvDecision.start ? new TvLiveEngine() : null;
 const shutdown = () => {
-    tvWatcher?.stop();
+    tvEngine?.stop();
     process.exit(0);
 };
 process.on("SIGINT", shutdown);
@@ -396,7 +398,9 @@ process.on("SIGTERM", shutdown);
 const server = Bun.serve({
     port: PORT,
     hostname: HOST,
-    async fetch(req) {
+    async fetch(req, srv) {
+        // a live stream stays open: no idle timeout for it (keepalive comments every 15 s)
+        if (new URL(req.url).pathname === "/api/futures/live") srv.timeout(req, 0);
         // CORS allowlist (scripts/proxy-cors.ts): the local app and the published site only, any other page gets 403; an
         // allowed page asking for private network access (Chrome's preflight from the published site) gets it
         const cors = corsFor(req.headers.get("origin"), asksPrivateNetwork(req.headers));
@@ -427,12 +431,18 @@ async function route(req: Request): Promise<Response> {
         try { return await handleNasdaq(url); }
         catch (e) { return json({ error: String(e) }, 502); }
     }
+    if (url.pathname === "/api/futures/status") return json(tvEngine ? tvEngine.statusJson() : { engine: false, state: "off", message: "TradingView live mode off (GEX_TV=0)" });
+    if (url.pathname === "/api/futures/live") {
+        if (!tvEngine) return json({ error: "TradingView live mode off (GEX_TV=0)" }, 404);
+        return tvEngine.response(url.searchParams.get("root") || "");
+    }
+    if (url.pathname.startsWith("/api/futures/")) return futuresFileResponse(url.pathname);
     if (url.pathname === "/api/search") {
         try { return await handleSearch(url); }
         catch (e) { return json({ error: String(e) }, 502); }
     }
     if (url.pathname === "/" || url.pathname === "/health") {
-        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"], futuresWatcher: tvDecision.start });
+        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/api/futures/status", "/api/futures/live?root=ES", "/api/futures/ES.json"], tradingviewLive: tvDecision.start });
     }
     return json({ error: "not found" }, 404);
 }
@@ -443,6 +453,7 @@ console.log(`   CBOE   | http://localhost:${PORT}/api/cboe?symbol=AAPL   (indice
 console.log(`   CHART  | http://localhost:${PORT}/api/chart?symbol=SPY&range=6mo&interval=1d   (indices: ^SPX)`);
 console.log(`   NASDAQ | http://localhost:${PORT}/api/nasdaq?symbol=AAPL`);
 console.log(`   SEARCH | http://localhost:${PORT}/api/search?provider=yahoo&q=apple`);
-console.log(tvDecision.start ? "   TV     | futures watcher started (tv:futures, output below)" : `   ${tvDecision.note.replace(/^TV {5}\| /, "TV     | ")}`);
+console.log(`   LIVE TV| http://localhost:${PORT}/api/futures/live?root=ES   (status: /api/futures/status)`);
+console.log(tvDecision.start ? "   TV     | TradingView live mode starting (ES NQ YM RTY, output below)" : `   ${tvDecision.note}`);
 console.log(`   (relay logs below: "$proxy | $localPath -> $remoteUrl")\n`);
-if (tvDecision.start) tvWatcher = spawnFuturesWatcher();
+tvEngine?.start();
