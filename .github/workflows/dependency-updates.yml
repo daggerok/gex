@@ -81,7 +81,20 @@ jobs:
             echo "No staged dependency changes — nothing to commit."
           else
             git commit -m "$COMMIT_MESSAGE"
-            git push origin "HEAD:${TARGET_BRANCH}" || echo "Push failed (may be up-to-date or race condition)"
+            # A rejected push (the branch moved) is retried once after a rebase; a second failure or a rebase conflict
+            # (bun.lock) fails the run instead of printing a message and staying green.
+            if ! git push origin "HEAD:${TARGET_BRANCH}"; then
+              echo "Push rejected, rebasing on origin/${TARGET_BRANCH} and retrying once"
+              git fetch --deepen=100 origin "${TARGET_BRANCH}"
+              if ! git pull --rebase origin "${TARGET_BRANCH}"; then
+                echo "::error::rebase on origin/${TARGET_BRANCH} failed (conflict in package.json or bun.lock?), nothing was pushed; rerun the workflow"
+                exit 1
+              fi
+              if ! git push origin "HEAD:${TARGET_BRANCH}"; then
+                echo "::error::push to ${TARGET_BRANCH} failed twice, nothing was pushed"
+                exit 1
+              fi
+            fi
           fi
 
       - name: Trigger GitHub Pages deploy for updated branch
@@ -90,7 +103,7 @@ jobs:
           TARGET_BRANCH: ${{ inputs.target_branch }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -sS -X POST \
+          curl -sS --fail-with-body -X POST \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/github-pages.yml/dispatches \

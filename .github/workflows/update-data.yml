@@ -86,7 +86,21 @@ jobs:
             echo "No data changes — nothing to commit."
           else
             git commit -m "chore(data): refresh option chains [skip ci]"
-            if git push; then echo "pushed=true" >> "$GITHUB_OUTPUT"; else echo "Push failed (may be up-to-date or race condition)"; fi
+            # main moved during the run (a merge, an archive commit): replay this commit on the new tip once, the fresh data
+            # wins a conflict (-X theirs = the commit being replayed). A second failure fails the run, so it is never lost silently.
+            if ! git push; then
+              echo "Push rejected, rebasing on origin/${GITHUB_REF_NAME} and retrying once"
+              git fetch --deepen=100 origin "${GITHUB_REF_NAME}" # the clone is shallow: the rebase needs the common ancestor
+              if ! git pull --rebase -X theirs origin "${GITHUB_REF_NAME}"; then
+                echo "::error::rebase on origin/${GITHUB_REF_NAME} failed, nothing was pushed; rerun the workflow"
+                exit 1
+              fi
+              if ! git push; then
+                echo "::error::push failed twice, nothing was pushed; rerun the workflow"
+                exit 1
+              fi
+            fi
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
           fi
 
       # Deploy the site only when this run pushed new data: no commit, no Pages run (saves the minute a deploy costs).
