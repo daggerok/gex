@@ -1,14 +1,21 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { centerRowInScroll } from '../center-row';
+import { centerRowInScroll, scrollRowToMiddle } from '../center-row';
+import { netGexByStrike, nearestStrikeTo } from '../gex';
+import { HelpButton } from './HelpButton';
+import { ScrollMarks } from './ScrollMarks';
 import { Tip } from './Tip';
 import { useI18n } from '../i18n';
-import { useLevelPrefs } from '../level-prefs';
+import { LEVEL_LABEL_SEPARATOR, levelMarksByStrike } from '../level-labels';
+import { LEVEL_CHART_LABEL_KEY, levelLabelItems, sigmaMode, useLevelPrefs } from '../level-prefs';
+import { useMetricColors } from '../metric-prefs';
+import { stickyPileHeight, visibleRowWindow, type ScrollMarkRow } from '../scroll-marks';
 import { DEFAULT_COLOR_THEME } from '../settings-store';
 import { accentOf } from '../theme';
-import type { ColorThemeId, DeskColumnSettings, OptionQuote, SideColumnSettings } from '../types';
-import { fmt, fmtGreek, fmtInt, fmtPct } from '../utils';
+import type { ColorThemeId, DeskColumnSettings, GexLevels, OptionQuote, SideColumnSettings } from '../types';
+import { useCustomLevels } from '../use-custom-levels';
+import { fmt, fmtGreek, fmtInt, fmtPct, fmtSignedCompact } from '../utils';
 
 // ============================================================================
 // OPTION CHAIN TABLE
@@ -91,6 +98,16 @@ export function deskColumns(settings: DeskColumnSettings, t: (key: string) => st
     return { calls: buildSide(settings.calls, true), puts: buildSide(settings.puts, false) };
 }
 
+/** Height of one expiration bar in px (`--od-bar` of the scroll container, in rem), 30 when it cannot be read. */
+function barPxOf(container: HTMLElement | null): number {
+    return (container ? parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 : 0) || 30;
+}
+
+/** The scroll marks tick of a section header with no Net GEX (the expiration bar): neutral slate, like the bar's text. */
+const SECTION_TICK = '#64748b';
+/** A row whose Net GEX is 0 or unknown (no gamma): grey, like the Board's neutral dot. */
+const NEUTRAL_TICK = '#94a3b8';
+
 export function gridCols(callCount: number, putCount: number): string {
     // Strike track must fit values like "1,480.00" (high-priced underlyings) without
     // overflowing into Put Bid. 5.75rem min + slight fr boost keeps the center axis
@@ -160,10 +177,8 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
     const { expiration, calls, puts, strikes } = section;
     const innerRef = useCallback((el: HTMLButtonElement | null) => registerBar(expiration, el), [registerBar, expiration]);
     const atmRef = useCallback((el: HTMLDivElement | null) => registerAtm(expiration, el), [registerAtm, expiration]);
-    const atmStrike = useMemo(() => {
-        if (spot == null || strikes.length === 0) return null;
-        return strikes.reduce((best, s) => (Math.abs(s - spot) < Math.abs(best - spot) ? s : best), strikes[0]);
-    }, [spot, strikes]);
+    // the strike nearest to spot, ties to the lower one (the scroll marks use the same rule)
+    const atmStrike = useMemo(() => (spot == null ? null : nearestStrikeTo(strikes, spot)), [spot, strikes]);
 
     // Symmetric open/close animation: keep rows mounted during close to fade out.
     const [rendered, setRendered] = useState(!collapsed);
@@ -261,6 +276,7 @@ export const ExpirationSection = React.memo(function ExpirationSection({ section
                                 // Register the ATM row so the desk can scroll it to
                                 // the vertical center (center-strike view) on load/expand.
                                 ref={isAtm ? atmRef : undefined}
+                                data-desk-row={strike}
                                 className={
                                     'od-drow grid text-slate-700 dark:text-slate-200 ' + bodyAnim + ' ' +
                                     (isAtm ? 'od-atm' : '')
@@ -300,7 +316,11 @@ export const ChainTable: React.FC<{
     colorTheme?: ColorThemeId;
     /** Shown in the middle of the toolbar row, between the expirations count and the Collapse all button (the symbol, its spot and the provider). */
     summary?: React.ReactNode;
-}> = ({ symbol, sections, spot, columns, colorTheme = DEFAULT_COLOR_THEME, summary }) => {
+    /** The levels of the selected expirations (useGexLevels), marked on their strikes in the scroll marks strip */
+    levels?: GexLevels | null;
+    /** The Max AG level shows only while the Absolute Gamma metric is on, like on the charts */
+    showMaxAg?: boolean;
+}> = ({ symbol, sections, spot, columns, colorTheme = DEFAULT_COLOR_THEME, summary, levels = null, showMaxAg = false }) => {
     const { t } = useI18n();
     const ax = accentOf(colorTheme);
     const visibleColumns = useMemo(() => deskColumns(columns, t, colorTheme), [columns, t, colorTheme]);
@@ -313,7 +333,8 @@ export const ChainTable: React.FC<{
     // removal for the rationale.)
     const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
     // the ATM row is tinted with the Spot level colour (index.css .od-atm), a custom Spot colour included
-    const atmColor = useLevelPrefs().colors.spot;
+    const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
+    const atmColor = levelColors.spot;
 
     // A fresh chain (new symbol OR a different set of loaded expirations) resets
     // everything back to fully expanded. Collapse/expand is now PURELY MANUAL
@@ -353,19 +374,12 @@ export const ChainTable: React.FC<{
      * the one-shot rAF found no row and bailed, leaving the desk off-screen).
      */
     const stopCentering = useRef<(() => void) | null>(null);
+    // the sticky pile above a section's rows: one --od-bar per bar up to and including its own
+    const pileInset = useCallback((exp: string) => Math.max(0, sections.findIndex((s) => s.expiration === exp) + 1) * barPxOf(scrollRef.current), [sections]);
     const centerStrike = useCallback((exp: string) => {
         stopCentering.current?.();
-        stopCentering.current = centerRowInScroll(
-            () => scrollRef.current,
-            () => atmRefs.current.get(exp) ?? null,
-            () => {
-                // the sticky pile above this section: one --od-bar per bar up to and including its own
-                const container = scrollRef.current;
-                const barPx = (container ? parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 : 0) || 30;
-                return Math.max(0, sections.findIndex((s) => s.expiration === exp) + 1) * barPx;
-            },
-        );
-    }, [sections]);
+        stopCentering.current = centerRowInScroll(() => scrollRef.current, () => atmRefs.current.get(exp) ?? null, () => pileInset(exp));
+    }, [pileInset]);
     useEffect(() => () => stopCentering.current?.(), []);
 
     /**
@@ -382,7 +396,7 @@ export const ChainTable: React.FC<{
         const container = scrollRef.current;
         const bar = barRefs.current.get(exp);
         if (!container || !bar) return;
-        const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
+        const barPx = barPxOf(container);
         const idx = Math.max(0, sections.findIndex((s) => s.expiration === exp));
         // bar.offsetTop is the bar's natural position within the (position:relative)
         // scroll container; subtract the pile height of the earlier bars so THIS
@@ -468,7 +482,7 @@ export const ChainTable: React.FC<{
     const recomputeActive = useCallback(() => {
         const container = scrollRef.current;
         if (!container) return;
-        const barPx = parseFloat(getComputedStyle(container).getPropertyValue('--od-bar')) * 16 || 30;
+        const barPx = barPxOf(container);
         const top = container.getBoundingClientRect().top;
         let current = '';
         // A bar is "pinned" when it has scrolled up to its accumulated top offset
@@ -529,6 +543,110 @@ export const ChainTable: React.FC<{
         return () => ro.disconnect();
     }, []);
 
+    // ---- Scroll marks (owner 2026-10-25): the Board's minimap strip (components/ScrollMarks.tsx) right of the desk ----
+    // One tick per row on screen, top to bottom: each section's expiration bar, then (expanded) its strikes in the colour
+    // of their Net GEX sign (that expiration's call + put at the strike, gex.ts netGexByStrike), its ATM row in the Spot
+    // colour and the enabled and custom levels on their nearest strike inside the section's strike range.
+    const metricColors = useMetricColors();
+    const sigmaView = sigmaMode.use();
+    const [customLevels] = useCustomLevels(symbol);
+    const netBySection = useMemo(
+        () => sections.map((s) => (spot == null ? new Map<number, number>() : netGexByStrike(Array.from(s.calls.values()).concat(Array.from(s.puts.values())), spot))),
+        [sections, spot],
+    );
+    const levelItems = useMemo(
+        () => levelLabelItems({ levels, selected: selectedLevels, colors: levelColors, showMaxAg, sigma: sigmaView, label: (k) => t(LEVEL_CHART_LABEL_KEY[k]), customLevels }),
+        [levels, selectedLevels, levelColors, showMaxAg, sigmaView, t, customLevels],
+    );
+    const markRows = useMemo<ScrollMarkRow[]>(() => {
+        const out: ScrollMarkRow[] = [];
+        sections.forEach((s, i) => {
+            out.push({ key: `${s.expiration}|`, strike: Number.NaN, netGex: Number.NaN, header: s.expiration });
+            if (collapsed.has(s.expiration) || !s.strikes.length) return;
+            const lo = s.strikes[0];
+            const hi = s.strikes[s.strikes.length - 1];
+            // a level outside this expiration's strikes is not on any of its rows (no clamping onto the edge strike)
+            const marks = levelMarksByStrike(levelItems.filter((l) => l.value >= lo && l.value <= hi), s.strikes);
+            const atm = spot == null ? null : nearestStrikeTo(s.strikes, spot);
+            for (const strike of s.strikes) {
+                out.push({ key: `${s.expiration}|${strike}`, strike, netGex: netBySection[i].get(strike) ?? Number.NaN, atm: strike === atm, levels: marks.get(strike) });
+            }
+        });
+        return out;
+    }, [sections, collapsed, levelItems, spot, netBySection]);
+    const markColors = useMemo(() => ({ pos: metricColors.netGexPos, neg: metricColors.netGexNeg, zero: NEUTRAL_TICK, atm: atmColor, section: SECTION_TICK }), [metricColors.netGexPos, metricColors.netGexNeg, atmColor]);
+    // which section and strike a mark row is (its key is `expiration|strike`, a header has no strike)
+    const markOf = useCallback((r: ScrollMarkRow) => {
+        const cut = (r.key ?? '').lastIndexOf('|');
+        return { exp: (r.key ?? '').slice(0, cut), header: r.header != null };
+    }, []);
+    // a click: a strike glides to the middle below the pile of bars (like Expand), a bar to its pinned slot (like Collapse)
+    const pickMark = useCallback((r: ScrollMarkRow) => {
+        const { exp, header } = markOf(r);
+        if (header) { scrollBarToPinned(exp); return; }
+        const box = scrollRef.current;
+        const row = box?.querySelector<HTMLElement>(`[data-exp="${exp}"] [data-desk-row="${r.strike}"]`);
+        if (box && row) scrollRowToMiddle(box, row, pileInset(exp));
+    }, [markOf, scrollBarToPinned, pileInset]);
+    const describeMark = useCallback((r: ScrollMarkRow): string => {
+        if (r.header != null) {
+            const s = sections.find((x) => x.expiration === r.header);
+            return [r.header, t('chain.strikes', { count: s?.strikes.length ?? 0 }), ...(collapsed.has(r.header) ? [t('desk.marks.collapsed')] : [])].join(' · ');
+        }
+        const parts = [`${markOf(r).exp}   ${fmt(r.strike)}   ${t('board.col.netGex')} ${Number.isFinite(r.netGex) ? fmtSignedCompact(r.netGex) : '-'}`];
+        if (r.atm) parts.push(t('board.atm'));
+        if (r.levels?.length) parts.push(r.levels.map((l) => l.text).join(LEVEL_LABEL_SEPARATOR));
+        return parts.join(' · ');
+    }, [sections, collapsed, markOf, t]);
+    // The frame: the desk's rows differ in height (bars, sub-headers, strikes), so it comes from the rows' real positions
+    // in the scroll content, measured once per layout (cached until the desk's height or the rows change) and read per frame.
+    // A sticky row reports its stuck place, so positions are walked top to bottom: a strike row (never sticky) gives its
+    // real top, a bar or a sub-header row follows the row before it.
+    const layoutRef = useRef<{ height: number; rows: ScrollMarkRow[]; edges: { top: number; bottom: number }[]; bars: { top: number; sub: number }[] } | null>(null);
+    const viewWindow = useCallback(() => {
+        const box = scrollRef.current;
+        const desk = box?.firstElementChild as HTMLElement | null | undefined;
+        if (!box || !desk || !markRows.length) return { top: 0, bottom: 1 };
+        let layout = layoutRef.current;
+        if (!layout || layout.height !== desk.offsetHeight || layout.rows !== markRows) {
+            const deskTop = desk.getBoundingClientRect().top;
+            const at = new Map<string, { top: number; bottom: number }>();
+            const bars: { top: number; sub: number }[] = [];
+            let y = 0;
+            for (const sec of Array.from(desk.children)) {
+                const exp = sec.getAttribute('data-exp') ?? '';
+                const bar = { top: y, sub: 0 };
+                for (const el of Array.from(sec.children) as HTMLElement[]) {
+                    const r = el.getBoundingClientRect();
+                    const strike = el.getAttribute('data-desk-row');
+                    if (strike != null) {
+                        y = r.top - deskTop;
+                        at.set(`${exp}|${strike}`, { top: y, bottom: y + r.height });
+                    } else if (el.classList.contains('od-bar')) {
+                        bar.top = y;
+                        at.set(`${exp}|`, { top: y, bottom: y + r.height });
+                    } else if (el.classList.contains('od-sub')) {
+                        bar.sub += r.height;
+                    }
+                    y += r.height;
+                }
+                bars.push(bar);
+            }
+            // a row not laid out (yet) sits where the row before it ends, so the edges stay ascending
+            let last = 0;
+            const edges = markRows.map((m) => {
+                const e = at.get(m.key ?? '') ?? { top: last, bottom: last };
+                last = e.bottom;
+                return e;
+            });
+            layout = { height: desk.offsetHeight, rows: markRows, edges, bars };
+            layoutRef.current = layout;
+        }
+        const top = box.scrollTop;
+        const edges = layout.edges;
+        return visibleRowWindow(edges.length, (i) => edges[i], top + stickyPileHeight(layout.bars, top, barPxOf(box)), top + box.clientHeight);
+    }, [markRows]);
+
     return (
         /* `flex-1 min-h-0 flex flex-col`: this root claims exactly the remaining
             vertical space inside DeskView's <main> (itself `h-full flex flex-col
@@ -538,8 +656,9 @@ export const ChainTable: React.FC<{
         <div className="flex flex-1 min-h-0 flex-col" style={{ ['--od-grid' as string]: odGrid, ['--od-atm' as string]: atmColor }}>
             {/* Controls ABOVE the desk (full width): count LEFT, the symbol and its spot in the MIDDLE, toggle RIGHT. */}
             <div className="mb-2 flex w-full items-center justify-between gap-3 shrink-0">
-                <span className="text-xs text-slate-400">
+                <span className="inline-flex items-center gap-1 text-xs text-slate-400">
                     {sections.length} {sections.length === 1 ? t('chain.expirations') : t('chain.expirationsPlural')}
+                    <HelpButton label={t('desk.help.label')} paragraphs={[t('desk.help.marks')]} align="left" />
                 </span>
                 {summary && <div className="min-w-0 flex-1 text-center">{summary}</div>}
                 <button
@@ -586,7 +705,9 @@ export const ChainTable: React.FC<{
                 hand-maintained constant), so it can never again under- or
                 over-estimate at any breakpoint, and the footer stays correctly
                 anchored in both the short- and tall-content cases. */}
-            <div ref={scrollRef} className="table-container @container w-full flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            {/* the card and, as an absolute overlay in the gutter right of it, the scroll marks strip (layout unchanged) */}
+            <div className="od-scroll-wrap relative flex flex-1 min-h-0 flex-col">
+            <div ref={scrollRef} className="table-container @container w-full flex-1 min-h-0 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800" data-desk-scroll>
                 <div className="od-desk" style={{ minWidth: odMinWidth }}>
                     {sections.map((s, i) => (
                         <ExpirationSection
@@ -605,6 +726,8 @@ export const ChainTable: React.FC<{
                         />
                     ))}
                 </div>
+            </div>
+            <ScrollMarks scrollRef={scrollRef} viewWindow={viewWindow} rows={markRows} colors={markColors} onPick={pickMark} describe={describeMark} label={t('desk.marks.label')} />
             </div>
         </div>
     );

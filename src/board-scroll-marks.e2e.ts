@@ -47,7 +47,7 @@ async function main(): Promise<void> {
             // ---- the strip: right of the card, as tall as it, inside the window ----
             const geo = await page.evaluate(() => {
                 const card = document.querySelector('[data-board-scroll]')!.getBoundingClientRect();
-                const strip = document.querySelector('[data-scroll-marks]')!.getBoundingClientRect();
+                const strip = document.querySelector('[data-board] [data-scroll-marks]')!.getBoundingClientRect();
                 return { card: { right: card.right, top: card.top, bottom: card.bottom }, strip: { left: strip.left, right: strip.right, top: strip.top, bottom: strip.bottom, width: strip.width }, win: window.innerWidth, pageW: document.documentElement.scrollWidth };
             });
             assert.ok(geo.strip.left >= geo.card.right, `${at}: the strip is right of the card (${geo.strip.left} >= ${geo.card.right})`);
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
 
             // ---- every row is on the strip exactly once (ticks merge, none is lost) ----
             const rows = await page.locator('[data-board-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-board-row') ?? ''));
-            const ticks = await page.locator('[data-scroll-tick]').evaluateAll((els) => els.map((e) => ({ kind: e.getAttribute('data-scroll-tick') ?? '', strikes: (e.getAttribute('data-scroll-strikes') ?? '').split(',') })));
+            const ticks = await page.locator('[data-board] [data-scroll-tick]').evaluateAll((els) => els.map((e) => ({ kind: e.getAttribute('data-scroll-tick') ?? '', strikes: (e.getAttribute('data-scroll-strikes') ?? '').split(',') })));
             assert.ok(ticks.length > 0 && ticks.length <= rows.length, `${at}: ${ticks.length} ticks for ${rows.length} rows`);
             assert.deepEqual(ticks.flatMap((t) => t.strikes), rows, `${at}: the ticks cover every row once, in order`);
             const atm = await page.locator('[data-board-atm]').getAttribute('data-board-row');
@@ -71,8 +71,8 @@ async function main(): Promise<void> {
 
             // ---- the frame shows the rows in view: about the middle on open (the ATM row is centered) ----
             const frame = () => page.evaluate(() => {
-                const s = document.querySelector('[data-scroll-marks]')!.getBoundingClientRect();
-                const f = document.querySelector('[data-scroll-frame]')!.getBoundingClientRect();
+                const s = document.querySelector('[data-board] [data-scroll-marks]')!.getBoundingClientRect();
+                const f = document.querySelector('[data-board] [data-scroll-frame]')!.getBoundingClientRect();
                 return { top: (f.top - s.top) / s.height, bottom: (f.bottom - s.top) / s.height };
             });
             const f0 = await frame();
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
             const firstStrike = rows[0];
             assert.ok((await rowPlace(page, firstStrike))! < 0, `${at}: the first row is out of view above`);
             // the first tick is the top row; when merged, its lead may be a neighbour - take the tick's lead row from its strikes
-            const tick = page.locator('[data-scroll-tick]').nth(Math.floor(ticks.length * 0.12));
+            const tick = page.locator('[data-board] [data-scroll-tick]').nth(Math.floor(ticks.length * 0.12));
             const target = (await tick.getAttribute('data-scroll-strikes'))!.split(',')[0];
             const before = await rowPlace(page, target);
             assert.ok(before !== null && (before < 0 || before > 1), `${at}: the target row ${target} is out of view (${before})`);
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
             assert.ok(f1.top < f0.top, `${at}: the frame moved up with the scroll (${f1.top.toFixed(2)} < ${f0.top.toFixed(2)})`);
 
             // ---- hover: the app's tooltip with the strike ----
-            await page.locator('[data-scroll-tick]').nth(ticks.length - 1).hover();
+            await page.locator('[data-board] [data-scroll-tick]').nth(ticks.length - 1).hover();
             await page.waitForTimeout(500);
             const tip = page.locator('[role=tooltip]').filter({ hasText: 'Net GEX' }).last();
             assert.ok(await tip.isVisible(), `${at}: hovering a tick shows a tooltip`);

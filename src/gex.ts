@@ -137,6 +137,16 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
 }
 
 /**
+ * Net GEX per strike of `quotes` (the Desk's scroll marks, owner 2026-10-25: one Desk section is ONE expiration, so a row's
+ * Net GEX is gexCall + gexPut of that expiration's call and put at the strike). The same numbers as computeGexProfile's
+ * netGex (same dealer signs, same per-quote forward), keyed by strike; a strike whose quotes all lack gamma is ABSENT,
+ * never 0 (section 7.1).
+ */
+export function netGexByStrike(quotes: readonly OptionQuote[], spot: number): Map<number, number> {
+    return new Map(computeGexProfile(quotes, spot).map((p) => [p.strike, p.netGex]));
+}
+
+/**
  * How the GEX chart draws the Net GEX metric (owner request 2026-10-25):
  *  - `net`: one value per strike, netGex = callGex + putGex (the default, as before)
  *  - `split` ("Abs GEX"): both sides at every strike without netting, callGex up and putGex down

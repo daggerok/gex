@@ -1,7 +1,6 @@
 /// <reference lib="esnext" />
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { scrollRowToMiddle } from '../center-row';
 import { mergeScrollTicks, scrollTicks, visibleWindow, type ScrollMarkRow, type ScrollTickGroup } from '../scroll-marks';
 import { Tip } from './Tip';
 
@@ -10,7 +9,8 @@ import { Tip } from './Tip';
 // per row (src/scroll-marks.ts places, colours and merges them), a frame over the rows in view (the ticks under it are
 // dimmed, the hidden ones stay bright), a click on a tick glides its row to the middle of the table (center-row.ts),
 // hovering shows the strike(s) and what they mark (Tip). It is an absolute overlay in the gutter right of the card, so the
-// layout does not change. Used by the Board; written so the Desk can use it later.
+// layout does not change. Used by the Board and the Desk (ChainTable): each says what a click does (`onPick`) and the Desk,
+// whose rows differ in height under a sticky pile of expiration bars, measures its own frame (`viewWindow`).
 // ============================================================================
 
 /** Width of the strip (px) and its gap to the card's right edge. */
@@ -24,16 +24,18 @@ const HIT_PX = 7;
 export const ScrollMarks: React.FC<{
     /** the scroll container of the table */
     scrollRef: React.RefObject<HTMLElement | null>;
-    /** height of the sticky header covering the top of the scroll area */
-    headHeight: () => number;
+    /** height of the sticky header covering the top of the scroll area (for the default frame) */
+    headHeight?: () => number;
+    /** the rows in view as fractions of all rows; default: visibleWindow (rows of one height below `headHeight`) */
+    viewWindow?: () => { top: number; bottom: number };
     rows: readonly ScrollMarkRow[];
-    colors: { pos: string; neg: string; zero: string; atm: string };
-    /** the row element of a strike (to scroll to it) */
-    rowOf: (strike: number) => HTMLElement | null;
+    colors: { pos: string; neg: string; zero: string; atm: string; section?: string };
+    /** a click on a tick: bring this row (the tick's most important one) to the middle of the table */
+    onPick: (row: ScrollMarkRow) => void;
     /** one tooltip line per row of a tick */
     describe: (row: ScrollMarkRow) => string;
     label: string;
-}> = ({ scrollRef, headHeight, rows, colors, rowOf, describe, label }) => {
+}> = ({ scrollRef, headHeight, viewWindow, rows, colors, onPick, describe, label }) => {
     const stripRef = useRef<HTMLDivElement>(null);
     const [height, setHeight] = useState(0);
     const [view, setView] = useState({ top: 0, bottom: 1 });
@@ -47,7 +49,7 @@ export const ScrollMarks: React.FC<{
         const measure = () => {
             frame = 0;
             setHeight(strip.clientHeight);
-            const w = visibleWindow(box, headHeight());
+            const w = viewWindow ? viewWindow() : visibleWindow(box, headHeight?.() ?? 0);
             setView((v) => (v.top === w.top && v.bottom === w.bottom ? v : w));
         };
         const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
@@ -59,17 +61,13 @@ export const ScrollMarks: React.FC<{
         const table = box.firstElementChild;
         if (table) ro.observe(table);
         return () => { box.removeEventListener('scroll', schedule); ro.disconnect(); cancelAnimationFrame(frame); };
-    }, [scrollRef, headHeight, rows]);
+    }, [scrollRef, headHeight, viewWindow, rows]);
 
     const groups = useMemo(() => (height > 0 ? mergeScrollTicks(scrollTicks(rows, height, colors)) : []), [rows, height, colors]);
 
     // the ticks do not depend on the scroll position, so scrolling re-renders only the frame
     const ticks = useMemo(() => {
-        const go = (g: ScrollTickGroup) => {
-            const box = scrollRef.current;
-            const row = rowOf(g.lead.strike);
-            if (box && row) scrollRowToMiddle(box, row, headHeight());
-        };
+        const go = (g: ScrollTickGroup) => onPick(rows[g.lead.index]);
         const centers = groups.map((g) => (g.top + g.bottom) / 2);
         return groups.map((g, i) => {
             const marked = g.kind !== 'row';
@@ -92,6 +90,7 @@ export const ScrollMarks: React.FC<{
                             onClick={() => go(g)}
                             data-scroll-tick={g.kind}
                             data-scroll-strikes={g.ticks.map((t) => t.strike).join(',')}
+                            data-scroll-keys={g.ticks.map((t) => t.key).join(',')}
                         >
                             <span className={'absolute rounded-[1px] ' + (marked ? 'inset-x-0' : 'inset-x-[1px]')} style={{ top: center - hitTop - barH / 2, height: barH, backgroundColor: g.color, opacity: g.opacity }} />
                         </button>
@@ -99,7 +98,7 @@ export const ScrollMarks: React.FC<{
                 </div>
             );
         });
-    }, [groups, rows, describe, rowOf, headHeight, scrollRef]);
+    }, [groups, rows, describe, onPick]);
 
     return (
         <div

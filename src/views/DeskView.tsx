@@ -5,7 +5,7 @@ import { Icon } from '../components/Icon';
 import { KeyOnboarding } from '../components/KeyOnboarding';
 import { useI18n } from '../i18n';
 import { accentOf } from '../theme';
-import type { ChainMeta, DataProvider, Settings } from '../types';
+import type { ChainMeta, DataProvider, GexLevels, Settings } from '../types';
 import { fmt, type DataAge } from '../utils';
 
 // ============================================================================
@@ -39,13 +39,17 @@ export interface DeskViewProps {
     previewLabel: string;
     sections: ChainSection[];
     hasRows: boolean;
+    /** The levels of the selected expirations (useGexLevels), marked on the desk's scroll marks strip */
+    levels: GexLevels | null;
+    /** The Absolute Gamma metric is on (the Max AG level shows only then, like on the charts) */
+    showMaxAg: boolean;
 }
 
 export const DeskView: React.FC<DeskViewProps> = ({
     settings, provider, meta, loadChain, getDates,
     tickerInput, metaLoading, expLoading, anyLoading, cancelAll, chainSymbol, spot,
     spotIsEstimated, dataAge, notice, error, showOnboarding, setToken, setSecret, onboardingPreview,
-    previewLabel, sections, hasRows,
+    previewLabel, sections, hasRows, levels, showMaxAg,
 }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(settings.colorTheme);
@@ -151,7 +155,7 @@ export const DeskView: React.FC<DeskViewProps> = ({
             {/* Option chain desk (one section per expiration), or guidance. */}
             {!showOnboarding && (
                 chainSymbol && hasRows ? (
-                    <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} summary={summary} />
+                    <ChainTable symbol={chainSymbol} sections={sections} spot={spot} columns={settings.deskColumns} colorTheme={settings.colorTheme} summary={summary} levels={levels} showMaxAg={showMaxAg} />
                 ) : meta && !expLoading && !chainSymbol ? (
                     <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-sm text-slate-400">
                         {tr('notice.pickExp')}
