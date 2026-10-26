@@ -121,8 +121,10 @@ export const TopBar: React.FC<{
     setTickerSuggestionsOpen: (v: boolean) => void;
     /** Auto proxy discovery state (src/proxy-discovery.ts). */
     proxy: ProxyDiscovery;
-    /** False on a page not served from this machine: no request goes to the proxy. */
+    /** False on a page not served from this machine before "Use my local proxy": no request goes to the proxy. */
     proxyAllowed: boolean;
+    /** The page is served from this machine (no opt-in needed). */
+    localPage: boolean;
     /** The data source is live (proxy found or a live provider fixed), else the cache. */
     live: boolean;
     /** Source label next to the ticker; null in a backtest (the As of selector shows the day). */
@@ -138,7 +140,7 @@ export const TopBar: React.FC<{
     tickerInput, tickerHint, onTickerInput, onSearch, searching,
     tickerSuggestions, tickerSuggestionsOpen, tickerSuggestionsLoading, activeTickerSuggestion,
     onTickerFocus, onTickerBlur, onTickerKeyDown, onChooseSuggestion, setActiveTickerSuggestion, setTickerSuggestionsOpen,
-    proxy, proxyAllowed, live, source, sourceStale, asOfSlot, asOfMenuSlot,
+    proxy, proxyAllowed, localPage, live, source, sourceStale, asOfSlot, asOfMenuSlot,
 }) => {
     const [openSettings, setOpenSettings] = useState(false);
     const { t, lang, setLang } = useI18n();
@@ -470,6 +472,23 @@ export const TopBar: React.FC<{
                                     <div className={`text-[10px] ${mt}`}>
                                         {settings.proxyAutoPoll ? t('settings.autoDiscoveryHint.on') : t('settings.autoDiscoveryHint.off')}
                                     </div>
+                                    {/* Published site: the proxy is used only after this one click (persisted), see proxy-discovery.ts */}
+                                    {!localPage && (
+                                        <div className="space-y-1" data-proxy-optin={settings.localProxyOptIn ? 'on' : 'off'}>
+                                            <button
+                                                type="button"
+                                                onClick={() => onChange({ localProxyOptIn: !settings.localProxyOptIn })}
+                                                className={`w-full rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
+                                                    settings.localProxyOptIn
+                                                        ? dark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                        : pillActive
+                                                }`}
+                                            >
+                                                {settings.localProxyOptIn ? t('settings.localProxyOptOut') : t('settings.localProxyOptIn')}
+                                            </button>
+                                            <div className={`text-[10px] ${mt}`}>{settings.localProxyOptIn ? t('settings.localProxyOptInOnHint') : t('settings.localProxyOptInHint')}</div>
+                                        </div>
+                                    )}
                                     <details className="group" data-source-advanced>
                                         <summary className={`cursor-pointer select-none text-[10px] font-bold uppercase tracking-wide ${mt}`}>{t('settings.advanced')}</summary>
                                         <div className="mt-2 space-y-2">

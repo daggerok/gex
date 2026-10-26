@@ -907,8 +907,10 @@ const App: React.FC = () => {
     }, [patchSettings]);
 
     // ---- Data source: auto proxy discovery (src/proxy-discovery.ts, owner 2026-10-25) -------------------------------
-    // Only a page served from this machine probes the proxy; elsewhere (GitHub Pages) no request goes to it.
-    const proxyAllowed = useMemo(() => isLoopbackHost(window.location.hostname), []);
+    // A page served from this machine probes the proxy by itself; elsewhere (GitHub Pages) no request goes to it until the
+    // user clicks "Use my local proxy" once (persisted): Chrome 142+ would otherwise ask every visitor for local network access
+    const localPage = useMemo(() => isLoopbackHost(window.location.hostname), []);
+    const proxyAllowed = localPage || settings.localProxyOptIn;
     // the "always cache" override needs no probe; the probe runs once on load, or periodically with auto-discovery ON
     const probeEnabled = proxyAllowed && settings.source !== 'static';
     const proxy = useProxyDiscovery(settings.proxyBase, probeEnabled, settings.proxyAutoPoll);
@@ -1663,6 +1665,7 @@ const App: React.FC = () => {
                 setTickerSuggestionsOpen={setTickerSuggestionsOpen}
                 proxy={proxy}
                 proxyAllowed={proxyAllowed}
+                localPage={localPage}
                 live={chain[0] !== 'static'}
                 source={asOf ? null : source}
                 sourceStale={!asOf && servedBy === 'static' && !!metaAge?.stale}

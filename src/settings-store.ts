@@ -405,6 +405,7 @@ export const DEFAULT_SETTINGS: Settings = {
     // Auto: the local proxy is found by itself (src/proxy-discovery.ts), the cache when there is none
     source: 'auto',
     proxyAutoPoll: false,
+    localProxyOptIn: false,
     language: DEFAULT_LANGUAGE,
     theme: 'system',
     colorTheme: DEFAULT_COLOR_THEME,
@@ -515,6 +516,7 @@ export function loadSettings(): Settings {
         delete (merged as Settings & { providerId?: unknown }).providerId;
         merged.source = sanitizeSourceOverride(parsed.source);
         merged.proxyAutoPoll = parsed.proxyAutoPoll === true;
+        merged.localProxyOptIn = parsed.localProxyOptIn === true;
         if (typeof merged.proxyBase !== 'string') merged.proxyBase = DEFAULT_SETTINGS.proxyBase;
         return merged;
     } catch {

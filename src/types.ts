@@ -257,6 +257,11 @@ export interface Settings {
     source: SourceOverride;
     /** "Proxy auto-discovery": OFF (default) probes the proxy once on page load, ON every 30 s and on tab focus. */
     proxyAutoPoll: boolean;
+    /**
+     * "Use my local proxy" on a page not served from this machine (GitHub Pages): until the user clicks it once, no request
+     * goes to the proxy at all, not even the probe on load (Chrome 142+ Local Network Access would prompt every visitor).
+     */
+    localProxyOptIn: boolean;
     language: Language;
     theme: ThemeMode;
     /** Shared product color palette (Emerald Ledger / Indigo Desk). */
