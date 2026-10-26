@@ -12,7 +12,7 @@ export async function proxyTickerSuggestions(providerId: 'yahoo' | 'nasdaq' | 'c
     const q = query.trim();
     if (!q) return [];
     const base = (ctx.proxyBase || '').replace(/\/$/, '');
-    if (!base) throw new Error('Proxy base URL is not configured for provider-native ticker search.');
+    if (!base) throw new Error('No proxy URL is set for provider-native ticker search.');
     const url = `${base}/api/search?provider=${encodeURIComponent(providerId)}&q=${encodeURIComponent(q)}`;
     const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctx.signal });
     if (!res.ok) throw new Error(`Ticker search proxy failed (HTTP ${res.status}).`);

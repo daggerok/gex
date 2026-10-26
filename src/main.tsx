@@ -26,6 +26,9 @@
  *
  * ---------------------------------------------------------------------------
  * CHANGELOG (append newest at top; keep history accurate):
+ * Since v0.9.54 every change is logged per PR in the agentic workspace,
+ * docs/repos/gex/decisions.md (Repo history); the entries below are the
+ * history before that, they describe the app as it was then.
  * ---------------------------------------------------------------------------
  * v0.9.54 - Fix footer spacing on a tall/loaded Desk chain (reported w/
  *          screenshot: footer sat flush at the viewport's bottom edge with
@@ -771,27 +774,31 @@
  *          expiration strip, Calls|Strike|Puts table, OCC symbol parser.
  * ---------------------------------------------------------------------------
  *
- * COMPANION INFRASTRUCTURE (optional; outside the 3 app source files):
- *   - scripts/options-data.ts           yfinance -> api/options/*.json + api/options/index.json
- *   - .github/workflows/update-data.yml   schedules the fetch + commits JSON
- *   - scripts/options-local-proxy.ts          local Bun proxy (Yahoo/NASDAQ/CBOE/search)
+ * COMPANION INFRASTRUCTURE (optional; outside the app source):
+ *   - scripts/options-data.ts           Yahoo + Cboe -> api/options/*.json, index.json, api/charts/*.json
+ *   - .github/workflows/update-data.yml, update-partial-data.yml   schedule the fetch
+ *   - scripts/options-local-proxy.ts    local Bun proxy (Yahoo/NASDAQ/CBOE/chart/search), `bun run all:proxy`
  *
  * WHY THESE API CHOICES (research summary, keep for future agents):
- *   - Dropdown order is fixed: CACHE, CBOE, NASDAQ, YAHOO.
+ *   - Four providers (CACHE, CBOE, NASDAQ, YAHOO), no provider menu: the
+ *     source is automatic (src/proxy-discovery.ts). Local proxy found ->
+ *     per ticker CBOE, then YAHOO, then NASDAQ, then CACHE; no proxy ->
+ *     CACHE. Settings -> Advanced may fix it (Always cache, one provider).
+ *     The published site contacts the proxy only after "Use my local proxy".
  *   - CACHE (static): same-origin api/options/*.json -> zero CORS/keys.
- *     DEFAULT selection on hosted/static deploys (GitHub Pages).
  *   - CBOE (via proxy): richest no-key delayed data (greeks/IV/OI/spot).
- *     DEFAULT selection on localhost/LAN when proxy is expected.
  *   - NASDAQ (via proxy): free full-chain, no browser CORS; no IV/greeks in feed.
  *   - YAHOO (via proxy): crumb/cookies handled by companion proxy; lazy per-exp.
  *   - Removed from registry (changelog only): marketdata.app, DoltHub, Tradier,
  *     Alpaca, Alpha Vantage, Polygon/Massive, Finnhub/Twelve Data, etc.
  *
- * DATA FLOW (deferred):
- *   [Get dates] -> loadMeta(symbol) -> ChainMeta{ underlyingPrice, expirations }
- *   [Load]      -> loadExpiration(symbol, exp) -> OptionQuote[] (cached for bulk)
+ * DATA FLOW (deferred, nothing fetches on open except a restored ticker):
+ *   [ticker + Enter] -> getDates: loadMeta(symbol) over the source chain
+ *                       -> ChainMeta{ underlyingPrice, expirations }
+ *   [pick expirations] -> loaded by themselves: loadExpiration(symbol, exp)
+ *                       -> OptionQuote[] (cached for bulk)
  *               -> (fallback) estimate spot via put-call parity if missing
- *               -> render selected expiration as Calls | Strike | Puts.
+ *               -> Desk, Board, GEX and Chart tabs read the same selection.
  *
  * EXTENSION POINTS (for future features / agents):
  *   - Add a provider: implement DataProvider (bulk or lazy) & push to PROVIDERS.
@@ -1142,7 +1149,7 @@ const App: React.FC = () => {
             dbg('getDates ok', { expirations: m.expirations.length });
             return m;
         } catch (e: unknown) {
-            if (metaAbort.current !== ac) return null; // superseded by a newer ticker or a provider switch: say nothing
+            if (metaAbort.current !== ac) return null; // superseded by a newer ticker or a source change: say nothing
             if (isAbortError(e)) { setNotice(tr('notice.cancelled')); return null; }
             setMeta(null);
             setError(friendlyError(e, errorProvider, lang));
@@ -1349,12 +1356,10 @@ const App: React.FC = () => {
         }
     }, [provider, settings, meta, selectedExps, tr, lang]);
 
-    // Bulk providers (CACHE/CBOE/NASDAQ) already hold the whole chain in memory, so
-    // loading the selected expirations costs nothing: do it whenever the selection
-    // changes instead of waiting for the Load button. Desk and GEX then always show
-    // the same data, whichever tab the selection was made on, and nothing has to be
-    // loaded twice. Lazy providers (YAHOO) fetch per expiration over the network and
-    // keep the explicit Load button, which loads the shared `expData` for BOTH tabs.
+    // The selected expirations load by themselves whenever the selection changes (there is no
+    // Load button any more). Bulk providers (CACHE/CBOE/NASDAQ) already hold the whole chain in
+    // memory, so that costs nothing; lazy YAHOO fetches per expiration (prefetched below). Every
+    // tab then shows the same shared `expData`, whichever tab the selection was made on.
     const loadChainRef = useRef(loadChain);
     loadChainRef.current = loadChain;
     useEffect(() => {
@@ -1537,13 +1542,11 @@ const App: React.FC = () => {
     // selection to the nearest expiration (setSelectedExps([m.expirations[0]])
     // above), which is exactly the default the GEX tab used to compute
     // separately - so unifying the state needs no extra default logic here.
-    // The shared expiration panel (below, in TabSwitcher's row) now offers the
-    // FULL `meta.expirations` list on Desk and GEX alike - not the narrower
-    // "already loaded" subset this used to compute as `gexExpirations` - since
-    // its Load button is right there to fetch whatever's selected. Any
-    // selected-but-not-yet-loaded expiration simply contributes no quotes
-    // (quotesByExp[exp] ?? [] in useGexLevels); it does not error, just gives
-    // an expectedly-incomplete analysis until Load is pressed.
+    // The shared expiration panel (below, in TabSwitcher's row) offers the
+    // FULL `meta.expirations` list on every tab - not the narrower "already
+    // loaded" subset this used to compute as `gexExpirations` - and a selected
+    // expiration loads by itself. One still loading simply contributes no
+    // quotes yet (quotesByExp[exp] ?? [] in useGexLevels); it does not error.
     // Persisted in Settings (gexMetrics); lazy-init reads it directly, same
     // reasoning as `activeTab` above — a brand-new user's settings.gexMetrics
     // is DEFAULT_SETTINGS.gexMetrics (['netGex']), identical to the old
@@ -1735,30 +1738,20 @@ const App: React.FC = () => {
                 value={activeTab}
                 onChange={changeTab}
                 colorTheme={settings.colorTheme}
-                /* ---- Shared expiration panel (picker + Load) — one copy, used
-                    by Desk, GEX AND Chart (on Chart the selection decides which
-                    expirations the levels are computed from, owner: the panel must be
-                    seen on every tab),
-                    rendered in the SAME row as the tab pills, to their right -
-                    one horizontal bar: [Desk|GEX|Chart]  [chips... All] [Load].
-                    So selecting expirations and fetching them works the same
-                    way on either tab (user request: GEX had no Load button of
-                    its own, so a lazy YAHOO expiration picked from the GEX tab
-                    had no way to actually be fetched). Offers the FULL
-                    `meta.expirations` list (not just already-loaded dates -
-                    see the gexQuotesByExp comment above); only rendered once a
-                    ticker's expirations are loaded (`meta` exists), same gate
-                    as the old Desk-only form. A <form> so pressing Enter (once
-                    the Load button is focused after picking a date) submits
-                    and loads immediately. flex-wrap on TabSwitcher's row (and
-                    on this form itself) + the widened chip-strip cap
-                    (ExpirationChips, max-w-[70vw]) fix the chip-row overflow
-                    bug: at narrow widths the form now wraps to its own line
-                    below the tab pills, and the Load button wraps within the
-                    form, instead of being clipped past the right edge of the
-                    viewport (confirmed live via Playwright before this fix -
-                    see ExpirationChips.tsx's doc comment for the measured
-                    root cause). ---- */
+                /* ---- Shared expiration panel (data age, chips with OI share, Reset)
+                    - one copy, used by Desk, Board, GEX AND Chart (on Chart the
+                    selection decides which expirations the levels are computed
+                    from, owner: the panel must be seen on every tab), rendered in
+                    the SAME row as the tab pills, to their right:
+                    [Desk|Board|GEX|Chart]  [chips... All] [Reset]. A selected
+                    expiration loads by itself (no Load button). Offers the FULL
+                    `meta.expirations` list (see the gexQuotesByExp comment
+                    above); only rendered once a ticker's expirations are loaded
+                    (`meta` exists). flex-wrap on TabSwitcher's row (and on this
+                    box) + the chip-strip cap (ExpirationChips, max-w-[70vw]) keep
+                    it from being clipped past the right edge at narrow widths: it
+                    wraps to its own line below the tab pills (see
+                    ExpirationChips.tsx's doc comment for the measured root cause). ---- */
                 endSlot={meta ? (
                     <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 lg:flex-nowrap">
                         <DataAgeBadge age={asOf ? null : metaAge} />

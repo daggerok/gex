@@ -1,6 +1,6 @@
 # GEX [![CI](https://github.com/daggerok/gex/actions/workflows/ci.yaml/badge.svg)](https://github.com/daggerok/gex/actions/workflows/ci.yaml)
 
-A single-page **options board** with English and Russian interface: enter a ticker, get expirations, select one or more dates, and view the classic **Calls | Strike | Puts** chain with bid / mid / ask, IV, volume, open interest and greeks where the provider supplies them. Two more tabs show **GEX** (gamma exposure by strike with key levels) and a price **Chart** with the same levels. The app is a static React + TypeScript + Tailwind CSS v4 site built by Parcel and deployable to GitHub Pages.
+A single-page **options board** with English and Russian interface: enter a ticker, select one or more expirations, and view the classic **Calls | Strike | Puts** chain with bid / mid / ask, IV, volume, open interest and greeks. More tabs show a per-strike **Board**, **GEX** (gamma exposure by strike with key levels) and a price **Chart** with the same levels. The app is a static React + TypeScript + Tailwind CSS v4 site built by Parcel and published on GitHub Pages (https://daggerok.github.io/gex/). Data comes live through a small local proxy when it runs on your computer, otherwise from the cache published with the site.
 
 We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always use `bun` instead of `npm`.
 
@@ -12,12 +12,12 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 - [Quick start](#quick-start)
 - [How to use](#how-to-use)
 - [Tabs: Desk, Board, GEX, Chart](#tabs-desk-board-gex-chart)
-- [Data providers](#data-providers)
+- [Data sources](#data-sources)
+- [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)
 - [Ticker suggestions](#ticker-suggestions)
 - [Static-cache greeks](#static-cache-greeks)
 - [Updating the data](#updating-the-data)
 - [Deploy to GitHub Pages](#deploy-to-github-pages)
-- [Proxy setup for GitHub Pages](#proxy-setup-for-github-pages)
 - [Companion infrastructure](#companion-infrastructure)
 - [Development](#development)
 - [Project structure](#project-structure)
@@ -28,15 +28,15 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 
 ## What you get
 
-- **Two-step, quota-friendly loading:** nothing fetches on page open. Type or search a ticker, then **Expirations**; select expiration(s), then **Load**
-- **Ticker suggestions:** searchable ticker and company combobox for every provider. Local static suggestions use `api/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
+- **Quota-friendly loading:** nothing fetches on page open except the ticker you had open last time. Type or pick a ticker and press Enter: its expirations load (the nearest one is selected); every expiration you select loads by itself
+- **Automatic data source:** with the local proxy running you get live data (CBOE, else YAHOO, else NASDAQ, else the cache, per ticker), without it the cache published with the site. A label next to the ticker says which: `LIVE CBOE`, `LIVE YAHOO`, `CACHE 2026-10-23`. See [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)
+- **Ticker suggestions:** searchable ticker and company combobox. Local static suggestions use `api/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest to latest with sticky expiration headers
 - **Desk UX:** ATM row highlight, sticky Calls / Strike / Puts headers, greeks columns enabled by default, per-side and per-column desk settings, empty cells for missing data, themed scrollbars, collapse and expand controls, and automatic centering on the current strike after load or expand
 - **GEX and Chart tabs:** key levels (Max Net GEX, Min Net GEX, Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Gamma Flip, Zero GEX, Max Pain, Spot, Max AG, the strike with the largest absolute gamma, while the AG metric is on, and Sigma, off until you turn it on) computed once and drawn on both tabs, plus your own custom levels. Zero GEX is the owner's own rule (from the Max Net GEX strike walking down to the Min Net GEX strike, or from Min Net GEX walking up to Max Net GEX when the total is negative; each step into the other sign is a candidate zone, with several the one with the highest average absolute gamma of its two strikes wins; the line is the zone's strike of the other sign), a switch in its chip draws it as a line or as the band between the two strikes. Sigma marks the strikes nearest to spot +/- 1, 2, 3 %, or with the switch in its chip +/- 1, 2, 3 statistical sigma (spot x ATM IV x sqrt(days / 365) of the nearest selected expiration); grey dotted lines, on the Chart tab from the next day to the right edge
-- **Theme UX:** compact current-theme icon with an animated dropdown for the other themes
+- **Themes:** light and dark (sun / moon button in the header) and two colour palettes in Settings
 - **Internationalization:** English and Russian UI with a language switcher in the header and in Settings
-- **Provider setup badges:** No setup, Free key, Needs proxy, plus onboarding when a token is required
-- **Local browser state:** provider, theme, language, tokens, proxy URL, last ticker, desk columns, custom levels and the query cache are stored only in the browser (`localStorage` and IndexedDB)
+- **Local browser state:** data source settings, theme, language, proxy URL, last ticker and expirations, active tab, desk columns, metric and level choices and colours, custom levels and the query cache are stored only in the browser (`localStorage` and IndexedDB)
 
 ## Quick start
 
@@ -46,10 +46,10 @@ This project uses **Bun** for installs and scripts and **Parcel** for the React 
 git clone https://github.com/daggerok/gex.git
 cd gex
 bun install -E
-bun run serve
+bun run start        # the app (Parcel, http://localhost:1234) and the local proxy (http://localhost:8787) together, under pm2
 ```
 
-Open the localhost URL printed by Parcel. Add `?debug=true` to the URL for verbose console logging.
+Open http://localhost:1234. `bun run serve` starts only the app (then it shows the cache), `bun run all:proxy` only the proxy. `bun run ps`, `bun run logs`, `bun run restart` and `bun run stop` manage the pm2 process. Add `?debug=true` to the URL for verbose console logging.
 
 Production build:
 
@@ -65,20 +65,18 @@ bun run build-github-pages
 
 ## How to use
 
-1. Pick a provider in the top-bar **API** dropdown
-2. Type a ticker or company name, pick a suggestion if useful
-3. Press **Expirations** to fetch expirations and spot metadata
-4. Select one or more expirations, or **All**
-5. Press **Load** to render the chain
+1. Type a ticker or company name, pick a suggestion if useful, press Enter (or the search button): the expirations and the spot load, the nearest expiration is selected
+2. Select more expirations in the Expirations panel next to the tabs (or **All**, **Reset** goes back to the nearest one): each loads by itself
+3. Switch between the Desk, Board, GEX and Chart tabs, they all use the same selection
 
-Dropdown order is always **CACHE, CBOE, NASDAQ, YAHOO**. Default selection only: `localhost` or a private LAN gives **CBOE**; GitHub Pages or any hosted static site gives **CACHE**
+The source label next to the ticker shows where the data came from (`LIVE CBOE`, `CACHE 2026-10-23`, amber when the cached day is old). The data source is chosen automatically, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)
 
 ## Tabs: Desk, Board, GEX, Chart
 
 - **Desk:** the options chain described above
-- **Board:** one row per strike of the selected expirations: Net GEX, Abs GEX, notional delta (the dealer delta exposure in $, this app's own definition), total, call and put OI and volume, and each strike's share of the Abs GEX. A green dot marks each column's peak (Net GEX: its largest positive and most negative strike) and tints the row by its Net GEX sign, the ATM row is grey and opens in the middle of the table. Above it the expirations with their share of the open interest; a click selects or drops one like the Expirations panel
-- **GEX:** gamma exposure by strike (the switch in the Net GEX chip shows "Abs GEX" instead: call GEX up and put GEX down at every strike; the AG line has a dot at every strike) with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis (remembered for each ticker, the last 200 tickers, also after a reload)
-- **Chart:** daily candles (1 year loaded, the 1M / 3M / 6M / 1Y buttons next to the symbol in the top left corner of the chart only change the visible part; above the chart the same Metrics and Levels panels as on the GEX tab, in the same place) with the same GEX levels as price lines. From the CACHE provider it reads `api/charts/<SYM>.json`, so it works without a proxy
+- **Board:** one row per strike of the selected expirations: Net GEX, Abs GEX, notional delta (the dealer delta exposure in $, this app's own definition), total, call and put OI and volume, P/C ratios and each strike's share of the Abs GEX. A dot marks each column's peak (Net GEX: its largest positive and most negative strike) in the positive or negative colour by the value's sign and tints the row by its Net GEX sign, the runner-up of a column gets the same dot and a tinted cell; the ATM row has the Spot colour and opens in the middle of the table. The same Metrics and Levels panels as on the GEX tab choose the columns and mark the levels on their strikes. The Expirations panel shows each expiration's share of the open interest
+- **GEX:** gamma exposure by strike (the switch in the Net GEX chip shows "Abs GEX" instead: call GEX up and put GEX down at every strike; the AG line has a hollow ring in its colour at every strike) with toggleable and colorable Key Levels, a Levels table and a Values table (what each level means on its own strike), zoom and pan on the strike axis (remembered for each ticker, the last 200 tickers, also after a reload)
+- **Chart:** daily candles (1 year loaded, the 1M / 3M / 6M / 1Y buttons next to the symbol in the top left corner of the chart only change the visible part; above the chart the same Metrics and Levels panels as on the GEX tab, in the same place) with the same GEX levels as price lines. It follows the data source: candles through the local proxy when it is found, otherwise the cached `api/charts/<SYM>.json` (no request to the proxy)
 
 ### Custom levels
 
@@ -95,18 +93,80 @@ You can add your own named levels on the **Chart** tab and on the **GEX** tab. T
 - The "?" buttons of both tabs explain this too (in the corners of the GEX chart, next to the ticker on the Chart tab)
 - Custom levels are plain prices on a strike, they take no part in the GEX math
 
-## Data providers
+## Data sources
 
-Only four sources. Short uppercase labels in the API dropdown.
+Four providers, no provider menu: the app picks the source by itself (`src/proxy-discovery.ts`).
 
-| UI label | Setup | Coverage | Greeks | Notes |
+| Provider | Needs | Coverage | Greeks | Notes |
 |---|---|---|---|---|
-| **CACHE** *(default on GitHub Pages)* | No setup | Cached tickers in `api/options/*.json` | CBOE and model-enriched as files refresh | Same-origin static JSON from GitHub Actions (Yahoo + CBOE delayed 1st-order greeks). Model and higher-order greeks are computed in the browser. No CORS, no keys |
-| **CBOE** *(default on localhost)* | Needs proxy | CBOE delayed options | Yes (provider + client Black-Scholes higher-order) | Richest delayed feed (greeks, IV, OI, spot). Requires Proxy base URL (`/api/cboe`) |
-| **NASDAQ** | Needs proxy | NASDAQ option chain | No IV, so no model greeks | Full chain in one call: bid, ask, last, volume, OI. Proxy `/api/nasdaq` |
-| **YAHOO** | Needs proxy | Yahoo symbol search and option chains | Client Black-Scholes from IV | Lazy per expiration. Companion proxy handles crumb and cookies (`/api/options`) |
+| **CACHE** | Nothing | Cached tickers in `api/options/*.json` | Cboe delayed 1st-order, model-enriched in the browser | Same-origin static JSON refreshed by GitHub Actions. Used when no local proxy is found, and as the last fallback |
+| **CBOE** | Local proxy | CBOE delayed options, equities and indices | Yes (provider + client Black-Scholes higher-order) | First choice with the proxy: greeks, IV, OI, spot (`/api/cboe`) |
+| **YAHOO** | Local proxy | Yahoo option chains | Client Black-Scholes from IV | Second choice. Lazy per expiration, the proxy handles crumb and cookies (`/api/options`) |
+| **NASDAQ** | Local proxy | NASDAQ option chain | No IV, so no model greeks | Third choice. Full chain in one call: bid, ask, last, volume, OI (`/api/nasdaq`) |
 
-Removed from the live registry: marketdata.app, DoltHub, Tradier, Alpaca, Polygon/Massive, Alpha Vantage and other gated experiments
+With the proxy found each ticker tries CBOE, then YAHOO, then NASDAQ, then CACHE, and the first that knows the ticker serves it. Settings -> Data source -> **Advanced** can fix the source: **Always cache** (never even looks for the proxy) or one provider only (`CBOE only`, `YAHOO only`, `NASDAQ only`). Removed long ago: marketdata.app, DoltHub, Tradier, Alpaca, Polygon/Massive, Alpha Vantage and other gated experiments
+
+## Local proxy and auto-discovery
+
+The browser cannot call Cboe, Yahoo or NASDAQ directly (no CORS), so live data goes through a small Bun proxy on your own computer, `scripts/options-local-proxy.ts`. Without it the app shows the cache published with the site.
+
+### Start the proxy
+
+```bash
+bun install -E
+bun run all:proxy        # http://localhost:8787, listens on 127.0.0.1 only
+bun run start            # or: the app and the proxy together (pm2)
+```
+
+`PORT=9000 bun scripts/options-local-proxy.ts` changes the port, `HOST=0.0.0.0` makes it reachable from the LAN (on purpose only: it relays your own Yahoo session and IP). `curl http://localhost:8787/health` answers `{"ok":true,...}` when it runs.
+
+### What auto-discovery does
+
+- The app asks `{proxy URL}/health` (default `http://localhost:8787`, 500 ms timeout). Found -> live data: each ticker tries **CBOE -> YAHOO -> NASDAQ -> cache**, the first that knows it serves it. Not found -> the cache, never an error
+- **Proxy auto-discovery** (Settings -> Data source, default **off**): off, the proxy is looked for **once when the page loads**, so after you start or stop it, refresh the page. On, it is looked for every 30 s and whenever you come back to the tab, and the data switches between live and cache by itself (the open ticker is loaded again from the new source)
+- The **source label** next to the ticker shows the result: `LIVE CBOE`, `LIVE YAHOO`, `LIVE NASDAQ`, or `CACHE <date of the data>` (amber when that day is not today's). Before a ticker is loaded it shows `LIVE` or `CACHE`, while the first check runs `…`
+- **Settings -> Data source -> Advanced:** the manual override (**Auto**, **Always cache**, or one provider only) and the **proxy URL**. Always cache never contacts the proxy, also when it runs (useful with a cache you built yourself, below)
+- The **Chart tab** follows the same result: candles through the proxy (`/api/chart`) when the source is live, otherwise the cached `api/charts/<SYM>.json`
+
+### On GitHub Pages
+
+The published site (https://daggerok.github.io/gex/) never contacts your computer by itself: Chrome 142+ asks every visitor for permission to access the local network as soon as a site calls `localhost`. To use your proxy from the published site:
+
+1. Start the proxy (`bun run all:proxy`)
+2. Open Settings -> Data source -> **Use my local proxy** (once, it is remembered in this browser; **Stop using my local proxy** turns it off)
+3. Allow the browser's prompt to access devices on your local network (Chrome)
+
+From then on the published site behaves like the local app. The proxy answers browsers only for pages served from `localhost` or `127.0.0.1` (any port) and from `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`, any other page gets 403), and answers Chrome's private network preflight (`Access-Control-Allow-Private-Network: true`) only for those. Safari blocks `http://localhost` from an https page (mixed content), so there the published site stays on the cache; use the local app (`bun run start`)
+
+### Build the cache yourself
+
+The cache is the `api/` folder the fetcher writes (`scripts/options-data.ts`, see [Updating the data](#updating-the-data)). Locally:
+
+```bash
+./scripts/options-data.ts                          # the default tickers (indices, their ETFs, mega caps)
+TICKERS="PLTR HOOD" ./scripts/options-data.ts      # the default tickers plus these
+./scripts/options-data.ts all                      # everything (long)
+bun run serve                                      # the app reads your fresh api/ (choose Always cache to ignore a running proxy)
+```
+
+The files change tracked data in `api/`; do not commit them by hand (`git checkout -- api` before a commit), the workflows publish the cache
+
+### Futures options from your TradingView account (local)
+
+**Available on the branch `feat/tradingview-futures` ([PR #202](https://github.com/daggerok/gex/pull/202), not merged yet), after #202 is merged also on `main`.** GEX for the CME index futures options `/ES`, `/NQ`, `/YM`, `/RTY` (and the micros) from your own TradingView account with CME data:
+
+```bash
+git checkout feat/tradingview-futures && git pull
+bun run tv:session     # once: imports the TradingView session cookie from Chrome into ~/.config/gex/tradingview.env (mode 600)
+bun run tv:check       # must print "ok"
+bun run tv:futures     # ES NQ YM RTY, keeps running and rewrites api/futures/<ROOT>.json every minute (Ctrl+C stops)
+bun run start          # the app, then enter /ES (or ES1!)
+```
+
+- `bun run tv:futures --once` writes the files once and exits (`--once ES` only that root, `--micros` adds MES, MNQ, MYM, M2K). The files land in `api/futures/<ROOT>.json`, the app reads them for `/ES` and `ES1!`
+- The session file lives outside the repository, in your home folder, with mode 600. Never commit it, never paste its value anywhere (chat, issue, screenshot). Logging out of TradingView in the browser ends that session: log in again and rerun `bun run tv:session`
+- Planned: live updates without a reload (with auto-discovery on, re-read the futures file on every check; later the proxy pushes the updates to the page)
+- The details (publishing the files, troubleshooting) are in the README of that branch
 
 ## Ticker suggestions
 
@@ -114,7 +174,7 @@ Removed from the live registry: marketdata.app, DoltHub, Tradier, Alpaca, Polygo
   - `files`: tickers with cached option chains
   - `names`: ticker to company, fund or index display name
   - `no_options`: valid tickers where the latest data scan found no listed options, shown as **`(no options)`**
-- YAHOO, NASDAQ and CBOE suggestions use the companion proxy endpoint `/api/search?provider=...&q=...` for provider-native full-text symbol search
+- With the local proxy found, suggestions also come from the provider-native full-text symbol search of the proxy (`/api/search?provider=...&q=...`)
 - Provider search is a discovery helper: some matches can still return no option chain when loaded, the app then shows the provider's no-data error
 
 ## Static-cache greeks
@@ -164,67 +224,35 @@ CONCURRENCY=3 DEFAULT_TICKERS=AAPL,MSFT,NVDA ./scripts/options-data.ts
 4. The **Update partial options data** workflow runs `scripts/options-data.ts` with no arguments (only the default set; a default ticker keeps its expirations by rule: every listed date up to 42 days, the Friday weeklies up to 92 days, the monthlies and quarter-ends up to one year, no LEAPS; other tickers keep `MAX_EXPIRATIONS`; `EXPIRATION_RULE=0` turns the rule off for a quick local run) every hour on weekdays at 8:45, 9:45, ..., 16:45 New York time, plus 17:15, 18:15 and 19:15 after the close (12 runs a day, 4 tickers at a time, about 20 s of fetching). **It does not commit the hourly data**: each run builds the site from the fresh files and deploys it to GitHub Pages itself (its `deploy` job), so the repository does not grow by about 2 MB a run. Only a final run commits: any scheduled run that starts from 16:30 to 23:59 New York time writes the day's archive zip and `api/latest.json` (and a backtest backup, from the run that made it); several final runs are fine, a ticker whose data did not change keeps its zip entry, so a later one commits only what changed after the close. Any other deploy (`github-pages.yml`, a code push or the weekly full refresh) refreshes the default tickers before building, so the site never shows the older committed files. The schedule runs in New York time (`timezone: America/New_York`); a step skips a scheduled run that starts before 8:40 or after midnight. GitHub drops some scheduled runs and starts others late, the three after-close slots make sure the day gets its archive. Market holidays are not skipped. It can also be started by hand from the Actions tab
 5. The **GitHub Pages** workflow builds the app with `bun run build-github-pages` and deploys `dist/`
 
-## Proxy setup for GitHub Pages
-
-When using GitHub Pages (or any static host), proxy-backed providers (Yahoo, NASDAQ, CBOE) require a **locally running proxy** because the browser cannot call these APIs directly (CORS).
-
-### How it works
-
-1. Your browser loads the app from GitHub Pages (for example `https://daggerok.github.io/gex/`)
-2. When you select a proxy-backed provider, the app sends requests to the **Proxy base URL** (default `http://localhost:8787`)
-3. The proxy on your machine forwards the requests to Yahoo, NASDAQ or CBOE and returns the response
-4. This works because the browser can reach `localhost` even when the page is served from GitHub Pages
-
-### Running the local proxy
-
-```bash
-git clone https://github.com/daggerok/gex.git
-cd gex
-bun install -E
-bun ./scripts/options-local-proxy.ts
-```
-
-The proxy starts on `http://localhost:8787` by default and listens on the loopback interface only (`127.0.0.1`): it relays your own Yahoo session and IP, so other devices on the network cannot use it. `HOST=0.0.0.0` makes it reachable from the LAN, on purpose only; `PORT` changes the port.
-
-### Configuring the app
-
-1. Open the app, click the **gear icon** (Settings) in the top-right corner
-2. Set the **Proxy base URL** field to `http://localhost:8787` (or your custom port)
-3. Now the Yahoo, NASDAQ and CBOE providers work
-
-### Proxy troubleshooting
-
-- **"Could not reach the proxy":** make sure the proxy is running (`bun ./scripts/options-local-proxy.ts`)
-- **CORS errors or 403 "origin not allowed":** the proxy must run on `localhost`, and it answers only pages served from `localhost` or `127.0.0.1` (any port) and `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`)
-- **Port conflicts:** change the port in `scripts/options-local-proxy.ts` or use the `PORT` environment variable
-
 ## Companion infrastructure
 
 Optional files outside the core app source:
 
-- `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options }` and writes `api/charts/<SYM>.json`
+- `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options, defaults }` and writes `api/charts/<SYM>.json`
 - `.github/workflows/update-data.yml`: weekly refresh (Saturday 10:00 UTC) of all tickers of `api/All.txt` and `api/Indices.txt`, also manual
 - `.github/workflows/update-partial-data.yml`: hourly refresh of the default set on weekdays during market hours
-- `scripts/options-local-proxy.ts`: local **Bun** proxy serving:
+- `scripts/options-local-proxy.ts`: local **Bun** proxy (`bun run all:proxy`, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)) serving:
+  - `/health`: what the app's auto-discovery asks
   - `/api/options`: Yahoo optionChain with crumb and cookie handling
+  - `/api/chart`: Yahoo daily candles for the Chart tab
   - `/api/nasdaq`: NASDAQ option-chain relay
   - `/api/cboe`: CBOE delayed-options relay
   - `/api/search?provider=yahoo|nasdaq|cboe&q=...`: provider-native suggestions
 
 ## Development
 
-Stack: React 19, TypeScript, Tailwind CSS v4, Lucide React, Recharts, lightweight-charts (Chart tab), Parcel 2, Bun, GitHub Pages.
+Stack: React 19, TypeScript, Tailwind CSS v4, Recharts, lightweight-charts (Chart tab), Parcel 2, Bun, GitHub Pages.
 
 ```bash
 bun i -E            # install dependencies
 bun run start       # app together with the local proxy (pm2 under the hood)
-bun run stop ; bun run kill ; bun run ps ; bun run start ; sleep 3 ; bun run logs   # rebuild cycle
+bun run stop ; bun run start ; sleep 3 ; bun run ps ; bun run logs   # restart cycle (logs keeps following, Ctrl+C)
 ```
 
 ### Tests
 
 - **Unit tests:** `bun test` runs every `src/*.test.ts`
-- **Browser (e2e) tests:** `bun run test:e2e` runs `src/*.e2e.ts` in headless Chromium through Playwright (needs `bunx playwright install chromium` once). `src/e2e-site.ts` builds the app into a temp folder and serves it with the SPY data
+- **Browser (e2e) tests:** `bun run test:e2e` runs `src/*.e2e.ts` in headless Chromium through Playwright (needs `bunx playwright install chromium` once; `bun run test:e2e proxy-auto` runs only the checks whose name contains that text). `src/e2e-site.ts` builds the app into a temp folder and serves it with the SPY and QQQ data; `noProxy(page)` makes the default proxy port fail (the app then uses the cache), `startFakeProxy()` stands in for the local proxy
 - `src/layout.e2e.ts` guards the page layout at three window sizes: no page scroll on any tab (only the Desk and Board tables, the GEX sidebar and the Cursor list scroll inside), the footer pressed to the bottom, no empty space above it, one footer design on all tabs. Its error message lists what is wrong, what was expected and measured, and which files to look at
 - Naming: unit tests are `*.test.ts`, e2e are `*.e2e.ts`, never the other way, so `bun test` does not run browsers
 - CI (`.github/workflows/ci.yaml`, pull requests only) runs the unit tests, the e2e tests, `bun build` of the fetcher and both builds. `main` is built and deployed by `github-pages.yml`
@@ -249,6 +277,7 @@ src/
   types.ts                    # domain and settings types
   i18n.tsx                    # en and ru dictionaries, I18nProvider, useI18n()
   utils.ts                    # debug logger, formatting and parsing helpers, friendlyError
+  proxy-discovery.ts          # auto data source: proxy /health probe, CBOE -> YAHOO -> NASDAQ -> CACHE, source label
   greeks.ts                   # client-side Black-Scholes model greeks (single source of truth)
   gex.ts                      # GEX profile and key levels (pure functions)
   vix-pricing.ts              # Black-76 pricing for futures-priced symbols (VIX, VXN)
@@ -259,8 +288,8 @@ src/
   theme.ts                    # theme controller hook and palette accent classes
   settings-store.ts           # persisted settings and the IndexedDB query cache
   providers/                  # CACHE, CBOE, NASDAQ, YAHOO providers, registry, loaders, chart data
-  components/                 # TopBar, TabSwitcher, SettingsPanel, ChainTable, switches, onboarding, icons
-  views/                      # DeskView, GexView, ChartView
+  components/                 # TopBar, TabSwitcher, SettingsPanel, ChainTable, ToolbarRow, Metrics and Levels panels, Tip, switches, icons
+  views/                      # DeskView, BoardView, GexView, ChartView
   *.test.ts                   # unit tests
   history-zip.ts              # zip format of the daily archives (read in the app, built by the fetcher)
   *.e2e.ts, e2e-site.ts       # browser tests and their site helper
@@ -274,7 +303,8 @@ scripts/
   history-archive.ts          # writes the day zip api/history/<month>/<day>.zip (last run of the day), prunes old days, keeps index.json in step with the disk
   backtest-backup.ts          # makes an on-demand backup zip (all data or chosen tickers)
   # src/backtest/: snapshot format, zip reading and writing in the browser, controller (the logic of the As of feature), store (IndexedDB)
-  options-local-proxy.ts      # local Bun proxy: Yahoo, NASDAQ, CBOE, search
+  options-local-proxy.ts      # local Bun proxy: health, Yahoo, chart, NASDAQ, CBOE, search
+  proxy-cors.ts               # the proxy's CORS allowlist and private network preflight answer
 .github/workflows/
   ci.yaml                     # pull request checks
   update-data.yml             # data refresh of all tickers (weekly, also manual)
@@ -290,14 +320,15 @@ package.json                  # Bun and Parcel scripts
 - Browser settings and tokens are stored in the browser only
 - No application backend exists unless you run or deploy the optional proxy
 - On shared computers, clear keys and settings from the app settings or the browser storage
-- For public deployments without a local proxy use **CACHE**; for live data run the proxy (or Worker) and pick CBOE, YAHOO or NASDAQ
+- The published site never contacts your computer unless you click **Use my local proxy**; the proxy listens on `127.0.0.1` only and answers browsers only for the local app and the published site
 
 ## Troubleshooting
 
-- **Nothing loads on open:** expected. Press **Expirations**, then **Load**
-- **Needs proxy or CORS errors:** start `bun ./scripts/options-local-proxy.ts` locally and set its URL in Settings, Proxy base URL
-- **`Unexpected token '<'`:** a proxy or server returned HTML instead of JSON. Check the proxy URL and the provider
-- **CACHE says not cached:** the ticker is absent from `api/options/*.json`. Use another provider, or run the fetcher for it (`TICKERS=XYZ ./scripts/options-data.ts`)
+- **Nothing loads on open:** expected on the first visit. Type a ticker and press Enter
+- **The label says CACHE although the proxy runs:** with Proxy auto-discovery off the proxy is looked for only when the page loads, refresh the page (or turn auto-discovery on). Check `curl http://localhost:8787/health`, the proxy URL in Settings -> Advanced, and that the override there is **Auto**. On the published site click **Use my local proxy** first
+- **403 "origin not allowed" from the proxy:** the page is not served from `localhost` / `127.0.0.1` or `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`)
+- **`Unexpected token '<'`:** a proxy or server returned HTML instead of JSON. Check the proxy URL in Settings -> Advanced
+- **CACHE says not cached:** the ticker is absent from `api/options/*.json`. Start the local proxy, or run the fetcher for it (`TICKERS=XYZ ./scripts/options-data.ts`)
 - **`(no options)` suggestion:** the ticker is valid in the local manifest, but the latest data scan found no listed options
-- **Proxy connection refused:** make sure the proxy is running and the Proxy base URL is set correctly in Settings
-- **Chart tab empty for a ticker:** it has no `api/charts/<SYM>.json` yet (the fetcher writes it after the options pass) and no proxy is set
+- **Port 8787 in use:** `PORT=9000 bun scripts/options-local-proxy.ts` and set `http://localhost:9000` in Settings -> Advanced
+- **Chart tab empty for a ticker:** no proxy found and no `api/charts/<SYM>.json` yet (the fetcher writes it after the options pass)

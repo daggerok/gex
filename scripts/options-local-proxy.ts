@@ -3,7 +3,7 @@
  * =============================================================================
  * GEX — LOCAL DEV data proxy (Bun): Yahoo + NASDAQ + CBOE + search
  * -----------------------------------------------------------------------------
- * INFRASTRUCTURE (not part of the 3-file app source).
+ * INFRASTRUCTURE (not part of the app source).
  *
  * WHY:
  *   - Yahoo's options endpoint requires a rotating "crumb" token tied to cookies
@@ -11,19 +11,26 @@
  *   - NASDAQ/CBOE endpoints used here send no browser-usable CORS headers.
  *   - Provider-native suggestion endpoints are also relayed so the app can
  *     search symbols without exposing users to upstream CORS differences.
- *   This tiny Bun server relays those requests for LOCAL development, with CORS
- *   only for the local app and the published site (scripts/proxy-cors.ts).
+ *   This tiny Bun server relays those requests for the local app and for the
+ *   published site (after its "Use my local proxy" opt-in), with CORS only for
+ *   those origins (scripts/proxy-cors.ts), which also get the private network
+ *   preflight answer (Access-Control-Allow-Private-Network).
  *
- * RUN:  bun run scripts/options-local-proxy.ts        (defaults to 127.0.0.1:8787)
- *       PORT=9000 bun run scripts/options-local-proxy.ts
- *       HOST=0.0.0.0 bun run scripts/options-local-proxy.ts   (reachable from the LAN, on purpose only)
+ * RUN:  bun run all:proxy                              (defaults to 127.0.0.1:8787)
+ *       PORT=9000 bun scripts/options-local-proxy.ts
+ *       HOST=0.0.0.0 bun scripts/options-local-proxy.ts   (reachable from the LAN, on purpose only)
+ *       bun run start                                  (the app and this proxy together, pm2)
  *
  * LISTENS ON LOOPBACK ONLY by default (review GEX-M4, 2026-10-25): it relays the user's own Yahoo session and IP, so a
  * LAN host must not be able to use it. Any further local endpoint (e.g. a future TradingView provider) goes through this
  * same server and inherits the loopback default; HOST opts out for everything at once.
  *
- * USE FROM THE APP (GEX → Settings → Proxy base URL = http://localhost:8787):
- *   - Provider "Yahoo (via proxy)" calls:
+ * USE FROM THE APP: no setup. The app probes GET {base}/health (base
+ * http://localhost:8787 unless changed in Settings -> Advanced) and, when it
+ * answers, loads each ticker from CBOE, else YAHOO, else NASDAQ, else its cache
+ * (src/proxy-discovery.ts):
+ *   - GET {base}/health  ({ ok: true, ... })
+ *   - Provider "YAHOO" calls:
  *       GET {base}/api/options?symbol=AAPL[&date=YYYY-MM-DD]   (Yahoo optionChain)
  *   - Provider "CBOE" calls:
  *       GET {base}/api/cboe?symbol=AAPL     (equities)   returns CBOE JSON as-is
