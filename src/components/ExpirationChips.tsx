@@ -9,20 +9,20 @@ import { oiSharePct } from '../utils';
 /**
  * Multi-select expiration chips + "All"/"None" toggle. Rendered ONCE in a
  * shared panel (main.tsx, via TabSwitcher's `endSlot`, in the same row as the
- * Desk/GEX/Chart tab pills) alongside the Load button, visible on Desk and
- * GEX alike - no longer duplicated per-view (see main.tsx changelog). Renders
+ * tab pills) next to the Reset button, visible on every tab - no longer
+ * duplicated per-view (see main.tsx changelog). Renders
  * a fragment (label, chip strip, toggle) so the caller supplies the wrapper.
  *
  * Overflow fix: the chip strip caps itself at `max-w-[70vw]` and scrolls
  * internally (`overflow-x-auto`) - that part was never the bug. The bug was
  * the CALLER's row not wrapping: a plain `flex` row has no upper bound of its
  * own, so at narrow (mobile) widths the fixed-width "All"/"None" toggle AND
- * the Load button (a sibling in the caller's row) got pushed past the right
+ * the Load button of that time (a sibling in the caller's row) got pushed past the right
  * edge of the viewport - genuinely clipped, not just scrolled - because nothing
  * in that row could wrap. Confirmed live via Playwright at 320-414px widths
  * before this fix (Load button's bounding rect exceeded window.innerWidth and
  * document.documentElement.scrollWidth grew past the viewport). Callers now
- * add `flex-wrap` to their own row so the toggle/Load button drop to a second
+ * add `flex-wrap` to their own row so the toggle and the Reset button drop to a second
  * line instead of sliding off-screen when space is tight.
  */
 export const ExpirationChips: React.FC<{
@@ -48,7 +48,7 @@ export const ExpirationChips: React.FC<{
                 "None" toggle in a wide chain never has to fight for space on
                 the same line - the caller's row additionally wraps (flex-wrap)
                 as a second line of defense at widths where even 70vw plus the
-                toggle/Load button don't fit. */}
+                toggle and the Reset button don't fit. */}
             <div className="themed-scroll flex min-w-0 max-w-[70vw] items-center gap-1 overflow-x-auto lg:max-w-none">
                 {expirations.map((exp) => {
                     const on = selected.includes(exp);

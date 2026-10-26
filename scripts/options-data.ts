@@ -96,6 +96,8 @@
  *      Stops at MAX_FETCHES writes or after RATE_LIMIT_HITS consecutive errors.
  *   4. Rewrites api/options/index.json only when the ticker set, names or
  *      skiplist changed.
+ *   5. Writes api/charts/{SYMBOL}.json (1Y of daily bars) for the cached tickers
+ *      (CHART_CACHE, CHART_MAX_FETCHES), and with HISTORY=1 the day zip.
  *
  * YAHOO ENDPOINT MAPPING (what yfinance did, now done directly)
  *   Ticker(sym).options        GET query2/v7/finance/options/{sym}?crumb=...

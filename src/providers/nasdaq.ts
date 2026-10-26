@@ -32,7 +32,7 @@ export const nasdaqProvider: DataProvider = {
     label: 'NASDAQ',
     description:
         'NASDAQ option chain via proxy (/api/nasdaq) — full chain one call (bid/ask/last/volume/OI). ' +
-        'No IV/greeks in feed (higher-order stay empty). Needs Proxy base URL.',
+        'No IV/greeks in feed (higher-order stay empty). Needs the local proxy.',
     mode: 'bulk',
     setup: 'proxy',
     supportsToken: false,

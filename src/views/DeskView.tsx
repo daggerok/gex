@@ -82,9 +82,9 @@ export const DeskView: React.FC<DeskViewProps> = ({
             (centered, py-16) content, unchanged from before. */
         <main className="mx-auto w-full px-4 pt-4 lg:px-6 h-full flex flex-col min-h-0">
             {/* ---- Controls: STEP 1 result (Cancel/spot) — the expiration
-                picker + Load button (STEP 2) now live in the shared panel in
-                main.tsx, in the same row as the Desk/GEX/Chart tab pills,
-                visible from Desk and GEX alike. ---- */}
+                picker (STEP 2, selected dates load by themselves) lives in the
+                shared panel in main.tsx, in the same row as the tab pills,
+                visible from every tab. ---- */}
             {/* Only while a request is in flight (Cancel and the loading text): the symbol and its spot are in the table's toolbar row. */}
             {anyLoading && <div className="mb-4 flex flex-wrap items-center gap-2">
 

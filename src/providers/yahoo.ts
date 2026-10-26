@@ -6,7 +6,7 @@ import { proxyTickerSuggestions } from './proxy-search';
 
 /**
  * Yahoo (via proxy) provider (LAZY, needs a proxy base URL).
- * The proxy (scripts/options-local-proxy.ts) handles Yahoo's crumb/cookie flow and re-exposes CORS:*.
+ * The proxy (scripts/options-local-proxy.ts) handles Yahoo's crumb/cookie flow; CORS only for its allowlist (proxy-cors.ts).
  * Endpoint: GET {base}/api/options?symbol=X[&date=YYYY-MM-DD]
  *   -> Yahoo optionChain JSON: result[0].expirationDates (unix), quote price,
  *      and options[0].calls/puts for the requested expiration.
