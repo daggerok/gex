@@ -102,8 +102,10 @@
  *   3b. ROTATE_STALE=N (fixed list only): the N oldest other cached files follow the list in the queue (see t19).
  *   4. Rewrites api/options/index.json only when the ticker set, names or
  *      skiplist changed.
- *   5. Writes api/charts/{SYMBOL}.json (1Y of daily bars) for the cached tickers
- *      (CHART_CACHE, CHART_MAX_FETCHES), and with HISTORY=1 the day zip.
+ *   5. Writes api/charts/{SYMBOL}.json (1Y of daily bars): the priority symbols and FUTURES_CHART_SYMBOLS first, then with a
+ *      fixed list only that list (not the ROTATE_STALE picks), with `all` every cached ticker; missing files first, then the
+ *      oldest (CHART_CACHE, CHART_MAX_FETCHES). With HISTORY=1 the day zip. Files count as fresh only inside the weekend
+ *      window (isFreshAt: written after Friday 20:00, until Sunday 18:00 market time), every other time all are refetched.
  *
  * YAHOO ENDPOINT MAPPING (what yfinance did, now done directly)
  *   Ticker(sym).options        GET query2/v7/finance/options/{sym}?crumb=...
