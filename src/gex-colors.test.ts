@@ -67,8 +67,8 @@ describe('Board peak and runner-up dots: one blue per theme (owner 2026-10-25)',
   // a tint as index.css and BoardView mix it: `pct` of the colour into the opaque table base
   const mix = (c: string, base: string, pct: number) => rgb(c).map((v, i) => Math.round(v * pct + rgb(base)[i]! * (1 - pct)));
 
-  test('sky-600 on the light table, sky-300 on the dark one, neither a sign colour', () => {
-    expect(BOARD_PEAK_DOT).toEqual({ light: '#0284c7', dark: '#7dd3fc' });
+  test('sky-700 on the light table, sky-300 on the dark one, neither a sign colour', () => {
+    expect(BOARD_PEAK_DOT).toEqual({ light: '#0369a1', dark: '#7dd3fc' });
     for (const c of Object.values(BOARD_PEAK_DOT)) expect([DEFAULT_METRIC_COLORS.netGexPos, DEFAULT_METRIC_COLORS.netGexNeg]).not.toContain(c);
   });
 
