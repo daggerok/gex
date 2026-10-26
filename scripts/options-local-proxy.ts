@@ -44,6 +44,7 @@
  *       GET {base}/api/futures/status       engine state (live, expired, rate-limited...) and the ready roots
  *       GET {base}/api/futures/live?root=ES server-sent events: status, snapshot, then batched deltas
  *       GET {base}/api/futures/ES.json      the file
+ *       GET {base}/api/futures/cme-oi       CME's preliminary open interest per option product and side (free FTP file)
  *     and the TradingView hybrid for stock and index options (scripts/tv/hybrid.ts, on demand, never written to a file):
  *       GET {base}/api/tv/live?symbol=SPY   the same events for a stock or index chain (OPRA 15 min delayed, Cboe OI)
  *       GET {base}/api/tv/status            the running hybrid feeds
@@ -63,6 +64,7 @@ import { proxyPort } from "./check-ports";
 import { asksPrivateNetwork, corsFor } from "./proxy-cors";
 import { engineDecision, futuresFileResponse, TvLiveEngine } from "./tv/live";
 import { HybridEngine } from "./tv/hybrid";
+import { CmeOiService } from "./tv/cme-oi";
 
 /** PORT, else 8787; `bun run proxy` / `all` / `start` check it is free before starting (scripts/check-ports.ts). */
 const PORT = proxyPort(process.env);
@@ -392,6 +394,8 @@ const tvDecision = engineDecision(process.env);
 // started only once the server listens (below): a taken port must not leave a websocket behind
 const tvEngine = tvDecision.start ? new TvLiveEngine() : null;
 const hybrid = tvDecision.start ? new HybridEngine() : null;
+// CME's free daily open interest per option product (scripts/tv/cme-oi.ts), the cross-check of the futures chains
+const cmeOi = tvDecision.start ? new CmeOiService() : null;
 const shutdown = () => {
     tvEngine?.stop();
     hybrid?.stop();
@@ -439,7 +443,9 @@ async function route(req: Request): Promise<Response> {
         catch (e) { return json({ error: String(e) }, 502); }
     }
     if (url.pathname === "/api/futures/status") return json(tvEngine ? tvEngine.statusJson() : { engine: false, state: "off", message: "TradingView live mode off (GEX_TV=0)" });
+    if (url.pathname === "/api/futures/cme-oi") return json(cmeOi?.get() ?? { day: null, file: null, products: {} });
     if (url.pathname === "/api/futures/live") {
+        cmeOi?.get(); // a futures ticker is open: fetch the newest CME file if it is missing
         if (!tvEngine) return json({ error: "TradingView live mode off (GEX_TV=0)" }, 404);
         return tvEngine.response(url.searchParams.get("root") || "");
     }
@@ -454,7 +460,7 @@ async function route(req: Request): Promise<Response> {
         catch (e) { return json({ error: String(e) }, 502); }
     }
     if (url.pathname === "/" || url.pathname === "/health") {
-        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/api/futures/status", "/api/futures/live?root=ES", "/api/futures/ES.json", "/api/tv/live?symbol=SPY", "/api/tv/status"], tradingviewLive: tvDecision.start });
+        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/api/futures/status", "/api/futures/live?root=ES", "/api/futures/ES.json", "/api/tv/live?symbol=SPY", "/api/tv/status", "/api/futures/cme-oi"], tradingviewLive: tvDecision.start });
     }
     return json({ error: "not found" }, 404);
 }
@@ -469,3 +475,4 @@ console.log(`   LIVE TV| http://localhost:${PORT}/api/futures/live?root=ES   (st
 console.log(tvDecision.start ? "   TV     | TradingView live mode starting (ES NQ YM RTY, output below)" : `   ${tvDecision.note}`);
 console.log(`   (relay logs below: "$proxy | $localPath -> $remoteUrl")\n`);
 tvEngine?.start();
+void cmeOi?.refresh();
