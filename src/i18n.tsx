@@ -121,7 +121,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'deskColumns.header.ask': 'Ask',
 
         'settings.vixFuturesPricing': 'VIX futures-priced greeks (experimental)',
-        'settings.vixFuturesPricing.hint': 'Black-76 pricing for VIX/VXN options. Not wired up yet — toggling this has no effect yet.',
+        'settings.vixFuturesPricing.hint': 'Prices VIX and VXN options with Black-76 off the futures forward of each expiration. On: the GEX and Chart tabs show GEX levels for VIX and VXN (no Gamma Flip). Off: the GEX tab says GEX is not available for them.',
 
         'settings.cache': 'Cache',
         'settings.cache.records': 'Data records',
@@ -622,8 +622,8 @@ export const translations: Record<Language, Record<string, string>> = {
         'deskColumns.header.mid': 'Мид',
         'deskColumns.header.ask': 'Аск',
 
-        'settings.vixFuturesPricing': 'Гриски VIX по фьючерсам (экспериментально)',
-        'settings.vixFuturesPricing.hint': 'Модель Black-76 для опционов VIX/VXN. Пока не подключена — переключатель ни на что не влияет.',
+        'settings.vixFuturesPricing': 'Греки VIX по фьючерсам (экспериментально)',
+        'settings.vixFuturesPricing.hint': 'Опционы VIX и VXN считаются по модели Black-76 от фьючерсного форварда каждой экспирации. Вкл.: вкладки GEX и График показывают уровни GEX для VIX и VXN (без Gamma Flip). Выкл.: вкладка GEX сообщает, что GEX для них недоступен.',
 
         'settings.cache': 'Кэш',
         'settings.cache.records': 'Записей данных',
