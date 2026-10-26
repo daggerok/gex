@@ -8,7 +8,7 @@ import { proxyTickerSuggestions } from './proxy-search';
  * CBOE provider (BULK — free, no key, ALL equities + indices, richest data).
  * Cash indices are prefixed with "_" (_SPX, _VIX...). CBOE's CDN sends NO CORS
  * header, so the browser CANNOT call it directly — it must be relayed. Two ways:
- *   1) The local Bun proxy (scripts/options-local-proxy.ts, `bun run all:proxy`)
+ *   1) The local Bun proxy (scripts/options-local-proxy.ts, `bun run proxy`)
  *      serves /api/cboe; we call {base}/api/cboe?symbol=XXX. The app finds it by
  *      itself (src/proxy-discovery.ts), its URL is in Settings -> Advanced.
  *   2) A generic CORS proxy template ({url}) when no proxy base is set (kept as a

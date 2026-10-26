@@ -16,10 +16,10 @@
  *   those origins (scripts/proxy-cors.ts), which also get the private network
  *   preflight answer (Access-Control-Allow-Private-Network).
  *
- * RUN:  bun run all:proxy                              (defaults to 127.0.0.1:8787)
- *       PORT=9000 bun scripts/options-local-proxy.ts
- *       HOST=0.0.0.0 bun scripts/options-local-proxy.ts   (reachable from the LAN, on purpose only)
- *       bun run start                                  (the app and this proxy together, pm2)
+ * RUN:  bun run proxy                                  (defaults to 127.0.0.1:8787, fails fast when the port is taken)
+ *       PORT=9000 bun run proxy
+ *       HOST=0.0.0.0 bun run proxy                     (reachable from the LAN, on purpose only)
+ *       bun run all                                    (the app and this proxy together; bun run start = the same under pm2)
  *
  * LISTENS ON LOOPBACK ONLY by default (review GEX-M4, 2026-10-25): it relays the user's own Yahoo session and IP, so a
  * LAN host must not be able to use it. Any further local endpoint (e.g. a future TradingView provider) goes through this
@@ -50,9 +50,11 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 
+import { proxyPort } from "./check-ports";
 import { asksPrivateNetwork, corsFor } from "./proxy-cors";
 
-const PORT = Number(process.env.PORT ?? 8787);
+/** PORT, else 8787; `bun run proxy` / `all` / `start` check it is free before starting (scripts/check-ports.ts). */
+const PORT = proxyPort(process.env);
 /** Interface the proxy listens on: loopback unless HOST says otherwise (GEX-M4). */
 const DEFAULT_PROXY_HOST = "127.0.0.1";
 const HOST = (process.env.HOST ?? "").trim() || DEFAULT_PROXY_HOST;
