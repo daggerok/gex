@@ -9,9 +9,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // provider menu and a cache / live switch:
 //   - proxy up   -> live data, per ticker CBOE -> YAHOO -> NASDAQ, the cache as the last fallback
 //   - proxy down -> the cache, never an error
-// The probe is GET {proxyBase}/health with a short timeout. "Proxy auto-discovery" (persisted, default OFF) decides how
-// often: OFF probes ONCE on page load (start or stop the proxy -> refresh the page), ON probes every PROXY_POLL_MS and
-// when the tab gets focus or becomes visible, so the source switches without a reload. A manual override (always the
+// The probe is GET {proxyBase}/health with a short timeout. The one control is "Auto" (setting `proxyAutoPoll`, owner
+// 2026-10-26: "we don't need this many buttons"): ON looks for the proxy at once, every PROXY_POLL_MS and when the tab gets
+// focus or becomes visible, so the source switches between live and the cache without a reload; OFF never looks for the
+// proxy and never uses it (the cache only), on the published site and locally alike. On the published site Auto ON is
+// also the user's consent to contact this computer (Chrome 142+ Local Network Access). A manual override (always the
 // cache, or one fixed provider) lives in the advanced settings. The Chart tab follows the same result.
 
 /** How long the /health probe may take before the proxy counts as down. */
@@ -48,10 +50,10 @@ export function sourceChain(override: SourceOverride, proxyUp: boolean | null, p
 }
 
 /**
- * True when the page itself is served from this machine (localhost, 127.x, ::1): only such a page probes the proxy
- * without asking. Any other host (GitHub Pages, a LAN address) makes no request to the proxy unless the user opts in,
- * because Chrome 142+ (Local Network Access) would show every visitor a permission prompt, and the proxy's CORS
- * allowlist (scripts/proxy-cors.ts) refuses LAN origins anyway.
+ * True when the page itself is served from this machine (localhost, 127.x, ::1). Such a page starts with Auto ON when
+ * nothing is saved yet (settings-store.ts); any other host (GitHub Pages, a LAN address) starts with Auto OFF and makes
+ * no request to the proxy until the user turns Auto on, because Chrome 142+ (Local Network Access) would show every
+ * visitor a permission prompt. Also decides whether the Chrome hints apply (only off this machine).
  */
 export function isLoopbackHost(hostname: string): boolean {
     const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -63,24 +65,40 @@ export function normalizeProxyBase(base: string | null | undefined): string {
     return String(base ?? '').trim().replace(/\/+$/, '');
 }
 
+/**
+ * Why a probe failed: `network` = the fetch itself rejected with a TypeError (nothing listens, or Chrome blocked this
+ * site from reaching the computer; the page cannot tell the two apart), `http` = the proxy answered a non-2xx status,
+ * `timeout` = no answer within the timeout, `no-base` = no proxy URL set.
+ */
+export type ProxyFailure = 'network' | 'http' | 'timeout' | 'no-base';
+
+/** One /health probe with the reason of a failure (never throws). */
+export async function probeProxyDetailed(
+    base: string,
+    fetchImpl: typeof fetch = fetch,
+    timeoutMs: number = PROXY_PROBE_TIMEOUT_MS,
+): Promise<{ up: boolean; failure: ProxyFailure | null }> {
+    const b = normalizeProxyBase(base);
+    if (!b) return { up: false, failure: 'no-base' };
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+        const res = await fetchImpl(`${b}/health`, { signal: ac.signal, cache: 'no-store' });
+        return res.ok ? { up: true, failure: null } : { up: false, failure: 'http' };
+    } catch (e) {
+        return { up: false, failure: ac.signal.aborted ? 'timeout' : e instanceof TypeError ? 'network' : 'timeout' };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 /** One /health probe: true when the proxy answers 2xx within the timeout, false otherwise (never throws). */
 export async function probeProxy(
     base: string,
     fetchImpl: typeof fetch = fetch,
     timeoutMs: number = PROXY_PROBE_TIMEOUT_MS,
 ): Promise<boolean> {
-    const b = normalizeProxyBase(base);
-    if (!b) return false;
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), timeoutMs);
-    try {
-        const res = await fetchImpl(`${b}/health`, { signal: ac.signal, cache: 'no-store' });
-        return res.ok;
-    } catch {
-        return false;
-    } finally {
-        clearTimeout(timer);
-    }
+    return (await probeProxyDetailed(base, fetchImpl, timeoutMs)).up;
 }
 
 export interface ProxyDiscovery {
@@ -88,36 +106,34 @@ export interface ProxyDiscovery {
     up: boolean | null;
     /** A probe is running. */
     checking: boolean;
+    /** Why the last probe failed (null: it answered, or none ran yet). */
+    failure: ProxyFailure | null;
 }
 
 /**
- * Probe state for the app. `enabled` false means no request at all (up = false). Probes once on mount and whenever the
- * base or `enabled` changes; with `poll` also every PROXY_POLL_MS and on window focus / tab visible.
+ * Probe state for the app. `enabled` false (Auto OFF, or the "always cache" override) means no request at all (up =
+ * false). Enabled: probes at once, every PROXY_POLL_MS and on window focus / tab visible, and again when the base changes.
  */
-export function useProxyDiscovery(base: string, enabled: boolean, poll: boolean): ProxyDiscovery {
-    const [state, setState] = useState<ProxyDiscovery>(() => ({ up: enabled ? null : false, checking: false }));
+export function useProxyDiscovery(base: string, enabled: boolean): ProxyDiscovery {
+    const [state, setState] = useState<ProxyDiscovery>(() => ({ up: enabled ? null : false, checking: false, failure: null }));
     const seq = useRef(0);
     const run = useCallback(async () => {
         const id = ++seq.current;
         setState((s) => (s.checking ? s : { ...s, checking: true }));
-        const up = await probeProxy(base);
-        if (id !== seq.current) return; // a newer probe (other base) owns the state
-        setState((s) => (s.up === up && !s.checking ? s : { up, checking: false }));
+        const { up, failure } = await probeProxyDetailed(base);
+        if (id !== seq.current) return; // a newer probe (other base, Auto switched) owns the state
+        setState((s) => (s.up === up && s.failure === failure && !s.checking ? s : { up, checking: false, failure }));
     }, [base]);
 
-    // the one probe on load (and after a change of the base or the permission)
     useEffect(() => {
         if (!enabled) {
             seq.current++;
-            setState({ up: false, checking: false });
+            setState({ up: false, checking: false, failure: null });
             return;
         }
+        // Auto just switched on (or the base changed): unknown until the first probe answers
+        setState({ up: null, checking: true, failure: null });
         void run();
-    }, [enabled, run]);
-
-    // periodic probing only while "Proxy auto-discovery" is ON
-    useEffect(() => {
-        if (!enabled || !poll) return;
         const timer = window.setInterval(() => { void run(); }, PROXY_POLL_MS);
         const onFocus = () => { void run(); };
         const onVisible = () => { if (document.visibilityState === 'visible') void run(); };
@@ -128,7 +144,7 @@ export function useProxyDiscovery(base: string, enabled: boolean, poll: boolean)
             window.removeEventListener('focus', onFocus);
             document.removeEventListener('visibilitychange', onVisible);
         };
-    }, [enabled, poll, run]);
+    }, [enabled, run]);
 
     return state;
 }
@@ -211,7 +227,8 @@ export const LOCAL_NETWORK_PERMISSIONS = ['loopback-network', 'local-network-acc
 /**
  * True when the browser says the user DENIED this site access to the local network, so the proxy probe can never answer
  * (owner 2026-10-26: a blocked prompt looked the same as a stopped proxy). Only asked while `active` (a published page with
- * the opt-in on); follows a later change in the site settings.
+ * Auto on). Chrome 153 was seen to report "prompt" for both names while the fetch was blocked, so a failed probe with a
+ * network error also gets a hint that names both causes (TopBar); follows a later change in the site settings.
  */
 export function useLocalNetworkDenied(active: boolean): boolean {
     const [denied, setDenied] = useState(false);
