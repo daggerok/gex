@@ -30,7 +30,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 ## What you get
 
 - **Quota-friendly loading:** nothing fetches on page open except the ticker you had open last time. Type or pick a ticker and press Enter: its expirations load (the nearest one is selected); every expiration you select loads by itself
-- **Automatic data source:** with the local proxy running you get live data (CBOE, else YAHOO, else NASDAQ, else the cache, per ticker), without it the cache published with the site. A label next to the ticker says which: `LIVE CBOE`, `LIVE YAHOO`, `CACHE 2026-10-23`. See [Local proxy and auto-discovery](#local-proxy-and-tradingview-live-mode)
+- **Automatic data source:** with the local proxy running you get live data (CBOE, else YAHOO, else NASDAQ, else the cache, per ticker), without it the cache published with the site. A label next to the ticker says which: `LIVE CBOE`, `LIVE YAHOO`, `CACHE 2026-10-23`. See [Local proxy and TradingView live mode](#local-proxy-and-tradingview-live-mode)
 - **Ticker suggestions:** searchable ticker and company combobox. Local static suggestions use `api/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest to latest with sticky expiration headers
 - **Desk UX:** ATM row highlight, sticky Calls / Strike / Puts headers, greeks columns enabled by default, per-side and per-column desk settings, empty cells for missing data, themed scrollbars, collapse and expand controls, and automatic centering on the current strike after load or expand
@@ -113,7 +113,7 @@ bun run build-github-pages
 
 Four ways to run it: the published site (cache), local with the proxy (live), local with your own cache, and local with your TradingView account for the futures `/ES`, `/NQ`, `/YM`, `/RTY` (needs the local proxy and a TradingView session imported from Chrome, full guide in [Local proxy and TradingView live mode](#local-proxy-and-tradingview-live-mode)), see [docs/usage.md](docs/usage.md#four-ways-to-use-it)
 
-The source label next to the ticker shows where the data came from (`LIVE CBOE`, `CACHE 2026-10-23`, amber when the cached day is old). The data source is chosen automatically, see [Local proxy and auto-discovery](#local-proxy-and-tradingview-live-mode). Every tab, panel and control in detail: [docs/usage.md](docs/usage.md)
+The source label next to the ticker shows where the data came from (`LIVE CBOE`, `CACHE 2026-10-23`, amber when the cached day is old). The data source is chosen automatically, see [Local proxy and TradingView live mode](#local-proxy-and-tradingview-live-mode). Every tab, panel and control in detail: [docs/usage.md](docs/usage.md)
 
 ## Data sources
 
@@ -329,7 +329,7 @@ Optional files outside the core app source:
 
 - `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options, defaults }` and writes `api/charts/<SYM>.json`
 - `.github/workflows/*`: see [Automations](#automations)
-- `scripts/options-local-proxy.ts`: local **Bun** proxy (`bun run proxy`, see [Local proxy and auto-discovery](#local-proxy-and-tradingview-live-mode)) serving:
+- `scripts/options-local-proxy.ts`: local **Bun** proxy (`bun run proxy`, see [Local proxy and TradingView live mode](#local-proxy-and-tradingview-live-mode)) serving:
   - `/health`: what the app's auto-discovery asks
   - `/api/options`: Yahoo optionChain with crumb and cookie handling
   - `/api/chart`: Yahoo daily candles for the Chart tab
