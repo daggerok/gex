@@ -14,6 +14,9 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t21 - The rotation includes the cached Cboe cash indices that are not in the run's list (owner, 2026-10-26): the separate
+ *        api/Indices.txt step of update-data.yml is gone (SPX, NDX, DJX and RUT are default tickers and keep their expirations
+ *        by rule), so XSP, no longer a default, is refreshed by ROTATE_STALE like any other cached file (MAX_EXPIRATIONS).
  *   t20 - Candles for the rotation (owner, 2026-10-26): the chart pass also covers the ROTATE_STALE tickers whose chain this run
  *        wrote, queued after the fixed list with their own budget on top of CHART_MAX_FETCHES (same compact file, same
  *        pacing), so over the ~6 week cycle every cached ticker gets api/charts/<SYM>.json. A definitive "no chart data"
@@ -1729,15 +1732,14 @@ export interface RotationDeps {
 
 /**
  * ROTATE_STALE (t19, owner 2026-10-25): the `count` cached tickers OUTSIDE the run's fixed universe (the default list plus
- * TICKERS, so a ticker of api/All.txt is never counted twice) with the oldest `updated` stamp, ties by symbol. Fresh files and
- * the Cboe cash indices (SPX, XSP, VIX, ...: api/Indices.txt refreshes them in their own step with a smaller expiration cap) are
- * left out. With ~2,700 such files and 500 per weekly run every file is refreshed within ~6 weeks. Pure, for tests.
+ * TICKERS, so a ticker of api/All.txt is never counted twice) with the oldest `updated` stamp, ties by symbol. Fresh files are
+ * left out; a cached cash index outside the list (XSP since t21) rotates like any other file. With ~2,700 such files and 500 per weekly run every file is refreshed within ~6 weeks. Pure, for tests.
  */
 export function selectRotation(universe: readonly string[], count: number, d: RotationDeps): string[] {
     if (count <= 0) return [];
     const inUniverse = new Set(universe.map((s) => canonical(s)));
     return d.cached
-        .filter((s) => !inUniverse.has(s) && !CBOE_INDEX_SET.has(s) && !d.isFresh(s))
+        .filter((s) => !inUniverse.has(s) && !d.isFresh(s))
         .map((s): [string, string] => [s, d.updatedOf(s)])
         .sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
         .slice(0, count)

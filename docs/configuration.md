@@ -109,7 +109,7 @@ The local futures options of [PR #202](https://github.com/daggerok/gex/pull/202)
 | `HISTORY_KEEP_BACKUP_DAYS` | repository variable | 14 | days of backup zips kept |
 | fetch env of each workflow | the workflow files | see [Automations](automations.md#workflows-at-a-glance) | `MAX_EXPIRATIONS`, `KEEP_EXPIRATIONS`, `CONCURRENCY`, `REQUEST_SLEEP`, `MAX_FETCHES`, `ROTATE_STALE` |
 | `api/All.txt` | the repository | 356 tickers | the extra tickers of the weekly refresh |
-| `api/Indices.txt` | the repository | SPX, XSP, NDX, DJX, RUT | the index step of the weekly refresh |
+| `api/Indices.txt` | the repository | SPX, XSP, NDX, DJX, RUT | the supported cash indices (kept in sync with `INDEX_DIVIDEND_YIELDS`, checked by `src/greeks.test.ts`); no workflow reads it since 2026-10-26 |
 | Pages | Settings -> Pages | GitHub Actions | the site is deployed by the workflows |
 | Workflow permissions | Settings -> Actions -> General | Read and write | the data workflows commit |
 
