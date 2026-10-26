@@ -45,14 +45,6 @@ export function providerForSymbol(selected: DataProvider, symbol: string | null 
     return isFuturesTicker(symbol) ? staticProvider : selected;
 }
 
-/** Curated public CORS proxies for CBOE. "{url}" = encoded target URL. */
-export const PROXY_PRESETS: { label: string; template: string }[] = [
-    { label: 'AllOrigins (raw)', template: 'https://api.allorigins.win/raw?url={url}' },
-    { label: 'Corsproxy.io', template: 'https://corsproxy.io/?url={url}' },
-    { label: 'Codetabs', template: 'https://api.codetabs.com/v1/proxy/?quest={url}' },
-    { label: 'None (direct — will fail unless host allows CORS)', template: '{url}' },
-];
-
 /**
  * Provider-native suggestion request with local-index fallback. If a provider has
  * no dedicated search/list endpoint, or its proxy is unavailable, the UI still
@@ -76,7 +68,6 @@ export async function suggestTickers(provider: DataProvider, query: string, ctx:
  */
 export function ctxFor(settings: Settings, provider: DataProvider, signal?: AbortSignal): ProviderContext {
     return {
-        proxyTemplate: settings.proxyTemplate,
         proxyBase: settings.proxyBase,
         token: settings.tokens[provider.id] || '',
         secret: settings.secrets[provider.id] || '',

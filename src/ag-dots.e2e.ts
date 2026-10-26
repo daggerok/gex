@@ -24,6 +24,13 @@ async function setAgHidden(page: Page, hidden: boolean): Promise<void> {
     }, hidden);
 }
 
+/** Hides (or shows again) the level lines and their labels: a level line drawn over a bar hides the bar's colour. */
+async function setLevelsHidden(page: Page, hidden: boolean): Promise<void> {
+    await page.evaluate((h) => {
+        document.querySelectorAll<SVGElement>('.recharts-reference-line').forEach((e) => { e.style.visibility = h ? 'hidden' : ''; });
+    }, hidden);
+}
+
 /** Viewport pixels at the given points, read from a screenshot decoded on a blank page (no app code involved). */
 async function pixelsAt(page: Page, pts: Pt[]): Promise<Rgb[]> {
     const png = await page.screenshot();
@@ -100,7 +107,14 @@ async function checkHoles(page: Page, label: string, barFills: Rgb[]): Promise<{
         const seen = controls.filter((_, i) => !same(withAg[centres.length + i], without[centres.length + i])).length;
         assert.ok(seen >= Math.ceil(controls.length / 2), `${label}: control - the AG line is visible between the rings (${seen} of ${controls.length})`);
     }
-    const overBars = without.slice(0, centres.length).filter((c) => barFills.some((f) => same(c, f))).length;
+    // what sits behind a ring with the AG layer and the level lines hidden: the levels of the day often stand right on the
+    // largest bars (Max / Min Net GEX, Zero GEX, Spot), so their lines, not the bar, would be read there
+    await setAgHidden(page, true);
+    await setLevelsHidden(page, true);
+    const behind = await pixelsAt(page, centres);
+    await setLevelsHidden(page, false);
+    await setAgHidden(page, false);
+    const overBars = behind.filter((c) => barFills.some((f) => same(c, f))).length;
     return { rings: centres.length, overBars };
 }
 
@@ -131,7 +145,6 @@ async function main(): Promise<void> {
             // ---- v4: the AG line and fill are cut out inside every ring ----
             const barFills = Array.from(new Set(await page.locator('.recharts-bar-rectangle path').evaluateAll((els) => els.map((e) => e.getAttribute('fill') ?? '')))).filter((f) => f.startsWith('#')).map(rgbOf);
             const full = await checkHoles(page, `${scheme} full view`, barFills);
-            assert.ok(full.overBars >= 1, `${scheme}: at least one checked ring sits on a Net GEX bar (${full.overBars})`);
 
             // ---- hover: the active dot has the theme's hover ring (no hard-coded white) and shows only the bar or background ----
             const target = (await ringCentres(page, 'ring')).filter((r) => r.isolated).sort((a, b) => a.y - b.y)[0];
@@ -159,7 +172,10 @@ async function main(): Promise<void> {
             await page.setViewportSize({ width: 1100, height: 800 });
             await page.waitForTimeout(800);
             const resized = await checkHoles(page, `${scheme} resized`, barFills);
-            console.log(`ag-dots e2e ${scheme}: ${dots.length} rings ${line}, hover ring ${hover}; holes ok in ${full.rings} rings (${full.overBars} on bars), zoomed ${zoomed.rings}, resized ${resized.rings}, hovered`);
+            // the rule must be seen over a bar too, counted over the three views: the committed cache data changes every day
+            const overBars = full.overBars + zoomed.overBars + resized.overBars;
+            assert.ok(overBars >= 1, `${scheme}: at least one checked ring sits on a Net GEX bar (full ${full.overBars}, zoomed ${zoomed.overBars}, resized ${resized.overBars})`);
+            console.log(`ag-dots e2e ${scheme}: ${dots.length} rings ${line}, hover ring ${hover}; holes ok in ${full.rings} rings, zoomed ${zoomed.rings}, resized ${resized.rings} (${overBars} on bars), hovered`);
             await page.context().close();
         }
     } finally {

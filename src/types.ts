@@ -124,8 +124,6 @@ export interface ChainResult extends ChainMeta {
 
 /** Runtime context handed to a provider so it can honor user settings. */
 export interface ProviderContext {
-    /** CORS proxy template; "{url}" is replaced with the encoded target URL. */
-    proxyTemplate: string;
     /** Base URL of a request-handling proxy (Yahoo/worker), e.g. localhost:8787. */
     proxyBase: string;
     /** Optional/required API token or key (provider-specific). */
@@ -172,8 +170,6 @@ export interface DataProvider {
     keyLabel?: string;
     /** Placeholder label for the secret field (when supportsSecret). */
     secretLabel?: string;
-    /** Whether this provider is routed through the CORS proxy template. */
-    needsProxy: boolean;
     /** Whether this provider needs a request-handling proxy base URL (Yahoo). */
     needsProxyBase?: boolean;
     /** URL where the user can obtain a free key (for the onboarding link). */
@@ -275,7 +271,6 @@ export interface Settings {
     theme: ThemeMode;
     /** Shared product color palette (Emerald Ledger / Indigo Desk). */
     colorTheme: ColorThemeId;
-    proxyTemplate: string;
     /** Base URL of the request-handling proxy (Yahoo/worker). */
     proxyBase: string;
     /** Per-provider API keys, so switching providers keeps each key. */

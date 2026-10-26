@@ -264,7 +264,6 @@ export const staticProvider: DataProvider = {
     mode: 'bulk',
     setup: 'none',
     supportsToken: false,
-    needsProxy: false,
     demoSymbol: undefined,
     needsKeyFor() { return false; },
     async listTickers(ctx) {

@@ -219,7 +219,6 @@ export const translations: Record<Language, Record<string, string>> = {
         'spot.estimated': '(est.)',
         'spot.delayed': '· delayed · {{provider}}',
         'spot.asOf': '· as of {{at}} ET · {{provider}}',
-        'data.stale': 'Data of {{day}}, {{days}} d old',
 
         'loading.expirations': 'Fetching expirations…',
         'loading.chain': 'Loading chain…',
@@ -244,8 +243,6 @@ export const translations: Record<Language, Record<string, string>> = {
             '3. Run the proxy: bun run proxy (http://localhost:8787)\n' +
             '4. Turn on Auto in the top bar: the app finds the proxy within 30 s or when you come back to the tab\n\n' +
             'See README.md for detailed instructions.',
-        'error.friendly.networkCors':
-            'Network/CORS error reaching the proxy. Check that the proxy runs, or choose Always cache in Settings -> Advanced.',
         'error.friendly.networkGeneric':
             'Network error — could not reach the data provider. Check your connection and try again.',
         'error.friendly.unexpectedJson':
@@ -741,7 +738,6 @@ export const translations: Record<Language, Record<string, string>> = {
         'spot.estimated': '(оценка)',
         'spot.delayed': '· с задержкой · {{provider}}',
         'spot.asOf': '· на {{at}} ET · {{provider}}',
-        'data.stale': 'Данные за {{day}}, {{days}} дн. назад',
 
         'loading.expirations': 'Загружаем экспирации…',
         'loading.chain': 'Загружаем цепочку…',
@@ -766,8 +762,6 @@ export const translations: Record<Language, Record<string, string>> = {
             '3. Запусти прокси: bun run proxy (http://localhost:8787)\n' +
             '4. Включи «Авто» в верхней панели: приложение найдёт прокси за 30 с или при возврате на вкладку\n\n' +
             'Подробности — в README.md.',
-        'error.friendly.networkCors':
-            'Ошибка сети/CORS при обращении к прокси. Попробуй другой CORS-прокси в настройках или выбери «Всегда кэш» в Настройки -> Дополнительно.',
         'error.friendly.networkGeneric':
             'Сетевая ошибка — не удалось достучаться до провайдера данных. Проверь соединение и попробуй снова.',
         'error.friendly.unexpectedJson':

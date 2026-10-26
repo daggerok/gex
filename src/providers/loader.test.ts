@@ -14,7 +14,7 @@ import { getBulk, lazyKey, loadExpiration, loadMeta } from './loader';
 // Black-76 setting, or Black-76 greeks with the setting off) until the ticker is fetched again.
 // ---------------------------------------------------------------------------
 
-const ctx = { proxyTemplate: '', proxyBase: '', token: '', secret: '' } as unknown as ProviderContext;
+const ctx = { proxyBase: '', token: '', secret: '' } as unknown as ProviderContext;
 const R = 0.045;
 
 /** Frozen pricing clock: 16:00 New York on Monday 2026-03-09 (same as vix-gex.test.ts). */
@@ -64,7 +64,7 @@ function vixChain(iv: number | null, symbol = 'VIX'): ChainResult {
 /** A bulk provider that serves a fresh copy of `make()` on every fetch and counts the fetches. */
 function bulkProvider(id: string, make: () => ChainResult) {
     const p = {
-        id, label: id, description: '', mode: 'bulk', setup: 'none', supportsToken: false, needsProxy: false, needsKeyFor: () => false,
+        id, label: id, description: '', mode: 'bulk', setup: 'none', supportsToken: false, needsKeyFor: () => false,
         fetches: 0,
         fetchAll: async () => { p.fetches++; return structuredClone(make()); },
     };
