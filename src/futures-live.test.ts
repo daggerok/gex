@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { futuresLiveUrl, LIVE_APPLY_MAX_MS, LIVE_APPLY_MS, liveApplyDelay, LiveChainState, nyTime } from './futures-live';
+import { futuresFocusUrl, futuresLiveUrl, LIVE_APPLY_MAX_MS, LIVE_APPLY_MS, liveApplyDelay, LiveChainState, nyTime, subscribedProgress } from './futures-live';
 
 const payload = () => ({
     symbol: 'ES', updated: '2026-10-25T21:40:00-04:00', date: '2026-10-23', underlyingPrice: 7650, expirations: ['2099-01-16'],
@@ -42,5 +42,21 @@ describe('TradingView live mode in the app', () => {
         expect(liveApplyDelay(15)).toBe(1000);
         expect(liveApplyDelay(80)).toBe(1600);
         expect(liveApplyDelay(1000)).toBe(LIVE_APPLY_MAX_MS);
+    });
+});
+
+describe('fast start (owner 2026-10-26)', () => {
+    test('subscribedProgress: "ES 3,200/5,560" while the websocket subscription runs, null when done or unknown', () => {
+        const status = { state: 'live' as const, message: '', until: null, since: 0, subscribed: { ES: [3200, 5560] as [number, number], NQ: [4946, 4946] as [number, number] } };
+        expect(subscribedProgress(status, 'ES')).toBe('ES 3,200/5,560');
+        expect(subscribedProgress(status, 'NQ')).toBeNull();
+        expect(subscribedProgress(status, 'YM')).toBeNull();
+        expect(subscribedProgress(null, 'ES')).toBeNull();
+        expect(subscribedProgress(status, null)).toBeNull();
+        expect(subscribedProgress({ ...status, subscribed: { ES: [0, 0] } }, 'ES')).toBeNull();
+    });
+
+    test('futuresFocusUrl: the root and the shown expirations', () => {
+        expect(futuresFocusUrl('http://localhost:8787/', 'ES', ['2026-10-27', '2026-10-28'])).toBe('http://localhost:8787/api/futures/focus?root=ES&exps=2026-10-27%2C2026-10-28');
     });
 });

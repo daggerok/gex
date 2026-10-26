@@ -232,7 +232,11 @@ export function familiesOf(v: QuoteValues | undefined): Family[] {
 export const SCAN_URL = 'https://scanner.tradingview.com/options/scan2?label-product=options-builder';
 /** Where scanGreeks posts. Mutable for tests only (a local fake server). */
 export const TV_SCAN = { url: SCAN_URL };
-export const SCAN_COLUMNS = ['name', 'option-type', 'strike', 'expiration', 'root', 'iv', 'delta', 'gamma', 'theta', 'vega', 'rho'];
+/**
+ * bid and ask are the scanner's quote of each option (the fast-start snapshot, until the option streams on the websocket);
+ * the scanner has no working OI, volume or last column (reports/tradingview-futures-findings.md)
+ */
+export const SCAN_COLUMNS = ['name', 'option-type', 'strike', 'expiration', 'root', 'iv', 'delta', 'gamma', 'theta', 'vega', 'rho', 'bid', 'ask'];
 
 export interface ScanRow {
     /** symbol without the exchange prefix, e.g. E4A261026C7630 */
@@ -243,6 +247,9 @@ export interface ScanRow {
     theta: number | null;
     vega: number | null;
     rho: number | null;
+    /** the scanner's bid and ask (undefined: a row without the columns, e.g. a hand-built one: no scanner quote) */
+    bid?: number | null;
+    ask?: number | null;
 }
 
 /** One scanner request for every watched option of a front contract (`in_range` takes exactly two values, so ranges). */
@@ -272,7 +279,7 @@ export function parseScan(json: unknown): Map<string, ScanRow> {
         const f = Array.isArray(row?.f) ? row.f : [];
         const name = typeof f[0] === 'string' ? f[0] : '';
         if (!name) continue;
-        out.set(name, { name, iv: numOrNull(f[5]), delta: numOrNull(f[6]), gamma: numOrNull(f[7]), theta: numOrNull(f[8]), vega: numOrNull(f[9]), rho: numOrNull(f[10]) });
+        out.set(name, { name, iv: numOrNull(f[5]), delta: numOrNull(f[6]), gamma: numOrNull(f[7]), theta: numOrNull(f[8]), vega: numOrNull(f[9]), rho: numOrNull(f[10]), bid: numOrNull(f[11]), ask: numOrNull(f[12]) });
     }
     return out;
 }
@@ -299,6 +306,107 @@ export async function scanGreeks(front: string, wanted: readonly WantedOption[],
     return out;
 }
 
+// ---- fast start (owner 2026-10-26): scanner snapshot first, websocket subscription by importance -------------------------
+
+/** What the last file of a root knew of one option: the base of the fast-start snapshot until the option streams. */
+export interface FileRow {
+    openInterest: number | null;
+    oiDate: string | null;
+    /** null when the file is of an older trading day (yesterday's volume is not today's) */
+    volume: number | null;
+    last: number | null;
+}
+
+/**
+ * The rows of a futures file (api/futures/<ROOT>.json) by option name. Open interest always (the exchange's daily figure,
+ * equal to the CME Daily Bulletin: reports/cme-bulletin-probe/summary.md); volume and last only when the file is of
+ * `today` (its `date`, the market day). Empty on anything unreadable.
+ */
+export function fileRowsOf(json: unknown, today: string): Map<string, FileRow> {
+    const out = new Map<string, FileRow>();
+    const j = json as { date?: unknown; quotes?: unknown } | null;
+    if (!j || !Array.isArray(j.quotes)) return out;
+    const sameDay = j.date === today;
+    for (const raw of j.quotes as Array<Record<string, unknown>>) {
+        if (!raw || typeof raw.symbol !== 'string') continue;
+        out.set(raw.symbol, {
+            openInterest: numOrNull(raw.openInterest),
+            oiDate: typeof raw.oiDate === 'string' ? raw.oiDate : null,
+            volume: sameDay ? numOrNull(raw.volume) : null,
+            last: sameDay ? numOrNull(raw.last) : null,
+        });
+    }
+    return out;
+}
+
+/** One option's values for the file and the live deltas. */
+export interface MergedValues {
+    bid: number | null;
+    ask: number | null;
+    last: number | null;
+    volume: number | null;
+    openInterest: number | null;
+    /** the day of the open interest value (TradingView's `oi.time`, or the file's), null when unknown or current */
+    oiDate: string | null;
+}
+
+/**
+ * The values of one option from what is known (owner 2026-10-26, fast TradingView live start):
+ * - `completed` (the websocket answered it on the current connection): the websocket only, a missing `oi` is 0 (never traded)
+ * - else bid and ask from the scanner row when it carries them (`scanQuotes`), else from the websocket (an older
+ *   connection); last and volume from the websocket, else the file of today; open interest from the websocket, else the
+ *   last file (the daily figure, with its day), else null
+ */
+export function mergeOption(ws: QuoteValues | undefined, scan: ScanRow | undefined, file: FileRow | undefined, completed: boolean, scanQuotes: boolean): MergedValues {
+    const oiValue = numOrNull((ws?.oi as { value?: unknown } | undefined)?.value);
+    const oiTime = numOrNull((ws?.oi as { time?: unknown } | undefined)?.time);
+    if (completed) {
+        return {
+            bid: numOrNull(ws?.bid), ask: numOrNull(ws?.ask), last: numOrNull(ws?.lp), volume: numOrNull(ws?.volume),
+            openInterest: oiValue ?? 0, oiDate: oiValue != null && oiTime != null ? oiDay(oiTime) : null,
+        };
+    }
+    const fromScan = scanQuotes && scan != null && (scan.bid !== undefined || scan.ask !== undefined);
+    return {
+        bid: fromScan ? scan!.bid ?? null : numOrNull(ws?.bid),
+        ask: fromScan ? scan!.ask ?? null : numOrNull(ws?.ask),
+        last: numOrNull(ws?.lp) ?? file?.last ?? null,
+        volume: numOrNull(ws?.volume) ?? file?.volume ?? null,
+        openInterest: oiValue ?? file?.openInterest ?? null,
+        oiDate: oiValue != null ? (oiTime != null ? oiDay(oiTime) : null) : file?.openInterest != null ? file.oiDate : null,
+    };
+}
+
+/** Width of the distance bands of subscriptionOrder (fraction of the forward). */
+export const ORDER_BAND_PCT = 0.01;
+
+/**
+ * The order in which a root's options join the websocket (owner 2026-10-26): the selected expirations first (when the
+ * page told the proxy which ones), then in distance bands of ORDER_BAND_PCT around `center` (the forward) - the strikes
+ * within 1% of every expiration before the ones within 2% - and inside a band the nearest expiration first, then the
+ * strike nearest the forward, the call before the put. A copy, `wanted` is not changed.
+ */
+export function subscriptionOrder(wanted: readonly WantedOption[], center: number | null, selected: ReadonlySet<string> = new Set()): WantedOption[] {
+    const c = center != null && Number.isFinite(center) && center > 0 ? center : null;
+    const key = (w: WantedOption) => {
+        const dist = c == null ? 0 : Math.abs(w.strike - c);
+        return { sel: selected.has(isoDate(w.exp)) ? 0 : 1, band: c == null ? 0 : Math.floor(dist / (c * ORDER_BAND_PCT)), dist };
+    };
+    const keys = new Map(wanted.map((w) => [w, key(w)]));
+    return wanted.slice().sort((a, b) => {
+        const ka = keys.get(a)!;
+        const kb = keys.get(b)!;
+        return ka.sel - kb.sel || ka.band - kb.band || a.exp - b.exp || ka.dist - kb.dist || a.strike - b.strike
+            || a.root.localeCompare(b.root) || (a.side === b.side ? 0 : a.side === 'call' ? -1 : 1);
+    });
+}
+
+/** The order in which the roots are read and subscribed: the focused ones (the most recent first), then the rest as given. */
+export function rootOrder(roots: readonly string[], focus: readonly string[]): string[] {
+    const first = focus.filter((r, i) => roots.indexOf(r) >= 0 && focus.indexOf(r) === i);
+    return first.concat(roots.filter((r) => first.indexOf(r) < 0));
+}
+
 // ---- the cache file --------------------------------------------------------------------------------------------------
 
 export interface FileInput {
@@ -311,6 +419,10 @@ export interface FileInput {
     /** symbols whose first answer is complete: a missing `oi` there means 0 (never traded) */
     completed: ReadonlySet<string>;
     greeks: ReadonlyMap<string, ScanRow>;
+    /** futures fast start: bid and ask of an option that is not `completed` yet come from its scanner row (mergeOption) */
+    scanQuotes?: boolean;
+    /** futures fast start: the last file's rows (open interest, today's volume and last) for options not `completed` yet */
+    fileRows?: ReadonlyMap<string, FileRow>;
     /** the futures price (mid or last), the fallback of the parity forward */
     futures: { price: number; source: 'mid' | 'last' } | null;
     now: Date;
@@ -341,12 +453,9 @@ export function buildPayload(input: FileInput): { payload: Payload; stats: FileS
         const name = w.symbol.slice(w.symbol.indexOf(':') + 1);
         const g = input.greeks.get(name);
         if (!v && !g) continue; // nothing known yet
-        const bid = numOrNull(v?.bid);
-        const ask = numOrNull(v?.ask);
-        const oiValue = numOrNull((v?.oi as { value?: unknown } | undefined)?.value);
-        const oiTime = numOrNull((v?.oi as { time?: unknown } | undefined)?.time);
-        const openInterest = oiValue ?? (input.completed.has(w.symbol) ? 0 : null);
-        if (oiValue != null) withOi++;
+        const m = mergeOption(v, g, input.fileRows?.get(name), input.completed.has(w.symbol), input.scanQuotes === true);
+        const { bid, ask, openInterest } = m;
+        if (openInterest != null && (numOrNull((v?.oi as { value?: unknown } | undefined)?.value) != null || !input.completed.has(w.symbol))) withOi++;
         if (g?.gamma != null) withGamma++;
         const expiration = isoDate(w.exp);
         const q: Quote = {
@@ -357,8 +466,8 @@ export function buildPayload(input: FileInput): { payload: Payload; stats: FileS
             bid,
             ask,
             mid: mid(bid, ask),
-            last: numOrNull(v?.lp),
-            volume: numOrNull(v?.volume),
+            last: m.last,
+            volume: m.volume,
             openInterest,
             iv: g?.iv ?? null,
             delta: g?.delta ?? null,
@@ -371,7 +480,7 @@ export function buildPayload(input: FileInput): { payload: Payload; stats: FileS
         };
         // futures files only (owner decision G10, 2026-10-26): the day of TradingView's OI value, so the app can mark an OI
         // older than the newest day of the chain; an extra key after the fetcher's ones, api/options is not affected
-        (q as Quote & { oiDate: string | null }).oiDate = oiValue != null && oiTime != null ? oiDay(oiTime) : null;
+        (q as Quote & { oiDate: string | null }).oiDate = m.oiDate;
         quotes.push(q);
         forParity.push({ symbol: name, expiration, side: w.side, strike: w.strike, bid, ask, mid: q.mid, last: q.last, volume: q.volume, openInterest, iv: q.iv, delta: q.delta, gamma: q.gamma, theta: q.theta, vega: q.vega });
     }

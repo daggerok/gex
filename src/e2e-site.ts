@@ -149,8 +149,8 @@ export interface FakeProxy {
     setUp: (up: boolean) => void;
     /** /api/cboe serves SPY and QQQ (true) or answers 500 (false), to check the fallback */
     setCboe: (ok: boolean) => void;
-    /** paths requested so far (with the Origin header seen) */
-    hits: Array<{ path: string; origin: string | null }>;
+    /** paths requested so far (with the Origin header seen and the query string) */
+    hits: Array<{ path: string; origin: string | null; query?: string }>;
     /** send one TradingView live mode event (status, snapshot, delta, greeks) to every /api/futures/live client (scripts/tv/live.ts) */
     sendLive: (event: string, data: unknown) => void;
     /** clients connected to /api/futures/live right now */
@@ -184,7 +184,7 @@ export function startFakeProxy(): FakeProxy {
         fetch(req, srv) {
             const url = new URL(req.url);
             const origin = req.headers.get('origin');
-            hits.push({ path: url.pathname, origin });
+            hits.push({ path: url.pathname, origin, query: url.search });
             const cors: Record<string, string> = origin
                 ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Private-Network': 'true', Vary: 'Origin' }
                 : {};
@@ -194,6 +194,8 @@ export function startFakeProxy(): FakeProxy {
             // CME's product totals of the open interest cross-check (scripts/tv/cme-oi.ts): SPY's file under the YM name has
             // symbols like SPY261030C00500000, so the fake product is SPY
             if (url.pathname === '/api/futures/cme-oi') return new Response(JSON.stringify({ day: '2026-10-22', file: 'daily_volume_20261022.xlsx', products: { 'SPY|call': 1e9, 'SPY|put': 1e9 } }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+            // fast start: the page names the expirations it shows (scripts/tv/live.ts focus)
+            if (url.pathname === '/api/futures/focus') return new Response(JSON.stringify({ ok: true }), { headers: { ...cors, 'Content-Type': 'application/json' } });
             if (url.pathname === '/api/futures/live' || url.pathname === '/api/tv/live') {
                 srv.timeout(req, 0);
                 let self: ReadableStreamDefaultController<Uint8Array> | null = null;
