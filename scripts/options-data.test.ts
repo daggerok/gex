@@ -30,6 +30,7 @@ import {
   buildChartQueue,
   FUTURES_CHART_SYMBOLS,
   buildQueue,
+  queuePhase,
   selectRotation,
   yahooChartCandidates,
   PRIORITY_SYMBOLS,
@@ -334,6 +335,19 @@ describe('work queue', () => {
     const d = { ...base, cached: ['A', 'B'], updatedOf: (s: string) => (s === 'A' ? '2' : '1') };
     expect(buildQueue(['A'], d).queue).toEqual(['B', 'A']);
     expect(buildQueue(['A'], { ...d, explicit: true }).queue).toEqual(['A']);
+  });
+
+  test('queuePhase labels every position by its segment, the priority entries included', () => {
+    const q = buildQueue(['AAPL', 'MSFT'], {
+      ...base,
+      priority: ['SPY', 'QQQ'],
+      cached: ['MSFT', 'OLD'],
+      rotation: ['ROT'],
+      updatedOf: () => '1',
+    });
+    expect(q.queue).toEqual(['SPY', 'QQQ', 'AAPL', 'MSFT', 'OLD', 'ROT']);
+    // without the priority offset position 3 (AAPL) was labelled refresh and positions 1-2 coverage
+    expect(q.queue.map((_, i) => queuePhase(i + 1, q))).toEqual(['priority', 'priority', 'coverage', 'refresh', 'refresh', 'rotate']);
   });
 
   test('undated files sort first and ties keep a stable order', () => {

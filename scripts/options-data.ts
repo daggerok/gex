@@ -1702,6 +1702,15 @@ export function buildQueue(universe: string[], d: QueueDeps): WorkQueue {
     };
 }
 
+export type QueuePhase = "priority" | "coverage" | "refresh" | "rotate";
+
+/** Phase of the 1-based `position` in a WorkQueue (priority, missing, stale, rotation segments in that order), for the logs. */
+export function queuePhase(position: number, q: Pick<WorkQueue, "queue" | "nPriority" | "nMissing" | "nRotate">): QueuePhase {
+    if (position <= q.nPriority) return "priority";
+    if (position <= q.nPriority + q.nMissing) return "coverage";
+    return position <= q.queue.length - q.nRotate ? "refresh" : "rotate";
+}
+
 export interface RotationDeps {
     /** Symbols that have an options file. */
     cached: string[];
@@ -2207,7 +2216,8 @@ export async function main(): Promise<void> {
     console.log(outputConfigBlock(outputConfigEntries()));
     const { symbols: universe, source: universeSource } = await loadUniverse();
 
-    const { queue, nPriority, nMissing, nStale, nFresh, nRotate } = buildWorkQueue(universe);
+    const wq = buildWorkQueue(universe);
+    const { queue, nPriority, nMissing, nStale, nFresh, nRotate } = wq;
     const skip = loadSkiplist();
 
     const noOptionSyms: string[] = [];
@@ -2236,15 +2246,14 @@ export async function main(): Promise<void> {
         );
     }
     if (cfg.DRY_RUN) {
-        const phaseOf = (i: number) => (i < nPriority ? "priority" : i < nPriority + nMissing ? "coverage" : i < queue.length - nRotate ? "refresh" : "rotate");
-        queue.forEach((sym, i) => console.log(`${outputLabel("dry run")} ${String(i + 1).padStart(4)}/${queue.length} ${phaseOf(i).padEnd(8)} ${sym}`));
+        queue.forEach((sym, i) => console.log(`${outputLabel("dry run")} ${String(i + 1).padStart(4)}/${queue.length} ${queuePhase(i + 1, wq).padEnd(8)} ${sym}`));
         console.log(`${outputLabel("dry run")} nothing fetched or written (DRY_RUN=1)`);
         return;
     }
 
     const work = async (sym: string, position: number, st: { fetched: number }): Promise<TickerResult> => {
         const path = join(DATA_DIR, `${sym}.json`);
-        const phase = position <= nPriority ? "priority" : position <= nPriority + nMissing ? "coverage" : position <= queue.length - nRotate ? "refresh" : "rotate";
+        const phase = queuePhase(position, wq);
         const started = performance.now();
         log(`FETCH [${position}/${queue.length}] ${phase} ${sym}: fetching option chain (writes=${st.fetched}/${cfg.MAX_FETCHES}, file=api/options/${sym}.json)`);
         let previousText: string | null = null;
@@ -2280,7 +2289,7 @@ export async function main(): Promise<void> {
         softDeadlineMs: cfg.SOFT_DEADLINE_SECONDS * 1000,
         work,
         onDone: (position, sym, r, st) => {
-            const phase = position <= nMissing ? "coverage" : "refresh";
+            const phase = queuePhase(position, wq);
             counts[r.status]++;
             if (r.kind === "written") {
                 delete skip[sym];
