@@ -1667,7 +1667,8 @@ export interface QueueDeps {
 
 /**
  * Priority symbols first (SPY, SPX, QQQ, NDX unless fresh; with an explicit TICKERS list only those in it),
- * then missing (universe order), then stale oldest-updated first.
+ * then missing (universe order), then stale oldest-updated first. An uncached symbol on the skiplist is left out until its
+ * SKIP_RECHECK_DAYS window ends, with or without an explicit list.
  */
 export function buildQueue(universe: string[], d: QueueDeps): WorkQueue {
     const cachedSet = new Set(d.cached);
@@ -1685,6 +1686,9 @@ export function buildQueue(universe: string[], d: QueueDeps): WorkQueue {
             continue;
         }
         if (missingSet.has(sym) || prioritySet.has(sym)) continue;
+        // an explicit list may name an uncached symbol on the skiplist: honour SKIP_RECHECK_DAYS like the `all` path does
+        // (there the candidates are cached files only), so it is not re-fetched as "stale" on every run
+        if (!cachedSet.has(sym) && blocked(sym)) continue;
         stale.push([sym, d.updatedOf(sym)]);
     }
     stale.sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)); // stable, plain string order
