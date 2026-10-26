@@ -21,7 +21,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
       - run: bunx npm-check-updates -u
-      - run: bun install
+      - run: bun install -E # exact versions, like ci.yaml and dependency-updates.yml (package.json pins exact versions)
       - run: bun run test
       - run: bun run build
       - run: bun run clean
