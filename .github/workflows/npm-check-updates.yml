@@ -1,6 +1,10 @@
 name: npm-check-updates
-# Manual only: bumps every dependency in package.json and checks that tests and builds still pass
+# Bumps every dependency in package.json in its own checkout and checks that tests and builds still pass; nothing is pushed.
+# Manual, and once a week (owner, 2026-10-26): Sunday 10:00 New York time. A red run means the newest versions break something.
 on:
+  schedule:
+    - cron: "0 10 * * 0"
+      timezone: America/New_York
   workflow_dispatch:
 permissions:
   contents: read

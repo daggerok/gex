@@ -1,5 +1,5 @@
 # =============================================================================
-# GEX - backtest backup (run by hand)
+# GEX - backtest backup (by hand, and once a week on Saturday)
 # -----------------------------------------------------------------------------
 # Copies the cache files of api/options into ONE zip, api/history/<YYYY-MM>/<YYYY-MM-DD-HH-mm>.zip
 # (New York time, to the minute), and commits it. A backup is never overwritten: run it as
@@ -17,6 +17,11 @@
 name: Backtest backup
 
 on:
+  # Once a week (owner, 2026-10-26): Saturday 12:00 New York time, after the weekly update-data.yml run (10:00, the shared
+  # concurrency group makes this one wait for it), a backup of the preset from the committed files (inputs are empty here)
+  schedule:
+    - cron: "0 12 * * 6"
+      timezone: America/New_York
   workflow_dispatch:
     inputs:
       tickers:

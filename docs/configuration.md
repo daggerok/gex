@@ -88,6 +88,19 @@ The full table with defaults is in [Automations: environment variables](automati
 | `PORT` | `bun run proxy`, `all`, `start`, the proxy | 8787 | port of the local proxy |
 | `HOST` | the proxy | `127.0.0.1` | interface the proxy listens on; `0.0.0.0` opens it to the LAN |
 
+### Local data runner `scripts/data-local.ts`
+
+| Variable or path | Default | Meaning |
+|---|---|---|
+| `GEX_DATA_RUNNER` | `<parent of the checkout>/.worktrees/<repo>/data-runner` | the worktree the runs use (detached HEAD on `origin/main`) |
+| `GEX_DATA_HOME` | `~/Library/Application Support/gex-data` | `state.json` (last run per job, read by `data:status`) and `run.lock` (`{pid, job, started}`, one run at a time) |
+| `GEX_DATA_LOG` | `~/Library/Logs/gex-data.log` | the log (launchd stdout and stderr; foreground runs append too) |
+| `GEX_DATA_PLIST` | `~/Library/LaunchAgents/com.daggerok.gex-data.plist` | the launchd agent written by `data:setup` |
+| `GEX_DATA_LABEL` | `com.daggerok.gex-data` | the launchd label |
+| `HISTORY_KEEP_DAYS`, `HISTORY_KEEP_BACKUP_DAYS` | 14 | passed to the fetcher on a final partial run, like the repository variables of the same names |
+
+The fetcher settings of each job are the workflow's (see [Automations](automations.md#jobs)); they are not configurable here on purpose
+
 ### TradingView futures (PR #202, not merged yet)
 
 The local futures options of [PR #202](https://github.com/daggerok/gex/pull/202) read your TradingView session from `~/.config/gex/tradingview.env` (mode 600, outside the repository, never committed) and add `tv:*` scripts and their variables on that branch; the full guide is its TradingView section, added here when it merges
