@@ -48,10 +48,21 @@ export interface TvLiveStatus {
     since: number;
 }
 
-/** The live stream of one root on the proxy. */
+/** The live stream of one futures root on the proxy. */
 export function futuresLiveUrl(base: string, root: string): string {
     return `${normalizeProxyBase(base)}/api/futures/live?root=${encodeURIComponent(root)}`;
 }
+
+/** The TradingView hybrid stream of a stock or index ticker on the proxy (scripts/tv/hybrid.ts). */
+export function hybridLiveUrl(base: string, symbol: string): string {
+    return `${normalizeProxyBase(base)}/api/tv/live?symbol=${encodeURIComponent(symbol)}`;
+}
+
+/**
+ * What streams: `futures` (/ES...: CME realtime, greeks from the mids) or `hybrid` (a stock or index: OPRA 15 minutes
+ * delayed, TradingView's scanner greeks, Cboe open interest; the proxy never writes it to a file).
+ */
+export type TvLiveKind = 'futures' | 'hybrid';
 
 /** A value row of a delta: [name, bid, ask, last, volume, openInterest, oiDate] (oiDate may be missing: an older proxy). */
 export type LiveValueRow = [string, number | null, number | null, number | null, number | null, number | null, (string | null)?];
@@ -123,14 +134,17 @@ export class LiveChainState {
         this.dirty = true;
     }
 
-    /** The chain for the app (null before the snapshot): live greeks from the mids, spot = the parity forward. */
-    toChain(symbol: string): ChainResult | null {
+    /**
+     * The chain for the app (null before the snapshot), spot = the parity forward. Futures: live greeks from the mids;
+     * hybrid: TradingView's scanner greeks as they come (the options are 15 minutes late, the scanner is the source).
+     */
+    toChain(symbol: string, kind: TvLiveKind = 'futures'): ChainResult | null {
         if (!this.base) return null;
         this.dirty = false;
         const file = futuresFile(symbol);
         const raw = { ...this.base, quotes: Array.from(this.byName.values()), updated: this.updated ?? this.base.updated };
         const parsed = chainFromCacheFile(file?.symbol ?? symbol, raw, 'live');
-        const quotes = liveFuturesGreeks(parsed.quotes as OptionQuote[], this.cache);
+        const quotes = kind === 'futures' ? liveFuturesGreeks(parsed.quotes as OptionQuote[], this.cache) : (parsed.quotes as OptionQuote[]);
         // the cache keys carry the minute: drop the old ones now and then
         if (this.cache.size > quotes.length * 4) this.cache.clear();
         this.crossCheck = liveGreeksCrossCheck(quotes, this.tvGamma);
@@ -153,16 +167,17 @@ export interface TvLive {
  * allowed). `onChain` gets a new chain at most every LIVE_APPLY_MS while updates arrive. The EventSource reconnects by
  * itself when the proxy restarts; an older proxy without the endpoint answers 404 and nothing changes.
  */
-export function useTvLive(base: string, symbol: string | null, onChain: (chain: ChainResult) => void): TvLive {
+export function useTvLive(base: string, symbol: string | null, onChain: (chain: ChainResult) => void, kind: TvLiveKind = 'futures'): TvLive {
     const [live, setLive] = useState<TvLive>({ status: null, streaming: false, updated: null });
     const handler = useRef(onChain);
     handler.current = onChain;
-    const root = symbol ? futuresFile(symbol)?.root ?? null : null;
+    // the stream's key: the futures root (ES) or the ticker itself (SPY); events carry it as `root`
+    const root = !symbol ? null : kind === 'futures' ? futuresFile(symbol)?.root ?? null : symbol.trim().toUpperCase();
     useEffect(() => {
         setLive({ status: null, streaming: false, updated: null });
         if (!root || !symbol || !normalizeProxyBase(base) || typeof EventSource === 'undefined') return undefined;
         const state = new LiveChainState();
-        const es = new EventSource(futuresLiveUrl(base, root));
+        const es = new EventSource(kind === 'futures' ? futuresLiveUrl(base, root) : hybridLiveUrl(base, root));
         const read = (ev: MessageEvent): any => {
             try { return JSON.parse(String(ev.data)); } catch { return null; }
         };
@@ -187,7 +202,7 @@ export function useTvLive(base: string, symbol: string | null, onChain: (chain: 
             let wait = LIVE_APPLY_MS;
             if (state.dirty && state.ready) {
                 const t0 = performance.now();
-                const chain = state.toChain(symbol);
+                const chain = state.toChain(symbol, kind);
                 if (chain) {
                     setLive((l) => ({ ...l, streaming: true, updated: state.updated }));
                     handler.current(chain);
@@ -205,7 +220,7 @@ export function useTvLive(base: string, symbol: string | null, onChain: (chain: 
             window.clearTimeout(timer);
             es.close();
         };
-    }, [base, root, symbol]);
+    }, [base, root, symbol, kind]);
     return live;
 }
 
@@ -217,12 +232,13 @@ export function nyTime(iso: string | null): string {
 }
 
 /**
- * Put a live chain into the CACHE provider's memory (not the persistent cache: it changes every second) and return its
+ * Put a live chain into the memory of the provider that serves the ticker (CACHE for futures, CBOE or NASDAQ for the
+ * hybrid) (not the persistent cache: it changes every second) and return its
  * meta without the expirations that are over; the app sets it as the new meta, so the selected expirations load from it.
  */
-export async function applyLiveChain(chain: ChainResult, vixFuturesPricing: boolean): Promise<ChainMeta> {
-    await putBulk('static', chain, vixFuturesPricing, false);
-    const cached = (await getBulk('static', chain.symbol, vixFuturesPricing)) ?? chain;
+export async function applyLiveChain(chain: ChainResult, vixFuturesPricing: boolean, providerId: string = 'static'): Promise<ChainMeta> {
+    await putBulk(providerId, chain, vixFuturesPricing, false);
+    const cached = (await getBulk(providerId, chain.symbol, vixFuturesPricing)) ?? chain;
     return withoutExpired({
         symbol: cached.symbol, underlyingPrice: cached.underlyingPrice, expirations: cached.expirations, greeks: cached.greeks,
         updated: cached.updated ?? null, dataDate: cached.dataDate ?? null,

@@ -75,7 +75,34 @@ async function main(): Promise<void> {
 
         proxy.sendLive('status', { state: 'expired', message: 'log in to tradingview.com in Chrome', until: null, since: Date.now() });
         await waitLabel(/^TV LOGIN$/, 'the engine lost the session');
-        console.log(`futures live e2e: ok (live update, event to committed chain: ${ms.join(', ')} ms)`);
+        await page.close();
+
+        // TradingView hybrid: a stock loaded live through CBOE follows /api/tv/live once it delivers (15 min delayed label);
+        // a status without data keeps LIVE CBOE
+        const spy = JSON.parse(readFileSync(join(ROOT, 'api', 'options', 'SPY.json'), 'utf8')) as typeof file;
+        const page2 = await (await browser.newContext({ viewport: { width: 1400, height: 800 } })).newPage();
+        await page2.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [SETTINGS_KEY, JSON.stringify({ proxyBase: proxy.base, lastTicker: 'SPY' })] as const);
+        await page2.goto(site.url);
+        const label2 = () => page2.locator('[data-source-label]').textContent();
+        const wait2 = (re: RegExp, what: string) => page2.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-source-label]')?.textContent ?? ''), re.source, { timeout: 10000 })
+            .catch(async () => assert.fail(`${what}: the label is "${await label2()}", expected ${re}`));
+        await wait2(/^LIVE CBOE$/, 'SPY through the proxy');
+        for (let i = 0; i < 50 && proxy.liveClients() === 0; i++) await page2.waitForTimeout(100);
+        assert.equal(proxy.liveClients(), 1, 'the app subscribed to the TradingView hybrid stream');
+        assert.ok(proxy.hits.some((h) => h.path === '/api/tv/live'), 'the hybrid stream is /api/tv/live');
+        proxy.sendLive('status', { state: 'starting', message: 'starting', until: null, since: Date.now() });
+        await page2.waitForTimeout(1500);
+        assert.equal(await label2(), 'LIVE CBOE', 'no data from TradingView yet: the provider keeps its label');
+        await page2.waitForFunction(() => document.querySelectorAll('.od-atm').length > 0, null, { timeout: 10000 });
+        const atm2 = await page2.locator('.od-atm').first().textContent();
+        proxy.sendLive('status', { state: 'live', message: 'streaming SPY', until: null, since: Date.now() });
+        proxy.sendLive('snapshot', { root: 'SPY', payload: spy });
+        const first2 = spy.expirations[0];
+        proxy.sendLive('delta', { root: 'SPY', updated: '2026-10-26T14:05:07.000Z', rows: spy.quotes.filter((q) => q.expiration === first2 && q.bid != null && q.ask != null).map((q) => [q.symbol, q.bid! * 2, q.ask! * 2, q.last, q.volume, q.openInterest]) });
+        await wait2(/^TV 15m delayed 10:05:07$/, 'SPY from the TradingView hybrid');
+        await page2.waitForFunction((before) => document.querySelector('.od-atm')?.textContent !== before, atm2, { timeout: 8000 })
+            .catch(() => assert.fail('the Desk ATM row of SPY did not change after the hybrid delta'));
+        console.log(`futures live e2e: ok (live update, event to committed chain: ${ms.join(', ')} ms; hybrid SPY ok)`);
     } finally {
         await browser.close();
         proxy.close();

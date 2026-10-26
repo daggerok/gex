@@ -109,10 +109,38 @@ export function isoDate(yyyymmdd: number): string {
     return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 }
 
-/** TradingView option symbol: <prefix>:<root><YYMMDD><C|P><strike>, e.g. CME_MINI:E4A261026C7630 */
-export function optionSymbol(prefix: string, root: string, exp: number, side: 'call' | 'put', strike: number): string {
-    return `${prefix}:${root}${String(exp).slice(2)}${side === 'call' ? 'C' : 'P'}${strike}`;
+/** An OPRA strike as TradingView writes it: always with a decimal (760 -> "760.0", 207.5 -> "207.5"); without it the quote session answers `error`. */
+export function opraStrike(strike: number): string {
+    return Number.isInteger(strike) ? `${strike}.0` : String(strike);
 }
+
+/**
+ * TradingView option symbol: <prefix>:<root><YYMMDD><C|P><strike>, e.g. CME_MINI:E4A261026C7630; US options (prefix OPRA)
+ * carry the strike with a decimal, OPRA:SPY261026C760.0 (reports/tv-opra-probe/summary.md).
+ */
+export function optionSymbol(prefix: string, root: string, exp: number, side: 'call' | 'put', strike: number): string {
+    return `${prefix}:${root}${String(exp).slice(2)}${side === 'call' ? 'C' : 'P'}${prefix === 'OPRA' ? opraStrike(strike) : strike}`;
+}
+
+/** The OCC symbol Cboe uses for the same option: SPY261026C00760000 (strike x 1000, 8 digits). */
+export function occSymbol(root: string, exp: number, side: 'call' | 'put', strike: number): string {
+    return `${root}${String(exp).slice(2)}${side === 'call' ? 'C' : 'P'}${String(Math.round(strike * 1000)).padStart(8, '0')}`;
+}
+
+/**
+ * The open interest of one option, one rule for every TradingView chain (owner decision G10, option C: keep and mark).
+ * TradingView keeps each contract's OI of the LAST day it got one (`oi.time`), on US options often weeks old and low
+ * (probe 2026-10-26: 9-30% below Cboe). So: the Cboe OI when there is one (`day` null: current); else TradingView's value
+ * with its day, which the app compares with the chain's newest day and shows pale when older (src/oi-dates.ts); else null.
+ */
+export function openInterestOf(tv: { time?: unknown; value?: unknown } | null | undefined, cboe: number | null | undefined): { value: number; day: string | null } | null {
+    if (typeof cboe === 'number' && Number.isFinite(cboe)) return { value: cboe, day: null };
+    const value = numOrNull(tv?.value);
+    if (value == null) return null;
+    const t = numOrNull(tv?.time);
+    return { value, day: t != null ? oiDay(t) : null };
+}
+
 
 /** Strikes within +/- `pct` of `center`, ascending. */
 export function strikesInWindow(strikes: readonly number[], center: number, pct: number = WINDOW_PCT): number[] {
