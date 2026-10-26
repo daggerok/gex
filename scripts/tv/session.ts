@@ -107,14 +107,14 @@ export function decryptChromeCookie(encrypted: Uint8Array, key: Buffer, hostKey:
 export const SESSIONID_RE = /^[a-z0-9]{20,64}$/i;
 export const SESSIONID_SIGN_RE = /^[\w.:+/=-]{8,200}$/;
 
-async function importFromChrome(): Promise<{ sessionid: string; sessionidSign: string | null; profile: string } | null> {
+async function importFromChrome(log: (line: string) => void = console.log): Promise<{ sessionid: string; sessionidSign: string | null; profile: string } | null> {
     const hits = findProfiles();
     if (!hits.length) {
-        console.log('Chrome: no profile holds a TradingView session');
+        log('Chrome: no profile holds a TradingView session');
         return null;
     }
     const hit = hits[0];
-    console.log(`Chrome: using "${hit.profile}" (TradingView session last used ${hit.lastAccess.toISOString().slice(0, 10)}); macOS may ask to allow Keychain access`);
+    log(`Chrome: using "${hit.profile}" (TradingView session last used ${hit.lastAccess.toISOString().slice(0, 10)}); macOS may ask to allow Keychain access`);
     const key = chromeKey(await chromeSafeStoragePassword());
     const pick = (name: string): string | null => {
         const row = hit.rows.filter((r) => r.name === name).sort((a, b) => Number(b.last_access_utc) - Number(a.last_access_utc))[0];
@@ -125,6 +125,40 @@ async function importFromChrome(): Promise<{ sessionid: string; sessionidSign: s
     if (!sessionid || !SESSIONID_RE.test(sessionid)) throw new Error('the decrypted sessionid does not look valid');
     const sign = pick('sessionid_sign');
     return { sessionid, sessionidSign: sign && SESSIONID_SIGN_RE.test(sign) ? sign : null, profile: hit.profile };
+}
+
+/**
+ * Which Chrome session cookie is current: the profile plus a hash of the ENCRYPTED sessionid (no Keychain, no value; the
+ * hash changes only when TradingView issues a new session, e.g. after a new login). null when no profile has one. The
+ * proxy's live mode (scripts/tv/live.ts) imports again only when this changes, so macOS shows the Keychain dialog at
+ * most once per new login.
+ */
+export function chromeSessionFingerprint(): string | null {
+    if (process.platform !== 'darwin') return null;
+    const hit = findProfiles()[0];
+    const row = hit?.rows.filter((r) => r.name === 'sessionid').sort((a, b) => Number(b.last_access_utc) - Number(a.last_access_utc))[0];
+    if (!hit || !row) return null;
+    return `${hit.profile}:${createHash('sha256').update(Buffer.from(row.encrypted_value)).update(row.value).digest('hex').slice(0, 16)}`;
+}
+
+export type ImportResult = { ok: true; changed: boolean; profile: string } | { ok: false; reason: string };
+
+/**
+ * The non-interactive part of tv:session for the proxy's live mode: import the session from Chrome (macOS only) and write
+ * the env file when the value differs. Never prints the value; `log` gets the same lines as tv:session.
+ */
+export async function importSessionFromChrome(log: (line: string) => void = console.log, path: string = TV_ENV_PATH): Promise<ImportResult> {
+    if (process.platform !== 'darwin') return { ok: false, reason: 'automatic import works on macOS only: run bun run tv:session --prompt' };
+    try {
+        const r = await importFromChrome(log);
+        if (!r) return { ok: false, reason: 'no Chrome profile holds a TradingView session: log in to tradingview.com in Chrome' };
+        const current = existsSync(path) ? parseEnv(readFileSync(path, 'utf8')) : {};
+        const changed = current.TV_SESSIONID !== r.sessionid || (current.TV_SESSIONID_SIGN || null) !== r.sessionidSign;
+        if (changed) writeEnvFile(r, path);
+        return { ok: true, changed, profile: r.profile };
+    } catch (err) {
+        return { ok: false, reason: `Chrome import failed: ${(err as Error).message}` };
+    }
 }
 
 /** Read a line from the terminal without echoing it. */

@@ -31,6 +31,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { writeFileAtomic } from '../history-archive';
+import type { Payload } from '../options-data';
 import {
     buildPayload, DEFAULT_ROOTS, DIST_FUTURES_DIR, familiesOf, FUTURES_DIR, futuresPrice, MICRO_ROOTS, payloadText,
     allocateSessions, QUOTE_FIELDS, scanGreeks, TV_ROOTS, TvRateLimitError, WS_BATCH, WS_BATCH_PAUSE_MS, WS_BATCH_TIMEOUT_MS, wantedOptions,
@@ -43,10 +44,18 @@ export const DEFAULT_WATCH_MS = 60_000;
 export const DEFAULT_REFRESH_MS = 5 * 60_000;
 /** Get a new auth token this long before the old one expires. */
 export const AUTH_REFRESH_BEFORE_MS = 15 * 60_000;
+/** A failed token renewal (session expired, network) is tried again after this long. */
+export const AUTH_RETRY_MS = 3 * 60_000;
 /** Assumed token lifetime when its `exp` cannot be read (TradingView issues 4 h tokens). */
 export const AUTH_FALLBACK_LIFETIME_MS = 3.5 * 60 * 60_000;
-/** Pause of every HTTP request after a 429 or 403. */
+/** Pause of every HTTP request after a 429 or 403; doubles with every further one in a row, up to RATE_LIMIT_MAX_MS. */
 export const RATE_LIMIT_BACKOFF_MS = 15 * 60_000;
+export const RATE_LIMIT_MAX_MS = 2 * 60 * 60_000;
+
+/** The pause after the `hits`-th 429 / 403 in a row: 15 min, 30 min, 1 h, 2 h, 2 h... */
+export function rateLimitPauseMs(hits: number): number {
+    return Math.min(RATE_LIMIT_BACKOFF_MS * Math.pow(2, Math.max(0, hits - 1)), RATE_LIMIT_MAX_MS);
+}
 /**
  * Debug: `TV_RENEW_EVERY_MS=180000` renews the token at least this often (instead of only AUTH_REFRESH_BEFORE_MS before
  * it expires), to exercise the renewal path in minutes instead of hours. Unset in normal use.
@@ -152,11 +161,51 @@ class RootFeed {
     ready = false;
     /** last spot written (the parity forward), the center of the next window */
     lastSpot: number | null = null;
+    /** a value arrived since the file was last written (writeOnlyOnChange) */
+    dirtySinceWrite = true;
 
     constructor(readonly root: string) {
         this.continuous = TV_ROOTS[root].continuous;
         this.prefix = this.continuous.slice(0, this.continuous.indexOf(':'));
     }
+}
+
+/** One option of a live delta: [name, bid, ask, last, volume, openInterest]. */
+export type LiveValueRow = [string, number | null, number | null, number | null, number | null, number | null];
+/** One option's TradingView greeks: [name, iv, delta, gamma, theta, vega, rho]. */
+export type LiveGreekRow = [string, number | null, number | null, number | null, number | null, number | null, number | null];
+
+const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** What the watcher is doing, for the proxy's live mode (scripts/tv/live.ts) and the app's source label. */
+export type WatcherState = 'starting' | 'live' | 'reconnecting' | 'no-session' | 'expired' | 'rate-limited' | 'error';
+
+export interface WatcherStatus {
+    state: WatcherState;
+    /** one line for people, never a secret */
+    message: string;
+    /** rate-limited: when requests start again (epoch ms) */
+    until: number | null;
+    /** when this state began (epoch ms) */
+    since: number;
+}
+
+/**
+ * Hooks of the proxy's live mode (scripts/tv/live.ts); the CLI (`bun run tv:futures`) uses none. All optional.
+ * - onStatus: every change of the state
+ * - onValues: symbols of `root` whose websocket values changed (called per message, cheap)
+ * - onWindow: the watched option list of `root` changed (first subscription, window moved, reconnect): a new snapshot
+ * - writeOnlyOnChange: skip the file write of a root when nothing changed since the last one
+ * - log: where the lines go (default console.log with the time)
+ */
+export interface WatcherHooks {
+    onStatus?: (status: WatcherStatus) => void;
+    onValues?: (root: string, symbols: readonly string[]) => void;
+    onWindow?: (root: string) => void;
+    /** the scanner greeks of `root` were read again */
+    onGreeks?: (root: string) => void;
+    writeOnlyOnChange?: boolean;
+    log?: (line: string) => void;
 }
 
 export class FuturesWatcher {
@@ -169,6 +218,9 @@ export class FuturesWatcher {
     /** when the next token renewal is due (renewDueAt) */
     private renewAt = 0;
     private pausedUntil = 0;
+    /** 429 / 403 answers in a row (rateLimitPauseMs) */
+    private rateLimitHits = 0;
+    private statusNow: WatcherStatus = { state: 'starting', message: 'starting', until: null, since: Date.now() };
     private reconnectDelay = RECONNECT_MIN_MS;
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -179,8 +231,63 @@ export class FuturesWatcher {
     private stopping = false;
     private waiters: (() => void)[] = [];
 
-    constructor(private readonly args: FuturesArgs) {
+    constructor(private readonly args: FuturesArgs, private readonly hooks: WatcherHooks = {}) {
         this.feeds = args.roots.map((r) => new RootFeed(r));
+    }
+
+    get status(): WatcherStatus {
+        return this.statusNow;
+    }
+
+    private setStatus(state: WatcherState, message: string, until: number | null = null): void {
+        const s = this.statusNow;
+        if (s.state === state && s.message === message && s.until === until) return;
+        this.statusNow = { state, message, until, since: s.state === state ? s.since : Date.now() };
+        this.hooks.onStatus?.(this.statusNow);
+    }
+
+    /**
+     * The live values of some option symbols of `root` as compact rows [name, bid, ask, last, volume, openInterest]
+     * (the delta of the live mode; null = not known). Symbols that are not watched options (the futures) are skipped.
+     */
+    valueRows(root: string, symbols: Iterable<string>): LiveValueRow[] {
+        const feed = this.feeds.find((f) => f.root === root);
+        if (!feed) return [];
+        const out: LiveValueRow[] = [];
+        for (const sym of Array.from(symbols)) {
+            if (!feed.sessionOf.has(sym) || feed.failed.has(sym)) continue;
+            const v = feed.values.get(sym) ?? {};
+            const oi = numOrNull((v.oi as { value?: unknown } | undefined)?.value) ?? (feed.completed.has(sym) ? 0 : null);
+            out.push([sym.slice(sym.indexOf(':') + 1), numOrNull(v.bid), numOrNull(v.ask), numOrNull(v.lp), numOrNull(v.volume), oi]);
+        }
+        return out;
+    }
+
+    /** TradingView's greeks of every watched option of `root` as rows [name, iv, delta, gamma, theta, vega, rho]. */
+    greekRows(root: string): LiveGreekRow[] {
+        const feed = this.feeds.find((f) => f.root === root);
+        if (!feed) return [];
+        const out: LiveGreekRow[] = [];
+        feed.greeks.forEach((g, name) => out.push([name, g.iv, g.delta, g.gamma, g.theta, g.vega, g.rho]));
+        return out;
+    }
+
+    /** The roots whose first subscription is done (a snapshot can be built). */
+    readyRoots(): string[] {
+        return this.feeds.filter((f) => f.ready).map((f) => f.root);
+    }
+
+    /**
+     * The current chain of `root` in the fetcher's schema (the same object the file holds), null before the first
+     * subscription is done. Built from the in-memory values, no request.
+     */
+    snapshot(root: string, now: Date = new Date()): Payload | null {
+        const feed = this.feeds.find((f) => f.root === root);
+        if (!feed || !feed.ready) return null;
+        return buildPayload({
+            root: feed.root, wanted: feed.wanted, values: feed.values, failed: feed.failed, completed: feed.completed, greeks: feed.greeks,
+            futures: feed.front ? futuresPrice(feed.values.get(feed.front) ?? {}) : null, now,
+        }).payload;
     }
 
     /** --once: connect, subscribe every root, write the files, close. Returns the number of roots written. */
@@ -233,7 +340,9 @@ export class FuturesWatcher {
     }
 
     private log(line: string): void {
-        console.log(`[${clock()}] ${this.redact(line)}`);
+        const text = this.redact(line);
+        if (this.hooks.log) this.hooks.log(text);
+        else console.log(`[${clock()}] ${text}`);
     }
 
     private redact(x: unknown): string {
@@ -246,26 +355,42 @@ export class FuturesWatcher {
     }
 
     private pause(reason: string): void {
-        this.pausedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
-        this.log(`${reason}: rate limited, no requests to TradingView until ${clock(new Date(this.pausedUntil))} (the files keep the last values)`);
+        this.rateLimitHits++;
+        this.pausedUntil = Date.now() + rateLimitPauseMs(this.rateLimitHits);
+        const line = `${reason}: rate limited, no requests to TradingView until ${clock(new Date(this.pausedUntil))} (the files keep the last values)`;
+        this.log(line);
+        this.setStatus('rate-limited', line, this.pausedUntil);
+    }
+
+    /** A request went through: the next 429 starts the backoff at 15 minutes again. */
+    private requestOk(): void {
+        this.rateLimitHits = 0;
+        if (this.statusNow.state === 'rate-limited' && !this.paused()) this.setStatus(this.sock && !this.sock.closed ? 'live' : 'reconnecting', 'requests allowed again');
     }
 
     /** Read the env file (so tv:session needs no restart) and get a fresh token. `fatal`: throw instead of logging. */
     private async authenticate(fatal: boolean): Promise<void> {
-        const fail = (msg: string) => {
+        const fail = (msg: string, state: WatcherState) => {
+            if (state !== 'rate-limited') this.setStatus(state, msg);
             if (fatal) throw new Error(msg);
+            // a failed renewal is tried again in AUTH_RETRY_MS, not at every tick
+            this.renewAt = Date.now() + AUTH_RETRY_MS;
             this.log(msg);
         };
         if (this.paused()) return;
         const session = loadTvSession();
-        if (!session) return fail('no session -> run bun run tv:session');
+        if (!session) return fail('no session -> run bun run tv:session', 'no-session');
         this.session = session;
         const auth = await fetchAuthToken(session);
         if (auth.status === 429 || auth.status === 403) {
-            this.pausedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
-            return fail(`tradingview.com answered ${auth.status}: rate limited, wait ${RATE_LIMIT_BACKOFF_MS / 60_000} minutes`);
+            this.rateLimitHits++;
+            const wait = rateLimitPauseMs(this.rateLimitHits);
+            this.pausedUntil = Date.now() + wait;
+            this.setStatus('rate-limited', `tradingview.com answered ${auth.status}: rate limited`, this.pausedUntil);
+            return fail(`tradingview.com answered ${auth.status}: rate limited, wait ${wait / 60_000} minutes`, 'rate-limited');
         }
-        if (!auth.token || !auth.loggedIn) return fail('session expired -> run bun run tv:session');
+        if (!auth.token || !auth.loggedIn) return fail('session expired -> run bun run tv:session', 'expired');
+        this.requestOk();
         const changed = auth.token !== this.token;
         this.token = auth.token;
         this.tokenExpiresAt = jwtExpiresAt(auth.token) ?? Date.now() + AUTH_FALLBACK_LIFETIME_MS;
@@ -290,6 +415,8 @@ export class FuturesWatcher {
             if (p.v) {
                 const prev = feed.values.get(p.n);
                 feed.values.set(p.n, prev ? Object.assign(prev, p.v) : Object.assign({}, p.v));
+                feed.dirtySinceWrite = true;
+                this.hooks.onValues?.(feed.root, [p.n]);
             }
         } else if (msg.m === 'quote_completed') {
             const feed = this.byQs.get(String(msg.p[0]));
@@ -373,6 +500,7 @@ export class FuturesWatcher {
             feed.qs = this.openSession(feed, sock);
             try {
                 await this.subscribe(feed, true);
+                this.hooks.onWindow?.(feed.root);
                 this.log(`${feed.root}: subscribed ${feed.sessionOf.size} options in ${feed.sessions.length} quote session(s) [${feed.sessions.map((x) => x.count).join(', ')}]`);
             } catch (err) {
                 this.log(`${feed.root}: ${this.redact(err)}`);
@@ -380,6 +508,7 @@ export class FuturesWatcher {
         }
         if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
         this.reconnectDelay = RECONNECT_MIN_MS;
+        if (!this.paused()) this.setStatus('live', `streaming ${this.readyRoots().join(' ')}`);
     }
 
     /** A new quote session of `feed` on `sock`, with the quote fields; returns its id. */
@@ -428,6 +557,7 @@ export class FuturesWatcher {
         const delay = this.reconnectDelay;
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, RECONNECT_MAX_MS);
         this.log(`reconnecting in ${Math.round(delay / 1000)} s`);
+        if (this.statusNow.state === 'live' || this.statusNow.state === 'starting') this.setStatus('reconnecting', `websocket dropped, reconnecting in ${Math.round(delay / 1000)} s`);
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             void (async () => {
@@ -505,7 +635,10 @@ export class FuturesWatcher {
             this.addOptions(feed, sock, batch);
             await this.waitFor(feed, batch, WS_BATCH_TIMEOUT_MS);
         }
-        if (!fresh && (added.length || removed.length)) this.log(`${feed.root}: window moved, +${added.length} -${removed.length} options`);
+        if (!fresh && (added.length || removed.length)) {
+            this.log(`${feed.root}: window moved, +${added.length} -${removed.length} options`);
+            this.hooks.onWindow?.(feed.root);
+        }
         feed.ready = true;
     }
 
@@ -514,9 +647,11 @@ export class FuturesWatcher {
         if (this.paused()) return;
         try {
             const greeks = await scanGreeks(feed.front, feed.wanted, this.session);
+            this.requestOk();
             if (greeks.size) {
                 feed.greeks = greeks;
                 feed.greeksAt = Date.now();
+                this.hooks.onGreeks?.(feed.root);
             }
         } catch (err) {
             if (err instanceof TvRateLimitError) this.pause(`${feed.root} greeks`);
@@ -572,6 +707,8 @@ export class FuturesWatcher {
         const toDist = existsSync(distApi);
         for (const feed of this.feeds) {
             if (!feed.ready) continue;
+            if (this.hooks.writeOnlyOnChange && !feed.dirtySinceWrite) continue;
+            feed.dirtySinceWrite = false;
             const { payload, stats } = buildPayload({
                 root: feed.root, wanted: feed.wanted, values: feed.values, failed: feed.failed, completed: feed.completed, greeks: feed.greeks,
                 futures: feed.front ? futuresPrice(feed.values.get(feed.front) ?? {}) : null, now: new Date(),

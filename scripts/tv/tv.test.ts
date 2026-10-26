@@ -13,7 +13,7 @@ import {
     TV_SCAN, TvRateLimitError, wantedOptions, type Family, type QuoteValues, type ScanRow, type WantedOption,
 } from './chain';
 import { cookieHeader, jwtExpiresAt, parseEnv, redact } from './env';
-import { AUTH_REFRESH_BEFORE_MS, DEFAULT_REFRESH_MS, DEFAULT_WATCH_MS, FuturesWatcher, parseArgs, parseDuration, RATE_LIMIT_BACKOFF_MS, renewDueAt } from './futures';
+import { AUTH_REFRESH_BEFORE_MS, DEFAULT_REFRESH_MS, DEFAULT_WATCH_MS, FuturesWatcher, parseArgs, parseDuration, RATE_LIMIT_BACKOFF_MS, RATE_LIMIT_MAX_MS, rateLimitPauseMs, renewDueAt } from './futures';
 import { authTokenFromPage, decodeFrames, encodeFrame, fetchAuthToken, TV_HTTP, type TvMessage } from './ws';
 
 const fx = (name: string) => readFileSync(join(__dirname, 'fixtures', name), 'utf8');
@@ -251,6 +251,12 @@ describe('tv:futures arguments', () => {
         expect(renewDueAt(exp, now, 180_000)).toBe(now + 180_000);
         // the debug interval never delays a renewal that is due earlier
         expect(renewDueAt(now + 10 * 60_000, now, 3_600_000)).toBe(now - 5 * 60_000);
+    });
+
+    test('rate limits pause longer when they repeat: 15 min, 30 min, 1 h, then 2 h at most', () => {
+        expect([1, 2, 3, 4, 5, 9].map(rateLimitPauseMs)).toEqual([15, 30, 60, 120, 120, 120].map((m) => m * 60_000));
+        expect(rateLimitPauseMs(0)).toBe(RATE_LIMIT_BACKOFF_MS);
+        expect(RATE_LIMIT_MAX_MS).toBe(2 * 3_600_000);
     });
 
     test('--micros, --once, roots in any form, durations', () => {
