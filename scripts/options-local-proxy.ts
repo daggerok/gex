@@ -43,7 +43,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 
-import { corsFor } from "./proxy-cors";
+import { asksPrivateNetwork, corsFor } from "./proxy-cors";
 
 const PORT = Number(process.env.PORT ?? 8787);
 /** Interface the proxy listens on: loopback unless HOST says otherwise (GEX-M4). */
@@ -372,8 +372,9 @@ const server = Bun.serve({
     port: PORT,
     hostname: HOST,
     async fetch(req) {
-        // CORS allowlist (scripts/proxy-cors.ts): the local app and the published site only, any other page gets 403
-        const cors = corsFor(req.headers.get("origin"));
+        // CORS allowlist (scripts/proxy-cors.ts): the local app and the published site only, any other page gets 403; an
+        // allowed page asking for private network access (Chrome's preflight from the published site) gets it
+        const cors = corsFor(req.headers.get("origin"), asksPrivateNetwork(req.headers));
         if (!cors.allow) return new Response(JSON.stringify({ error: "origin not allowed" }), { status: 403, headers: { "Content-Type": "application/json" } });
         const res = await route(req);
         for (const [k, v] of Object.entries(cors.headers)) res.headers.set(k, v);

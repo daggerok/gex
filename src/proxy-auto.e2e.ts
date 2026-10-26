@@ -8,15 +8,16 @@ import { noProxy, startFakeProxy, startTestSite, type FakeProxy } from './e2e-si
 // Browser check of the auto proxy (owner 2026-10-25, src/proxy-discovery.ts): no provider menu and no cache / live switch;
 // the app looks for the local proxy and loads live data through it (CBOE first) or the cache when there is none, with a
 // source label next to the ticker. Proxy down -> CACHE <date>; up -> LIVE CBOE; "Proxy auto-discovery" OFF needs a
-// reload to notice a change, ON switches by itself; CBOE failing -> the cache in the end. A fake proxy (e2e-site.ts)
-// stands in for scripts/options-local-proxy.ts. Run: `bun run test:e2e proxy-auto`.
+// reload to notice a change, ON switches by itself; CBOE failing -> the cache in the end; on a host not served from this
+// machine (the published site) no request at all reaches this machine before "Use my local proxy". A fake proxy
+// (e2e-site.ts) stands in for scripts/options-local-proxy.ts. Run: `bun run test:e2e proxy-auto`.
 // ============================================================================
 
 const SETTINGS_KEY = 'gex.settings.v5';
 
 async function pageWith(browser: Browser, settings: Record<string, unknown> | null): Promise<Page> {
     const page = await (await browser.newContext({ viewport: { width: 1400, height: 800 } })).newPage();
-    if (settings) await page.addInitScript(([key, value]) => { localStorage.setItem(key, value); }, [SETTINGS_KEY, JSON.stringify(settings)] as const);
+    if (settings) await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [SETTINGS_KEY, JSON.stringify(settings)] as const); // first load only, a reload keeps what the app saved
     return page;
 }
 
@@ -133,6 +134,44 @@ async function main(): Promise<void> {
             assert.equal(saved.providerId, undefined, 'the old providerId is gone from the saved settings');
             assert.equal(saved.source, 'auto');
             await page.close();
+        }
+        // 7. published site (any host not served from this machine): no request to this machine before "Use my local proxy"
+        {
+            proxy.setUp(true);
+            proxy.setCboe(true);
+            const before = proxy.hits.length;
+            const pages = await chromium.launch({ args: ['--mute-audio', '--host-resolver-rules=MAP gex.test 127.0.0.1'] });
+            try {
+                const page = await pageWith(pages, { proxyBase: proxy.base, lastTicker: 'SPY' });
+                const local: string[] = [];
+                page.on('request', (r) => { const h = new URL(r.url()).hostname; if (h === 'localhost' || h === '127.0.0.1') local.push(r.url()); });
+                const url = site.url.replace('localhost', 'gex.test');
+                await page.goto(url);
+                await waitLabel(page, /^CACHE \d{4}-\d{2}-\d{2}$/, 'published site, before the opt-in');
+                await page.getByRole('button', { name: 'Chart' }).first().click();
+                await page.waitForTimeout(1500);
+                await page.getByRole('button', { name: 'Desk' }).first().click();
+                const ticker = page.locator('input[role=combobox]');
+                await ticker.fill('QQ');
+                await page.waitForTimeout(800);
+                assert.deepEqual(local, [], 'no request to this machine before the opt-in (no probe, no search, no candles)');
+                assert.equal(proxy.hits.length, before, 'the proxy saw nothing');
+                await ticker.fill('SPY');
+                await page.keyboard.press('Escape');
+                await page.locator('button[aria-label="Settings"]').click();
+                const optIn = page.locator('[data-proxy-optin] button');
+                assert.equal(await page.locator('[data-proxy-optin]').getAttribute('data-proxy-optin'), 'off');
+                assert.equal(await page.locator('[data-proxy-status]').getAttribute('data-proxy-status'), 'off');
+                await optIn.click();
+                await waitLabel(page, /^LIVE CBOE$/, 'published site, after "Use my local proxy"');
+                const seen = proxy.hits.slice(before);
+                assert.ok(seen.some((h) => h.path === '/health' && h.origin === new URL(url).origin), 'the probe came from the published origin');
+                await page.reload();
+                await waitLabel(page, /^LIVE CBOE$/, 'the opt-in is remembered after a reload');
+                await page.close();
+            } finally {
+                await pages.close();
+            }
         }
         console.log('proxy auto e2e: ok');
     } finally {

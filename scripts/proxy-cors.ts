@@ -34,17 +34,26 @@ export type CorsDecision = { allow: true; headers: Record<string, string> } | { 
 const ALLOW_METHODS = 'GET, OPTIONS';
 const ALLOW_HEADERS = '*';
 
-/** The CORS answer for a request's Origin header (null = no Origin). */
-export function corsFor(origin: string | null): CorsDecision {
+/**
+ * The CORS answer for a request's Origin header (null = no Origin). `privateNetwork`: the request carries
+ * `Access-Control-Request-Private-Network: true`, the preflight Chrome sends before a public page (the published site)
+ * may call this machine (Private Network Access; Chrome 142+ Local Network Access asks the user for permission first).
+ * Only an allowed origin gets `Access-Control-Allow-Private-Network: true` back (auto proxy opt-in, owner 2026-10-25).
+ */
+export function corsFor(origin: string | null, privateNetwork = false): CorsDecision {
     if (origin === null) return { allow: true, headers: {} };
     if (!isAllowedOrigin(origin)) return { allow: false };
-    return {
-        allow: true,
-        headers: {
-            'Access-Control-Allow-Origin': origin,
-            'Access-Control-Allow-Methods': ALLOW_METHODS,
-            'Access-Control-Allow-Headers': ALLOW_HEADERS,
-            Vary: 'Origin',
-        },
+    const headers: Record<string, string> = {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': ALLOW_METHODS,
+        'Access-Control-Allow-Headers': ALLOW_HEADERS,
+        Vary: 'Origin',
     };
+    if (privateNetwork) headers['Access-Control-Allow-Private-Network'] = 'true';
+    return { allow: true, headers };
+}
+
+/** True when a request asks for private network access (the PNA preflight header). */
+export function asksPrivateNetwork(headers: Pick<Headers, 'get'>): boolean {
+    return (headers.get('access-control-request-private-network') ?? '').toLowerCase() === 'true';
 }

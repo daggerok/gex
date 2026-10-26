@@ -268,15 +268,18 @@ describe('loadSettings: the provider menu became the auto source (owner 2026-10-
                 expect(s.proxyAutoPoll).toBe(false);
                 expect(s.lastTicker).toBe('SPY');
             }
-            blob = JSON.stringify({ source: 'static', proxyAutoPoll: true, proxyBase: 'http://127.0.0.1:9000' });
+            expect(DEFAULT_SETTINGS.localProxyOptIn).toBe(false);
+            blob = JSON.stringify({ source: 'static', proxyAutoPoll: true, proxyBase: 'http://127.0.0.1:9000', localProxyOptIn: true });
             const s = loadSettings();
+            expect(s.localProxyOptIn).toBe(true);
             expect(s.source).toBe('static');
             expect(s.proxyAutoPoll).toBe(true);
             expect(s.proxyBase).toBe('http://127.0.0.1:9000');
-            blob = JSON.stringify({ source: 'dolthub', proxyAutoPoll: 'yes', proxyBase: 5 });
+            blob = JSON.stringify({ source: 'dolthub', proxyAutoPoll: 'yes', proxyBase: 5, localProxyOptIn: 1 });
             const bad = loadSettings();
             expect(bad.source).toBe('auto');
             expect(bad.proxyAutoPoll).toBe(false);
+            expect(bad.localProxyOptIn).toBe(false);
             expect(bad.proxyBase).toBe('http://localhost:8787');
         } finally {
             g.localStorage = saved;
