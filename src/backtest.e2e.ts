@@ -172,15 +172,16 @@ async function main(): Promise<void> {
         assert.equal(await page.locator(`[data-backtest-row="${backupId}"]`).count(), 0, 'backup removed');
         await page.keyboard.press('Escape');
         await page.locator('[data-asof-import]').setInputFiles(backupPath);
-        await page.locator('[data-backtest-toast=ok]').waitFor();
+        // the import's own toast: the "Removed ... older than" toast above is still up (9 s), so any ok toast was found at
+        // once and the menu opened before a slow runner had stored the import (CI, 2026-10-26: "the imported backup is listed")
+        await page.locator('[data-backtest-toast=ok]', { hasText: `Imported: ${backupId}` }).waitFor();
         await openMenu();
         assert.equal(await option(backupId).count(), 1, 'the imported backup is listed');
         assert.ok((await option(backupId).innerText()).includes('local'), 'marked local');
         await page.keyboard.press('Escape');
         // a file that is not an archive is refused with a reason
         await page.locator('[data-asof-import]').setInputFiles({ name: 'broken.zip', mimeType: 'application/zip', buffer: Buffer.from('not a zip') });
-        await page.locator('[data-backtest-toast=error]').waitFor();
-        assert.ok((await page.locator('[data-backtest-toast=error]').innerText()).includes('broken.zip'));
+        await page.locator('[data-backtest-toast=error]', { hasText: 'broken.zip' }).waitFor();
 
         // ---- the custom levels of a snapshot replace the user's own and cannot be edited ----
         await page.evaluate((k) => {

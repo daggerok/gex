@@ -838,7 +838,7 @@ import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
 import { useGexQuotesByExp } from './gex-chain';
 import { useGexLevels } from './use-gex-levels';
-import { dataAge, dbg, errorText, estimateSpot, friendlyError, isAbortError } from './utils';
+import { dataAge, dbg, errorText, estimateSpot, friendlyError, isAbortError, suggestionOnEnter } from './utils';
 import { DeskView } from './views/DeskView';
 import { CHART_RANGES, type ChartRange, DEFAULT_RANGE } from './views/chart-range';
 import { loadChartRange, saveChartRange } from './chart-zoom-store';
@@ -990,6 +990,9 @@ const App: React.FC = () => {
     const [tickerSuggestionsLoading, setTickerSuggestionsLoading] = useState<boolean>(false);
     const [tickerSuggestionsOpen, setTickerSuggestionsOpen] = useState<boolean>(false);
     const [activeTickerSuggestion, setActiveTickerSuggestion] = useState<number>(-1);
+    // the query the shown suggestions were found for: until the debounced search for the typed text answers, the list (and
+    // a row highlighted by the mouse resting over it) belongs to an older query and Enter must not pick from it
+    const [tickerSuggestionsFor, setTickerSuggestionsFor] = useState<string | null>(null);
     // AbortControllers so the Cancel button can stop in-flight requests.
     const metaAbort = useRef<AbortController | null>(null);
     const expAbort = useRef<AbortController | null>(null);
@@ -1033,9 +1036,13 @@ const App: React.FC = () => {
                 .then((items) => {
                     if (cancelled) return;
                     setTickerSuggestions(items);
+                    setTickerSuggestionsFor(query);
                 })
                 .catch((e) => {
-                    if (!cancelled && !isAbortError(e)) setTickerSuggestions([]);
+                    if (!cancelled && !isAbortError(e)) {
+                        setTickerSuggestions([]);
+                        setTickerSuggestionsFor(query);
+                    }
                 })
                 .finally(() => {
                     if (!cancelled) setTickerSuggestionsLoading(false);
@@ -1477,10 +1484,14 @@ const App: React.FC = () => {
             return;
         }
         if (e.key === 'Enter') {
-            // Enter loads the highlighted suggestion, or else the typed ticker, right away.
+            // Enter loads the highlighted suggestion, or else the typed ticker, right away. A highlight in a list found for an
+            // older query does not count: typing "SPY" + Enter faster than the 180 ms search debounce, with the mouse resting
+            // where the unfiltered list opens (it highlights the row under the pointer), loaded that row's ticker instead
+            // (AAPB; the flaky desk-atm e2e on slow CI runners, 2026-10-26).
             e.preventDefault();
-            if (tickerSuggestionsOpen && activeTickerSuggestion >= 0 && tickerSuggestions[activeTickerSuggestion]) {
-                chooseTickerSuggestion(tickerSuggestions[activeTickerSuggestion]);
+            const picked = suggestionOnEnter({ open: tickerSuggestionsOpen, items: tickerSuggestions, active: activeTickerSuggestion, listFor: tickerSuggestionsFor }, tickerInput);
+            if (picked) {
+                chooseTickerSuggestion(picked);
             } else {
                 setTickerSuggestionsOpen(false);
                 setActiveTickerSuggestion(-1);
@@ -1497,7 +1508,7 @@ const App: React.FC = () => {
             e.preventDefault();
             setActiveTickerSuggestion((i) => Math.max(i - 1, -1));
         }
-    }, [tickerSuggestionsOpen, tickerSuggestions, activeTickerSuggestion, chooseTickerSuggestion, getDates, tickerInput]);
+    }, [tickerSuggestionsOpen, tickerSuggestions, tickerSuggestionsFor, activeTickerSuggestion, chooseTickerSuggestion, getDates, tickerInput]);
 
     // Whether the current provider+settings require a key for the typed ticker.
     const showOnboarding = useMemo(() => {

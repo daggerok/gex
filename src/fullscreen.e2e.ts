@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
-import { noProxy, startTestSite } from './e2e-site';
+import { eventually, noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the chart full screen on the GEX and Chart tabs: the button and the F key put the chart card over the whole
@@ -24,6 +24,16 @@ async function main(): Promise<void> {
     const rect = async (p: Page) => { const b = (await card(p).boundingBox())!; return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
     const covers = async (p: Page) => { const r = await rect(p); return r.x <= 0 && r.y <= 0 && r.w >= 1199 && r.h >= 799; };
     const settle = () => page.waitForTimeout(400);
+    // entering and leaving the browser's full screen is async (slow on a busy runner): wait for the state, not a fixed time
+    const isFull = () => eventually(() => covers(page));
+    // back = in place, out of the browser's own full screen, and still so half a second later: after F, F in quick
+    // succession the browser may grant the first request after the card went back (the app then leaves it again,
+    // useFullscreen leaveIfLate), so one look at the right moment was not enough
+    const backTo = async (normal: { x: number; y: number; w: number; h: number }) => {
+        const back = async () => JSON.stringify(await rect(page)) === JSON.stringify(normal) && (await page.evaluate(() => document.fullscreenElement === null));
+        await eventually(async () => (await back()) && (await page.waitForTimeout(500).then(back)), 8000);
+        return rect(page);
+    };
 
     async function check(tab: 'GEX' | 'Chart') {
         await page.getByRole('button', { name: tab }).first().click();
@@ -33,36 +43,40 @@ async function main(): Promise<void> {
         const chartBefore = await page.evaluate(() => (document.querySelector('canvas') ?? document.querySelector('.recharts-wrapper'))!.getBoundingClientRect().width);
 
         // the button
-        await button(page).click(); await settle();
-        assert.equal(await covers(page), true, `${tab}: the button makes it cover the window`);
+        await button(page).click();
+        assert.equal(await isFull(), true, `${tab}: the button makes it cover the window`);
         assert.equal(await button(page).getAttribute('aria-pressed'), 'true');
-        const chartFull = await page.evaluate(() => (document.querySelector('canvas') ?? document.querySelector('.recharts-wrapper'))!.getBoundingClientRect().width);
+        const chartWidth = () => page.evaluate(() => (document.querySelector('canvas') ?? document.querySelector('.recharts-wrapper'))!.getBoundingClientRect().width);
+        // the chart follows its card a frame or more later (a resize observer)
+        await eventually(async () => (await chartWidth()) > chartBefore);
+        const chartFull = await chartWidth();
         assert.ok(chartFull > chartBefore, `${tab}: the chart itself grew (${chartBefore} -> ${chartFull})`);
-        await button(page).click(); await settle();
-        assert.deepEqual(await rect(page), normal, `${tab}: the button brings it back to where it was`);
+        await button(page).click();
+        assert.deepEqual(await backTo(normal), normal, `${tab}: the button brings it back to where it was`);
 
         // GEX: a button in both top corners of the card, the right one toggles too
         if (tab === 'GEX') {
             assert.equal(await buttons(page).count(), 2, 'GEX: two full screen buttons');
             const [l, r] = [(await buttons(page).first().boundingBox())!, (await buttons(page).last().boundingBox())!];
             assert.ok(l.x - normal.x < 40 && normal.x + normal.w - (r.x + r.width) < 40 && Math.abs(l.y - r.y) < 2, `GEX: one button top left, one top right (${l.x}, ${r.x}; card ${normal.x}..${normal.x + normal.w})`);
-            await buttons(page).last().click(); await settle();
-            assert.equal(await covers(page), true, 'GEX: the right button makes it cover the window');
+            await buttons(page).last().click();
+            assert.equal(await isFull(), true, 'GEX: the right button makes it cover the window');
             const rf = (await buttons(page).last().boundingBox())!;
             assert.ok(1200 - (rf.x + rf.width) < 40 && rf.y < 40, 'GEX: the right button stays top right in full screen');
-            await buttons(page).last().click(); await settle();
-            assert.deepEqual(await rect(page), normal, 'GEX: the right button brings it back');
+            await buttons(page).last().click();
+            assert.deepEqual(await backTo(normal), normal, 'GEX: the right button brings it back');
         }
 
         // F
         await page.mouse.move(600, 400);
-        await page.keyboard.press('f'); await settle();
-        assert.equal(await covers(page), true, `${tab}: F makes it full screen`);
-        await page.keyboard.press('f'); await settle();
-        assert.deepEqual(await rect(page), normal, `${tab}: F again brings it back`);
+        await page.keyboard.press('f');
+        assert.equal(await isFull(), true, `${tab}: F makes it full screen`);
+        await page.keyboard.press('f');
+        assert.deepEqual(await backTo(normal), normal, `${tab}: F again brings it back`);
 
         // the controls of the chart work in full screen
-        await page.keyboard.press('f'); await settle();
+        await page.keyboard.press('f');
+        assert.equal(await isFull(), true, `${tab}: F once more for the controls`);
         if (tab === 'GEX') {
             const zoomKey = 'gex.chartZoom.v2';
             const zoom = () => page.evaluate((k) => (JSON.parse(localStorage.getItem(k) ?? '{}') as Record<string, number[]>).SPY ?? null, zoomKey);
@@ -98,11 +112,12 @@ async function main(): Promise<void> {
         }
 
         // Esc
-        await page.keyboard.press('Escape'); await settle();
-        if (!(await covers(page))) { /* already left */ } else { await page.keyboard.press('Escape'); await settle(); }
+        await page.keyboard.press('Escape');
+        if (!(await eventually(async () => !(await covers(page)), 1500))) await page.keyboard.press('Escape');
+        await backTo(normal);
         await page.keyboard.press('f'); await settle();
-        await page.keyboard.press('Escape'); await settle();
-        assert.deepEqual(await rect(page), normal, `${tab}: Esc leaves full screen`);
+        await page.keyboard.press('Escape');
+        assert.deepEqual(await backTo(normal), normal, `${tab}: Esc leaves full screen`);
 
         // F while a field is edited is a letter, not the hotkey
         const field = page.locator('input[role=combobox]');

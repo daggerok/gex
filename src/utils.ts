@@ -41,6 +41,17 @@ export function isAbortError(e: unknown): boolean {
 // SHARED HELPERS
 // ============================================================================
 
+/**
+ * The ticker suggestion Enter picks: the highlighted one, but only while the list is open and was found for the text in the
+ * box (`listFor` = the query of the shown list). Typing faster than the search debounce leaves the list of an older query
+ * on screen, and a row highlighted there (the mouse resting where the list opened highlights the row under it) is not what
+ * the user typed: Enter then loads the typed ticker (null here).
+ */
+export function suggestionOnEnter<T>(list: { open: boolean; items: readonly T[]; active: number; listFor: string | null }, typed: string): T | null {
+    if (!list.open || list.listFor !== typed.trim() || list.active < 0) return null;
+    return list.items[list.active] ?? null;
+}
+
 /** Normalize a value that an API may return as either an array or a single
  *  object (Tradier does this for singletons) into a proper array. */
 export function asArray<T>(v: T | T[] | null | undefined): T[] {

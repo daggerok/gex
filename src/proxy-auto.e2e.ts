@@ -31,6 +31,18 @@ async function waitLabel(page: Page, re: RegExp, what: string, timeout = 8000): 
     }
 }
 
+/**
+ * Waits until the fake proxy got no request for `quietMs`: a page closed while it was still loading (a live chain, its
+ * candles) has requests on the wire that reach the proxy after the close, and they must not count for the next step.
+ */
+async function drained(proxy: FakeProxy, quietMs = 400): Promise<void> {
+    let seen = -1;
+    while (seen !== proxy.hits.length) {
+        seen = proxy.hits.length;
+        await new Promise((r) => setTimeout(r, quietMs));
+    }
+}
+
 const healthHits = (proxy: FakeProxy) => proxy.hits.filter((h) => h.path === '/health').length;
 
 async function main(): Promise<void> {
@@ -102,6 +114,7 @@ async function main(): Promise<void> {
         {
             proxy.setUp(true);
             proxy.setCboe(false);
+            await drained(proxy);
             const before = proxy.hits.length;
             const page = await pageWith(browser, { proxyBase: proxy.base, lastTicker: 'SPY' });
             await page.goto(site.url);
@@ -116,6 +129,7 @@ async function main(): Promise<void> {
         {
             proxy.setUp(true);
             proxy.setCboe(true);
+            await drained(proxy);
             const before = healthHits(proxy);
             const page = await pageWith(browser, { proxyBase: proxy.base, lastTicker: 'SPY', source: 'static' });
             await page.goto(site.url);
@@ -139,6 +153,7 @@ async function main(): Promise<void> {
         {
             proxy.setUp(true);
             proxy.setCboe(true);
+            await drained(proxy);
             const before = proxy.hits.length;
             const pages = await chromium.launch({ args: ['--mute-audio', '--host-resolver-rules=MAP gex.test 127.0.0.1'] });
             try {
@@ -155,7 +170,10 @@ async function main(): Promise<void> {
                 await ticker.fill('QQ');
                 await page.waitForTimeout(800);
                 assert.deepEqual(local, [], 'no request to this machine before the opt-in (no probe, no search, no candles)');
-                assert.equal(proxy.hits.length, before, 'the proxy saw nothing');
+                // only what came from the published origin counts: a request of the page of step 6 (it was loading SPY live
+                // when it closed) may still reach the proxy now (CI, 2026-10-26: 18 hits instead of 17)
+                const published = new URL(url).origin;
+                assert.deepEqual(proxy.hits.slice(before).filter((h) => h.origin === published), [], 'the proxy saw nothing from the published site');
                 await ticker.fill('SPY');
                 await page.keyboard.press('Escape');
                 await page.locator('button[aria-label="Settings"]').click();
