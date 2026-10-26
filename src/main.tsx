@@ -1815,8 +1815,7 @@ const App: React.FC = () => {
                     previewLabel={previewLabel}
                     sections={sections}
                     hasRows={hasRows}
-                    levels={gex.levels}
-                    showMaxAg={gexMetrics.includes('absoluteGamma')}
+                    metrics={gexMetrics}
                 />
             </div>
             {/* `grow` + flex-col (2026-10-07): the wrapper takes the leftover height so
