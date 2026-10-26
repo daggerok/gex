@@ -94,6 +94,9 @@ export const Pill = ({
     </div>
 );
 
+/** The short state in the source label while the TradingView live mode cannot stream (TV LOGIN, TV PAUSED...). */
+const TV_STATE_SHORT: Readonly<Record<string, string>> = { expired: 'LOGIN', 'no-session': 'LOGIN', 'rate-limited': 'PAUSED', reconnecting: 'RECONNECTING', error: 'ERROR' };
+
 export const TopBar: React.FC<{
     settings: Settings;
     provider: DataProvider;
@@ -229,14 +232,18 @@ export const TopBar: React.FC<{
         : proxy.up === null ? t('settings.proxyChecking') : proxy.up ? t('settings.proxyFound') : t('settings.proxyNotFound');
     const base = settings.proxyBase || '—';
     const sourceText = !source ? '' : source.kind === 'checking' ? '…' : source.kind === 'live'
-        ? `LIVE${source.provider ? ` ${source.provider}` : ''}`
-        : `CACHE${source.date ? ` ${source.date}` : ''}`;
+        ? `LIVE${source.provider ? ` ${source.provider}` : ''}${source.at ? ` ${source.at}` : ''}`
+        : source.kind === 'tv'
+            ? `TV ${TV_STATE_SHORT[source.state] ?? source.state.toUpperCase()}`
+            : `CACHE${source.date ? ` ${source.date}` : ''}`;
     const sourceTip = !source ? '' : source.kind === 'checking'
         ? t('source.tip.checking', { base })
         : source.kind === 'live'
-            ? (source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
+            ? (source.provider === 'TV' ? t('source.tip.liveTv', { at: source.at ?? '', base }) : source.provider ? t('source.tip.live', { provider: source.provider, base }) : t('source.tip.liveNext', { base }))
+            : source.kind === 'tv'
+                ? t(source.state === 'rate-limited' ? 'source.tip.tvPaused' : source.state === 'reconnecting' ? 'source.tip.tvReconnecting' : source.state === 'expired' || source.state === 'no-session' ? 'source.tip.tvLogin' : 'source.tip.tvError', { message: source.message, date: source.date ?? '', until: source.until ? new Date(source.until).toLocaleTimeString() : '' })
             : (source.date ? t('source.tip.cache', { date: source.date }) : t('source.tip.cacheNext'));
-    const sourceCls = sourceStale
+    const sourceCls = sourceStale || source?.kind === 'tv'
         ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
         : source?.kind === 'live'
             ? (dark ? `border-slate-600 bg-slate-800 ${textAccent}` : `border-slate-200 bg-slate-50 ${textAccent}`)

@@ -29,7 +29,7 @@ export interface TestSnapshot {
 }
 
 /** `snapshots` become `api/history/<month>/<id>.zip` plus `api/history/index.json`, and `api/latest.json` gets `latest`. */
-export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?: string } = {}): Promise<TestSite> {
+export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?: string; futures?: Record<string, string> } = {}): Promise<TestSite> {
     const dir = mkdtempSync(join(tmpdir(), 'gex-e2e-'));
     // `bun run test:e2e` (src/e2e-run.ts) builds the app ONCE and hands the folder over, every check copies it (it adds its own
     // files to the copy); a check run alone builds for itself
@@ -60,6 +60,11 @@ export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?:
         writeFileSync(join(dir, 'api', 'history', 'index.json'), JSON.stringify({ version: 1, snapshots: index }));
     }
     if (opts.latest) writeFileSync(join(dir, 'api', 'latest.json'), JSON.stringify({ version: 1, date: opts.latest }));
+    // futures files (api/futures/<ROOT>.json, as tv:futures writes them), by root
+    for (const [root, text] of Object.entries(opts.futures ?? {})) {
+        mkdirSync(join(dir, 'api', 'futures'), { recursive: true });
+        writeFileSync(join(dir, 'api', 'futures', `${root}.json`), text);
+    }
     const server = Bun.serve({
         port: 0,
         fetch(req) {
@@ -146,6 +151,10 @@ export interface FakeProxy {
     setCboe: (ok: boolean) => void;
     /** paths requested so far (with the Origin header seen) */
     hits: Array<{ path: string; origin: string | null }>;
+    /** send one TradingView live mode event (status, snapshot, delta, greeks) to every /api/futures/live client (scripts/tv/live.ts) */
+    sendLive: (event: string, data: unknown) => void;
+    /** clients connected to /api/futures/live right now */
+    liveClients: () => number;
     close: () => void;
 }
 
@@ -158,6 +167,8 @@ export function startFakeProxy(): FakeProxy {
     let up = true;
     let cboe = true;
     const hits: FakeProxy['hits'] = [];
+    const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
+    const enc = new TextEncoder();
     const cboeBody = (symbol: string): string | null => {
         const file = join(ROOT, 'api', 'options', `${symbol}.json`);
         if (!existsSync(file)) return null;
@@ -170,7 +181,7 @@ export function startFakeProxy(): FakeProxy {
     };
     const server = Bun.serve({
         port: 0,
-        fetch(req) {
+        fetch(req, srv) {
             const url = new URL(req.url);
             const origin = req.headers.get('origin');
             hits.push({ path: url.pathname, origin });
@@ -180,6 +191,15 @@ export function startFakeProxy(): FakeProxy {
             if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
             if (url.pathname === '/health') return new Response(up ? 'ok' : 'down', { status: up ? 200 : 503, headers: cors });
             if (!up) return new Response('down', { status: 503, headers: cors });
+            if (url.pathname === '/api/futures/live') {
+                srv.timeout(req, 0);
+                let self: ReadableStreamDefaultController<Uint8Array> | null = null;
+                const stream = new ReadableStream<Uint8Array>({
+                    start: (c) => { self = c; streams.add(c); c.enqueue(enc.encode(': connected\n\n')); },
+                    cancel: () => { if (self) streams.delete(self); },
+                });
+                return new Response(stream, { headers: { ...cors, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } });
+            }
             if (url.pathname === '/api/cboe' && cboe) {
                 const body = cboeBody(String(url.searchParams.get('symbol') ?? '').replace(/^_/, ''));
                 if (body) return new Response(body, { headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -192,6 +212,13 @@ export function startFakeProxy(): FakeProxy {
         setUp: (v) => { up = v; },
         setCboe: (v) => { cboe = v; },
         hits,
+        sendLive: (event, data) => {
+            const bytes = enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+            for (const c of Array.from(streams)) {
+                try { c.enqueue(bytes); } catch { streams.delete(c); }
+            }
+        },
+        liveClients: () => streams.size,
         close: () => server.stop(true),
     };
 }

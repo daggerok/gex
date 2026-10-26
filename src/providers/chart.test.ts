@@ -86,6 +86,19 @@ describe('yahooChartSymbol', () => {
     });
 });
 
+describe('yahooChartSymbol of futures tickers', () => {
+    test('/ES, ES1! and the micros map to the Yahoo continuous front month', () => {
+        expect(yahooChartSymbol('/ES')).toBe('ES=F');
+        expect(yahooChartSymbol('es1!')).toBe('ES=F');
+        expect(yahooChartSymbol('/NQ')).toBe('NQ=F');
+        expect(yahooChartSymbol('/YM')).toBe('YM=F');
+        expect(yahooChartSymbol('RTY1!')).toBe('RTY=F');
+        for (const m of ['MES', 'MNQ', 'MYM', 'M2K']) expect(yahooChartSymbol(`/${m}`)).toBe(`${m}=F`);
+        // a bare ES is the Eversource stock
+        expect(yahooChartSymbol('ES')).toBe('ES');
+    });
+});
+
 describe('fetchOhlc', () => {
     const realFetch = globalThis.fetch;
     afterEach(() => { globalThis.fetch = realFetch; });
@@ -159,6 +172,16 @@ describe('chart cache file and source order', () => {
     expect(calls[0]).toBe('api/charts/SPY.json');
     expect(calls[1]).toContain('http://localhost:8787/api/chart');
     expect(bars.length).toBe(3);
+  });
+
+  test('a futures ticker reads ES=F: the proxy when live, else the cached api/charts/ES=F.json (owner 2026-10-25, PR #214)', async () => {
+    mock(200);
+    const live = await loadOhlc('/ES', { proxyBase: 'http://localhost:8787' }, {}, false);
+    expect(calls).toEqual(['http://localhost:8787/api/chart?symbol=ES%3DF&range=6mo&interval=1d']);
+    expect(live.length).toBe(3);
+    calls.length = 0;
+    await loadOhlc('ES1!', { proxyBase: '' }, {}, false).catch(() => null);
+    expect(calls).toEqual(['api/charts/ES=F.json']);
   });
 
   test('a live provider asks the proxy first and uses the cache when the proxy fails', async () => {

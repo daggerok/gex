@@ -38,6 +38,41 @@ import type { GexLevels, GexPoint, IvRepair, OptionQuote, SigmaLevel, SigmaLevel
 export const CONTRACT_MULTIPLIER = 100;
 
 /**
+ * Contract multiplier ($ per index point of one option) of the futures options gex reads from the TradingView
+ * files (`bun run tv:futures`, api/futures/<ROOT>.json): one option is one futures contract, so its multiplier is the
+ * futures point value (CME contract specs: E-mini S&P 500 $50, Micro $5; E-mini Nasdaq-100 $20, Micro $2; E-mini Dow $5,
+ * Micro $0.50; E-mini Russell 2000 $50, Micro $5). Every symbol not listed here uses CONTRACT_MULTIPLIER (100). A constant
+ * factor scales every GEX $ value alike, so the level strikes do not move, only the $ totals become right.
+ */
+export const CONTRACT_MULTIPLIER_BY_FUTURES_ROOT: Readonly<Record<string, number>> = {
+    ES: 50,
+    MES: 5,
+    NQ: 20,
+    MNQ: 2,
+    YM: 5,
+    MYM: 0.5,
+    RTY: 50,
+    M2K: 5,
+};
+
+/**
+ * The futures root of an app ticker in a futures form, `/ES` or `ES1!` (any case, the TradingView continuous notation),
+ * null for anything else. A bare `ES` is NOT a future: it is the Eversource Energy stock of the cache, with 100-share
+ * options. Only the roots of CONTRACT_MULTIPLIER_BY_FUTURES_ROOT are recognized.
+ */
+export function futuresRoot(symbol: string | null | undefined): string | null {
+    const m = /^\/([A-Z0-9]+)$|^([A-Z0-9]+?)1!$/.exec(String(symbol ?? '').trim().toUpperCase());
+    const root = m ? m[1] ?? m[2] : null;
+    return root && Object.prototype.hasOwnProperty.call(CONTRACT_MULTIPLIER_BY_FUTURES_ROOT, root) ? root : null;
+}
+
+/** $ per point of one option contract of `symbol`: the futures table for `/ES`-style tickers, else CONTRACT_MULTIPLIER. */
+export function contractMultiplier(symbol: string | null | undefined): number {
+    const root = futuresRoot(symbol);
+    return root ? CONTRACT_MULTIPLIER_BY_FUTURES_ROOT[root] : CONTRACT_MULTIPLIER;
+}
+
+/**
  * Minimum distance from the primary wall, as a fraction of spot, for a strike
  * to qualify as the "second wall" (netGexPlus / netGexMinus).
  * ORIGINAL, UNSOURCED heuristic: no public standard for a "second wall" exists.
@@ -73,14 +108,14 @@ export function netGexPlusMinusMinDistance(symbol: string | null | undefined, sp
     return (rule ? rule.pct : NET_GEX_PLUS_MINUS_MIN_DISTANCE_PCT) * spot;
 }
 
-/** GEX of a call position: gamma * OI * multiplier * spot^2 * 0.01 (section 7.1). */
-export function gexCall(gamma: number, openInterest: number, spot: number): number {
-    return gamma * openInterest * CONTRACT_MULTIPLIER * spot * spot * 0.01;
+/** GEX of a call position: gamma * OI * multiplier * spot^2 * 0.01 (section 7.1). `multiplier`: contractMultiplier(symbol). */
+export function gexCall(gamma: number, openInterest: number, spot: number, multiplier: number = CONTRACT_MULTIPLIER): number {
+    return gamma * openInterest * multiplier * spot * spot * 0.01;
 }
 
 /** GEX of a put position: same formula as a call, negated (section 7.1). */
-export function gexPut(gamma: number, openInterest: number, spot: number): number {
-    return -gexCall(gamma, openInterest, spot);
+export function gexPut(gamma: number, openInterest: number, spot: number, multiplier: number = CONTRACT_MULTIPLIER): number {
+    return -gexCall(gamma, openInterest, spot, multiplier);
 }
 
 function finiteOr0(value: number | null | undefined): number {
@@ -101,7 +136,7 @@ function finiteOr0(value: number | null | undefined): number {
  * this is how VIX/VXN's per-expiration forward is honored. Every other
  * quote (forward null/absent) uses `spot` unchanged.
  */
-export function computeGexProfile(quotes: readonly OptionQuote[], spot: number): GexPoint[] {
+export function computeGexProfile(quotes: readonly OptionQuote[], spot: number, multiplier: number = CONTRACT_MULTIPLIER): GexPoint[] {
     const byStrike = new Map<number, GexPoint>();
     for (const q of quotes) {
         if (typeof q.gamma !== 'number' || !Number.isFinite(q.gamma)) continue;
@@ -115,11 +150,11 @@ export function computeGexProfile(quotes: readonly OptionQuote[], spot: number):
         const oi = finiteOr0(q.openInterest);
         const volume = finiteOr0(q.volume);
         if (q.side === 'call') {
-            point.callGex += gexCall(q.gamma, oi, ref);
+            point.callGex += gexCall(q.gamma, oi, ref, multiplier);
             point.callOi += oi;
             point.callVolume += volume;
         } else {
-            point.putGex += gexPut(q.gamma, oi, ref);
+            point.putGex += gexPut(q.gamma, oi, ref, multiplier);
             point.putOi += oi;
             point.putVolume += volume;
         }
@@ -1066,7 +1101,9 @@ export function computeSigmaLevels(quotes: readonly OptionQuote[], spot: number,
 }
 
 export function computeGexLevels(quotes: readonly OptionQuote[], spot: number, symbol?: string | null): GexLevels {
-    const profile = computeGexProfile(quotes, spot);
+    // $ per point of one contract (futures options differ from the 100 of stock and index options); it scales every $ value
+    // of the profile alike, so no level strike depends on it
+    const profile = computeGexProfile(quotes, spot, contractMultiplier(symbol));
     const walls = findNetGexLevels(profile, spot, netGexPlusMinusMinDistance(symbol, spot));
     const pcr = computePCRatio(quotes);
     // Gamma flip (section 7.3): hypothetical-spot Black-Scholes recompute
@@ -1124,9 +1161,10 @@ export interface BoardRow {
     absGex: number;
     /**
      * Notional delta, OUR OWN DEFINITION (not a published metric): the dealer delta exposure in $ under the same dealer
-     * positioning gexCall / gexPut assume (long the calls, short the puts): sum of delta x OI x 100 x spot for calls minus
-     * the same for puts (a put delta is negative, so both sides add up as the dealer's long delta). Quotes with a null
-     * delta are left out. Futures-priced quotes use their own forward like computeGexProfile.
+     * positioning gexCall / gexPut assume (long the calls, short the puts): sum of delta x OI x multiplier x spot for
+     * calls minus the same for puts (a put delta is negative, so both sides add up as the dealer's long delta). The
+     * multiplier is 100, or the futures point value (contractMultiplier). Quotes with a null delta are left out.
+     * Futures-priced quotes use their own forward like computeGexProfile.
      */
     notionalDelta: number;
     callOi: number;
@@ -1174,7 +1212,7 @@ export interface Board {
  * (pure; the 30k-quote chains stay fast, the caller memoizes). OI and volume count every quote, the money columns only
  * quotes with the greek they need (null gamma / delta left out, never read as 0).
  */
-export function computeBoard(quotes: readonly OptionQuote[], spot: number): Board {
+export function computeBoard(quotes: readonly OptionQuote[], spot: number, multiplier: number = CONTRACT_MULTIPLIER): Board {
     const byStrike = new Map<number, BoardRow>();
     for (const q of quotes) {
         if (!Number.isFinite(q.strike)) continue;
@@ -1191,13 +1229,13 @@ export function computeBoard(quotes: readonly OptionQuote[], spot: number): Boar
         if (q.side === 'call') {
             row.callOi += oi;
             row.callVolume += volume;
-            if (hasGamma) row.callGex += gexCall(q.gamma as number, oi, ref);
-            if (hasDelta) row.notionalDelta += (q.delta as number) * oi * CONTRACT_MULTIPLIER * ref;
+            if (hasGamma) row.callGex += gexCall(q.gamma as number, oi, ref, multiplier);
+            if (hasDelta) row.notionalDelta += (q.delta as number) * oi * multiplier * ref;
         } else {
             row.putOi += oi;
             row.putVolume += volume;
-            if (hasGamma) row.putGex += gexPut(q.gamma as number, oi, ref);
-            if (hasDelta) row.notionalDelta -= (q.delta as number) * oi * CONTRACT_MULTIPLIER * ref;
+            if (hasGamma) row.putGex += gexPut(q.gamma as number, oi, ref, multiplier);
+            if (hasDelta) row.notionalDelta -= (q.delta as number) * oi * multiplier * ref;
         }
     }
     const rows: BoardRow[] = [];

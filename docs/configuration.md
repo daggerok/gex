@@ -101,9 +101,16 @@ The full table with defaults is in [Automations: environment variables](automati
 
 The fetcher settings of each job are the workflow's (see [Automations](automations.md#jobs)); they are not configurable here on purpose
 
-### TradingView futures (PR #202, not merged yet)
+### TradingView futures and the live mode
 
-The local futures options of [PR #202](https://github.com/daggerok/gex/pull/202) read your TradingView session from `~/.config/gex/tradingview.env` (mode 600, outside the repository, never committed) and add `tv:*` scripts and their variables on that branch; the full guide is its TradingView section, added here when it merges
+The session lives in `~/.config/gex/tradingview.env` (mode 600, outside the repository, never committed). Full guide: [README, Local proxy and TradingView live mode](../README.md#local-proxy-and-tradingview-live-mode)
+
+| Variable | Used by | Default | Meaning |
+|---|---|---|---|
+| `GEX_TV` | the proxy | on | `0` turns the TradingView live mode off |
+| `GEX_TV_ENV` | the proxy, `tv:*` | `~/.config/gex/tradingview.env` | another session file (a copy with a wrong value shows the "session expired" path without touching the real one) |
+| `TV_SESSIONID`, `TV_SESSIONID_SIGN` | the proxy, `tv:*` | from the file | the session in the environment instead of the file |
+| `TV_RENEW_EVERY_MS` | `tv:futures`, the proxy | off | debug: renew the 4-hour token this often (at least 60000) |
 
 ### Tests
 

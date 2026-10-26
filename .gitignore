@@ -46,3 +46,6 @@ package-lock.json
 
 # half-written files of an interrupted fetcher run (scripts write <file>.tmp, then rename it)
 *.tmp
+
+# api/futures/ (bun run tv:futures) IS committed and published (owner 2026-10-25, may be removed later for space);
+# the TradingView session never goes into a file of the repo (scripts/tv/env.ts redact())

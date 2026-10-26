@@ -64,8 +64,11 @@ export async function getBulk(providerId: string, symbol: string, vixFuturesPric
     }
     return null;
 }
-/** Store a bulk result (always model-enriched) in memory + persistent cache. */
-export async function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false): Promise<void> {
+/**
+ * Store a bulk result (always model-enriched) in memory + persistent cache. `persist` false keeps it in memory only (the
+ * TradingView live mode replaces the chain every second, futures-live.ts; the file stays the persistent copy).
+ */
+export async function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false, persist: boolean = true): Promise<void> {
     const enriched = enrichChainResult(result, vixFuturesPricing);
     const k = bulkKey(providerId, enriched.symbol, vixFuturesPricing);
     if (isFuturesPricedSymbol(enriched.symbol)) {
@@ -74,7 +77,7 @@ export async function putBulk(providerId: string, result: ChainResult, vixFuture
         bulkCache.delete(bulkKey(providerId, enriched.symbol, !vixFuturesPricing));
     }
     bulkCache.set(k, enriched);
-    if (!isAsOfProviderId(providerId)) await cacheSet(k, enriched);
+    if (persist && !isAsOfProviderId(providerId)) await cacheSet(k, enriched);
 }
 /** A lazy expiration in the persistent cache, tagged with the meta fetch it belongs to (GEX-H6). */
 export interface LazyEntry {

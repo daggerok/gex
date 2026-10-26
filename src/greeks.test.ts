@@ -423,7 +423,7 @@ describe('vixFuturesPricing call-site parity', () => {
   test('every loader entry point that can enrich (getBulk/putBulk/loadMeta/loadExpiration) accepts vixFuturesPricing', () => {
     for (const sig of [
       'export async function getBulk(providerId: string, symbol: string, vixFuturesPricing: boolean = false)',
-      'export async function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false)',
+      'export async function putBulk(providerId: string, result: ChainResult, vixFuturesPricing: boolean = false, persist: boolean = true)',
       'export async function loadMeta(provider: DataProvider, symbol: string, ctx: ProviderContext, vixFuturesPricing: boolean = false)',
       'export async function loadExpiration(provider: DataProvider, symbol: string, expiration: string, ctx: ProviderContext, vixFuturesPricing: boolean = false)',
     ]) {
@@ -440,6 +440,11 @@ describe('vixFuturesPricing call-site parity', () => {
       expect(mainSrc).toContain(snippet);
     }
     expect(chainSrc).toContain('getBulk(provider.id, meta.symbol, vixFuturesPricing)');
+    // the TradingView live mode (futures-live.ts, PR #202) writes and reads the bulk cache with the same setting
+    const liveSrc = read('src/futures-live.ts');
+    expect(liveSrc).toContain("putBulk('static', chain, vixFuturesPricing, false)");
+    expect(liveSrc).toContain("getBulk('static', chain.symbol, vixFuturesPricing)");
+    expect(mainSrc).toContain('applyLiveChain(chain, settings.vixFuturesPricing)');
     // Sanity: exactly one real call site each (ignoring comments/changelog
     // prose, which also mention these names) — if a second call site is
     // ever added without updating this test, this count check (not the

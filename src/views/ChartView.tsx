@@ -109,6 +109,8 @@ export interface ChartViewProps {
     /** The data source is live (the proxy was found, or a live provider is fixed): candles come from the proxy first, the
      *  cache is the fallback. False: only the cache, no request to the proxy (owner rule of thumb, 2026-10-25). */
     liveCandles?: boolean;
+    /** Bumped on every live futures update (main.tsx): the candles are fetched again in place, without a loading state. */
+    refreshKey?: number;
 }
 
 type FetchState =
@@ -125,7 +127,7 @@ function levelEntries(levels: GexLevels | null) {
     });
 }
 
-export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [], asOfDate = null, liveCandles = false }) => {
+export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, isFuturesPriced, levelExpCount, range, setRange, metrics, setMetrics, strikes = [], asOfDate = null, liveCandles = false, refreshKey = 0 }) => {
     const agEnabled = metrics.includes('absoluteGamma');
     const fs = useFullscreen();
     const { t: tr, lang } = useI18n();
@@ -187,6 +189,17 @@ export const ChartView: React.FC<ChartViewProps> = ({ settings, symbol, levels, 
         return () => ac.abort();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fetchKey]);
+    // a live futures update: fetch the candles again and swap them in only when they arrive (the chart never blanks)
+    useEffect(() => {
+        if (!symbol || !refreshKey) return undefined;
+        const ac = new AbortController();
+        const key = fetchKey;
+        loadOhlc(symbol, { proxyBase, signal: ac.signal }, { range: loadRange, interval: DEFAULT_CHART_INTERVAL }, asOfDate !== null)
+            .then((fresh) => { if (!ac.signal.aborted) setState((s) => (s.key === key ? { key, status: 'ok', bars: asOfDate ? cutBarsAfter(fresh, asOfDate) : fresh } : s)); })
+            .catch(() => { /* keep the candles shown */ });
+        return () => ac.abort();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refreshKey]);
     const current = state.key === fetchKey ? state : { key: fetchKey, status: 'loading' as const };
     const bars = current.status === 'ok' ? current.bars : null;
     // the Sigma segments start at the slot after the last candle: logical index = number of bars

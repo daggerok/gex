@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { DataProvider, OptionQuote, ProviderContext } from '../types';
-import { chainFromCacheFile, manifestFromIndex, staticProvider, staticTickerSuggestionsFromManifest } from './cache';
+import { chainFromCacheFile, futuresFile, manifestFromIndex, staticProvider, staticTickerSuggestionsFromManifest } from './cache';
 import { lazyHit, loadExpiration, withoutExpired } from './loader';
 
 const ctx = {} as ProviderContext;
@@ -112,5 +112,45 @@ describe('a lazy expiration is fetched once while a request for it runs', () => 
     expect(calls).toBe(1);
     await loadExpiration(lazy, 'SPY', '2099-10-16', ctx);
     expect(calls).toBe(2);
+  });
+});
+
+describe('CACHE provider: local futures files (bun run tv:futures, never in index.json)', () => {
+  const ES_FILE = { symbol: 'ES', updated: '2026-10-25T10:00:00-04:00', date: '2026-10-23', underlyingPrice: 7672.5, expirations: ['2026-10-30'], quotes: [{ symbol: 'EW261030C07650', expiration: '2026-10-30', side: 'call', strike: 7650, gamma: 0.004, openInterest: 10 }] };
+  const EVERSOURCE = { ...SPX, symbol: 'ES', underlyingPrice: 70 };
+
+  test('/ES and ES1! open api/futures/ES.json although index.json does not list it', async () => {
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seen.push(url);
+      if (url.endsWith('api/options/index.json')) return new Response(JSON.stringify(INDEX));
+      if (url.endsWith('api/futures/ES.json')) return new Response(JSON.stringify(ES_FILE));
+      return new Response('missing', { status: 404 });
+    }) as typeof fetch;
+    for (const t of ['/ES', 'es1!']) {
+      const chain = await staticProvider.fetchAll!(t, ctx);
+      expect(chain.symbol).toBe('/ES');
+      expect(chain.underlyingPrice).toBe(7672.5);
+      expect(chain.quotes.length).toBe(1);
+    }
+    expect(seen.filter((u) => u.includes('api/futures/'))).toEqual(['api/futures/ES.json', 'api/futures/ES.json']);
+  });
+
+  test('a bare ES stays the Eversource stock file of api/options', async () => {
+    serve({ 'api/options/index.json': { ...INDEX, files: ['ES', 'SPX'] }, 'api/options/ES.json': EVERSOURCE, 'api/futures/ES.json': ES_FILE });
+    const chain = await staticProvider.fetchAll!('ES', ctx);
+    expect(chain.underlyingPrice).toBe(70);
+  });
+
+  test('a missing futures file says how to make it, not "not in the static cache"', async () => {
+    serve({ 'api/options/index.json': INDEX });
+    await expect(staticProvider.fetchAll!('/NQ', ctx)).rejects.toThrow('bun run tv:futures');
+  });
+
+  test('futuresFile maps only the futures forms', () => {
+    expect(futuresFile('/m2k')).toEqual({ root: 'M2K', symbol: '/M2K', url: 'api/futures/M2K.json' });
+    expect(futuresFile('ES')).toBeNull();
+    expect(futuresFile('SPX')).toBeNull();
   });
 });

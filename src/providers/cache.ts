@@ -1,4 +1,5 @@
 /// <reference lib="esnext" />
+import { futuresRoot } from '../gex';
 import type { ChainResult, DataProvider, GreeksSummary, OptionQuote, ProviderContext, TickerSuggestion } from '../types';
 import { asArray, computeMid, num, UiError } from '../utils';
 
@@ -225,6 +226,18 @@ export function chainFromCacheFile(raw: string, j: any, where: string): ChainRes
 }
 
 /**
+ * The local futures file of a futures ticker (`/ES`, `ES1!`, any case; gex.ts futuresRoot), null for every other ticker.
+ * `bun run tv:futures` writes api/futures/<ROOT>.json from the owner's TradingView session on the owner's machine; the
+ * owner commits it by hand and it is published with the site (owner 2026-10-25), so the public site has it as of that
+ * commit. Never in index.json. A missing file says how to make it.
+ * Not api/options/ES.json: that is the Eversource Energy stock. `symbol` is the one canonical ticker, `/ES`.
+ */
+export function futuresFile(ticker: string): { root: string; symbol: string; url: string } | null {
+    const root = futuresRoot(ticker);
+    return root ? { root, symbol: `/${root}`, url: `api/futures/${root}.json` } : null;
+}
+
+/**
  * Static cache provider (BULK, no setup — best for GitHub Pages).
  * Reads the site's OWN files (same-origin => zero CORS, zero keys):
  *   ./api/options/index.json     -> { files: ["<TICKER>", ...],
@@ -266,6 +279,18 @@ export const staticProvider: DataProvider = {
     },
     async fetchAll(symbol, ctx) {
         const raw = symbol.toUpperCase().replace(/^[_.]/, '');
+        // futures tickers (/ES, ES1!) read the TradingView file, never listed in index.json (see futuresFile)
+        const future = futuresFile(raw);
+        if (future) {
+            let j: any;
+            try {
+                j = await fetchStaticJson(future.url, ctx.signal, future.symbol);
+            } catch (e) {
+                if (e instanceof UiError && e.key === 'error.cache.notCached') throw new UiError('error.cache.futuresMissing', { symbol: future.symbol, root: future.root });
+                throw e;
+            }
+            return chainFromCacheFile(future.symbol, j, future.url);
+        }
         const manifest = await loadStaticTickerManifest(ctx).catch(() => null);
         // the skiplist wins only when there is no file: a valid file is served even if a failed scan listed the ticker (GEX-H3)
         if (manifest?.noOptions.includes(raw) && !manifest.options.includes(raw)) {
