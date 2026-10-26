@@ -38,6 +38,8 @@
  *   - OHLC price history (src/providers/chart.ts, not a chain provider) calls:
  *       GET {base}/api/chart?symbol=SPY&range=6mo&interval=1d   (Yahoo v8 chart, no crumb)
  *       GET {base}/api/chart?symbol=^SPX&range=6mo&interval=1d  (indices use the "^" prefix)
+ *   - Futures (scripts/tv/live.ts): with the TradingView session file present the proxy also runs the tv:futures
+ *     watcher as a child (GEX_TV=0 turns it off), which rewrites api/futures/<ROOT>.json every minute
  *   - Ticker suggestions for providers that expose a searchable universe call:
  *       GET {base}/api/search?provider=yahoo&q=apple
  *       GET {base}/api/search?provider=nasdaq&q=tesla
@@ -52,6 +54,9 @@
 
 import { proxyPort } from "./check-ports";
 import { asksPrivateNetwork, corsFor } from "./proxy-cors";
+import { existsSync } from "node:fs";
+import { TV_ENV_PATH } from "./tv/env";
+import { spawnFuturesWatcher, watcherDecision } from "./tv/live";
 
 /** PORT, else 8787; `bun run proxy` / `all` / `start` check it is free before starting (scripts/check-ports.ts). */
 const PORT = proxyPort(process.env);
@@ -376,6 +381,17 @@ async function handleOptions(url: URL): Promise<Response> {
     return new Response(await res.text(), { status: res.status, headers: { "Content-Type": "application/json" } });
 }
 
+// ─── Futures: the tv:futures watcher as a child (scripts/tv/live.ts) ─────────────────────────────────────────────────
+const tvDecision = watcherDecision(process.env, existsSync(TV_ENV_PATH));
+// started only once the server listens (below): a taken port must not leave a watcher behind
+let tvWatcher: { stop: () => void } | null = null;
+const shutdown = () => {
+    tvWatcher?.stop();
+    process.exit(0);
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
 // ─── Server ──────────────────────────────────────────────────────────────────
 const server = Bun.serve({
     port: PORT,
@@ -416,7 +432,7 @@ async function route(req: Request): Promise<Response> {
         catch (e) { return json({ error: String(e) }, 502); }
     }
     if (url.pathname === "/" || url.pathname === "/health") {
-        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"] });
+        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx"], futuresWatcher: tvDecision.start });
     }
     return json({ error: "not found" }, 404);
 }
@@ -427,4 +443,6 @@ console.log(`   CBOE   | http://localhost:${PORT}/api/cboe?symbol=AAPL   (indice
 console.log(`   CHART  | http://localhost:${PORT}/api/chart?symbol=SPY&range=6mo&interval=1d   (indices: ^SPX)`);
 console.log(`   NASDAQ | http://localhost:${PORT}/api/nasdaq?symbol=AAPL`);
 console.log(`   SEARCH | http://localhost:${PORT}/api/search?provider=yahoo&q=apple`);
+console.log(tvDecision.start ? "   TV     | futures watcher started (tv:futures, output below)" : `   ${tvDecision.note.replace(/^TV {5}\| /, "TV     | ")}`);
 console.log(`   (relay logs below: "$proxy | $localPath -> $remoteUrl")\n`);
+if (tvDecision.start) tvWatcher = spawnFuturesWatcher();
