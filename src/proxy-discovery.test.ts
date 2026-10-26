@@ -98,6 +98,9 @@ describe('sourceLabel', () => {
         // ES is ready while NQ still subscribes: ES streams, the label is live
         expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: { state: 'starting', message: 'x', until: null, progress: 'NQ 2/4' } } })).toEqual({ kind: 'live', provider: 'TV', at: '10:05:07' });
         expect(sourceLabel({ ...base, tvLive: { streaming: false, at: '', status: null } })).toEqual({ kind: 'cache', date: '2026-10-25 21:40' });
+        // fast start: live from the scanner snapshot on; the websocket progress goes into the label (its tooltip)
+        expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: live, progress: 'ES 3,200/5,560' } })).toEqual({ kind: 'live', provider: 'TV', at: '10:05:07', progress: 'ES 3,200/5,560' });
+        expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: live, progress: null } })).toEqual({ kind: 'live', provider: 'TV', at: '10:05:07' });
         const expired = { state: 'expired', message: 'log in to tradingview.com in Chrome', until: null };
         expect(sourceLabel({ ...base, tvLive: { streaming: true, at: '10:05:07', status: expired } })).toEqual({ kind: 'tv', state: 'expired', message: 'log in to tradingview.com in Chrome', until: null, date: '2026-10-25 21:40' });
     });

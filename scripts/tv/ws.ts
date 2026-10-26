@@ -46,8 +46,8 @@ export interface AuthAnswer {
     loggedIn: boolean;
 }
 
-/** The logged-in chart page that holds the auth token. Mutable for tests only (a local fake server). */
-export const TV_HTTP = { chartUrl: 'https://www.tradingview.com/chart/' };
+/** The logged-in chart page that holds the auth token and the realtime websocket. Mutable for tests only (a local fake server). */
+export const TV_HTTP = { chartUrl: 'https://www.tradingview.com/chart/', wsUrl: 'wss://data.tradingview.com/socket.io/websocket' };
 
 /** GET tradingview.com/chart/ with the session cookie; the token is null when the session was rejected. */
 export async function fetchAuthToken(s: TvSession): Promise<AuthAnswer> {
@@ -80,7 +80,7 @@ export class TvSocket {
     lastFrameAt = Date.now();
 
     constructor(private readonly opts: WsOptions) {
-        const url = `wss://data.tradingview.com/socket.io/websocket?from=chart%2F&date=${new Date().toISOString().slice(0, 19)}&type=chart`;
+        const url = `${TV_HTTP.wsUrl}?from=chart%2F&date=${new Date().toISOString().slice(0, 19)}&type=chart`;
         const headers: Record<string, string> = { Origin: 'https://www.tradingview.com', 'User-Agent': UA };
         if (opts.session) headers.Cookie = cookieHeader(opts.session);
         // Bun accepts headers in the second argument of the WebSocket constructor

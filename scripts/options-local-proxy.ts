@@ -43,6 +43,7 @@
  *     imported from Chrome, one websocket to TradingView, the files api/futures/<ROOT>.json rewritten on change, and
  *       GET {base}/api/futures/status       engine state (live, expired, rate-limited...) and the ready roots
  *       GET {base}/api/futures/live?root=ES server-sent events: status, snapshot, then batched deltas
+ *       GET {base}/api/futures/focus?root=ES&exps=2026-10-27,...  subscribe this root and these expirations first
  *       GET {base}/api/futures/ES.json      the file
  *       GET {base}/api/futures/cme-oi       CME's preliminary open interest per option product and side (free FTP file)
  *     and the TradingView hybrid for stock and index options (scripts/tv/hybrid.ts, on demand, never written to a file):
@@ -444,6 +445,13 @@ async function route(req: Request): Promise<Response> {
     }
     if (url.pathname === "/api/futures/status") return json(tvEngine ? tvEngine.statusJson() : { engine: false, state: "off", message: "TradingView live mode off (GEX_TV=0)" });
     if (url.pathname === "/api/futures/cme-oi") return json(cmeOi?.get() ?? { day: null, file: null, products: {} });
+    if (url.pathname === "/api/futures/focus") {
+        // the page shows this root with these expirations: they join the TradingView websocket first (scripts/tv/live.ts)
+        if (!tvEngine) return json({ error: "TradingView live mode off (GEX_TV=0)" }, 404);
+        const exps = (url.searchParams.get("exps") || "").split(",").filter((e) => /^\d{4}-\d{2}-\d{2}$/.test(e)).slice(0, 100);
+        const ok = tvEngine.focus(url.searchParams.get("root") || "", url.searchParams.has("exps") ? exps : undefined);
+        return json({ ok }, ok ? 200 : 404);
+    }
     if (url.pathname === "/api/futures/live") {
         cmeOi?.get(); // a futures ticker is open: fetch the newest CME file if it is missing
         if (!tvEngine) return json({ error: "TradingView live mode off (GEX_TV=0)" }, 404);
@@ -460,7 +468,7 @@ async function route(req: Request): Promise<Response> {
         catch (e) { return json({ error: String(e) }, 502); }
     }
     if (url.pathname === "/" || url.pathname === "/health") {
-        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/api/futures/status", "/api/futures/live?root=ES", "/api/futures/ES.json", "/api/tv/live?symbol=SPY", "/api/tv/status", "/api/futures/cme-oi"], tradingviewLive: tvDecision.start });
+        return json({ ok: true, service: "gex-proxy", endpoints: ["/api/options?symbol=AAPL", "/api/cboe?symbol=AAPL", "/api/chart?symbol=SPY&range=6mo&interval=1d", "/api/nasdaq?symbol=AAPL", "/api/search?provider=yahoo&q=apple", "/api/search?provider=nasdaq&q=tesla", "/api/search?provider=cboe&q=spx", "/api/futures/status", "/api/futures/live?root=ES", "/api/futures/focus?root=ES&exps=2026-10-27", "/api/futures/ES.json", "/api/tv/live?symbol=SPY", "/api/tv/status", "/api/futures/cme-oi"], tradingviewLive: tvDecision.start });
     }
     return json({ error: "not found" }, 404);
 }

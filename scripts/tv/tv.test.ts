@@ -9,7 +9,7 @@ import { setValuationTime } from '../../src/greeks';
 import { chainFromCacheFile } from '../../src/providers/cache';
 import { rowsFromChain } from '../options-data';
 import {
-    allocateSessions, buildPayload, familiesOf, futuresPrice, isThirdFriday, MAX_EXPIRATIONS, optionSymbol, parseScan, payloadText, pickSeries, QUOTE_SESSION_LIMIT, SCAN_PAGE, scanBody, scanGreeks, strikesInWindow,
+    allocateSessions, buildPayload, familiesOf, fileRowsOf, futuresPrice, isThirdFriday, mergeOption, rootOrder, subscriptionOrder, MAX_EXPIRATIONS, optionSymbol, parseScan, payloadText, pickSeries, QUOTE_SESSION_LIMIT, SCAN_PAGE, scanBody, scanGreeks, strikesInWindow,
     TV_SCAN, TvRateLimitError, wantedOptions, type Family, type QuoteValues, type ScanRow, type WantedOption,
 } from './chain';
 import { cookieHeader, jwtExpiresAt, parseEnv, redact } from './env';
@@ -159,9 +159,9 @@ describe('scanner', () => {
     });
 
     test('rows by name, nulls kept as null', () => {
-        const rows = parseScan({ totalCount: 1, symbols: [{ s: 'CME_MINI:E4A261026C7630', f: ['E4A261026C7630', 'call', 7630, 20261026, 'E4A', 0.1125, 0.71, 0.0044, null, 'x', -1] }, { f: [] }] });
+        const rows = parseScan({ totalCount: 1, symbols: [{ s: 'CME_MINI:E4A261026C7630', f: ['E4A261026C7630', 'call', 7630, 20261026, 'E4A', 0.1125, 0.71, 0.0044, null, 'x', -1, 12.25, 12.75] }, { f: [] }] });
         expect(Array.from(rows.keys())).toEqual(['E4A261026C7630']);
-        expect(rows.get('E4A261026C7630')).toEqual({ name: 'E4A261026C7630', iv: 0.1125, delta: 0.71, gamma: 0.0044, theta: null, vega: null, rho: -1 });
+        expect(rows.get('E4A261026C7630')).toEqual({ name: 'E4A261026C7630', iv: 0.1125, delta: 0.71, gamma: 0.0044, theta: null, vega: null, rho: -1, bid: 12.25, ask: 12.75 });
         expect(parseScan(null).size).toBe(0);
     });
 });
@@ -418,5 +418,82 @@ describe('HTTP errors from TradingView (local fake server, no real request)', ()
         const w = watcher();
         await expect(w.authenticate(true)).rejects.toThrow('session expired -> run bun run tv:session');
         expect((await fetchAuthToken({ sessionid: 'x', sessionidSign: null })).token).toBeNull();
+    });
+});
+
+describe('fast start: subscription order (owner 2026-10-26)', () => {
+    const w = (exp: number, strike: number, side: 'call' | 'put' = 'call', root = 'E1A'): WantedOption => ({ symbol: optionSymbol('CME_MINI', root, exp, side, strike), root, exp, side, strike });
+    // forward 7000: 1% bands of 70 points
+    const all = [w(20261030, 7300), w(20261027, 7100), w(20261030, 7000), w(20261027, 7000, 'put'), w(20261027, 7000), w(20261027, 6950), w(20261028, 7040), w(20261027, 6930)];
+    const label = (x: WantedOption) => `${String(x.exp).slice(6)}${x.side[0]}${x.strike}`;
+
+    test('the strikes within 1% of every expiration first, the nearest expiration first inside a band, then the nearest strike, call before put', () => {
+        expect(subscriptionOrder(all, 7000).map(label)).toEqual(['27c7000', '27p7000', '27c6950', '28c7040', '30c7000', '27c6930', '27c7100', '30c7300']);
+    });
+
+    test('the selected expirations come first, in the same order inside', () => {
+        expect(subscriptionOrder(all, 7000, new Set(['2026-10-30'])).map(label)).toEqual(['30c7000', '30c7300', '27c7000', '27p7000', '27c6950', '28c7040', '27c6930', '27c7100']);
+    });
+
+    test('a copy (the input keeps its order); without a forward: by expiration and strike', () => {
+        const before = all.map(label);
+        subscriptionOrder(all, 7000);
+        expect(all.map(label)).toEqual(before);
+        expect(subscriptionOrder(all, null).map(label)).toEqual(['27c6930', '27c6950', '27c7000', '27p7000', '27c7100', '28c7040', '30c7000', '30c7300']);
+    });
+
+    test('roots: the focused ones first (the most recent first), unknown and repeated ones ignored, then the default order', () => {
+        expect(rootOrder(['ES', 'NQ', 'YM', 'RTY'], [])).toEqual(['ES', 'NQ', 'YM', 'RTY']);
+        expect(rootOrder(['ES', 'NQ', 'YM', 'RTY'], ['YM', 'CL', 'NQ', 'YM'])).toEqual(['YM', 'NQ', 'ES', 'RTY']);
+    });
+});
+
+describe('fast start: scanner snapshot merge (mergeOption, fileRowsOf, buildPayload scanQuotes)', () => {
+    const scan: ScanRow = { name: 'E1A261027C7000', iv: 0.2, delta: 0.5, gamma: 0.001, theta: null, vega: null, rho: null, bid: 10, ask: 10.5 };
+    const file = { openInterest: 321, oiDate: '2026-10-22', volume: 55, last: 10.25 };
+    const ws: QuoteValues = { bid: 11, ask: 11.5, lp: 11.25, volume: 3, oi: { time: Date.parse('2026-10-23T02:40:00Z') / 1000, value: 400 } };
+
+    test('not on the websocket yet: the scanner bid and ask, the file open interest with its day, the file volume and last', () => {
+        expect(mergeOption(undefined, scan, file, false, true)).toEqual({ bid: 10, ask: 10.5, last: 10.25, volume: 55, openInterest: 321, oiDate: '2026-10-22' });
+    });
+
+    test('answered on this connection (completed): the websocket only, a missing oi is 0 (never traded)', () => {
+        expect(mergeOption(ws, scan, file, true, true)).toEqual({ bid: 11, ask: 11.5, last: 11.25, volume: 3, openInterest: 400, oiDate: '2026-10-23' });
+        expect(mergeOption({ bid: 11 }, scan, file, true, true)).toEqual({ bid: 11, ask: null, last: null, volume: null, openInterest: 0, oiDate: null });
+    });
+
+    test('values of an earlier connection (a reconnect): the fresh scanner quote wins, the websocket OI and volume stay', () => {
+        expect(mergeOption(ws, scan, file, false, true)).toEqual({ bid: 10, ask: 10.5, last: 11.25, volume: 3, openInterest: 400, oiDate: '2026-10-23' });
+    });
+
+    test('without scanQuotes (the hybrid, older rows without bid and ask): the websocket values as before', () => {
+        expect(mergeOption(ws, scan, undefined, false, false)).toMatchObject({ bid: 11, ask: 11.5 });
+        const { bid: _b, ask: _a, ...greeksOnly } = scan;
+        expect(mergeOption(ws, greeksOnly, undefined, false, true)).toMatchObject({ bid: 11, ask: 11.5 });
+        expect(mergeOption(undefined, undefined, undefined, false, true)).toEqual({ bid: null, ask: null, last: null, volume: null, openInterest: null, oiDate: null });
+    });
+
+    test('fileRowsOf: OI always, volume and last only from a file of today; junk is empty', () => {
+        const json = { date: '2026-10-26', quotes: [{ symbol: 'A', openInterest: 5, oiDate: '2026-10-23', volume: 9, last: 1.5 }, { symbol: 'B', openInterest: null }, { nope: 1 }] };
+        expect(fileRowsOf(json, '2026-10-26').get('A')).toEqual({ openInterest: 5, oiDate: '2026-10-23', volume: 9, last: 1.5 });
+        expect(fileRowsOf(json, '2026-10-27').get('A')).toEqual({ openInterest: 5, oiDate: '2026-10-23', volume: null, last: null });
+        expect(fileRowsOf(json, '2026-10-26').get('B')).toEqual({ openInterest: null, oiDate: null, volume: null, last: null });
+        expect(fileRowsOf(json, '2026-10-26').size).toBe(2);
+        expect(fileRowsOf(null, '2026-10-26').size).toBe(0);
+        expect(fileRowsOf({ quotes: 'x' }, '2026-10-26').size).toBe(0);
+    });
+
+    test('buildPayload: the scanner snapshot of options not streaming yet, the websocket for the completed one', () => {
+        const wc = { symbol: 'CME_MINI:E1A261027C7000', root: 'E1A', exp: 20261027, side: 'call' as const, strike: 7000 };
+        const wp = { ...wc, symbol: 'CME_MINI:E1A261027P7000', side: 'put' as const };
+        const greeks = new Map<string, ScanRow>([['E1A261027C7000', scan], ['E1A261027P7000', { ...scan, name: 'E1A261027P7000', bid: 8, ask: 8.5 }]]);
+        const { payload, stats } = buildPayload({
+            root: 'ES', wanted: [wc, wp], values: new Map([[wp.symbol, { bid: 9, ask: 9.5, oi: { time: 1, value: 7 } }]]), failed: new Set(), completed: new Set([wp.symbol]),
+            greeks, scanQuotes: true, fileRows: new Map([['E1A261027C7000', file], ['E1A261027P7000', file]]), futures: null, now: new Date('2026-10-26T14:00:00Z'),
+        });
+        const q = payload.quotes as Array<typeof payload.quotes[number] & { oiDate: string | null }>;
+        expect(q.map((x) => [x.side, x.bid, x.ask, x.openInterest, x.oiDate])).toEqual([['call', 10, 10.5, 321, '2026-10-22'], ['put', 9, 9.5, 7, '1970-01-01']]);
+        expect(q[0].mid).toBe(10.25);
+        expect(stats.withOi).toBe(2);
     });
 });

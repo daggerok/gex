@@ -831,9 +831,9 @@ import { asOfDayOf, makeAsOfProvider, valuationTimeOf } from './providers/asof';
 import { ownCustomLevels, setCustomLevelsOverride } from './use-custom-levels';
 import { ctxFor, isFuturesTicker, providerById, suggestTickers } from './providers';
 import { isLoopbackHost, sourceChain, sourceLabel, type SourceProviderId, useProxyDiscovery } from './proxy-discovery';
-import { loadDefaultTickers } from './providers/cache';
+import { futuresFile, loadDefaultTickers } from './providers/cache';
 import { loadExpiration, loadMeta } from './providers/loader';
-import { applyLiveChain, nyTime, useTvLive } from './futures-live';
+import { applyLiveChain, nyTime, subscribedProgress, useTvLive } from './futures-live';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
 import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
@@ -1215,7 +1215,7 @@ const App: React.FC = () => {
                 liveApplying.current = false;
             }
         })();
-    }, liveKind);
+    }, liveKind, liveFuturesSymbol ? selectedExps : undefined);
 
     // Entering, changing or leaving a backtest reloads a ticker from the new source. Opening a snapshot picks the ticker: the
     // only one of a single-ticker backup; with two or more, the stored last ticker when the snapshot has it, else the first one
@@ -1317,7 +1317,7 @@ const App: React.FC = () => {
     const live = liveLabel({ liveReachable: chain[0] !== 'static', latestDate: bt.latestDate });
     // a futures ticker shows its file's own time (the Desk's "as of"), not the trading day the file belongs to
     const futuresAt = meta && isFuturesTicker(meta.symbol) ? dataAge(meta.updated, meta.dataDate)?.at ?? null : null;
-    const tvLiveLabel = liveSymbol ? { streaming: tvLive.streaming, at: nyTime(tvLive.updated), status: tvLive.status, hybrid: liveKind === 'hybrid' } : null;
+    const tvLiveLabel = liveSymbol ? { streaming: tvLive.streaming, at: nyTime(tvLive.updated), status: tvLive.status, hybrid: liveKind === 'hybrid', progress: liveFuturesSymbol ? subscribedProgress(tvLive.status, futuresFile(liveFuturesSymbol)?.root ?? null) : null } : null;
     const source = sourceLabel({ chain, probing: probeEnabled && proxy.up === null, servedBy: meta ? servedBy : null, dataDate: meta?.dataDate ?? null, futuresAt, tvLive: tvLiveLabel, archive: asOf?.label ?? null });
     const liveText = live.kind === 'today' ? tr('bt.asOfToday') : live.date ? tr('bt.asOfLatest', { date: live.date }) : tr('bt.asOfUnknown');
 

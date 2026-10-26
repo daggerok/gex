@@ -47,7 +47,29 @@ export interface TvLiveStatus {
     message: string;
     until: number | null;
     since: number;
+    /** starting: which root the proxy reads, e.g. "ES 1/4" */
+    progress?: string;
+    /** per root: [options on the websocket, options in the window] (fast start: the rest come from the scanner snapshot) */
+    subscribed?: Record<string, [number, number]>;
 }
+
+/**
+ * "ES 3,200/5,560" while the proxy still adds the options of `root` to its websocket (the rest come from the scanner
+ * snapshot), null when all of them stream or nothing is known.
+ */
+export function subscribedProgress(status: TvLiveStatus | null, root: string | null): string | null {
+    const c = root ? status?.subscribed?.[root] : undefined;
+    if (!root || !Array.isArray(c) || !(c[1] > 0) || c[0] >= c[1]) return null;
+    return `${root} ${c[0].toLocaleString('en-US')}/${c[1].toLocaleString('en-US')}`;
+}
+
+/** The proxy's focus call: the page shows `root` with the expirations `exps` (subscribed first). */
+export function futuresFocusUrl(base: string, root: string, exps: readonly string[]): string {
+    return `${normalizeProxyBase(base)}/api/futures/focus?root=${encodeURIComponent(root)}&exps=${encodeURIComponent(exps.join(','))}`;
+}
+
+/** The focus call waits this long after the last change of the selected expirations. */
+export const FOCUS_DEBOUNCE_MS = 300;
 
 /** The live stream of one futures root on the proxy. */
 export function futuresLiveUrl(base: string, root: string): string {
@@ -178,7 +200,7 @@ export interface TvLive {
  * allowed). `onChain` gets a new chain at most every LIVE_APPLY_MS while updates arrive. The EventSource reconnects by
  * itself when the proxy restarts; an older proxy without the endpoint answers 404 and nothing changes.
  */
-export function useTvLive(base: string, symbol: string | null, onChain: (chain: ChainResult) => void, kind: TvLiveKind = 'futures'): TvLive {
+export function useTvLive(base: string, symbol: string | null, onChain: (chain: ChainResult) => void, kind: TvLiveKind = 'futures', selectedExps: readonly string[] = []): TvLive {
     const [live, setLive] = useState<TvLive>({ status: null, streaming: false, updated: null });
     const handler = useRef(onChain);
     handler.current = onChain;
@@ -242,6 +264,16 @@ export function useTvLive(base: string, symbol: string | null, onChain: (chain: 
             es.close();
         };
     }, [base, root, symbol, kind]);
+    // futures: tell the proxy which expirations the page shows, so they join its websocket first (fast start); an older
+    // proxy answers 404, nothing changes
+    const expsKey = selectedExps.join(',');
+    useEffect(() => {
+        if (kind !== 'futures' || !root || !normalizeProxyBase(base) || !expsKey) return undefined;
+        const timer = window.setTimeout(() => {
+            fetch(futuresFocusUrl(base, root, expsKey.split(',')), { cache: 'no-store' }).catch(() => { /* proxy gone: the stream says so */ });
+        }, FOCUS_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [base, root, kind, expsKey]);
     return live;
 }
 

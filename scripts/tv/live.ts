@@ -8,11 +8,15 @@
  * scripts/tv/futures.ts (one websocket, quote sessions of up to 3,000 options, the scanner every LIVE_REFRESH_MS) and a
  * server-sent events stream per futures root for the app:
  *
- *   GET /api/futures/status          {"engine":true,"state":"live","message":"...","until":null,"since":...,"roots":["ES",...]}
+ *   GET /api/futures/status          {"engine":true,"state":"live","message":"...","until":null,"since":...,"roots":["ES",...],
+ *                                     "subscribed":{"ES":[3200,5560],...}}   options on the websocket / in the window
+ *   GET /api/futures/focus?root=ES&exps=2026-10-27,2026-10-28
+ *                                    the page shows ES with these expirations: they join the websocket first
  *   GET /api/futures/live?root=ES    text/event-stream:
- *       event: status    {"state","message","until","since"}               on connect and on every change
- *       event: snapshot  {"root","payload":<the api/futures/ES.json object>} on connect, after a reconnect, when the
- *                                                                           option window moves
+ *       event: status    {"state","message","until","since","subscribed"}  on connect and on every change
+ *       event: snapshot  {"root","payload":<the api/futures/ES.json object>} on connect, as soon as the scanner snapshot
+ *                                                                           is in (about 1 s per root after the start),
+ *                                                                           after a reconnect, when the window moves
  *       event: delta     {"root","updated","rows":[[name, bid, ask, last, volume, openInterest, oiDate], ...]}
  *                        the options that changed, at most every LIVE_FLUSH_MS, only when something changed
  *       event: greeks    {"root","at","rows":[[name, iv, delta, gamma, theta, vega, rho], ...]}
@@ -85,6 +89,8 @@ export interface WatcherLike {
     snapshot(root: string): Payload | null;
     valueRows(root: string, symbols: Iterable<string>): LiveValueRow[];
     greekRows(root: string): LiveGreekRow[];
+    /** a page opened `root` (showing `exps`): subscribe it first (FuturesWatcher.focus) */
+    focus?(root: string, exps?: readonly string[]): void;
 }
 
 export interface EngineOptions {
@@ -123,6 +129,8 @@ export class TvLiveEngine {
     private stopped = false;
     private statusNow: WatcherStatus = { state: 'starting', message: 'starting', until: null, since: Date.now() };
     readonly roots: string[];
+    /** what the pages asked for, the most recent last (replayed into a new watcher) */
+    private readonly focusAsked = new Map<string, readonly string[] | undefined>();
     /** counters for the logs and the CPU notes */
     stats = { deltas: 0, quotes: 0, snapshots: 0, values: 0 };
 
@@ -180,6 +188,7 @@ export class TvLiveEngine {
             ? this.opts.makeWatcher(this.roots, this.hooks())
             : new FuturesWatcher({ roots: this.roots, once: false, watchMs: LIVE_WRITE_MS, refreshMs: LIVE_REFRESH_MS, help: false }, this.hooks());
         this.watcher = w;
+        this.focusAsked.forEach((exps, root) => w.focus?.(root, exps));
         try {
             await w.runWatch();
             this.started = true;
@@ -236,6 +245,20 @@ export class TvLiveEngine {
         }
     }
 
+    /**
+     * GET /api/futures/focus and every new live client: the page shows `root` (with the expirations `exps`), so it is read
+     * and subscribed before the other roots. False for a root that is not live.
+     */
+    focus(root: string, exps?: readonly string[]): boolean {
+        const r = root.trim().toUpperCase();
+        if (!this.roots.includes(r)) return false;
+        const keep = exps ?? this.focusAsked.get(r);
+        this.focusAsked.delete(r);
+        this.focusAsked.set(r, keep);
+        this.watcher?.focus?.(r, keep);
+        return true;
+    }
+
     /** The JSON of GET /api/futures/status. */
     statusJson(): Record<string, unknown> {
         return { engine: true, ...this.statusNow, roots: this.watcher ? this.watcher.readyRoots() : [] };
@@ -246,6 +269,7 @@ export class TvLiveEngine {
         const r = root.trim().toUpperCase();
         if (!this.roots.includes(r)) return new Response(JSON.stringify({ error: `not a live root: ${root} (live: ${this.roots.join(', ')})` }), { status: 404, headers: { 'Content-Type': 'application/json' } });
         let me: Client | null = null;
+        this.focus(r);
         const stream = new ReadableStream<Uint8Array>({
             start: (controller) => {
                 const c: Client = { root: r, controller };

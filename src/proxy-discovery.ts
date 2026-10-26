@@ -136,8 +136,11 @@ export function useProxyDiscovery(base: string, enabled: boolean, poll: boolean)
 /** What the source label next to the ticker says. */
 export type SourceLabel =
     | { kind: 'checking' }
-    /** `at`: the New York time (hh:mm:ss) of the last live update, for the TradingView live mode (LIVE TV 10:05:07) */
-    | { kind: 'live'; provider: string | null; at?: string; delayedMin?: number }
+    /**
+     * `at`: the New York time (hh:mm:ss) of the last live update, for the TradingView live mode (LIVE TV 10:05:07);
+     * `progress`: the futures options still joining the proxy's websocket ("ES 3,200/5,560", the tooltip says so)
+     */
+    | { kind: 'live'; provider: string | null; at?: string; delayedMin?: number; progress?: string }
     | { kind: 'cache'; date: string | null }
     /** an "As of" day of the backtest is open (owner 2026-10-26): its saved data is shown and live is off on purpose */
     | { kind: 'archive'; date: string }
@@ -154,6 +157,8 @@ export interface TvLiveLabelInput {
     status: { state: string; message: string; until: number | null; progress?: string } | null;
     /** a stock or index through the TradingView hybrid: 15 minutes delayed; its failures keep the provider's own label */
     hybrid?: boolean;
+    /** futures fast start: "ES 3,200/5,560" while the proxy still subscribes (futures-live.ts subscribedProgress), else null */
+    progress?: string | null;
 }
 
 /**
@@ -185,8 +190,9 @@ export function sourceLabel(opts: {
         const { streaming, at, status } = opts.tvLive;
         const state = status?.state ?? null;
         if (state && state !== 'live' && state !== 'starting') return { kind: 'tv', state, message: status!.message, until: status!.until, date: opts.futuresAt ?? opts.dataDate };
-        if (streaming) return { kind: 'live', provider: 'TV', ...(at ? { at } : {}) };
-        // the engine is still subscribing (1.5-3 minutes after the proxy starts): say so, the page goes live by itself
+        // fast start: live from the scanner snapshot on, the websocket subscription runs on (its progress in the tooltip)
+        if (streaming) return { kind: 'live', provider: 'TV', ...(at ? { at } : {}), ...(opts.tvLive.progress ? { progress: opts.tvLive.progress } : {}) };
+        // the engine is still reading the roots (a few seconds after the proxy starts): say so, the page goes live by itself
         if (state === 'starting') return { kind: 'tv', state, message: status!.message, until: null, date: opts.futuresAt ?? opts.dataDate, ...(status!.progress ? { progress: status!.progress } : {}) };
     }
     if (opts.servedBy === 'static') return { kind: 'cache', date: opts.futuresAt ?? opts.dataDate };

@@ -11,8 +11,9 @@ import { startFakeProxy, startTestSite } from './e2e-site';
 // the proxy found, a futures ticker (/YM) subscribes to the proxy's live stream; before the first snapshot it shows its
 // file (CACHE <file time>); a snapshot and then deltas update the Desk IN PLACE (no reload, same tab, same scroll
 // position) and the label becomes LIVE TV hh:mm:ss; an engine status "expired" turns it into TV LOGIN. The futures file
-// is the cached SPY chain under the YM name (current dates, so the check does not age). A fake proxy stands in for
-// scripts/options-local-proxy.ts + scripts/tv/live.ts. Run: `bun run test:e2e futures-live`.
+// is the cached SPY chain under the YM name (current dates, so the check does not age). Fast start (2026-10-26): the page
+// names its selected expirations (/api/futures/focus) and the label carries the websocket progress until it is done. A
+// fake proxy stands in for scripts/options-local-proxy.ts + scripts/tv/live.ts. Run: `bun run test:e2e futures-live`.
 // ============================================================================
 
 const SETTINGS_KEY = 'gex.settings.v5';
@@ -54,9 +55,22 @@ async function main(): Promise<void> {
         // the engine is still subscribing: the label says so (owner acceptance finding 2026-10-26), then goes live by itself
         proxy.sendLive('status', { state: 'starting', message: 'subscribing YM 3/4', until: null, since: Date.now(), progress: 'YM 3/4' });
         await waitLabel(/^TV starting… YM 3\/4$/, 'while the engine subscribes');
-        proxy.sendLive('status', { state: 'live', message: 'streaming YM', until: null, since: Date.now() });
+        // fast start: the page told the proxy which expirations it shows (they join the websocket first)
+        for (let i = 0; i < 50 && !proxy.hits.some((h) => h.path === '/api/futures/focus'); i++) await page.waitForTimeout(100);
+        const focus = proxy.hits.find((h) => h.path === '/api/futures/focus');
+        assert.ok(focus, 'the page called /api/futures/focus');
+        const focusParams = new URLSearchParams(focus!.query ?? '');
+        assert.equal(focusParams.get('root'), 'YM', 'focus names the root');
+        assert.ok((focusParams.get('exps') ?? '').split(',').every((e) => file.expirations.includes(e)) && !!focusParams.get('exps'), `focus names the selected expirations: ${focus!.query}`);
+        // the scanner snapshot makes the page live while the websocket subscription runs; the tooltip names the progress
+        proxy.sendLive('status', { state: 'live', message: 'streaming YM (websocket 3,200 of 5,560 options, the rest from the scanner)', until: null, since: Date.now(), subscribed: { YM: [3200, 5560] } });
         proxy.sendLive('snapshot', { root: 'YM', payload: file });
         await waitLabel(/^LIVE TV \d\d:\d\d:\d\d$/, 'after the snapshot');
+        await page.waitForFunction(() => document.querySelector('[data-source-label]')?.getAttribute('data-source-progress') === 'YM 3,200/5,560', null, { timeout: 5000 })
+            .catch(async () => assert.fail(`the label carries the subscription progress: "${await label.getAttribute('data-source-progress')}"`));
+        proxy.sendLive('status', { state: 'live', message: 'streaming YM', until: null, since: Date.now(), subscribed: { YM: [5560, 5560] } });
+        await page.waitForFunction(() => !document.querySelector('[data-source-label]')?.hasAttribute('data-source-progress'), null, { timeout: 5000 })
+            .catch(() => assert.fail('the progress goes away once every option streams'));
         // a delta: every option of the first expiration twice as expensive, OI x3
         const first = file.expirations[0];
         const rows = file.quotes.filter((q) => q.expiration === first && q.bid != null && q.ask != null)
