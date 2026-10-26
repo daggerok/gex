@@ -24,6 +24,8 @@ async function main(): Promise<void> {
     const file = JSON.parse(readFileSync(join(ROOT, 'api', 'options', 'SPY.json'), 'utf8')) as { symbol: string; updated: string; quotes: Q[]; expirations: string[] };
     file.symbol = 'YM';
     file.updated = '2026-10-25T21:40:00-04:00';
+    // TradingView OI days (owner decision G10): every third quote carries an older one -> its Desk OI cell is pale
+    file.quotes.forEach((q, i) => { (q as Q & { oiDate: string }).oiDate = i % 3 === 0 ? '2026-10-15' : '2026-10-23'; });
     const site = await startTestSite({ futures: { YM: JSON.stringify(file) } });
     const proxy = startFakeProxy();
     const browser = await chromium.launch({ args: ['--mute-audio'] });
@@ -36,6 +38,8 @@ async function main(): Promise<void> {
             .catch(async () => assert.fail(`${what}: the label is "${await label.textContent()}", expected ${re}`));
         await waitLabel(/^CACHE 2026-10-25 21:40$/, 'before the stream: the file\'s own time');
         await page.waitForFunction(() => document.querySelectorAll('.od-atm').length > 0, null, { timeout: 10000 });
+        const pale = await page.evaluate(() => document.querySelectorAll('[data-oi-stale]').length);
+        assert.ok(pale > 0, 'OI cells older than the newest OI day are marked pale on the Desk');
         for (let i = 0; i < 50 && proxy.liveClients() === 0; i++) await page.waitForTimeout(100);
         assert.equal(proxy.liveClients(), 1, 'the app subscribed to the live stream of the proxy');
 
@@ -47,6 +51,9 @@ async function main(): Promise<void> {
         const scrollBefore = await page.evaluate(() => document.querySelector<HTMLElement>('[data-desk-scroll]')?.scrollTop ?? -1);
         const atmBefore = await page.locator('.od-atm').first().textContent();
 
+        // the engine is still subscribing: the label says so (owner acceptance finding 2026-10-26), then goes live by itself
+        proxy.sendLive('status', { state: 'starting', message: 'subscribing YM 3/4', until: null, since: Date.now(), progress: 'YM 3/4' });
+        await waitLabel(/^TV starting… YM 3\/4$/, 'while the engine subscribes');
         proxy.sendLive('status', { state: 'live', message: 'streaming YM', until: null, since: Date.now() });
         proxy.sendLive('snapshot', { root: 'YM', payload: file });
         await waitLabel(/^LIVE TV \d\d:\d\d:\d\d$/, 'after the snapshot');
@@ -56,6 +63,8 @@ async function main(): Promise<void> {
             .map((q) => [q.symbol, q.bid! * 2, q.ask! * 2, q.last, q.volume, (q.openInterest ?? 0) * 3]);
         proxy.sendLive('delta', { root: 'YM', updated: '2026-10-26T14:05:07.000Z', rows });
         await waitLabel(/^LIVE TV 10:05:07$/, 'after the delta: its New York time');
+        await page.waitForFunction(() => /as of \d{4}-\d{2}-\d{2} 10:05:07 ET · LIVE TV/.test(document.body.textContent ?? ''), null, { timeout: 5000 })
+            .catch(() => assert.fail('the Desk header says LIVE TV with the time of the last update, like the top label'));
         await page.waitForFunction((before) => document.querySelector('.od-atm')?.textContent !== before, atmBefore, { timeout: 8000 })
             .catch(() => assert.fail('the Desk ATM row did not change after the delta (bid and ask x2, OI x3)'));
         assert.equal(await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload), true, 'no page reload');

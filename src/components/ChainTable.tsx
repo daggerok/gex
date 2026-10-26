@@ -43,12 +43,21 @@ export interface DeskColumnDef {
     headerLabel?: string;
     className?: string;
     render: (q?: OptionQuote) => string;
+    /** a class for one cell (the pale OI of a TradingView OI older than the chain's newest day) */
+    cellClass?: (q?: OptionQuote) => string;
+    /** the app tooltip of one cell, null for none */
+    tip?: (q?: OptionQuote) => string | null;
 }
 
 /** Build the currently visible call/put columns from Settings → Desk columns. */
 export function deskColumns(settings: DeskColumnSettings, t: (key: string) => string, colorTheme: ColorThemeId = DEFAULT_COLOR_THEME): { calls: DeskColumnDef[]; puts: DeskColumnDef[] } {
     const ax = accentOf(colorTheme);
-    const oi: DeskColumnDef = { key: 'openInterest', label: t('settings.deskColumns.openInterest'), headerLabel: t('deskColumns.header.openInterest'), render: (q) => fmtInt(q?.openInterest) };
+    // a TradingView OI older than the chain's newest OI day stays in the numbers but is shown pale (owner decision G10)
+    const oi: DeskColumnDef = {
+        key: 'openInterest', label: t('settings.deskColumns.openInterest'), headerLabel: t('deskColumns.header.openInterest'), render: (q) => fmtInt(q?.openInterest),
+        cellClass: (q) => (q?.oiStale ? 'opacity-45' : ''),
+        tip: (q) => (q?.oiStale && q.oiDate ? t('chain.oiStale').replace('{{date}}', q.oiDate) : null),
+    };
     const vol: DeskColumnDef = { key: 'volume', label: t('settings.deskColumns.volume'), headerLabel: t('deskColumns.header.volume'), render: (q) => fmtInt(q?.volume) };
     const iv: DeskColumnDef = { key: 'iv', label: t('settings.deskColumns.iv'), headerLabel: t('deskColumns.header.iv'), className: 'text-slate-500', render: (q) => fmtPct(q?.iv) };
     const delta: DeskColumnDef = { key: 'delta', label: t('settings.deskColumns.delta'), headerLabel: t('deskColumns.header.delta'), className: ax.greek, render: (q) => fmtGreek(q?.delta) };
@@ -111,20 +120,36 @@ export function gridCols(callCount: number, putCount: number): string {
     // Strike track must fit values like "1,480.00" (high-priced underlyings) without
     // overflowing into Put Bid. 5.75rem min + slight fr boost keeps the center axis
     // readable while side columns still flex. CSS on .od-strike-cell contains overflow.
-    return `repeat(${callCount}, minmax(3.5rem, 1fr)) minmax(5.75rem, 1.15fr) repeat(${putCount}, minmax(3.5rem, 1fr))`;
+    // Side columns at least 3.75rem: the gap between two right-aligned numbers is the column width minus the text width;
+    // the widest values ("-0.5954", "2,839", "-17.71": large greeks print fewer decimals, utils.ts fmtGreek) are about
+    // 56 px in the Desk's tight-tracked 16 px digits (Cell), so 60 px keeps about 4 px between numbers at 390 px, and
+    // 20 columns still fit 1440 px without a horizontal scroll (owner check of /ES, 2026-10-26)
+    return `repeat(${callCount}, minmax(3.75rem, 1fr)) minmax(5.75rem, 1.15fr) repeat(${putCount}, minmax(3.75rem, 1fr))`;
 }
 export function deskMinWidth(callCount: number, putCount: number): string {
     // Strike allowance raised in lockstep with gridCols (was 4.5rem for 4.25rem track).
-    return `${Math.max(48, (callCount + putCount) * 3.75 + 6.25)}rem`;
+    // 4rem per side column: a grid cell's min-content (the widest number plus its padding, about 64 px) widens its track
+    // beyond the 3.75rem minimum, and the desk must be at least that wide so the sticky expiration bar spans every column
+    // (desk-atm.e2e.ts); 20 columns still fit 1440 px
+    return `${Math.max(48, (callCount + putCount) * 4 + 6.25)}rem`;
 }
 
 /** One data cell in the grid desk. */
 export const Cell: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className }) => (
-    <div className={'px-2 py-[3px] text-right tabular-nums ' + (className || '')}>{children}</div>
+    <div className={'px-2 py-[3px] text-right tabular-nums tracking-tight ' + (className || '')}>{children}</div>
 );
 export const QuoteCells: React.FC<{ q?: OptionQuote; columns: DeskColumnDef[] }> = ({ q, columns }) => (
     <>
-        {columns.map((c) => <Cell key={c.key} className={c.className}>{c.render(q)}</Cell>)}
+        {columns.map((c) => {
+            const extra = c.cellClass?.(q);
+            const tip = c.tip?.(q);
+            const text = c.render(q);
+            return (
+                <Cell key={c.key} className={extra ? `${c.className ?? ''} ${extra}` : c.className}>
+                    {tip ? <Tip text={tip} wrapperClassName="inline-flex justify-end" ><span data-oi-stale="">{text}</span></Tip> : text}
+                </Cell>
+            );
+        })}
     </>
 );
 

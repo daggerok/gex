@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { translations } from './i18n';
 import type { DataProvider } from './types';
-import { dataAge, errorText, fmt, fmtCompact, fmtDays, fmtInt, fmtSignedCompact, friendlyError, oiSharePct, UiError } from './utils';
+import { dataAge, errorText, fmt, fmtCompact, fmtDays, fmtGreek, fmtInt, fmtSignedCompact, friendlyError, oiSharePct, UiError } from './utils';
 
 // The number formatters are cached for speed, they must give exactly what toLocaleString gave.
 describe('fmt and fmtInt keep their output', () => {
@@ -113,4 +113,13 @@ describe('oiSharePct (the OI share next to each expiration)', () => {
     expect(oiSharePct(undefined)).toBe('');
     expect(oiSharePct(Number.NaN)).toBe('');
   });
+});
+
+describe('fmtGreek: fewer decimals for large values (futures theta fits its Desk column)', () => {
+    test('4 decimals below 10, 2 from 10, 0 from 1000; empty for missing', () => {
+        expect([0, 0.0049, -0.2764, 1.0831, -9.9999].map((v) => fmtGreek(v))).toEqual(['0.0000', '0.0049', '-0.2764', '1.0831', '-9.9999']);
+        expect([-17.71, -17.7100123, 123.456, -1234.5].map((v) => fmtGreek(v))).toEqual(['-17.71', '-17.71', '123.46', '-1235']);
+        expect(fmtGreek(null)).toBe('');
+        expect(fmtGreek(12.345, 1)).toBe('12.3');
+    });
 });

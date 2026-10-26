@@ -34,7 +34,7 @@ import { join, relative } from 'node:path';
 import { writeFileAtomic } from '../history-archive';
 import type { Payload } from '../options-data';
 import {
-    buildPayload, DEFAULT_ROOTS, DIST_FUTURES_DIR, familiesOf, FUTURES_DIR, futuresPrice, MICRO_ROOTS, payloadText,
+    buildPayload, oiDay, DEFAULT_ROOTS, DIST_FUTURES_DIR, familiesOf, FUTURES_DIR, futuresPrice, MICRO_ROOTS, payloadText,
     allocateSessions, QUOTE_FIELDS, scanGreeks, TV_ROOTS, TvRateLimitError, WS_BATCH, WS_BATCH_PAUSE_MS, WS_BATCH_TIMEOUT_MS, wantedOptions,
     type Family, type QuoteValues, type ScanRow, type WantedOption,
 } from './chain';
@@ -171,8 +171,8 @@ class RootFeed {
     }
 }
 
-/** One option of a live delta: [name, bid, ask, last, volume, openInterest]. */
-export type LiveValueRow = [string, number | null, number | null, number | null, number | null, number | null];
+/** One option of a live delta: [name, bid, ask, last, volume, openInterest, oiDate] (oiDate: the day of the OI value). */
+export type LiveValueRow = [string, number | null, number | null, number | null, number | null, number | null, string | null];
 /** One option's TradingView greeks: [name, iv, delta, gamma, theta, vega, rho]. */
 export type LiveGreekRow = [string, number | null, number | null, number | null, number | null, number | null, number | null];
 
@@ -189,6 +189,8 @@ export interface WatcherStatus {
     until: number | null;
     /** when this state began (epoch ms) */
     since: number;
+    /** starting / reconnecting: which root is being subscribed, e.g. "ES 1/4" (the app shows it in the label) */
+    progress?: string;
 }
 
 /**
@@ -240,10 +242,10 @@ export class FuturesWatcher {
         return this.statusNow;
     }
 
-    private setStatus(state: WatcherState, message: string, until: number | null = null): void {
+    private setStatus(state: WatcherState, message: string, until: number | null = null, progress?: string): void {
         const s = this.statusNow;
-        if (s.state === state && s.message === message && s.until === until) return;
-        this.statusNow = { state, message, until, since: s.state === state ? s.since : Date.now() };
+        if (s.state === state && s.message === message && s.until === until && s.progress === progress) return;
+        this.statusNow = { state, message, until, since: s.state === state ? s.since : Date.now(), ...(progress ? { progress } : {}) };
         this.hooks.onStatus?.(this.statusNow);
     }
 
@@ -258,8 +260,10 @@ export class FuturesWatcher {
         for (const sym of Array.from(symbols)) {
             if (!feed.sessionOf.has(sym) || feed.failed.has(sym)) continue;
             const v = feed.values.get(sym) ?? {};
-            const oi = numOrNull((v.oi as { value?: unknown } | undefined)?.value) ?? (feed.completed.has(sym) ? 0 : null);
-            out.push([sym.slice(sym.indexOf(':') + 1), numOrNull(v.bid), numOrNull(v.ask), numOrNull(v.lp), numOrNull(v.volume), oi]);
+            const rawOi = numOrNull((v.oi as { value?: unknown } | undefined)?.value);
+            const oiTime = numOrNull((v.oi as { time?: unknown } | undefined)?.time);
+            const oi = rawOi ?? (feed.completed.has(sym) ? 0 : null);
+            out.push([sym.slice(sym.indexOf(':') + 1), numOrNull(v.bid), numOrNull(v.ask), numOrNull(v.lp), numOrNull(v.volume), oi, rawOi != null && oiTime != null ? oiDay(oiTime) : null]);
         }
         return out;
     }
@@ -491,8 +495,14 @@ export class FuturesWatcher {
         await sock.opened;
         sock.send('set_auth_token', [this.token]);
         this.byQs.clear();
-        for (const feed of this.feeds) {
+        for (let k = 0; k < this.feeds.length; k++) {
+            const feed = this.feeds[k];
             if (this.sock !== sock || sock.closed) throw new Error('websocket dropped while subscribing');
+            // the app shows the progress while it waits (TV starting… ES 1/4); a reconnect keeps its own state
+            const progress = `${feed.root} ${k + 1}/${this.feeds.length}`;
+            if (this.statusNow.state === 'starting' || this.statusNow.state === 'reconnecting') {
+                this.setStatus(this.statusNow.state, `subscribing ${progress} (about 30-80 s per future)`, null, progress);
+            }
             feed.sessions = [];
             feed.sessionOf.clear();
             feed.subscribedFront = null;
