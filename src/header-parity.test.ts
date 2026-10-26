@@ -55,7 +55,7 @@ describe('header parity + auto proxy controls (gex)', () => {
     expect(menu.indexOf('data-debug-info')).toBeGreaterThan(menu.indexOf('data-data-source'));
   });
 
-  test('auto proxy: the header shows only the source label, the menu the auto-discovery with the override under Advanced', () => {
+  test('auto proxy: the header shows the Auto switch and the source label, the menu the auto-discovery first with the override under Advanced', () => {
     const topBar = readFileSync(join(__dirname, 'components/TopBar.tsx'), 'utf8');
     const header = topBar.slice(0, topBar.indexOf('{openSettings && ('));
     const menu = topBar.slice(topBar.indexOf('{openSettings && ('));
@@ -65,11 +65,16 @@ describe('header parity + auto proxy controls (gex)', () => {
     expect(main).not.toContain("{ k: 'cache', l: '💾' }");
     expect(main).not.toContain('data-provider-select');
     expect(main).not.toContain('LIVE_PROVIDERS');
-    // one select in the menu: the source override, inside the Advanced block, after the nested SettingsPanel
+    // one select in the menu: the source override, inside the Advanced block. Menu order (owner 2026-10-26): theme and
+    // language first, then the data source block (Auto first), then the nested SettingsPanel
     expect(menu.match(/<select/g)?.length).toBe(1);
     expect(menu.indexOf('data-source-override')).toBeGreaterThan(menu.indexOf('data-source-advanced'));
-    expect(menu.indexOf('data-data-source')).toBeGreaterThan(menu.indexOf('<SettingsPanel'));
-    expect(menu).toContain('data-proxy-autopoll=');
+    expect(menu.indexOf('data-data-source')).toBeGreaterThan(menu.indexOf("t('settings.language')"));
+    expect(menu.indexOf('data-data-source')).toBeLessThan(menu.indexOf('<SettingsPanel'));
+    expect(menu.indexOf('data-proxy-autopoll=')).toBeGreaterThan(menu.indexOf('data-data-source'));
+    expect(menu.indexOf('data-proxy-autopoll=')).toBeLessThan(menu.indexOf('data-proxy-status='));
+    // the Auto switch of the top bar (the same setting)
+    expect(header).toContain('data-topbar-auto=');
   });
 
   test('the proxy status is muted when the proxy is not probed', () => {

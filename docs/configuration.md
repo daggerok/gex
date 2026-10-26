@@ -26,7 +26,7 @@ The app has exactly four providers and no provider menu (`src/proxy-discovery.ts
 
 - **Auto (default):** the app asks `{proxy URL}/health` (500 ms timeout). Proxy found -> each ticker tries CBOE, then YAHOO, then NASDAQ, then CACHE, the first one that knows the ticker serves it. Not found -> CACHE, never an error
 - **When it looks:** with **Proxy auto-discovery** off (default) once when the page loads; on, every 30 s and whenever the tab gets focus or becomes visible, and the open ticker is reloaded from the new source when the result changes
-- **Published site:** a page not served from this machine (anything but `localhost`, `*.localhost`, `127.x.x.x`, `::1`) never contacts the proxy, not even the probe, until **Use my local proxy** is clicked, because Chrome 142+ asks every visitor for local network permission as soon as a page calls `localhost`
+- **Published site:** a page not served from this machine (anything but `localhost`, `*.localhost`, `127.x.x.x`, `::1`) never contacts the proxy, not even the probe, until **Use my local proxy** is on, because Chrome 142+ asks every visitor for local network permission as soon as a page calls `localhost`. There the two are one switch: turning **Proxy auto-discovery** (Auto) on also turns `localProxyOptIn` on, turning `localProxyOptIn` off also turns `proxyAutoPoll` off. Locally they stay independent
 - **Overrides** (Settings -> Data source -> Advanced): **Always cache** (never contacts the proxy) or one provider only (`CBOE only`, `YAHOO only`, `NASDAQ only`, no fallback)
 - **Source label** next to the ticker: `LIVE CBOE`, `LIVE YAHOO`, `LIVE NASDAQ` or `CACHE <date of the data>` (amber when that day is not today); before a ticker is loaded `LIVE` or `CACHE`, while the first probe runs `…`
 - The Chart tab follows the same result: candles through the proxy (`/api/chart`) when live, else `api/charts/<SYM>.json`
@@ -35,10 +35,11 @@ The app has exactly four providers and no provider menu (`src/proxy-discovery.ts
 
 The gear button in the top bar. Sections:
 
-- **Data source:** Proxy auto-discovery switch, the probe status, on the published site **Use my local proxy** or **Stop using my local proxy**; **Advanced:** Source override (Auto, Always cache, `<provider> only`) and the **Proxy base URL** (default `http://localhost:8787`)
-- **Theme:** system, light or dark (also the sun and moon button in the header)
+- **Theme:** system, light or dark (also the sun and moon button in the header, from `sm` width up)
 - **Color palette:** `gex` (default) or `fundamentals`
-- **Language:** English (default) or Russian (also in the header)
+- **Language:** English (default) or Russian (also in the header, from `sm` width up)
+- **Data source:** Proxy auto-discovery switch (the same setting as **Auto** in the top bar), the probe status, a warning when Chrome blocked local network access for the published site, on the published site **Use my local proxy** or **Stop using my local proxy**; **Advanced:** Source override (Auto, Always cache, `<provider> only`) and the **Proxy base URL** (default `http://localhost:8787`); **Source:** the top bar's source label, read-only, with the same tooltip
+- **Backtest (As of):** the same choice as the top bar's As of selector plus Import zip, Create backup and Backtest data
 - **Desk columns:** per side (calls, puts) open interest, volume, IV, delta, gamma, theta, vega on by default; rho, lambda, vanna, vomma, charm, speed, zomma, color off. Bid, mid, ask and the strike are always shown
 - **Cache:** record count and size of the query cache, size of the settings, oldest and newest record; **Clear data** (the query cache), **Clear settings** (the settings blob only), **Clear everything** (every `gex.*` key and the query cache; the backtest data stays, it has its own manager under "As of"). Each asks for a second click to confirm
 

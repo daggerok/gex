@@ -194,3 +194,35 @@ export function sourceLabel(opts: {
     if (opts.probing) return { kind: 'checking' };
     return opts.chain[0] === 'static' ? { kind: 'cache', date: null } : { kind: 'live', provider: null };
 }
+
+/**
+ * Chrome's Local Network Access permission names for a request from a public page to this machine: `loopback-network`
+ * (localhost, Chrome 14x+ split) and the older `local-network-access`. Both exist in Chromium 153 (checked 2026-10-26 with
+ * Playwright's build); a browser that knows neither throws, which counts as "not denied".
+ */
+export const LOCAL_NETWORK_PERMISSIONS = ['loopback-network', 'local-network-access'] as const;
+
+/**
+ * True when the browser says the user DENIED this site access to the local network, so the proxy probe can never answer
+ * (owner 2026-10-26: a blocked prompt looked the same as a stopped proxy). Only asked while `active` (a published page with
+ * the opt-in on); follows a later change in the site settings.
+ */
+export function useLocalNetworkDenied(active: boolean): boolean {
+    const [denied, setDenied] = useState(false);
+    useEffect(() => {
+        if (!active || typeof navigator === 'undefined' || !navigator.permissions?.query) { setDenied(false); return; }
+        let alive = true;
+        const statuses: PermissionStatus[] = [];
+        const update = () => { if (alive) setDenied(statuses.some((s) => s.state === 'denied')); };
+        LOCAL_NETWORK_PERMISSIONS.forEach((name) => {
+            navigator.permissions.query({ name: name as PermissionName }).then((s) => {
+                if (!alive) return;
+                statuses.push(s);
+                s.onchange = update;
+                update();
+            }, () => undefined);
+        });
+        return () => { alive = false; statuses.forEach((s) => { s.onchange = null; }); };
+    }, [active]);
+    return denied;
+}
