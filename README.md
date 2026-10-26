@@ -254,7 +254,7 @@ All of it in detail (steps, env, failure handling, durations, data sizes): [docs
 | `ci.yaml` | every pull request | unit tests, fetcher bundle, both builds, browser tests (jobs `build` and `e2e`), 2.5 to 3.5 min | nothing | no |
 | `github-pages.yml` | push to `main` (not archive-only pushes), manual, started by the data and dependency workflows | refreshes the 27 default tickers, builds with `/gex/`, deploys, 1 to 2 min | nothing | yes |
 | `update-partial-data.yml` | Mon-Fri 8:45 to 16:45 hourly, 17:15, 18:15, 19:15; manual | refreshes the 27 default tickers, builds and deploys, 1 to 1.5 min | final runs (from 16:30): the day zip and `api/latest.json`; a backup when `BACKTEST_TICKERS` is set | yes |
-| `update-data.yml` | Saturday 10:00; manual | the defaults plus `api/All.txt`, the 500 oldest other files (`ROTATE_STALE`), then `api/Indices.txt`, 9 to 14 min | `api/` | starts `github-pages.yml` |
+| `update-data.yml` | Saturday 10:00; manual | the defaults plus `api/All.txt`, the 500 oldest other files (`ROTATE_STALE`), 9 to 14 min | `api/` | starts `github-pages.yml` |
 | `backtest-backup.yml` | manual | optional fresh fetch, one backup zip | the zip | no |
 | `dependency-updates.yml` | manual | bumps every dependency, tests and builds, pushes to the branch | `package.json`, `bun.lock` | starts `github-pages.yml` |
 | `npm-check-updates.yml` | manual | the same bump as a check only | nothing | no |
@@ -325,7 +325,7 @@ api/
   options/                    # one option-chain cache file per ticker, plus index.json
   charts/                     # one file of 1 year of daily bars per ticker
   history/                    # index.json plus one folder per month, in it one zip per earlier day (last state of the default tickers)
-  All.txt, Indices.txt        # ticker lists of the update workflow
+  All.txt, Indices.txt        # ticker list of the update workflow; cash index list (kept in sync with INDEX_DIVIDEND_YIELDS)
 scripts/
   options-data.ts             # the fetcher: Yahoo and Cboe -> api/options and api/charts
   history-archive.ts          # writes the day zip api/history/<month>/<day>.zip (last run of the day), prunes old days, keeps index.json in step with the disk
