@@ -6,22 +6,22 @@
 #      (about 360 tickers), added on top of the built-in default list (DEFAULT_SYMBOLS). It does NOT pass `all`, so the
 #      auto-universe is not discovered. With ROTATE_STALE=500 the same step then refreshes a rotating portion of the
 #      other cached files of api/options (about 2,700): the 500 with the oldest `updated` stamp (selectRotation in the
-#      script; the list itself is never counted twice, cash indices are left to step 2), with their own 500-write budget
-#      and the same pacing. So every file is refreshed within about 6 weeks; until then it keeps the data of the run that
+#      script; the list itself is never counted twice; XSP, a cached cash index outside the list, rotates too), with their
+#      own 500-write budget and the same pacing; the chart pass gives the rotated tickers their candles. So every file is refreshed within about 6 weeks; until then it keeps the data of the run that
 #      last wrote it (its `updated` field says when).
-#   2. Fetches the index option chains (api/Indices.txt, e.g. SPX, NDX) in a SEPARATE step with a smaller
-#      MAX_EXPIRATIONS / MAX_FETCHES budget, so large index chains stay bounded in size.
-#   3. Commits the fresh api/options/*.json and api/charts/*.json back to the repo and starts the Pages deploy.
+#      The cash indices SPX, NDX, DJX and RUT are default tickers, so step 1 refreshes them with the expiration rule
+#      (selectDefaultExpirations); the former separate api/Indices.txt step was removed on 2026-10-26.
+#   2. Commits the fresh api/options/*.json and api/charts/*.json back to the repo and starts the Pages deploy.
 # The site (GitHub Pages) then reads its OWN api/options/*.json through the app's CACHE provider (used whenever no local
 # proxy is found) - zero CORS issues, zero exposed keys.
 #
 # SETUP:
 #   - Commit this repo with Pages enabled (Settings → Pages).
-#   - The ticker list is api/All.txt (and api/Indices.txt for the index step); tune the env vars in the job below.
+#   - The ticker list is api/All.txt; tune the env vars in the job below.
 #   - Ensure Actions has write permission: Settings → Actions → General →
 #     Workflow permissions → "Read and write permissions".
 #
-# CADENCE: once a week (Saturday 10:00 New York time) for every ticker of api/All.txt and api/Indices.txt plus the
+# CADENCE: once a week (Saturday 10:00 New York time) for every ticker of api/All.txt plus the
 # ROTATE_STALE portion of the rest, or by hand from the Actions tab. The default tickers are refreshed every hour on weekdays
 # by update-partial-data.yml, which keeps their later expirations; this run refreshes the far expirations' Yahoo prices.
 # =============================================================================
@@ -72,24 +72,6 @@ jobs:
         env:
           ROTATE_STALE: "500"
         run: TICKERS=$(cat api/All.txt) bun scripts/options-data.ts
-
-      # Index options (api/Indices.txt: SPX, XSP, NDX, DJX, RUT) run as their OWN
-      # step with a smaller expiration cap: an index chain is far larger than an
-      # equity's (SPX at MAX_EXPIRATIONS=50 is ~5.4 MB vs ~1.6 MB at 15), and a
-      # separate budget means a slow index fetch can never crowd out the equity
-      # run above. At 15 expirations all five indices total ~4.3 MB (~0.7 MB
-      # gzipped) and fetch in ~15 s. MAX_FETCHES must stay >= the line count of
-      # api/Indices.txt, or the last index silently waits for the next run.
-      # Indices enter the cache ONLY through this explicit allowlist, never via
-      # the script's live universe discovery.
-      # SPX, NDX, DJX and RUT are also default tickers: step 1 already fetched them with the expiration rule (which
-      # ignores MAX_EXPIRATIONS), so on the Saturday run they are still fresh here and skipped, and this step in effect
-      # refreshes XSP with 15 expirations. A manual weekday run (nothing fresh) fetches all five again.
-      - name: Fetch index option chains
-        env:
-          MAX_EXPIRATIONS: "15"
-          MAX_FETCHES: "10"
-        run: TICKERS=$(cat api/Indices.txt) bun scripts/options-data.ts
 
       - name: Commit updated data
         id: commit

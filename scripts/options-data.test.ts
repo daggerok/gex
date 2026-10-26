@@ -993,15 +993,21 @@ describe('chart cache', () => {
   };
 
   test('rotation: oldest updated first, ties by symbol, cut to the portion size', () => {
-    expect(selectRotation(['SPY', 'AAPL', 'BRK.B'], 3, rotDeps)).toEqual(['OLD1', 'OLD2', 'MID']);
-    expect(selectRotation(['SPY', 'AAPL', 'BRK.B'], 2, rotDeps)).toEqual(['OLD1', 'OLD2']);
+    expect(selectRotation(['SPY', 'AAPL', 'BRK.B', 'XSP'], 3, rotDeps)).toEqual(['OLD1', 'OLD2', 'MID']);
+    expect(selectRotation(['SPY', 'AAPL', 'BRK.B', 'XSP'], 2, rotDeps)).toEqual(['OLD1', 'OLD2']);
   });
 
-  test('rotation: the fixed universe (defaults + api/All.txt) is never counted twice, fresh files and cash indices are left out', () => {
-    // AAPL, SPY and BRK-B (given as BRK.B) are older than everything but belong to the universe; XSP is an index; TODAY is fresh
+  test('rotation: the fixed universe (defaults + api/All.txt) is never counted twice, fresh files are left out', () => {
+    // AAPL, SPY and BRK-B (given as BRK.B) are older than everything but belong to the universe; TODAY is fresh
     const all = selectRotation(['SPY', 'AAPL', 'BRK.B'], 100, rotDeps);
-    expect(all).toEqual(['OLD1', 'OLD2', 'MID', 'NEW']);
-    for (const s of ['SPY', 'AAPL', 'BRK-B', 'XSP', 'TODAY']) expect(all).not.toContain(s);
+    expect(all).toEqual(['XSP', 'OLD1', 'OLD2', 'MID', 'NEW']);
+    for (const s of ['SPY', 'AAPL', 'BRK-B', 'TODAY']) expect(all).not.toContain(s);
+  });
+
+  test('rotation: a cached cash index outside the list (XSP, no index step since t21) rotates, one inside the list does not', () => {
+    expect(selectRotation(['SPY'], 1, rotDeps)).toEqual(['AAPL']);
+    expect(selectRotation(['SPY', 'AAPL'], 1, rotDeps)).toEqual(['XSP']);
+    expect(selectRotation(['SPY', 'AAPL', 'XSP'], 1, rotDeps)).toEqual(['BRK-B']);
   });
 
   test('rotation: off by default (0) and the default list is outside the pick even when its files are the oldest', () => {
