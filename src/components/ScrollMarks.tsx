@@ -35,7 +35,9 @@ export const ScrollMarks: React.FC<{
     /** one tooltip line per row of a tick */
     describe: (row: ScrollMarkRow) => string;
     label: string;
-}> = ({ scrollRef, headHeight, viewWindow, rows, colors, onPick, describe, label }) => {
+    /** only the rows that mark something get a tick (the Board: ATM, peaks, runner-ups), no plain rows */
+    markedOnly?: boolean;
+}> = ({ scrollRef, headHeight, viewWindow, rows, colors, onPick, describe, label, markedOnly = false }) => {
     const stripRef = useRef<HTMLDivElement>(null);
     const [height, setHeight] = useState(0);
     const [view, setView] = useState({ top: 0, bottom: 1 });
@@ -63,7 +65,7 @@ export const ScrollMarks: React.FC<{
         return () => { box.removeEventListener('scroll', schedule); ro.disconnect(); cancelAnimationFrame(frame); };
     }, [scrollRef, headHeight, viewWindow, rows]);
 
-    const groups = useMemo(() => (height > 0 ? mergeScrollTicks(scrollTicks(rows, height, colors)) : []), [rows, height, colors]);
+    const groups = useMemo(() => (height > 0 ? mergeScrollTicks(scrollTicks(rows, height, colors, markedOnly)) : []), [rows, height, colors, markedOnly]);
 
     // the ticks do not depend on the scroll position, so scrolling re-renders only the frame
     const ticks = useMemo(() => {

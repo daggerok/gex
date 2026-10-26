@@ -23,8 +23,9 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // row's Net GEX; the runner-up of a column (computeBoard seconds) gets the same dot and, on an untinted row only, its own cell tinted exactly like a peak row (signTint); the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
 // and whenever the ticker or the expiration selection changes (src/center-row.ts, like the Desk). The table looks like the
 // Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel. Right of the
-// table's scrollbar a minimap strip (components/ScrollMarks.tsx, src/scroll-marks.ts) has a tick per row in its Net GEX sign
-// colour, the ATM, level, peak and runner-up rows on top, a frame over the rows in view; a click glides its row to the middle.
+// table's scrollbar a minimap strip (components/ScrollMarks.tsx, src/scroll-marks.ts) shows only what the table tints (owner
+// 2026-10-26): the ATM row in the Spot colour and the peak and runner-up rows in their Net GEX sign colour, placed by row,
+// a frame over the rows in view; a click glides its row to the middle.
 // ============================================================================
 
 interface BoardColumnDef {
@@ -142,15 +143,15 @@ export const BoardView: React.FC<{
         return centerRowInScroll(() => scrollRef.current, () => atmRef.current, () => headRef.current?.getBoundingClientRect().height ?? 0);
     }, [symbol, selectionKey, hasRows]);
 
-    // ---- the scroll marks strip: one entry per row with what it marks (only the shown columns' peaks and runner-ups) ----
+    // ---- the scroll marks strip: only what the table tints (owner 2026-10-26): the ATM row in the Spot colour and the rows
+    // and cells of the shown columns' peaks and runner-ups in the Net GEX sign colours; no level colours, no plain rows ----
     const markRows = React.useMemo<ScrollMarkRow[]>(() => (board?.rows ?? []).map((r) => ({
         strike: r.strike,
         netGex: r.netGex,
         atm: r.strike === board?.atmStrike,
-        levels: marks.get(r.strike),
         peaks: columns.filter((c) => c.peak && peakSets[c.peak].has(r.strike)).map((c) => c.key),
         seconds: columns.filter((c) => c.peak && !peakSets[c.peak].has(r.strike) && secondSets[c.peak].has(r.strike)).map((c) => c.key),
-    })), [board, marks, columns, peakSets, secondSets]);
+    })), [board, columns, peakSets, secondSets]);
     const markColors = React.useMemo(() => ({ pos: colors.netGexPos, neg: colors.netGexNeg, zero: NEUTRAL_DOT, atm: atmColor }), [colors.netGexPos, colors.netGexNeg, atmColor]);
     const headHeight = React.useCallback(() => headRef.current?.getBoundingClientRect().height ?? 0, []);
     const pickRow = React.useCallback((r: ScrollMarkRow) => {
@@ -161,7 +162,6 @@ export const BoardView: React.FC<{
     const describeMark = React.useCallback((r: ScrollMarkRow): string => {
         const parts = [`${fmt(r.strike)}   ${tr('board.col.netGex')} ${fmtSignedCompact(r.netGex)}`];
         if (r.atm) parts.push(tr('board.atm'));
-        if (r.levels?.length) parts.push(r.levels.map((l) => l.text).join(LEVEL_LABEL_SEPARATOR));
         if (r.peaks?.length) parts.push(`${tr('board.peak')}: ${r.peaks.map((k) => tr(ALL_COLUMNS[k].label)).join(', ')}`);
         if (r.seconds?.length) parts.push(`${tr('board.second')}: ${r.seconds.map((k) => tr(ALL_COLUMNS[k].label)).join(', ')}`);
         return parts.join(' · ');
@@ -260,7 +260,7 @@ export const BoardView: React.FC<{
                         </table>
                     )}
                 </div>
-                {hasRows && <ScrollMarks scrollRef={scrollRef} headHeight={headHeight} rows={markRows} colors={markColors} onPick={pickRow} describe={describeMark} label={tr('board.marks.label')} />}
+                {hasRows && <ScrollMarks scrollRef={scrollRef} headHeight={headHeight} rows={markRows} colors={markColors} onPick={pickRow} describe={describeMark} label={tr('board.marks.label')} markedOnly />}
             </div>
         </main>
     );
