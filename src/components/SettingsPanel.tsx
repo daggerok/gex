@@ -162,7 +162,7 @@ export const SettingsPanel: React.FC<{
                     <p className="mt-2 text-[11px] text-slate-400">{t('settings.deskColumns.note')}</p>
                 </div>
 
-                {/* ---- VIX futures pricing (Phase 1/3 — inert, nothing reads it yet) ---- */}
+                {/* ---- VIX futures pricing: Black-76 greeks and real GEX levels for VIX / VXN (greeks.ts, vix-pricing.ts, use-gex-levels.ts) ---- */}
                 <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">
                     <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
                         <input

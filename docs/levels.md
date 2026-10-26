@@ -18,7 +18,7 @@ The code is the reference: all of it lives in `src/gex.ts` and `src/greeks.ts` (
 
 - **Quotes:** only the expirations selected in the Expirations panel, all of them pooled per strike. Expired quotes are dropped first (see below)
 - **Spot:** the provider's underlying price; without one, a put-call parity estimate from the nearest selected expiration (the Spot level then says it is estimated)
-- **VIX and VXN** are priced off their futures, not the spot index: the Gamma Flip is not computed for them, and real levels need the experimental Black-76 pricing (`vixFuturesPricing`, off, no UI switch yet); otherwise the GEX tab explains why it shows none
+- **VIX and VXN** are priced off their futures, not the spot index: the Gamma Flip is not computed for them, and real levels need the experimental Black-76 pricing (Settings -> **VIX futures-priced greeks**, `vixFuturesPricing`, off by default): each expiration is priced off its own futures forward; off, the GEX tab explains why it shows none
 
 ## Time to expiration
 
