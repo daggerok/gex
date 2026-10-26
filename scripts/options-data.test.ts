@@ -30,6 +30,7 @@ import {
   buildChartQueue,
   FUTURES_CHART_SYMBOLS,
   buildQueue,
+  selectRotation,
   yahooChartCandidates,
   PRIORITY_SYMBOLS,
   canonical,
@@ -944,6 +945,46 @@ describe('chart cache', () => {
   test('cash indices are asked in caret form first', () => {
     expect(yahooChartCandidates('SPX')).toEqual(['^SPX', 'SPX']);
     expect(yahooChartCandidates('qqq')).toEqual(['QQQ']);
+  });
+
+  // ROTATE_STALE (owner 2026-10-25): the weekly run also refreshes the oldest other cached tickers
+  const ROT_UPDATED: Record<string, string> = {
+    OLD1: '2026-10-08T10:00:00-04:00', OLD2: '2026-10-08T10:00:00-04:00', MID: '2026-10-10T10:00:00-04:00',
+    NEW: '2026-10-24T10:00:00-04:00', AAPL: '2026-10-01T10:00:00-04:00', SPY: '2026-10-01T10:00:00-04:00',
+    XSP: '2026-10-01T10:00:00-04:00', 'BRK-B': '2026-10-02T10:00:00-04:00', TODAY: '2026-10-25T10:00:00-04:00',
+  };
+  const rotDeps = {
+    cached: Object.keys(ROT_UPDATED),
+    isFresh: (s: string) => s === 'TODAY',
+    updatedOf: (s: string) => ROT_UPDATED[s] ?? '',
+  };
+
+  test('rotation: oldest updated first, ties by symbol, cut to the portion size', () => {
+    expect(selectRotation(['SPY', 'AAPL', 'BRK.B'], 3, rotDeps)).toEqual(['OLD1', 'OLD2', 'MID']);
+    expect(selectRotation(['SPY', 'AAPL', 'BRK.B'], 2, rotDeps)).toEqual(['OLD1', 'OLD2']);
+  });
+
+  test('rotation: the fixed universe (defaults + api/All.txt) is never counted twice, fresh files and cash indices are left out', () => {
+    // AAPL, SPY and BRK-B (given as BRK.B) are older than everything but belong to the universe; XSP is an index; TODAY is fresh
+    const all = selectRotation(['SPY', 'AAPL', 'BRK.B'], 100, rotDeps);
+    expect(all).toEqual(['OLD1', 'OLD2', 'MID', 'NEW']);
+    for (const s of ['SPY', 'AAPL', 'BRK-B', 'XSP', 'TODAY']) expect(all).not.toContain(s);
+  });
+
+  test('rotation: off by default (0) and the default list is outside the pick even when its files are the oldest', () => {
+    expect(selectRotation(DEFAULT_SYMBOLS, 0, rotDeps)).toEqual([]);
+    const cached = [...DEFAULT_SYMBOLS, 'ZZZ'];
+    expect(selectRotation(DEFAULT_SYMBOLS, 500, { cached, isFresh: () => false, updatedOf: (s) => (s === 'ZZZ' ? '2026-10-24' : '2026-01-01') })).toEqual(['ZZZ']);
+  });
+
+  test('rotation is queued after the fixed list, never repeats a queued ticker, and is counted in nRotate', () => {
+    const q = buildQueue(['SPY', 'AAPL'], {
+      cached: ['SPY', 'AAPL', 'OLD1', 'MID'], skip: {}, explicit: true, isFresh: () => false,
+      updatedOf: (s) => ROT_UPDATED[s] ?? '', skipActive: () => false, rotation: ['OLD1', 'AAPL', 'MID'],
+    });
+    expect(q.queue).toEqual(['SPY', 'AAPL', 'OLD1', 'MID']);
+    expect(q.nRotate).toBe(2);
+    expect(q.nStale).toBe(1);
   });
 
   test('chart queue: priority, then no chart file, then stale oldest first, fresh skipped', () => {

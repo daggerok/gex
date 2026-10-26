@@ -4,8 +4,11 @@
 # INFRASTRUCTURE (not part of the app source). What it does:
 #   1. Runs scripts/options-data.ts (Bun, raw Yahoo calls, Cboe greeks overlay) with TICKERS = the list in api/All.txt
 #      (about 360 tickers), added on top of the built-in default list (DEFAULT_SYMBOLS). It does NOT pass `all`, so the
-#      auto-universe is not discovered and the other cached files of api/options (about 2,700 more) are not refreshed by
-#      this workflow; they keep the data of the run that last wrote them.
+#      auto-universe is not discovered. With ROTATE_STALE=500 the same step then refreshes a rotating portion of the
+#      other cached files of api/options (about 2,700): the 500 with the oldest `updated` stamp (selectRotation in the
+#      script; the list itself is never counted twice, cash indices are left to step 2), with their own 500-write budget
+#      and the same pacing. So every file is refreshed within about 6 weeks; until then it keeps the data of the run that
+#      last wrote it (its `updated` field says when).
 #   2. Fetches the index option chains (api/Indices.txt, e.g. SPX, NDX) in a SEPARATE step with a smaller
 #      MAX_EXPIRATIONS / MAX_FETCHES budget, so large index chains stay bounded in size.
 #   3. Commits the fresh api/options/*.json and api/charts/*.json back to the repo and starts the Pages deploy.
@@ -18,9 +21,9 @@
 #   - Ensure Actions has write permission: Settings → Actions → General →
 #     Workflow permissions → "Read and write permissions".
 #
-# CADENCE: once a week (Saturday 10:00 New York time) for every ticker of api/All.txt and api/Indices.txt, or by hand from the
-# Actions tab. The default tickers are refreshed every hour on weekdays by update-partial-data.yml, which keeps their
-# later expirations; this full run is what refreshes everything else (the far expirations' Yahoo prices included).
+# CADENCE: once a week (Saturday 10:00 New York time) for every ticker of api/All.txt and api/Indices.txt plus the
+# ROTATE_STALE portion of the rest, or by hand from the Actions tab. The default tickers are refreshed every hour on weekdays
+# by update-partial-data.yml, which keeps their later expirations; this run refreshes the far expirations' Yahoo prices.
 # =============================================================================
 name: Update options data
 
@@ -46,14 +49,11 @@ jobs:
   update:
     runs-on: ubuntu-latest
     env:
-      # SMART, self-driving universe — no hand-maintained ticker list.
-      # The script discovers US symbols sorted DESC by market cap (NASDAQ
-      # screener), skips files already refreshed today, and fetches top-down
-      # until the per-run budget is hit or the source rate-limits us. Each run
-      # APPENDS to the cache and the next run resumes where this one stopped.
-      MAX_FETCHES: "500"          # NEW (non-skipped) fetches per run (chunk size)
-      UNIVERSE_SIZE: "5000"       # consider the FULL market-cap-ranked US universe
-      MIN_MARKET_CAP: "9000000"   # Microcap floor ($10M); drops nano-caps
+      # The steps below pass a fixed list (TICKERS), so the script does not discover a universe here; UNIVERSE_SIZE and
+      # MIN_MARKET_CAP only matter for a manual `all` run. Files already refreshed today are skipped.
+      MAX_FETCHES: "500"          # writes per step for the fixed list (the rotation brings its own budget)
+      UNIVERSE_SIZE: "5000"       # `all` runs only: the market-cap-ranked US universe considered
+      MIN_MARKET_CAP: "9000000"   # `all` runs only: microcap floor ($10M); drops nano-caps
       MAX_EXPIRATIONS: "50"       # expirations stored per NON-default ticker; the defaults keep theirs by rule (selectDefaultExpirations)
       REQUEST_SLEEP: "0.5"        # politeness delay between fetches (seconds)
     steps:
@@ -66,7 +66,10 @@ jobs:
         with:
           bun-version: "1.4.x" # pinned minor: a new Bun release must not break the data runs unattended
 
+      # ROTATE_STALE: after the list, the 500 oldest other cached tickers (own budget of 500 writes, same pacing)
       - name: Fetch option chains
+        env:
+          ROTATE_STALE: "500"
         run: TICKERS=$(cat api/All.txt) bun scripts/options-data.ts
 
       # Index options (api/Indices.txt: SPX, XSP, NDX, DJX, RUT) run as their OWN
