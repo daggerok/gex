@@ -60,6 +60,7 @@ Open http://localhost:1234. Add `?debug=true` to the URL for verbose console log
 | `bun run app` | only the app (without the proxy it shows the cache) | 1234 |
 | `bun run proxy` | only the local proxy, with the TradingView live mode for the futures (see [Local proxy and TradingView live mode](#local-proxy-and-tradingview-live-mode)) | 8787 |
 | `bun run start` | the same as `all`, in the background under pm2 (`bun run ps`, `bun run logs`, `bun run restart`, `bun run stop` manage it) | 1234 and 8787 |
+| `bun run status` | starts nothing: one screen that says what runs (app, proxy, TradingView live mode, `tv:futures`, pm2, the data runner, the futures files) and the command that starts what does not; `--json` for scripts | reads 1234 and 8787 |
 
 Ports: `APP_PORT` moves the app, `PORT` moves the proxy (`APP_PORT=3000 PORT=9000 bun run all`; a moved proxy also needs its URL in Settings -> Advanced). Each command first checks its ports (`scripts/check-ports.ts`) and starts nothing when one is taken; `all` and `start` check both before either starts. It names the port and the process holding it, and exits with 1:
 
@@ -82,6 +83,41 @@ Data runner on your Mac (the hourly data slots, see [Automations](docs/automatio
 | `bun run data:run <job>` | runs `partial`, `weekly`, `backup [tickers]` or `deps` now with live output (`--dry-run`: nothing fetched or committed) |
 | `bun run data:pause` / `data:resume` / `data:uninstall` | stop, restart or remove the schedule |
 | `bun run data:help` | the list |
+
+`bun run status` shows the data runner too, next to the rest of the stack:
+
+```text
+$ bun run status
+gex status  Mon Oct 26 2026 14:34
+
+[ok]   App                  running
+                            pid 13079  node /Users/u/gex/...parcel --no-cache --no-source-maps --port 1234
+                            http://localhost:1234
+[ok]   Local proxy          running, /health answers
+                            pid 13075  bun ./scripts/options-local-proxy.ts
+                            http://localhost:8787
+[ok]   TradingView live     live
+                            since 14:31 (2 min)
+                            roots ES NQ YM RTY
+                            websocket ES 5,598/5,598, NQ 3,050/4,894, YM 0/616, RTY 0/664 options
+                            token valid until 18:31
+[ok]   CME OI check         file of 2026-10-23
+                            daily_volume_20261023.xlsx, downloaded 14:31
+[--]   tv:futures           not running (the proxy's live mode does its work)
+[ok]   TradingView session  file present
+                            /Users/u/.config/gex/tradingview.env
+[--]   pm2                  daemon runs, no process 'app'
+[off]  Data runner          schedule not installed
+                            -> bun run data:setup
+[--]   Futures files        newest data <1 min old
+                            ES   data of 14:33 (<1 min old), modified: differs from git
+                            NQ   data of 02:46 (11 h 47 min old)
+                            a commit would publish ES
+
+[ok]   Everything for live data is running
+```
+
+In a terminal the markers are green, red, yellow and grey dots; piped (or with `NO_COLOR`) they are `[ok]`, `[off]`, `[warn]` and `[--]`.
 
 Production build:
 
