@@ -133,6 +133,14 @@ async function main(): Promise<void> {
             });
             assert.equal(style.scheme, theme, `${theme} theme: color-scheme of the menu`);
             assert.notEqual(style.color, 'auto', `${theme} theme: a themed scrollbar-color on the menu`);
+            // one scroll only (owner 2026-10-26: the Desk columns list had its own scroll inside the menu's scroll): the
+            // menu is the only element in it that overflows with overflow auto or scroll, and it follows the theme
+            const scrollers = await page.locator('[data-settings-menu]').evaluate((menu) => [menu, ...Array.from(menu.querySelectorAll('*'))]
+                .filter((el) => /(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight + 1)
+                .map((el) => ({ menu: el.hasAttribute('data-settings-menu'), scheme: getComputedStyle(el).colorScheme, tag: `${el.tagName}.${(el as HTMLElement).className}`.slice(0, 80) })));
+            assert.equal(scrollers.length, 1, `${theme} theme: exactly one scroll in the open menu: ${JSON.stringify(scrollers)}`);
+            assert.ok(scrollers[0].menu, `${theme} theme: the menu itself scrolls`);
+            assert.equal(scrollers[0].scheme, theme, `${theme} theme: the menu scroll follows the theme`);
             await page.close();
         }
 

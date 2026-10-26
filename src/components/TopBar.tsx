@@ -451,7 +451,7 @@ export const TopBar: React.FC<{
                         {openSettings && (
                             <div
                                 data-settings-menu
-                                className={`absolute right-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3 max-h-[calc(100dvh-5rem)] overflow-y-auto`}
+                                className={`absolute right-0 top-full mt-2 w-[min(92vw,22rem)] z-[60] ${card} border rounded-xl shadow-xl p-3 space-y-3 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain themed-scroll`}
                             >
                                 <div className={`font-bold text-sm ${t1}`}>⚙️ {t('settings.title')}</div>
 

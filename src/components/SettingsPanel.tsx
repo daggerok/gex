@@ -66,7 +66,8 @@ export const SettingsPanel: React.FC<{
             {!embedded && <div className="fixed inset-0 z-40" onClick={onClose} />}
             <div
                 className={embedded
-            ? "themed-scroll max-h-[50vh] overflow-auto space-y-3"
+            // embedded in the top bar's settings menu: full height, the menu is the only scroll (owner 2026-10-26: no scroll inside a scroll)
+            ? "space-y-3"
             : "themed-scroll absolute right-0 top-11 z-50 max-h-[80vh] w-80 origin-top-right animate-fade-in overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-xl"}
                 role={embedded ? undefined : 'dialog'}
                 aria-label={embedded ? undefined : t('settings.title')}
