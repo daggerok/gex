@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
-import { noProxy, startTestSite } from './e2e-site';
+import { noProxy, scrollSettled, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the Board's scroll marks strip (components/ScrollMarks.tsx, src/scroll-marks.ts): the strip sits right
@@ -109,7 +109,8 @@ async function main(): Promise<void> {
             assert.ok(pick >= 0, `${at}: a highlighted row out of view to click`);
             const tick = page.locator('[data-board] [data-scroll-tick]').nth(pick);
             await tick.click();
-            await page.waitForTimeout(1200);
+            // the glide takes ~1.5 s on a long table (longer on a slow runner): wait until it stops, not a fixed time
+            await scrollSettled(page, '[data-board-scroll]');
             // the lead of a merged tick is its most important row, all of a tick's rows are within a few px of each other
             const strikes = (await tick.getAttribute('data-scroll-strikes'))!.split(',');
             const places = await Promise.all(strikes.map((s) => rowPlace(page, s)));

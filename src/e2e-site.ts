@@ -81,6 +81,60 @@ const LOCAL_PROXY_URL = /^https?:\/\/(localhost|127\.0\.0\.1):8787\//;
  */
 export async function noProxy(page: Page): Promise<void> {
     await page.route(LOCAL_PROXY_URL, (route) => route.abort());
+    await slowCpu(page);
+}
+
+/**
+ * `E2E_CPU_THROTTLE=<rate>` (e.g. 4-6) slows the page's CPU down by that factor (Chrome DevTools' CPU throttling), to
+ * reproduce a slow CI runner locally: `E2E_CPU_THROTTLE=5 bun run test:e2e desk`. No-op without it. `noProxy` applies it,
+ * so every check that uses the cache gets it.
+ */
+export async function slowCpu(page: Page): Promise<void> {
+    const rate = Number(process.env.E2E_CPU_THROTTLE);
+    if (!(rate > 1)) return;
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate });
+}
+
+/**
+ * Waits until the scroll container `selector` stops moving: its scrollTop unchanged for `frames` animation frames in a row,
+ * after it moved at all or after `idleMs` without any move (nothing to scroll). A smooth scroll (a scroll marks click)
+ * takes about 1.5 s across a long desk and longer on a slow runner, so a fixed sleep caught the row still gliding.
+ * Resolves with the settled scrollTop, rejects after `timeoutMs`.
+ */
+export async function scrollSettled(page: Page, selector: string, opts: { frames?: number; idleMs?: number; timeoutMs?: number } = {}): Promise<number> {
+    const { frames = 10, idleMs = 600, timeoutMs = 15000 } = opts;
+    return page.evaluate(([sel, still, idle, timeout]) => new Promise<number>((resolve, reject) => {
+        const el = document.querySelector(sel);
+        if (!el) { reject(new Error(`scrollSettled: no ${sel}`)); return; }
+        const t0 = performance.now();
+        const start = el.scrollTop;
+        let last = start;
+        let same = 0;
+        const step = () => {
+            const now = el.scrollTop;
+            same = Math.abs(now - last) < 0.5 ? same + 1 : 0;
+            last = now;
+            const moved = Math.abs(now - start) >= 0.5;
+            if (same >= still && (moved || performance.now() - t0 >= idle)) { resolve(now); return; }
+            if (performance.now() - t0 > timeout) { reject(new Error(`scrollSettled: ${sel} still scrolling after ${timeout} ms`)); return; }
+            requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+    }), [selector, frames, idleMs, timeoutMs] as const);
+}
+
+/**
+ * Polls `check` every `everyMs` until it is true or `timeoutMs` passed; returns its last answer. For a state the app reaches
+ * asynchronously (the browser's full screen, a toast): the check asserts the answer, a fixed sleep guessed how long it takes.
+ */
+export async function eventually(check: () => Promise<boolean>, timeoutMs = 5000, everyMs = 50): Promise<boolean> {
+    const end = Date.now() + timeoutMs;
+    for (;;) {
+        if (await check()) return true;
+        if (Date.now() > end) return false;
+        await new Promise((r) => setTimeout(r, everyMs));
+    }
 }
 
 export interface FakeProxy {

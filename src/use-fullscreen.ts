@@ -15,29 +15,67 @@ export interface Fullscreen {
     ref: React.RefObject<HTMLElement | null>;
 }
 
+/** How often (frames) and how long (frames) a late granted full screen is asked to end (useFullscreen leaveIfLate). */
+const LATE_EXIT_EVERY = 10;
+const LATE_EXIT_FRAMES = 180;
+
 export function useFullscreen(): Fullscreen {
     const [full, setFull] = useState(false);
     const ref = useRef<HTMLElement | null>(null);
     const fullRef = useRef(false);
     fullRef.current = full;
+    // the card is in the browser's own full screen because of us; cleared when we leave it ourselves, so the change event of
+    // our own (async) exit is not taken for the user's Esc: F, F, F quickly closed the third one when the second's exit landed
+    const nativeUsed = useRef(false);
     const toggleRef = useRef<() => void>(() => {});
+
+    /**
+     * A full screen granted after the card already left it (the user toggled back while the request was pending) is left.
+     * Chrome ignores an exit asked for while it is still entering (the exit promise never settles, no fullscreenchange), so
+     * the exit is asked again every LATE_EXIT_EVERY frames until the card is out, for at most LATE_EXIT_FRAMES frames.
+     */
+    const leaveIfLate = useCallback(() => {
+        let frame = 0;
+        const step = () => {
+            if (fullRef.current || !ref.current || document.fullscreenElement !== ref.current) return;
+            nativeUsed.current = false;
+            if (frame % LATE_EXIT_EVERY === 0) void document.exitFullscreen().catch(() => undefined);
+            if (++frame < LATE_EXIT_FRAMES) requestAnimationFrame(step);
+        };
+        step();
+    }, []);
 
     const toggle = useCallback(() => {
         if (!fullRef.current) {
+            fullRef.current = true;
             setFull(true);
             // the native full screen is a bonus: a refusal (no support, no permission) leaves the CSS one in place
-            try { void ref.current?.requestFullscreen?.()?.catch(() => undefined); } catch { /* not supported */ }
+            // the request is async: when the user left again before it was granted (F, F quickly), leave the granted one at once
+            // (Chrome does not always fire fullscreenchange for it then, so onChange below is not enough; the flaky fullscreen
+            // e2e, 2026-10-26)
+            const el = ref.current;
+            try { void el?.requestFullscreen?.()?.then(leaveIfLate, () => undefined); } catch { /* not supported */ }
         } else {
+            fullRef.current = false;
+            nativeUsed.current = false;
             setFull(false);
             if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
         }
-    }, []);
+    }, [leaveIfLate]);
 
     toggleRef.current = toggle;
 
     useEffect(() => {
         // the browser left its own full screen (Esc): the card goes back too
-        const onChange = () => { if (!document.fullscreenElement && fullRef.current && nativeUsed.current) setFull(false); nativeUsed.current = !!document.fullscreenElement; };
+        const onChange = () => {
+            // granted for a card that already left it (see leaveIfLate)
+            if (document.fullscreenElement && document.fullscreenElement === ref.current && !fullRef.current) {
+                leaveIfLate();
+                return;
+            }
+            if (!document.fullscreenElement && fullRef.current && nativeUsed.current) setFull(false);
+            nativeUsed.current = !!document.fullscreenElement && document.fullscreenElement === ref.current;
+        };
         // Esc leaves it, before the chart's own Esc handling (a double Esc resets the zoom)
         const onKey = (e: KeyboardEvent) => {
             // F toggles it, unless a field is being edited or a modifier is held (Cmd+F, Ctrl+F are the browser's find); the key
@@ -50,11 +88,12 @@ export function useFullscreen(): Fullscreen {
             if (e.key === 'Escape' && fullRef.current) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
+                fullRef.current = false;
+                nativeUsed.current = false;
                 setFull(false);
                 if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
             }
         };
-        const nativeUsed = { current: false };
         document.addEventListener('fullscreenchange', onChange);
         window.addEventListener('keydown', onKey, true);
         return () => { document.removeEventListener('fullscreenchange', onChange); window.removeEventListener('keydown', onKey, true); };

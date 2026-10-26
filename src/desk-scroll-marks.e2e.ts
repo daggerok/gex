@@ -3,7 +3,7 @@
 import { strict as assert } from 'node:assert';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
-import { noProxy, startTestSite } from './e2e-site';
+import { noProxy, scrollSettled, startTestSite } from './e2e-site';
 
 // ============================================================================
 // Browser check of the Desk's scroll marks strip (the Board's strip, components/ScrollMarks.tsx, inside ChainTable): it sits
@@ -28,23 +28,6 @@ const rowKeysOf = (page: Page): Promise<string[]> =>
         const strikes = open ? Array.from(sec.querySelectorAll('[data-desk-row]')).map((r) => `${exp}|${r.getAttribute('data-desk-row')}`) : [];
         return [`${exp}|`, ...strikes];
     }));
-
-/** Waits until the desk stops scrolling (the glide of a click is done): its scrollTop stays the same for 10 frames. */
-function deskScrollStill(page: Page): Promise<unknown> {
-    return page.waitForFunction(() => new Promise<boolean>((done) => {
-        const box = document.querySelector('[data-desk-scroll]');
-        if (!box) { done(false); return; }
-        let last = box.scrollTop;
-        let still = 0;
-        const step = () => {
-            if (box.scrollTop === last) still++;
-            else { still = 0; last = box.scrollTop; }
-            if (still >= 10) done(true);
-            else requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
-    }), undefined, { timeout: 10_000 });
-}
 
 /** Where a strike row sits in the visible part of the desk below the pile of bars above its section: 0 = top, 1 = bottom. */
 function rowPlace(page: Page, key: string): Promise<number | null> {
@@ -155,7 +138,8 @@ async function main(): Promise<void> {
             const before = await Promise.all(keys.map((k) => rowPlace(page, k)));
             assert.ok(before.every((p) => p !== null && p > 1), `${at}: the target rows ${keys.join(',')} are out of view below (${before.join(', ')})`);
             await tick.click();
-            await deskScrollStill(page);
+            // the glide takes ~1.5 s on a long table (longer on a slow runner): wait until it stops, not a fixed time
+            await scrollSettled(page, '[data-desk-scroll]');
             const after = await Promise.all(keys.map((k) => rowPlace(page, k)));
             assert.ok(after.some((p) => p !== null && p > 1 / 3 && p < 2 / 3), `${at}: after the click the row is in the middle third (${after.join(', ')})`);
             if (shots) await page.screenshot({ path: join(shots, `desk-scroll-marks-${width}-${scheme}-clicked.png`) });
