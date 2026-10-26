@@ -109,14 +109,8 @@ async function main(): Promise<void> {
             console.log(`desk scroll marks ${at}: ${ticks.length} ticks for ${rows.length} rows in ${exps.length} expirations`);
             if (shots) await page.screenshot({ path: join(shots, `desk-scroll-marks-${width}-${scheme}.png`) });
 
-            // ---- the frame is inside the strip (the first ATM row is centered on open) ----
-            const frame = () => page.evaluate(() => {
-                const s = document.querySelector('.od-scroll-wrap [data-scroll-marks]')!.getBoundingClientRect();
-                const f = document.querySelector('.od-scroll-wrap [data-scroll-frame]')!.getBoundingClientRect();
-                return { top: (f.top - s.top) / s.height, bottom: (f.bottom - s.top) / s.height };
-            });
-            const f0 = await frame();
-            assert.ok(f0.top > 0 && f0.bottom < 1 && f0.bottom > f0.top, `${at}: the frame is inside the strip on open (${f0.top.toFixed(2)}..${f0.bottom.toFixed(2)})`);
+            // ---- no frame over the rows in view (owner 2026-10-25: less overwhelming) ----
+            assert.equal(await page.locator('.od-scroll-wrap [data-scroll-frame]').count(), 0, `${at}: the strip has no visible window frame`);
 
             // ---- a click on a tick of a strike far below the view glides that row to the middle ----
             const plainIdx = ticks.map((t, i) => (t.keys.every((k) => !k.endsWith('|')) ? i : -1)).filter((i) => i >= 0);
@@ -129,8 +123,6 @@ async function main(): Promise<void> {
             await page.waitForTimeout(1200);
             const after = await Promise.all(keys.map((k) => rowPlace(page, k)));
             assert.ok(after.some((p) => p !== null && p > 1 / 3 && p < 2 / 3), `${at}: after the click the row is in the middle third (${after.join(', ')})`);
-            const f1 = await frame();
-            assert.ok(f1.top > f0.top, `${at}: the frame moved down with the scroll (${f1.top.toFixed(2)} > ${f0.top.toFixed(2)})`);
             if (shots) await page.screenshot({ path: join(shots, `desk-scroll-marks-${width}-${scheme}-clicked.png`) });
 
             // ---- hover: the app's tooltip with the expiration and strike ----

@@ -8,7 +8,7 @@ import { noProxy, startTestSite } from './e2e-site';
 // Browser check of the Board's scroll marks strip (components/ScrollMarks.tsx, src/scroll-marks.ts): the strip sits right
 // of the table card, as tall as it, outside the card (the table keeps its width, the page does not scroll); its ticks
 // cover exactly what the table highlights (owner 2026-10-26): the ATM row (Spot colour) and the rows with a peak or a
-// runner-up dot (their Net GEX sign colour), no plain rows, no level colours; the frame follows the scroll; a click on a tick of a row out of view glides that row into
+// runner-up dot (their Net GEX sign colour), no plain rows, no level colours; no frame over the rows in view (owner 2026-10-25); a click on a tick of a row out of view glides that row into
 // the middle of the table; hovering a tick shows the app's tooltip with the strike. Desktop light and phone dark.
 // Run: `bun run test:e2e`.
 // ============================================================================
@@ -86,14 +86,8 @@ async function main(): Promise<void> {
             assert.ok(atmTick && atmTick.kind !== 'row', `${at}: the ATM row's tick is marked (${atmTick?.kind})`);
             console.log(`board scroll marks ${at}: ${ticks.length} ticks for ${marked.length} highlighted of ${rows.length} rows`);
 
-            // ---- the frame shows the rows in view: about the middle on open (the ATM row is centered) ----
-            const frame = () => page.evaluate(() => {
-                const s = document.querySelector('[data-board] [data-scroll-marks]')!.getBoundingClientRect();
-                const f = document.querySelector('[data-board] [data-scroll-frame]')!.getBoundingClientRect();
-                return { top: (f.top - s.top) / s.height, bottom: (f.bottom - s.top) / s.height };
-            });
-            const f0 = await frame();
-            assert.ok(f0.top > 0 && f0.bottom < 1, `${at}: the frame is inside the strip on open (${f0.top.toFixed(2)}..${f0.bottom.toFixed(2)})`);
+            // ---- no frame over the rows in view (owner 2026-10-25: less overwhelming) ----
+            assert.equal(await page.locator('[data-board] [data-scroll-frame]').count(), 0, `${at}: the strip has no visible window frame`);
 
             // ---- a click on a tick of a row out of view glides that row to the middle ----
             // the strip holds only the highlighted rows and they are often near the ATM row, so scroll the table to an end
@@ -113,7 +107,6 @@ async function main(): Promise<void> {
                 pick = await outOfView();
             }
             assert.ok(pick >= 0, `${at}: a highlighted row out of view to click`);
-            const fBefore = await frame();
             const tick = page.locator('[data-board] [data-scroll-tick]').nth(pick);
             await tick.click();
             await page.waitForTimeout(1200);
@@ -121,8 +114,6 @@ async function main(): Promise<void> {
             const strikes = (await tick.getAttribute('data-scroll-strikes'))!.split(',');
             const places = await Promise.all(strikes.map((s) => rowPlace(page, s)));
             assert.ok(places.some((p) => p !== null && p > 1 / 3 && p < 2 / 3), `${at}: after the click the row is in the middle third (${places.join(', ')})`);
-            const f1 = await frame();
-            assert.ok(Math.abs(f1.top - fBefore.top) > 0.01, `${at}: the frame moved with the scroll (${fBefore.top.toFixed(2)} -> ${f1.top.toFixed(2)})`);
 
             // ---- hover: the app's tooltip with the strike ----
             await page.locator('[data-board] [data-scroll-tick]').nth(ticks.length - 1).hover();

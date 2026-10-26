@@ -25,7 +25,7 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel. Right of the
 // table's scrollbar a minimap strip (components/ScrollMarks.tsx, src/scroll-marks.ts) shows only what the table tints (owner
 // 2026-10-26): the ATM row in the Spot colour and the peak and runner-up rows in their Net GEX sign colour, placed by row,
-// a frame over the rows in view; a click glides its row to the middle.
+// no frame over the rows in view (owner 2026-10-25); a click glides its row to the middle.
 // ============================================================================
 
 interface BoardColumnDef {
@@ -260,7 +260,7 @@ export const BoardView: React.FC<{
                         </table>
                     )}
                 </div>
-                {hasRows && <ScrollMarks scrollRef={scrollRef} headHeight={headHeight} rows={markRows} colors={markColors} onPick={pickRow} describe={describeMark} label={tr('board.marks.label')} markedOnly />}
+                {hasRows && <ScrollMarks scrollRef={scrollRef} rows={markRows} colors={markColors} onPick={pickRow} describe={describeMark} label={tr('board.marks.label')} markedOnly />}
             </div>
         </main>
     );
