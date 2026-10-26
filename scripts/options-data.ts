@@ -14,6 +14,11 @@
  * Not part of the app bundle, never imported by src/ (tests import its helpers).
  *
  * CHANGELOG (newest first)
+ *   t19 - Stale cache rotation (owner, 2026-10-25): ROTATE_STALE=N appends to a fixed-list run the N cached tickers outside
+ *        that list (default list + TICKERS, so api/All.txt is never counted twice) with the oldest `updated`, after the list
+ *        itself, with their own N writes on top of MAX_FETCHES (selectRotation; fresh files and the Cboe cash indices left
+ *        out). The weekly update-data.yml passes 500, so the ~2,700 other files are refreshed within ~6 weeks. With `all` it
+ *        is off (the stale phase already cycles every file). DRY_RUN=1 prints the work queue and stops before any fetch.
  *   t18 - Futures candles (owner, 2026-10-25): the chart pass also writes api/charts/<SYM>.json for the Yahoo futures
  *        ES=F, NQ=F, YM=F, RTY=F, MES=F, MNQ=F, MYM=F, M2K=F (FUTURES_CHART_SYMBOLS) on every run, right after the priority
  *        symbols, so the Chart tab has futures candles without a proxy. Candles only, no options file for them.
@@ -94,6 +99,7 @@
  *   3. Fetches the chain from Yahoo, overlays Cboe delayed greeks, open
  *      interest and volume by OCC symbol, writes api/options/{SYMBOL}.json.
  *      Stops at MAX_FETCHES writes or after RATE_LIMIT_HITS consecutive errors.
+ *   3b. ROTATE_STALE=N (fixed list only): the N oldest other cached files follow the list in the queue (see t19).
  *   4. Rewrites api/options/index.json only when the ticker set, names or
  *      skiplist changed.
  *   5. Writes api/charts/{SYMBOL}.json (1Y of daily bars) for the cached tickers
@@ -145,6 +151,8 @@
  *   CONCURRENCY        default 1         parallel ticker workers (integer >= 1), 1 = old sequential run
  *   SOFT_DEADLINE_SECONDS default 0      stop starting new tickers after N seconds (0 = off)
  *   VERBOSE            default off       also print the legacy timestamped progress lines
+ *   ROTATE_STALE       default 0         with a fixed list: also refresh the N oldest other cached tickers, +N write budget (t19)
+ *   DRY_RUN            default 0         1 = print the work queue (phases, rotation pick) and stop, nothing fetched or written
  *   DEFAULT_TICKERS    default ""        replaces the built-in default list (space or comma separated); blank = built-in list
  *   TICKERS / TICKER   default ""        tickers ADDED on top of the default list (also with `all`); never replaces it
  * =============================================================================
@@ -279,6 +287,13 @@ function envFloat(name: string, def: string): number {
 function envPositiveInt(name: string, def: string): number {
     const v = envInt(name, def);
     if (v < 1) throw new Error(`${name} must be an integer >= 1, got ${v}`);
+    return v;
+}
+
+/** Strict integer >= 0 (ROTATE_STALE, 0 = off). */
+function envNonNegativeInt(name: string, def: string): number {
+    const v = envInt(name, def);
+    if (v < 0) throw new Error(`${name} must be an integer >= 0, got ${v}`);
     return v;
 }
 
@@ -430,6 +445,8 @@ const cfg = {
     CHART_MAX_FETCHES: envInt("CHART_MAX_FETCHES", "500"),
     CHART_CACHE: !["0", "false", "no", "off"].includes((process.env.CHART_CACHE ?? "1").toLowerCase()),
     SOFT_DEADLINE_SECONDS: envNonNegativeFloat("SOFT_DEADLINE_SECONDS", "0"),
+    ROTATE_STALE: envNonNegativeInt("ROTATE_STALE", "0"),
+    DRY_RUN: ["1", "true", "yes", "on"].includes((process.env.DRY_RUN ?? "0").toLowerCase()),
 };
 
 // ---- Ticker symbol aliases ---------------------------------------------------
@@ -1629,6 +1646,8 @@ export interface WorkQueue {
     nMissing: number;
     nStale: number;
     nFresh: number;
+    /** Trailing ROTATE_STALE entries of `queue` (they bring their own write budget, see main). */
+    nRotate: number;
 }
 
 export interface QueueDeps {
@@ -1640,6 +1659,8 @@ export interface QueueDeps {
     skipActive: (last: unknown) => boolean;
     /** Symbols queued first; defaults to PRIORITY_SYMBOLS. */
     priority?: string[];
+    /** ROTATE_STALE pick (selectRotation), queued last in its own order; anything already queued is not repeated. */
+    rotation?: string[];
 }
 
 /**
@@ -1666,12 +1687,52 @@ export function buildQueue(universe: string[], d: QueueDeps): WorkQueue {
     }
     stale.sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)); // stable, plain string order
     const priority = Array.from(prioritySet).filter((s) => !d.isFresh(s));
-    return { queue: [...priority, ...missing, ...stale.map(([s]) => s)], nPriority: priority.length, nMissing: missing.length, nStale: stale.length, nFresh: freshSkipped };
+    const head = [...priority, ...missing, ...stale.map(([s]) => s)];
+    const queued = new Set([...head, ...universe]);
+    const rotation = (d.rotation ?? []).filter((s) => !queued.has(s) && !d.isFresh(s));
+    return {
+        queue: [...head, ...rotation],
+        nPriority: priority.length,
+        nMissing: missing.length,
+        nStale: stale.length,
+        nFresh: freshSkipped,
+        nRotate: rotation.length,
+    };
+}
+
+export interface RotationDeps {
+    /** Symbols that have an options file. */
+    cached: string[];
+    isFresh: (sym: string) => boolean;
+    updatedOf: (sym: string) => string;
+}
+
+/**
+ * ROTATE_STALE (t19, owner 2026-10-25): the `count` cached tickers OUTSIDE the run's fixed universe (the default list plus
+ * TICKERS, so a ticker of api/All.txt is never counted twice) with the oldest `updated` stamp, ties by symbol. Fresh files and
+ * the Cboe cash indices (SPX, XSP, VIX, ...: api/Indices.txt refreshes them in their own step with a smaller expiration cap) are
+ * left out. With ~2,700 such files and 500 per weekly run every file is refreshed within ~6 weeks. Pure, for tests.
+ */
+export function selectRotation(universe: readonly string[], count: number, d: RotationDeps): string[] {
+    if (count <= 0) return [];
+    const inUniverse = new Set(universe.map((s) => canonical(s)));
+    return d.cached
+        .filter((s) => !inUniverse.has(s) && !CBOE_INDEX_SET.has(s) && !d.isFresh(s))
+        .map((s): [string, string] => [s, d.updatedOf(s)])
+        .sort((a, b) => (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+        .slice(0, count)
+        .map(([s]) => s);
 }
 
 function buildWorkQueue(universe: string[]): WorkQueue {
+    const cached = cachedSymbols();
+    const isFreshSym = (s: string) => isFresh(join(DATA_DIR, `${s}.json`));
+    const updatedOf = (s: string) => fileUpdated(join(DATA_DIR, `${s}.json`));
+    // with `all` the stale phase already cycles every cached file oldest first, ROTATE_STALE only matters for a fixed list
+    const rotation = cfg.ROTATE_STALE > 0 && explicitUniverse() ? selectRotation(universe, cfg.ROTATE_STALE, { cached, isFresh: isFreshSym, updatedOf }) : [];
     return buildQueue(universe, {
-        cached: cachedSymbols(),
+        cached,
+        rotation,
         skip: loadSkiplist(),
         explicit: explicitUniverse(),
         isFresh: (s) => isFresh(join(DATA_DIR, `${s}.json`)),
@@ -1774,6 +1835,8 @@ export function outputConfigEntries(
         ["CHART_CACHE", String(c.CHART_CACHE)],
         ["CHART_MAX_FETCHES", String(c.CHART_MAX_FETCHES)],
         ["SOFT_DEADLINE_SECONDS", pyFloatRepr(c.SOFT_DEADLINE_SECONDS)],
+        ["ROTATE_STALE", String(c.ROTATE_STALE)],
+        ["DRY_RUN", String(c.DRY_RUN)],
         ["RATE_LIMIT_HITS", String(c.RATE_LIMIT_HITS)],
         ["MAX_EXPIRATIONS", String(c.MAX_EXPIRATIONS)],
         ["UNIVERSE_SIZE", String(c.UNIVERSE_SIZE)],
@@ -2142,7 +2205,7 @@ export async function main(): Promise<void> {
     console.log(outputConfigBlock(outputConfigEntries()));
     const { symbols: universe, source: universeSource } = await loadUniverse();
 
-    const { queue, nPriority, nMissing, nStale, nFresh } = buildWorkQueue(universe);
+    const { queue, nPriority, nMissing, nStale, nFresh, nRotate } = buildWorkQueue(universe);
     const skip = loadSkiplist();
 
     const noOptionSyms: string[] = [];
@@ -2153,8 +2216,9 @@ export async function main(): Promise<void> {
     if (explicitUniverse()) console.log(`${outputLabel("filter")} ${universeSource}: ${universe.length} symbols`);
     console.log(`${outputLabel("universe")} ${universe.length} symbols (${universeSource}), today=${dateIso(todayDate())}, timezone=${MARKET_TZ_NAME}`);
     console.log(
-        `${outputLabel("queue")} ${queue.length} queued = ${nMissing} missing + ${nStale} stale (oldest first); ${nFresh} fresh skipped; ` +
-            `${Object.keys(skip).length} on no-options skiplist; budget=${cfg.MAX_FETCHES} writes, concurrency=${cfg.CONCURRENCY}`,
+        `${outputLabel("queue")} ${queue.length} queued = ${nPriority} priority + ${nMissing} missing + ${nStale} stale (oldest first)` +
+            `${nRotate ? ` + ${nRotate} rotate` : ""}; ${nFresh} fresh skipped; ` +
+            `${Object.keys(skip).length} on no-options skiplist; budget=${cfg.MAX_FETCHES + nRotate} writes, concurrency=${cfg.CONCURRENCY}`,
     );
     log(`Smart fetch v11: budget=${cfg.MAX_FETCHES} successful writes, universe=${universe.length}, today=${dateIso(todayDate())}, timezone=${MARKET_TZ_NAME}`);
     log(
@@ -2162,10 +2226,23 @@ export async function main(): Promise<void> {
             `${Object.keys(skip).length} on no-options skiplist; total queued=${queue.length}`,
     );
     if (nMissing === 0 && nStale) log("coverage complete - cycling oldest files for refresh");
+    if (cfg.ROTATE_STALE > 0) {
+        const rotated = queue.slice(queue.length - nRotate);
+        const span = rotated.length ? ` (${rotated[0]} .. ${rotated[rotated.length - 1]})` : "";
+        console.log(
+            `${outputLabel("rotate")} ${explicitUniverse() ? `${nRotate} other cached ticker(s) oldest first${span}, own budget +${nRotate} writes` : "off with `all` (the stale phase cycles every file)"}`,
+        );
+    }
+    if (cfg.DRY_RUN) {
+        const phaseOf = (i: number) => (i < nPriority ? "priority" : i < nPriority + nMissing ? "coverage" : i < queue.length - nRotate ? "refresh" : "rotate");
+        queue.forEach((sym, i) => console.log(`${outputLabel("dry run")} ${String(i + 1).padStart(4)}/${queue.length} ${phaseOf(i).padEnd(8)} ${sym}`));
+        console.log(`${outputLabel("dry run")} nothing fetched or written (DRY_RUN=1)`);
+        return;
+    }
 
     const work = async (sym: string, position: number, st: { fetched: number }): Promise<TickerResult> => {
         const path = join(DATA_DIR, `${sym}.json`);
-        const phase = position <= nPriority ? "priority" : position <= nPriority + nMissing ? "coverage" : "refresh";
+        const phase = position <= nPriority ? "priority" : position <= nPriority + nMissing ? "coverage" : position <= queue.length - nRotate ? "refresh" : "rotate";
         const started = performance.now();
         log(`FETCH [${position}/${queue.length}] ${phase} ${sym}: fetching option chain (writes=${st.fetched}/${cfg.MAX_FETCHES}, file=api/options/${sym}.json)`);
         let previousText: string | null = null;
@@ -2194,7 +2271,8 @@ export async function main(): Promise<void> {
     const pool = await runPool<TickerResult>({
         queue,
         concurrency: cfg.CONCURRENCY,
-        maxFetches: cfg.MAX_FETCHES,
+        // the ROTATE_STALE tickers bring their own budget, so the fixed list keeps all of MAX_FETCHES
+        maxFetches: cfg.MAX_FETCHES + nRotate,
         rateLimitHits: cfg.RATE_LIMIT_HITS,
         requestSleepMs: cfg.REQUEST_SLEEP * 1000,
         softDeadlineMs: cfg.SOFT_DEADLINE_SECONDS * 1000,
