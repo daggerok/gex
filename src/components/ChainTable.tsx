@@ -605,7 +605,7 @@ export const ChainTable: React.FC<{
             <div className="mb-2 flex w-full items-center justify-between gap-3 shrink-0">
                 <span className="inline-flex items-center gap-1 text-xs text-slate-400">
                     {sections.length} {sections.length === 1 ? t('chain.expirations') : t('chain.expirationsPlural')}
-                    <HelpButton label={t('desk.help.label')} paragraphs={[t('desk.help.marks')]} align="left" />
+                    <HelpButton label={t('desk.help.label')} paragraphs={[t('desk.help.toolbar'), t('desk.help.marks')]} align="left" />
                 </span>
                 {summary && <div className="min-w-0 flex-1 text-center">{summary}</div>}
                 <button

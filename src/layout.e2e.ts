@@ -5,7 +5,8 @@ import { chromium, type Page } from 'playwright';
 import { noProxy, startTestSite } from './e2e-site';
 
 // ============================================================================
-// Layout regression check. On a wide window (from `lg`, 1024 px) the Desk, Board, GEX and Chart tabs all fit the
+// Layout regression check. The upper part of the four tabs is identical (tab row, shared Expirations panel, Metrics +
+// Levels row, the content below it at the same y). On a wide window (from `lg`, 1024 px) the Desk, Board, GEX and Chart tabs all fit the
 // window: the page does not scroll (the Desk and Board tables scroll inside themselves, the GEX sidebar and Cursor list
 // scroll inside themselves), the footer is pressed to the bottom of the window, nothing is left empty
 // between the content and the footer, and the footer is ONE design on the three tabs: same box, same text
@@ -113,9 +114,12 @@ async function main(): Promise<void> {
             await page.waitForTimeout(2500);
 
             const looks: Record<string, Look> = {};
-            // the upper part of Board, GEX and Chart is identical (owner 2026-10-25): the tab row, the shared Expirations panel,
-            // and the Metrics + Levels row (components/ToolbarRow.tsx) at the same place and size; the Desk has no such row
+            // the upper part of ALL four tabs is identical (owner 2026-10-26, nothing jumps on a tab switch): the tab row with the
+            // shared Expirations panel, the Metrics + Levels row (components/ToolbarRow.tsx) with the same box (x, y, width,
+            // height) and the same panels, and the content below the row starts at the same y
             const toolbars: Record<string, string | null> = {};
+            const uppers: Record<string, string | null> = {};
+            const below: Record<string, number | null> = {};
             for (const tab of ['Desk', 'Board', 'GEX', 'Chart']) {
                 await page.getByRole('button', { name: tab, exact: true }).first().click();
                 await page.waitForTimeout(1800);
@@ -125,6 +129,20 @@ async function main(): Promise<void> {
                     const r = rows[0].getBoundingClientRect();
                     const kids = Array.from(rows[0].children).map((c) => `${c.getAttribute('aria-label') ?? c.tagName}:${Math.round(c.getBoundingClientRect().height)}`);
                     return `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)}x${Math.round(r.height)} [${kids.join(' ')}]`;
+                });
+                // the tab row and the Expirations panel in it (one shared copy, outside the tabs' content)
+                uppers[tab] = await page.evaluate(() => {
+                    const exp = document.querySelector('[data-exp-panel]');
+                    const tabs = exp?.closest('nav');
+                    if (!tabs || !exp) return null;
+                    const b = (e: Element) => { const r = e.getBoundingClientRect(); return `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)}x${Math.round(r.height)}`; };
+                    return `tabs ${b(tabs)} expirations ${b(exp)}`;
+                });
+                below[tab] = await page.evaluate(() => {
+                    const row = Array.from(document.querySelectorAll('[data-toolbar-row]')).find((e) => (e as HTMLElement).offsetParent !== null);
+                    let next = row?.nextElementSibling as HTMLElement | null | undefined;
+                    while (next && next.getBoundingClientRect().height === 0) next = next.nextElementSibling as HTMLElement | null;
+                    return next ? Math.round(next.getBoundingClientRect().top) : null;
                 });
                 const l = (looks[tab] = await look(page));
                 // the Chart page may be 1 px over because of the chart library's own rounding, nothing more
@@ -150,13 +168,18 @@ async function main(): Promise<void> {
                         `${l.gapAbove} px of empty space between the last content and the footer`, HINTS.gap[tab]);
                 }
             }
-            if (toolbars.Desk !== null) {
-                report(size, 'Desk', 'THE DESK HAS A METRICS / LEVELS ROW', 'no toolbar row on the Desk (only Board, GEX and Chart have it)', String(toolbars.Desk), 'src/views/DeskView.tsx');
-            }
-            for (const tab of ['Board', 'Chart']) {
+            for (const tab of ['Desk', 'Board', 'Chart']) {
                 if (!toolbars.GEX || toolbars[tab] !== toolbars.GEX) {
                     report(size, tab, 'THE METRICS / LEVELS ROW DIFFERS FROM THE GEX TAB', 'the same row (components/ToolbarRow.tsx) at the same position and size as on the GEX tab',
                         `${tab}: ${toolbars[tab]}  GEX: ${toolbars.GEX}`, 'src/components/ToolbarRow.tsx and the <main> wrapper of the tab (px-4 pt-4 lg:px-6)');
+                }
+                if (!uppers.GEX || uppers[tab] !== uppers.GEX) {
+                    report(size, tab, 'THE TAB ROW / EXPIRATIONS PANEL DIFFERS FROM THE GEX TAB', 'the same tab row and Expirations panel (one shared copy in main.tsx) at the same place and size',
+                        `${tab}: ${uppers[tab]}  GEX: ${uppers.GEX}`, 'src/main.tsx: the TabSwitcher and its endSlot (the shared Expirations panel)');
+                }
+                if (below.GEX == null || below[tab] !== below.GEX) {
+                    report(size, tab, 'THE CONTENT BELOW THE METRICS / LEVELS ROW STARTS AT A DIFFERENT HEIGHT', 'the first element below the row starts at the same y as on the GEX tab',
+                        `${tab}: y ${below[tab]}  GEX: y ${below.GEX}`, 'src/components/ToolbarRow.tsx (mb-4) and the first element of the tab below it (no own top margin)');
                 }
             }
             // one footer design on the three tabs, only the text differs

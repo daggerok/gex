@@ -255,7 +255,7 @@ async function main(): Promise<void> {
             await page.getByRole('button', { name: 'Desk' }).first().click();
             await page.waitForTimeout(1500);
             const count = (await page.getByText(/^\d+ expirations?$/).first().boundingBox())!;
-            const spotLine = (await page.getByText(/^Spot/).first().boundingBox())!;
+            const spotLine = (await page.getByText(/^Spot \$/).first().boundingBox())!; // not the Spot chip of the Levels panel
             const collapse = (await page.getByRole('button', { name: /Collapse all|Expand all/ }).first().boundingBox())!;
             assert.ok(count.x + count.width < spotLine.x && spotLine.x + spotLine.width < collapse.x, 'the spot line is between the expirations count and Collapse all');
             assert.ok(Math.abs(spotLine.y - count.y) < 20 && Math.abs(spotLine.y - collapse.y) < 20, 'all three are on one row');

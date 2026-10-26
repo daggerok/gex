@@ -28,8 +28,12 @@ export const LevelsPanel: React.FC<{
     spotEstimated?: boolean;
     /** the AG metric is on: only then the Max AG level has a chip */
     showMaxAg?: boolean;
+    /** fills its wrapper in ToolbarRow, which carries the row sizing (grow, min 300 px, at most its content) */
     className?: string;
-}> = ({ levels, symbol, colorTheme, spotEstimated = false, showMaxAg = false, className = 'grow basis-0 min-w-[300px] max-w-fit' }) => {
+    /** shown but not usable (the Desk: levels have no effect there, owner 2026-10-26): greyed, `inert` (no clicks, no focus);
+     *  the reason is the tooltip of the wrapper around it (ToolbarRow), since an inert element gets no hover */
+    disabled?: boolean;
+}> = ({ levels, symbol, colorTheme, spotEstimated = false, showMaxAg = false, className = 'min-w-0 flex-1', disabled = false }) => {
     const { t: tr } = useI18n();
     const ax = accentOf(colorTheme);
     const { selected, colors } = useLevelPrefs();
@@ -52,7 +56,7 @@ export const LevelsPanel: React.FC<{
     };
 
     return (
-        <div className={BOX + ' ' + className} role="group" aria-label={tr('gex.sidebar.keyLevels')}>
+        <div className={BOX + ' ' + className + (disabled ? ' opacity-50 grayscale' : '')} role="group" aria-label={tr('gex.sidebar.keyLevels')} inert={disabled} aria-disabled={disabled || undefined} data-levels-disabled={disabled || undefined}>
             <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.sidebar.keyLevels')}</span>
             {/* A spacer as the first child, not `justify-end` on the row: with `justify-end` an overflowing row cannot be
                 scrolled back to its first chips; the spacer pushes the chips to the right when they fit and gives way when not. */}
