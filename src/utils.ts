@@ -174,10 +174,15 @@ export function fmtPct(v: number | null | undefined): string {
     return `${(v * 100).toFixed(1)}%`;
 }
 
-/** Format greeks; missing values stay visually empty, while real zero prints as 0.0000. */
+/**
+ * Format greeks; missing values stay visually empty, while real zero prints as 0.0000. Large values get fewer decimals
+ * (|v| >= 10: 2, >= 1000: 0), so a futures theta like -17.71 fits its Desk column instead of running into the next one
+ * (owner check of /ES, 2026-10-26: "-17.7100" touched vega's "1.0831").
+ */
 export function fmtGreek(v: number | null | undefined, digits = 4): string {
     if (v == null || !Number.isFinite(v)) return '';
-    return v.toFixed(digits);
+    const a = Math.abs(v);
+    return v.toFixed(a >= 1000 ? 0 : a >= 10 ? Math.min(digits, 2) : digits);
 }
 
 /** Convert a "YYYY-MM-DD" date to unix seconds (UTC midnight). */
