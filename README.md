@@ -46,10 +46,30 @@ This project uses **Bun** for installs and scripts and **Parcel** for the React 
 git clone https://github.com/daggerok/gex.git
 cd gex
 bun install -E
-bun run start        # the app (Parcel, http://localhost:1234) and the local proxy (http://localhost:8787) together, under pm2
+bun run all          # the app (Parcel, http://localhost:1234) and the local proxy (http://localhost:8787) together, Ctrl+C stops both
 ```
 
-Open http://localhost:1234. `bun run serve` starts only the app (then it shows the cache), `bun run all:proxy` only the proxy. `bun run ps`, `bun run logs`, `bun run restart` and `bun run stop` manage the pm2 process. Add `?debug=true` to the URL for verbose console logging.
+Open http://localhost:1234. Add `?debug=true` to the URL for verbose console logging.
+
+### Run commands
+
+| Command | Starts | Ports |
+|---------|--------|-------|
+| `bun run all` | the app and the local proxy, in the foreground (Ctrl+C stops both) | 1234 and 8787 |
+| `bun run app` | only the app (without the proxy it shows the cache) | 1234 |
+| `bun run proxy` | only the local proxy | 8787 |
+| `bun run start` | the same as `all`, in the background under pm2 (`bun run ps`, `bun run logs`, `bun run restart`, `bun run stop` manage it) | 1234 and 8787 |
+
+Ports: `APP_PORT` moves the app, `PORT` moves the proxy (`APP_PORT=3000 PORT=9000 bun run all`; a moved proxy also needs its URL in Settings -> Advanced). Each command first checks its ports (`scripts/check-ports.ts`) and starts nothing when one is taken; `all` and `start` check both before either starts. It names the port and the process holding it, and exits with 1:
+
+```text
+$ bun run all
+Port 8787 (proxy) is already in use:
+  pid 34804: bun ./scripts/options-local-proxy.ts
+  stop that process, or start on another port: PORT=<port> bun run proxy
+Nothing was started (bun run all).
+error: script "all" exited with code 1
+```
 
 Production build:
 
@@ -114,11 +134,11 @@ The browser cannot call Cboe, Yahoo or NASDAQ directly (no CORS), so live data g
 
 ```bash
 bun install -E
-bun run all:proxy        # http://localhost:8787, listens on 127.0.0.1 only
-bun run start            # or: the app and the proxy together (pm2)
+bun run proxy            # http://localhost:8787, listens on 127.0.0.1 only
+bun run all              # or: the app and the proxy together
 ```
 
-`PORT=9000 bun scripts/options-local-proxy.ts` changes the port, `HOST=0.0.0.0` makes it reachable from the LAN (on purpose only: it relays your own Yahoo session and IP). `curl http://localhost:8787/health` answers `{"ok":true,...}` when it runs.
+`PORT=9000 bun run proxy` changes the port, `HOST=0.0.0.0` makes it reachable from the LAN (on purpose only: it relays your own Yahoo session and IP). `curl http://localhost:8787/health` answers `{"ok":true,...}` when it runs.
 
 ### What auto-discovery does
 
@@ -132,11 +152,11 @@ bun run start            # or: the app and the proxy together (pm2)
 
 The published site (https://daggerok.github.io/gex/) never contacts your computer by itself: Chrome 142+ asks every visitor for permission to access the local network as soon as a site calls `localhost`. To use your proxy from the published site:
 
-1. Start the proxy (`bun run all:proxy`)
+1. Start the proxy (`bun run proxy`)
 2. Open Settings -> Data source -> **Use my local proxy** (once, it is remembered in this browser; **Stop using my local proxy** turns it off)
 3. Allow the browser's prompt to access devices on your local network (Chrome)
 
-From then on the published site behaves like the local app. The proxy answers browsers only for pages served from `localhost` or `127.0.0.1` (any port) and from `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`, any other page gets 403), and answers Chrome's private network preflight (`Access-Control-Allow-Private-Network: true`) only for those. Safari blocks `http://localhost` from an https page (mixed content), so there the published site stays on the cache; use the local app (`bun run start`)
+From then on the published site behaves like the local app. The proxy answers browsers only for pages served from `localhost` or `127.0.0.1` (any port) and from `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`, any other page gets 403), and answers Chrome's private network preflight (`Access-Control-Allow-Private-Network: true`) only for those. Safari blocks `http://localhost` from an https page (mixed content), so there the published site stays on the cache; use the local app (`bun run all`)
 
 ### Build the cache yourself
 
@@ -146,7 +166,7 @@ The cache is the `api/` folder the fetcher writes (`scripts/options-data.ts`, se
 ./scripts/options-data.ts                          # the default tickers (indices, their ETFs, mega caps)
 TICKERS="PLTR HOOD" ./scripts/options-data.ts      # the default tickers plus these
 ./scripts/options-data.ts all                      # everything (long)
-bun run serve                                      # the app reads your fresh api/ (choose Always cache to ignore a running proxy)
+bun run app                                        # the app reads your fresh api/ (choose Always cache to ignore a running proxy)
 ```
 
 The files change tracked data in `api/`; do not commit them by hand (`git checkout -- api` before a commit), the workflows publish the cache
@@ -231,7 +251,7 @@ Optional files outside the core app source:
 - `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options, defaults }` and writes `api/charts/<SYM>.json`
 - `.github/workflows/update-data.yml`: weekly refresh (Saturday 10:00 UTC) of all tickers of `api/All.txt` and `api/Indices.txt`, also manual
 - `.github/workflows/update-partial-data.yml`: hourly refresh of the default set on weekdays during market hours
-- `scripts/options-local-proxy.ts`: local **Bun** proxy (`bun run all:proxy`, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)) serving:
+- `scripts/options-local-proxy.ts`: local **Bun** proxy (`bun run proxy`, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)) serving:
   - `/health`: what the app's auto-discovery asks
   - `/api/options`: Yahoo optionChain with crumb and cookie handling
   - `/api/chart`: Yahoo daily candles for the Chart tab
@@ -245,8 +265,8 @@ Stack: React 19, TypeScript, Tailwind CSS v4, Recharts, lightweight-charts (Char
 
 ```bash
 bun i -E            # install dependencies
-bun run start       # app together with the local proxy (pm2 under the hood)
-bun run stop ; bun run start ; sleep 3 ; bun run ps ; bun run logs   # restart cycle (logs keeps following, Ctrl+C)
+bun run all         # app together with the local proxy (see Run commands)
+bun run stop ; bun run start ; sleep 3 ; bun run ps ; bun run logs   # pm2 restart cycle (logs keeps following, Ctrl+C)
 ```
 
 ### Tests
@@ -330,5 +350,5 @@ package.json                  # Bun and Parcel scripts
 - **`Unexpected token '<'`:** a proxy or server returned HTML instead of JSON. Check the proxy URL in Settings -> Advanced
 - **CACHE says not cached:** the ticker is absent from `api/options/*.json`. Start the local proxy, or run the fetcher for it (`TICKERS=XYZ ./scripts/options-data.ts`)
 - **`(no options)` suggestion:** the ticker is valid in the local manifest, but the latest data scan found no listed options
-- **Port 8787 in use:** `PORT=9000 bun scripts/options-local-proxy.ts` and set `http://localhost:9000` in Settings -> Advanced
+- **Port 1234 or 8787 in use:** the run command names the process holding it. Stop it, or move the app with `APP_PORT=3000` and the proxy with `PORT=9000` (then set `http://localhost:9000` in Settings -> Advanced)
 - **Chart tab empty for a ticker:** no proxy found and no `api/charts/<SYM>.json` yet (the fetcher writes it after the options pass)

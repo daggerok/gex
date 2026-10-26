@@ -31,6 +31,7 @@ describe('api/options path layout', () => {
 describe('the daily archive is part of the site', () => {
   test('the build copies all of api to dist, so api/history/*.zip and index.json are deployed', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-    expect(pkg.scripts.ncp).toBe('ncp api dist/api');
+    // mkdir: on a fresh clone dist/ does not exist yet when `bun run app` copies api before Parcel starts
+    expect(pkg.scripts.ncp).toBe('mkdir -p dist && ncp api dist/api');
   });
 });

@@ -49,7 +49,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'settings.proxyLocalOnly': 'Cached data: this site does not use your local proxy',
         'settings.localProxyOptIn': 'Use my local proxy',
         'settings.localProxyOptOut': 'Stop using my local proxy',
-        'settings.localProxyOptInHint': 'Running bun run all:proxy on this computer? Allow this site to use it once: the browser may ask for permission to access devices on your local network (Chrome). Until then the site never contacts your computer.',
+        'settings.localProxyOptInHint': 'Running bun run proxy on this computer? Allow this site to use it once: the browser may ask for permission to access devices on your local network (Chrome). Until then the site never contacts your computer.',
         'settings.localProxyOptInOnHint': 'This site looks for the proxy at the URL in Advanced. Stop using it to go back to cached data only.',
         'settings.advanced': 'Advanced',
         'settings.sourceOverride': 'Source',
@@ -75,7 +75,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Get a free key',
         'settings.keyHint': 'Stored only in your browser (localStorage).',
         'settings.proxyBase': 'Proxy base URL',
-        'settings.proxyBaseHint': 'Start the proxy with bun run all:proxy (port 8787).',
+        'settings.proxyBaseHint': 'Start the proxy with bun run proxy (port 8787).',
         'settings.proxyBasePlaceholder': 'http://localhost:8787',
 
         'settings.deskColumns': 'Desk columns',
@@ -211,14 +211,14 @@ export const translations: Record<Language, Record<string, string>> = {
 
         'error.enterTicker': 'Enter a ticker symbol.',
         'error.noContracts': 'No option contracts found for “{{symbol}}”.',
-        'error.allExpired': 'Every expiration of the cached “{{symbol}}” data (of {{day}}) has expired. Refresh the data or start the local proxy (bun run all:proxy).',
+        'error.allExpired': 'Every expiration of the cached “{{symbol}}” data (of {{day}}) has expired. Refresh the data or start the local proxy (bun run proxy).',
         'error.providerBulk': 'Provider misconfigured (bulk without fetchAll).',
         'error.providerLazy': 'Provider misconfigured (lazy without fetchMeta).',
         'error.friendly.networkProxy':
             'Could not reach the proxy. To fix this:\n\n' +
             '1. Clone the repo: git clone https://github.com/daggerok/gex.git\n' +
             '2. Install dependencies: bun install -E\n' +
-            '3. Run the proxy: bun run all:proxy (http://localhost:8787)\n' +
+            '3. Run the proxy: bun run proxy (http://localhost:8787)\n' +
             '4. Refresh the page (or turn on Proxy auto-discovery in Settings)\n\n' +
             'See README.md for detailed instructions.',
         'error.friendly.networkCors':
@@ -236,7 +236,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'error.cache.noQuotes': 'Static file {{url}} loaded but has no "quotes" array. The file may be truncated or in an old format - re-run scripts/options-data.ts to rebuild it.',
         'error.cache.noOptions': '"{{symbol}}" is a valid ticker, but api/options/index.json marks it as (no options) in the latest static-cache scan.',
         'error.proxy.baseMissing': 'Set the proxy URL in Settings -> Advanced (e.g. http://localhost:8787).',
-        'error.proxy.needed': '{{provider}} needs a proxy. Start it with bun run all:proxy (default http://localhost:8787) or set its URL in Settings -> Advanced.',
+        'error.proxy.needed': '{{provider}} needs a proxy. Start it with bun run proxy (default http://localhost:8787) or set its URL in Settings -> Advanced.',
         'error.proxy.http': '{{provider}} proxy request failed (HTTP {{status}}). Check that the proxy runs and its URL in Settings -> Advanced, or pick another source there.',
         'error.proxy.notJson': 'The proxy returned a non-JSON page for {{provider}}. Check the proxy URL in Settings -> Advanced, or choose Always cache there.',
         'error.noOptionData': 'No option data for "{{symbol}}". Check the ticker symbol.',
@@ -427,7 +427,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'chart.range.all': 'All',
         'chart.loading': 'Loading price history…',
         'chart.error': 'Could not load price history: {{error}}',
-        'chart.proxyHint': 'Candles come from the local proxy when it runs (bun run all:proxy), else from the cache published with this site, which holds only the cached tickers.',
+        'chart.proxyHint': 'Candles come from the local proxy when it runs (bun run proxy), else from the cache published with this site, which holds only the cached tickers.',
         'chart.empty.noData': 'Enter a ticker and press Enter to chart its price with GEX levels.',
         'bt.asOfToday': 'As of today',
         'bt.asOfLatest': 'As of {{date}}',
@@ -547,7 +547,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'settings.proxyLocalOnly': 'Данные из кэша: этот сайт не использует твой локальный прокси',
         'settings.localProxyOptIn': 'Использовать мой локальный прокси',
         'settings.localProxyOptOut': 'Не использовать мой локальный прокси',
-        'settings.localProxyOptInHint': 'На этом компьютере запущен bun run all:proxy? Разреши сайту пользоваться им один раз: браузер может спросить разрешение на доступ к устройствам локальной сети (Chrome). До этого сайт никогда не обращается к твоему компьютеру.',
+        'settings.localProxyOptInHint': 'На этом компьютере запущен bun run proxy? Разреши сайту пользоваться им один раз: браузер может спросить разрешение на доступ к устройствам локальной сети (Chrome). До этого сайт никогда не обращается к твоему компьютеру.',
         'settings.localProxyOptInOnHint': 'Сайт ищет прокси по URL из раздела «Дополнительно». Отключи, чтобы вернуться только к данным из кэша.',
         'settings.advanced': 'Дополнительно',
         'settings.sourceOverride': 'Источник',
@@ -573,7 +573,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'settings.getKey': 'Получить бесплатный ключ',
         'settings.keyHint': 'Хранится только в браузере (localStorage).',
         'settings.proxyBase': 'Базовый URL прокси',
-        'settings.proxyBaseHint': 'Запусти прокси командой bun run all:proxy (порт 8787).',
+        'settings.proxyBaseHint': 'Запусти прокси командой bun run proxy (порт 8787).',
         'settings.proxyBasePlaceholder': 'http://localhost:8787',
 
         'settings.deskColumns': 'Колонки доски',
@@ -709,14 +709,14 @@ export const translations: Record<Language, Record<string, string>> = {
 
         'error.enterTicker': 'Введи тикер.',
         'error.noContracts': 'Для «{{symbol}}» не найдено опционных контрактов.',
-        'error.allExpired': 'Все экспирации сохранённых данных «{{symbol}}» (за {{day}}) уже истекли. Обновите данные или запустите локальный прокси (bun run all:proxy).',
+        'error.allExpired': 'Все экспирации сохранённых данных «{{symbol}}» (за {{day}}) уже истекли. Обновите данные или запустите локальный прокси (bun run proxy).',
         'error.providerBulk': 'Провайдер настроен неверно (bulk без fetchAll).',
         'error.providerLazy': 'Провайдер настроен неверно (lazy без fetchMeta).',
         'error.friendly.networkProxy':
             'Не удалось достучаться до прокси. Чтобы исправить:\n\n' +
             '1. Клонируй репозиторий: git clone https://github.com/daggerok/gex.git\n' +
             '2. Установи зависимости: bun install -E\n' +
-            '3. Запусти прокси: bun run all:proxy (http://localhost:8787)\n' +
+            '3. Запусти прокси: bun run proxy (http://localhost:8787)\n' +
             '4. Обнови страницу (или включи автопоиск прокси в настройках)\n\n' +
             'Подробности — в README.md.',
         'error.friendly.networkCors':
@@ -734,7 +734,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'error.cache.noQuotes': 'Статический файл {{url}} загружен, но в нём нет массива "quotes". Файл может быть обрезан или в старом формате - запустите scripts/options-data.ts, чтобы пересобрать его.',
         'error.cache.noOptions': '«{{symbol}}» - существующий тикер, но api/options/index.json помечает его как (без опционов) в последнем сканировании кэша.',
         'error.proxy.baseMissing': 'Укажите URL прокси в Настройки -> Дополнительно (например, http://localhost:8787).',
-        'error.proxy.needed': '{{provider}} нужен прокси. Запустите его командой bun run all:proxy (по умолчанию http://localhost:8787) или укажите его URL в Настройки -> Дополнительно.',
+        'error.proxy.needed': '{{provider}} нужен прокси. Запустите его командой bun run proxy (по умолчанию http://localhost:8787) или укажите его URL в Настройки -> Дополнительно.',
         'error.proxy.http': 'Запрос {{provider}} через прокси не удался (HTTP {{status}}). Проверьте, что прокси запущен, и его URL в Настройки -> Дополнительно, или выберите там другой источник.',
         'error.proxy.notJson': 'Прокси вернул для {{provider}} страницу не в формате JSON. Проверьте URL прокси в Настройки -> Дополнительно или выберите там «Всегда кэш».',
         'error.noOptionData': 'Нет данных об опционах для «{{symbol}}». Проверьте тикер.',
@@ -917,7 +917,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'chart.range.all': 'Все',
         'chart.loading': 'Загрузка истории цен…',
         'chart.error': 'Не удалось загрузить историю цен: {{error}}',
-        'chart.proxyHint': 'Свечи идут из локального прокси, когда он запущен (bun run all:proxy), иначе из кэша, опубликованного с сайтом, где есть только тикеры кэша.',
+        'chart.proxyHint': 'Свечи идут из локального прокси, когда он запущен (bun run proxy), иначе из кэша, опубликованного с сайтом, где есть только тикеры кэша.',
         'chart.empty.noData': 'Введи тикер и нажми Enter, чтобы построить график цены с уровнями GEX.',
         'bt.asOfToday': 'На сегодня',
         'bt.asOfLatest': 'На {{date}}',
