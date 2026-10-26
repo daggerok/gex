@@ -22,7 +22,7 @@ import { customLevelsLocked, useCustomLevels } from '../use-custom-levels';
 import { groupLevelLabels, groupNearLevelLabels, labelLayout, LEVEL_LABEL_SEPARATOR, type LevelLabelGroup, type LevelLabelItem } from '../level-labels';
 import { computeOiVolumeTotals, computePCRatio, gexBarHalves, pcRatioByStrike, pointAtPrice, sumAbsGamma, trimZeroBoundaries } from '../gex';
 import {
-    AG_DOT_COLORS, agDotColor, CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
+    AG_DOT_HOVER_RING, AG_DOT_STROKE_WIDTH, CUSTOM_LEVEL_COLOR, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, GEX_LEVEL_COLORS, loadLevelColors, loadMetricColors, saveLevelColors, saveMetricColors,
     type GexLevelKey, type LevelColorSet, type MetricColorSet,
 } from '../gex-colors';
 import { useI18n } from '../i18n';
@@ -446,16 +446,13 @@ export const GexView: React.FC<GexViewProps> = ({
     // ---- Per-metric bar colors (user-customizable, persisted) --------------
     // The colours are shared with the Chart tab (metric-prefs.ts)
     const metricColors = useMetricColors();
-    // AG dots v2 (owner 2026-10-25): a bold dot at every strike, blue by the sign of the strike's Net GEX (light blue < 0,
-    // dark blue >= 0, gex-colors.ts AG_DOT_COLORS per theme) - AG itself is never negative, so the dot carries the sign
-    // the line cannot show; the hovered dot gets a ring in the theme's hover token
+    // AG dots v3 (owner 2026-10-25): a hollow ring at every strike, stroke in the AG line colour (follows a custom colour),
+    // fill none so the bar or the card shows through; the hovered ring is larger and takes the theme's hover token
     const dark = useDarkClass();
-    const agDotTokens = AG_DOT_COLORS[dark ? 'dark' : 'light'];
-    const agDot = (r: number, active: boolean) => (props: { cx?: number; cy?: number; index?: number; payload?: { netGex?: number } }) => {
-        const net = props.payload?.netGex ?? 0;
-        const color = agDotColor(net, dark);
+    const agDot = (r: number, active: boolean) => (props: { cx?: number; cy?: number; index?: number }) => {
         if (props.cx == null || props.cy == null) return <g key={`ag-dot-${props.index}`} />;
-        return <circle key={`ag-dot-${props.index}`} cx={props.cx} cy={props.cy} r={r} fill={color} stroke={active ? agDotTokens.hover : color} strokeWidth={active ? 2 : 1} data-ag-dot={net < 0 ? 'neg' : 'pos'} />;
+        const stroke = active ? AG_DOT_HOVER_RING[dark ? 'dark' : 'light'] : metricColors.absoluteGamma;
+        return <circle key={`ag-dot-${props.index}`} cx={props.cx} cy={props.cy} r={r} fill="none" stroke={stroke} strokeWidth={AG_DOT_STROKE_WIDTH} data-ag-dot={active ? 'active' : 'ring'} />;
     };
     const colorFor = (m: GexMetric, sign?: 'pos' | 'neg'): string => {
         if (m === 'netGex') return sign === 'neg' ? metricColors.netGexNeg : metricColors.netGexPos;
@@ -1749,7 +1746,7 @@ export const GexView: React.FC<GexViewProps> = ({
                                             fill={metricColors.absoluteGamma}
                                             fillOpacity={0.18}
                                             strokeWidth={2}
-                                            // a bold dot at every strike makes the line easier to read (owner 2026-10-25), blue by the strike's Net GEX sign
+                                            // a hollow ring at every strike makes the line easier to read (owner 2026-10-25, AG dots v3)
                                             dot={agDot(AG_DOT_RADIUS, false)}
                                             activeDot={agDot(AG_DOT_ACTIVE_RADIUS, true)}
                                             // recharts layers: Area 100 < Bar 300 < Line/ReferenceLine

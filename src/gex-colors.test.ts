@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { describe, expect, test } from 'bun:test';
-import { AG_DOT_COLORS, agDotColor, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, mergeLevelColors } from './gex-colors';
+import { AG_DOT_HOVER_RING, AG_DOT_STROKE_WIDTH, DEFAULT_LEVEL_COLORS, DEFAULT_METRIC_COLORS, mergeLevelColors } from './gex-colors';
 
 describe('mergeLevelColors: saved colors survive the level key rename', () => {
   test('nothing saved or garbage -> defaults', () => {
@@ -29,20 +29,13 @@ describe('mergeLevelColors: saved colors survive the level key rename', () => {
   });
 });
 
-describe('agDotColor: AG dots are blue by the sign of the strike Net GEX (owner 2026-10-25)', () => {
-    test('light blue on negative, dark blue on positive and zero, per theme', () => {
-        for (const dark of [false, true]) {
-            const set = AG_DOT_COLORS[dark ? 'dark' : 'light'];
-            expect(agDotColor(-1, dark)).toBe(set.neg);
-            expect(agDotColor(1, dark)).toBe(set.pos);
-            expect(agDotColor(0, dark)).toBe(set.pos);
-        }
+describe('AG dots v3: hollow rings in the AG line colour (owner 2026-10-25)', () => {
+    test('the hover ring token differs per theme and from the default AG colour', () => {
+        expect(AG_DOT_HOVER_RING.light).not.toBe(AG_DOT_HOVER_RING.dark);
+        for (const ring of Object.values(AG_DOT_HOVER_RING)) expect(ring).not.toBe(DEFAULT_METRIC_COLORS.absoluteGamma);
     });
-    test('never the Net GEX (-) red, and the two shades differ in each theme', () => {
-        for (const set of Object.values(AG_DOT_COLORS)) {
-            expect(set.neg).not.toBe(set.pos);
-            expect([set.pos, set.neg]).not.toContain(DEFAULT_METRIC_COLORS.netGexNeg);
-            expect(set.hover).not.toBe(set.pos);
-        }
+    test('the ring stroke is 1.5-2 px', () => {
+        expect(AG_DOT_STROKE_WIDTH).toBeGreaterThanOrEqual(1.5);
+        expect(AG_DOT_STROKE_WIDTH).toBeLessThanOrEqual(2);
     });
 });

@@ -55,28 +55,19 @@ export const GEX_LEVEL_COLORS: Record<GexLevelKey, GexLevelColor> = {
 };
 
 /**
- * Absolute Gamma dots on the GEX chart (owner 2026-10-25, "AG dots v2"): one dot per strike on the AG line, BLUE in two
- * shades that carry the sign of the strike's Net GEX the unsigned AG line cannot show - light blue where Net GEX < 0,
- * dark blue where it is >= 0 (zero counts as positive). Deliberately not the red Net GEX (-) colour. One value per
- * theme, each readable on that theme's card (white / slate-800): the light theme needs a deeper "light blue" than the dark
- * one. `hover` is the ring of the active (hovered) dot, contrasting with the card.
+ * Absolute Gamma dots on the GEX chart (owner 2026-10-25, "AG dots v3", replaces the sign-coloured v2 dots): every strike
+ * on the AG line gets a hollow RING - stroke in the Absolute Gamma line colour (`metricColors.absoluteGamma`, so it follows
+ * a custom colour), no fill, so the bar or the card shows through. The dots no longer carry the Net GEX sign. Only the
+ * ring of the hovered (active) dot takes a theme token: a high-contrast stroke readable on that theme's card
+ * (white / slate-800) whatever the AG colour is.
  */
-export interface AgDotColors {
-    pos: string;
-    neg: string;
-    hover: string;
-}
-
-export const AG_DOT_COLORS: Readonly<Record<'light' | 'dark', AgDotColors>> = {
-    light: { pos: '#1e3a8a', neg: '#38bdf8', hover: '#0f172a' }, // blue-900, sky-400, slate-900 ring
-    dark: { pos: '#1d4ed8', neg: '#7dd3fc', hover: '#f8fafc' },  // blue-700, sky-300, slate-50 ring
+export const AG_DOT_HOVER_RING: Readonly<Record<'light' | 'dark', string>> = {
+    light: '#0f172a', // slate-900
+    dark: '#f8fafc', // slate-50
 };
 
-/** The AG dot colour of a strike: dark blue for Net GEX >= 0, light blue for Net GEX < 0. */
-export function agDotColor(netGex: number, dark: boolean): string {
-    const set = AG_DOT_COLORS[dark ? 'dark' : 'light'];
-    return netGex < 0 ? set.neg : set.pos;
-}
+/** Stroke width of the AG rings, in px (owner: ~1.5-2 px, readable in both themes). */
+export const AG_DOT_STROKE_WIDTH = 1.75;
 
 /** Lines the user adds to the Chart tab with a right click (not a GEX level, so it has no GexLevelKey). */
 export const CUSTOM_LEVEL_COLOR: GexLevelColor = { hex: '#38bdf8', dot: 'bg-sky-400' }; // sky-400
