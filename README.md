@@ -13,7 +13,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 - [Documentation](#documentation)
 - [How to use](#how-to-use)
 - [Data sources](#data-sources)
-- [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)
+- [Local proxy and TradingView live mode](#local-proxy-and-tradingview-live-mode)
 - [Ticker suggestions](#ticker-suggestions)
 - [Static-cache greeks](#static-cache-greeks)
 - [Updating the data](#updating-the-data)
@@ -30,7 +30,7 @@ We use **Bun** for JavaScript and TypeScript, including the data fetcher. Always
 ## What you get
 
 - **Quota-friendly loading:** nothing fetches on page open except the ticker you had open last time. Type or pick a ticker and press Enter: its expirations load (the nearest one is selected); every expiration you select loads by itself
-- **Automatic data source:** with the local proxy running you get live data (CBOE, else YAHOO, else NASDAQ, else the cache, per ticker), without it the cache published with the site. A label next to the ticker says which: `LIVE CBOE`, `LIVE YAHOO`, `CACHE 2026-10-23`. See [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)
+- **Automatic data source:** with the local proxy running you get live data (CBOE, else YAHOO, else NASDAQ, else the cache, per ticker), without it the cache published with the site. A label next to the ticker says which: `LIVE CBOE`, `LIVE YAHOO`, `CACHE 2026-10-23`. See [Local proxy and auto-discovery](#local-proxy-and-tradingview-live-mode)
 - **Ticker suggestions:** searchable ticker and company combobox. Local static suggestions use `api/options/index.json` names and mark known valid tickers without options as **`(no options)`**. The empty field hints at the main indices, ETFs and mega caps
 - **Multiple expirations:** select one, many, or all expirations. Chains render stacked earliest to latest with sticky expiration headers
 - **Desk UX:** ATM row highlight, sticky Calls / Strike / Puts headers, greeks columns enabled by default, per-side and per-column desk settings, empty cells for missing data, themed scrollbars, collapse and expand controls, and automatic centering on the current strike after load or expand
@@ -58,7 +58,7 @@ Open http://localhost:1234. Add `?debug=true` to the URL for verbose console log
 |---------|--------|-------|
 | `bun run all` | the app and the local proxy, in the foreground (Ctrl+C stops both) | 1234 and 8787 |
 | `bun run app` | only the app (without the proxy it shows the cache) | 1234 |
-| `bun run proxy` | only the local proxy | 8787 |
+| `bun run proxy` | only the local proxy, with the TradingView live mode for the futures (see [Local proxy and TradingView live mode](#local-proxy-and-tradingview-live-mode)) | 8787 |
 | `bun run start` | the same as `all`, in the background under pm2 (`bun run ps`, `bun run logs`, `bun run restart`, `bun run stop` manage it) | 1234 and 8787 |
 
 Ports: `APP_PORT` moves the app, `PORT` moves the proxy (`APP_PORT=3000 PORT=9000 bun run all`; a moved proxy also needs its URL in Settings -> Advanced). Each command first checks its ports (`scripts/check-ports.ts`) and starts nothing when one is taken; `all` and `start` check both before either starts. It names the port and the process holding it, and exits with 1:
@@ -111,9 +111,9 @@ bun run build-github-pages
 3. Switch between the **Desk** (the chain), **Board** (one row per strike), **GEX** (gamma exposure by strike with the levels) and **Chart** (daily candles with the same levels) tabs, they all use the same selection
 4. Add your own levels with a right click (two-finger click on a trackpad) on the GEX or Chart plot
 
-Four ways to run it: the published site (cache), local with the proxy (live), local with your own cache, and local with your TradingView account for the futures `/ES`, `/NQ`, `/YM`, `/RTY` (needs the local proxy and a TradingView session imported from Chrome, full guide in the TradingView section of [PR #202](https://github.com/daggerok/gex/pull/202), being finished), see [docs/usage.md](docs/usage.md#four-ways-to-use-it)
+Four ways to run it: the published site (cache), local with the proxy (live), local with your own cache, and local with your TradingView account for the futures `/ES`, `/NQ`, `/YM`, `/RTY` (needs the local proxy and a TradingView session imported from Chrome, full guide in [Local proxy and TradingView live mode](#local-proxy-and-tradingview-live-mode)), see [docs/usage.md](docs/usage.md#four-ways-to-use-it)
 
-The source label next to the ticker shows where the data came from (`LIVE CBOE`, `CACHE 2026-10-23`, amber when the cached day is old). The data source is chosen automatically, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery). Every tab, panel and control in detail: [docs/usage.md](docs/usage.md)
+The source label next to the ticker shows where the data came from (`LIVE CBOE`, `CACHE 2026-10-23`, amber when the cached day is old). The data source is chosen automatically, see [Local proxy and auto-discovery](#local-proxy-and-tradingview-live-mode). Every tab, panel and control in detail: [docs/usage.md](docs/usage.md)
 
 ## Data sources
 
@@ -128,37 +128,135 @@ Four providers, no provider menu: the app picks the source by itself (`src/proxy
 
 With the proxy found each ticker tries CBOE, then YAHOO, then NASDAQ, then CACHE, and the first that knows the ticker serves it. Settings -> Data source -> **Advanced** can fix the source: **Always cache** (never even looks for the proxy) or one provider only (`CBOE only`, `YAHOO only`, `NASDAQ only`). Removed long ago: marketdata.app, DoltHub, Tradier, Alpaca, Polygon/Massive, Alpha Vantage and other gated experiments
 
-## Local proxy and auto-discovery
+## Local proxy and TradingView live mode
 
-The browser cannot call Cboe, Yahoo or NASDAQ directly (no CORS), so live data goes through a small Bun proxy on your own computer, `scripts/options-local-proxy.ts`. Without it the app shows the cache published with the site.
+The browser cannot call Cboe, Yahoo, NASDAQ or TradingView directly (no CORS, cookies, a websocket), so live data goes through a small Bun proxy on your own computer, `scripts/options-local-proxy.ts`. The same process runs the **TradingView live mode** for the index futures options (`/ES`, `/NQ`, `/YM`, `/RTY`). Without the proxy the app shows the cache published with the site.
 
-### Start the proxy
+### What runs where
 
-```bash
-bun install -E
-bun run proxy            # http://localhost:8787, listens on 127.0.0.1 only
-bun run all              # or: the app and the proxy together
+```text
+ your computer                                                                 internet
+ ┌──────────────────────────────────────────────────────────┐
+ │ browser: the app (http://localhost:1234 or GitHub Pages)  │
+ │   options tickers ── GET /api/cboe, /api/options ...  ─┐  │
+ │   /ES, /NQ ...    ── GET /api/futures/live?root=ES ──┐ │  │
+ └──────────────────────────────────────────────────────┼─┼──┘
+ ┌──────────────────────────────────────────────────────┼─┼──┐
+ │ bun run proxy (127.0.0.1:8787, one process)          │ │  │
+ │   relays ───────────────────────────────────────────────┴──┼──> Cboe, Yahoo, NASDAQ
+ │   TradingView live mode (scripts/tv/live.ts)         │    │
+ │     session: ~/.config/gex/tradingview.env (600)     │    │
+ │              or imported from Chrome by itself       │    │
+ │     1 websocket, quote sessions of <= 3,000 options ─┼────┼──> data.tradingview.com (bid, ask, OI, volume)
+ │     scanner every minute ────────────────────────────┼────┼──> scanner.tradingview.com (greeks)
+ │     server-sent events to the page <─────────────────┘    │
+ │     api/futures/<ROOT>.json rewritten on change (15 s)     │
+ └────────────────────────────────────────────────────────────┘
 ```
 
-`PORT=9000 bun run proxy` changes the port, `HOST=0.0.0.0` makes it reachable from the LAN (on purpose only: it relays your own Yahoo session and IP). `curl http://localhost:8787/health` answers `{"ok":true,...}` when it runs.
+### Commands
+
+| Command | What it does |
+|---------|--------------|
+| `bun run all` | the app (http://localhost:1234) and the proxy (http://localhost:8787) with the TradingView live mode, in the foreground; Ctrl+C stops both |
+| `bun run proxy` | only the proxy, with the TradingView live mode (`GEX_TV=0 bun run proxy` leaves the live mode off) |
+| `bun run app` | only the app (no proxy: the cache) |
+| `bun run start` | the same as `all` under pm2 in the background; `bun run ps`, `bun run logs`, `bun run restart`, `bun run stop` |
+| `bun run tv:session` | imports the TradingView session cookie from Chrome into `~/.config/gex/tradingview.env` (`--probe` lists the Chrome profiles, `--dry-run` writes nothing, `--prompt` asks for the value instead) |
+| `bun run tv:check` | checks the session: one status line (below) |
+| `bun run tv:futures --once` | writes `api/futures/<ROOT>.json` once and exits, for publishing (`--once ES` one root, `--micros` adds MES, MNQ, MYM, M2K) |
+| `bun run tv:futures` | the files only, without the proxy: keeps running and rewrites them every minute (`--watch 2m`, `--refresh 10m` change the intervals) |
+
+Ports: `APP_PORT` moves the app, `PORT` the proxy; each command checks its ports first and starts nothing when one is taken (it names the process holding it)
+
+### First-time setup
+
+1. `bun install -E`
+2. Log in to https://www.tradingview.com in **Chrome** (the account needs CME data for realtime futures options; without it quotes are 10 minutes delayed)
+3. `bun run tv:session`: reads the session cookie of the Chrome profile that used TradingView last. macOS asks once to allow access to the Keychain item "Chrome Safe Storage" (click **Always Allow**); the value is written to `~/.config/gex/tradingview.env` (mode 600) and never printed. You can skip this step: the proxy imports the session by itself when the file is missing
+4. `bun run tv:check` must print `ok`
+5. `bun run all`, open http://localhost:1234, enter **`/ES`** (or `ES1!`, `/NQ`, `/YM`, `/RTY`, `/MES`...). A plain `ES` stays the Eversource Energy stock
+
+### The source label next to the ticker
+
+| Label | Meaning |
+|-------|---------|
+| `LIVE CBOE`, `LIVE YAHOO`, `LIVE NASDAQ` | an options ticker loaded through the proxy from that provider |
+| `CACHE 2026-10-23` | an options ticker from the cache published with the site, of that trading day (amber when it is not today's) |
+| `CACHE 2026-10-25 21:40` | a futures ticker from its file `api/futures/<ROOT>.json`, written at that New York time (no proxy, or before the live stream sent its first snapshot) |
+| `LIVE TV 10:05:07` | a futures ticker in the TradingView live mode: the time (New York) of the last update, it changes every second or two while the market moves |
+| `TV LOGIN` | the live mode has no valid session: log in to tradingview.com in Chrome, the proxy picks it up within 3 minutes (or run `bun run tv:session`); the last file is shown meanwhile |
+| `TV PAUSED` | TradingView answered 429 or 403: no requests for 15 minutes, then 30, 60, at most 120 if it repeats; it resumes by itself |
+| `TV RECONNECTING` | the websocket dropped (network, sleep): the proxy reconnects by itself (5 s, doubling to 5 min) and subscribes everything again |
+| `TV ERROR` | anything else; the tooltip has the message and the proxy retries |
+
+The tooltip of the label says the same in full sentences (English and Russian)
+
+### What the TradingView live mode does
+
+- **Session:** the proxy reads `~/.config/gex/tradingview.env` on every token request (so a new `tv:session` needs no restart). Missing or rejected -> it imports the session from Chrome by itself, but only once per new Chrome login (it compares a hash of the encrypted Chrome cookie, so the Keychain dialog shows at most once), and looks again every 3 minutes. The 4-hour auth token is renewed 15 minutes before it expires and sent on the open websocket
+- **Data:** one websocket to TradingView, one or more quote sessions per future (at most 3,000 options each: ES about 5,600 options in 2 sessions, NQ about 4,900 in 2, YM and RTY one each), every expiration up to and including the nearest monthly, strikes within ±6% of the forward. Bid, ask, last, volume and open interest arrive as TradingView pushes them. The scanner (TradingView's own IV and greeks) is read once a minute per future
+- **Greeks:** the websocket carries no IV or greeks, so the app prices every option with a two-sided quote itself, Black-76 on its expiration's put-call parity forward (`src/vix-pricing.ts` `liveFuturesGreeks`); options without a two-sided quote keep TradingView's scanner greeks, which also serve as a cross-check
+- **To the page:** server-sent events: the whole chain once (a snapshot), then only the changed options every 500 ms. The page applies them in place, keeps the tab, the expirations and the scroll position, and recalculates the levels at most once a second (slower when one update is heavy: it keeps itself under 5% of a CPU core); the Chart tab fetches its candles again every minute
+- **Files:** `api/futures/<ROOT>.json` (and `dist/api/futures/` when `dist/api` exists) are rewritten every 15 s when something changed, so a reload, `bun run app` or the published site after a commit show the latest state
+- **Without the stream** (no proxy, an older proxy, `GEX_TV=0`): the futures ticker reads its file once per load, as before
+
+Measured on 2026-10-25 (Sunday evening session, ES, MacBook): proxy with the live mode of 4 futures about 2% of one CPU core and 200 MB; the browser tab with one ES expiration 3.8% of a core (an update takes about 15 ms from the event to the redrawn Desk), with all 20 ES expirations 8% (about 115 ms per update, paced to every 2 s); the standalone `tv:futures` about 0.8% of a core and 125 MB
 
 ### What auto-discovery does
 
-- The app asks `{proxy URL}/health` (default `http://localhost:8787`, 500 ms timeout). Found -> live data: each ticker tries **CBOE -> YAHOO -> NASDAQ -> cache**, the first that knows it serves it. Not found -> the cache, never an error
-- **Proxy auto-discovery** (Settings -> Data source, default **off**): off, the proxy is looked for **once when the page loads**, so after you start or stop it, refresh the page. On, it is looked for every 30 s and whenever you come back to the tab, and the data switches between live and cache by itself (the open ticker is loaded again from the new source)
-- The **source label** next to the ticker shows the result: `LIVE CBOE`, `LIVE YAHOO`, `LIVE NASDAQ`, or `CACHE <date of the data>` (amber when that day is not today's). Before a ticker is loaded it shows `LIVE` or `CACHE`, while the first check runs `…`
-- **Settings -> Data source -> Advanced:** the manual override (**Auto**, **Always cache**, or one provider only) and the **proxy URL**. Always cache never contacts the proxy, also when it runs (useful with a cache you built yourself, below)
-- The **Chart tab** follows the same result: candles through the proxy (`/api/chart`) when the source is live, otherwise the cached `api/charts/<SYM>.json`
+- The app asks `{proxy URL}/health` (default `http://localhost:8787`, 500 ms timeout). Found -> live data: each options ticker tries **CBOE -> YAHOO -> NASDAQ -> cache**, a futures ticker subscribes to the live stream. Not found -> the cache, never an error
+- **Proxy auto-discovery** (Settings -> Data source, default **off**): off, the proxy is looked for **once when the page loads**, so after you start or stop it, refresh the page. On, it is looked for every 30 s and whenever you come back to the tab, and the data switches between live and cache by itself
+- **Settings -> Data source -> Advanced:** the manual override (**Auto**, **Always cache**, or one provider only) and the **proxy URL**. Always cache never contacts the proxy, also when it runs, and turns the live mode off in the page
+- The **Chart tab** follows the same result: candles through the proxy (`/api/chart`, futures as `ES=F` from Yahoo) when the source is live, otherwise the cached `api/charts/<SYM>.json`
 
 ### On GitHub Pages
 
-The published site (https://daggerok.github.io/gex/) never contacts your computer by itself: Chrome 142+ asks every visitor for permission to access the local network as soon as a site calls `localhost`. To use your proxy from the published site:
+The published site (https://daggerok.github.io/gex/) never contacts your computer by itself: Chrome 142+ asks every visitor for permission to access the local network as soon as a site calls `localhost`. To use your proxy (and the live mode) from the published site:
 
 1. Start the proxy (`bun run proxy`)
 2. Open Settings -> Data source -> **Use my local proxy** (once, it is remembered in this browser; **Stop using my local proxy** turns it off)
-3. Allow the browser's prompt to access devices on your local network (Chrome)
+3. Allow Chrome's prompt to access devices on your local network
 
-From then on the published site behaves like the local app. The proxy answers browsers only for pages served from `localhost` or `127.0.0.1` (any port) and from `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`, any other page gets 403), and answers Chrome's private network preflight (`Access-Control-Allow-Private-Network: true`) only for those. Safari blocks `http://localhost` from an https page (mixed content), so there the published site stays on the cache; use the local app (`bun run all`)
+The proxy answers browsers only for pages served from `localhost` or `127.0.0.1` (any port) and from `https://daggerok.github.io` (allowlist in `scripts/proxy-cors.ts`, any other page gets 403), and answers Chrome's private network preflight only for those. **Safari is not supported** here (it blocks `http://localhost` from an https page): use the local app (`bun run all`)
+
+### Publishing the futures files
+
+The published site cannot run the live mode for visitors; it shows the futures files as of the last commit:
+
+```bash
+bun run tv:futures --once          # or let bun run all run a minute: the files are current
+git add api/futures && git commit -m "chore(data): refresh futures options" && git push
+```
+
+They stay as of that commit until refreshed by hand again (CI has no session and never runs any of this)
+
+### Status lines of tv:check and tv:futures
+
+| Line | What to do |
+|------|------------|
+| `ok` | nothing |
+| `no session -> run bun run tv:session` | the env file has no `TV_SESSIONID`: run `bun run tv:session` (or start the proxy, it imports by itself) |
+| `session expired -> run bun run tv:session` | you logged out of TradingView (that ends the session) or it expired: log in to tradingview.com in Chrome, run `bun run tv:session` |
+| `Chrome import failed: Keychain access ... failed` | you denied the Keychain dialog: run `bun run tv:session` again and allow, or `bun run tv:session --prompt` and paste the value (DevTools -> Application -> Cookies -> `https://www.tradingview.com` -> `sessionid`) |
+| `no CME entitlement (OI empty)` | the account has no options data for CME futures on TradingView |
+| `no realtime CME entitlement (10 min delayed)` | OI works, prices are 10 minutes late (no realtime CME subscription) |
+| `rate limited` | TradingView answered 429 or 403: wait 15 minutes, do not retry in a loop |
+| `Port 8787 (proxy) is already in use` | another proxy runs (maybe from another checkout): stop it, or `PORT=9000 bun run proxy` and set `http://localhost:9000` in Settings -> Advanced |
+
+### Troubleshooting
+
+- `/ES` says its file is missing: the live mode has not written it yet (about 1.5 minutes after the proxy starts for all four futures) or the session is missing (`curl http://localhost:8787/api/futures/status`)
+- The label stays `CACHE <time>` for `/ES` while the proxy runs: refresh the page (auto-discovery off looks for the proxy only on load), check `curl http://localhost:8787/api/futures/status` says `"state":"live"`; with **Always cache** the live mode is off on purpose
+- Debug: `kill -USR2 <pid of bun scripts/tv/futures.ts>` drops the websocket of a standalone `tv:futures` to see the reconnect (`websocket closed`, `reconnecting in 5 s`, `subscribed N options in K quote session(s)`, `reconnected`); `TV_RENEW_EVERY_MS=180000 bun run tv:futures` renews the token every 3 minutes instead of 15 minutes before it expires; `GEX_TV_ENV=<file>` reads another env file (a copy with a wrong value shows the "session expired" message without touching the real one)
+- Open interest is the exchange's daily figure and lags one or two sessions; TradingView keeps each contract's OI of the last day it changed (`oi.time`)
+
+### Security
+
+- The session lives only in `~/.config/gex/tradingview.env` (mode 600) outside the repository; the proxy and the scripts never print it or the auth token (every log line goes through `redact()`), never write it anywhere else, and never send it anywhere but tradingview.com
+- Never commit the env file, never paste its value into a chat, an issue or a screenshot
+- Logging out of TradingView in the browser invalidates the session: log in again (the proxy imports the new one by itself)
+- The proxy listens on `127.0.0.1` only (`HOST=0.0.0.0` exposes it on purpose only); the futures data is for your personal use (CME licence, TradingView terms): keep the request rate human, never in CI
 
 ### Build the cache yourself
 
@@ -172,23 +270,6 @@ bun run app                                        # the app reads your fresh ap
 ```
 
 The files change tracked data in `api/`; do not commit them by hand (`git checkout -- api` before a commit), the workflows publish the cache
-
-### Futures options from your TradingView account (local)
-
-**Available on the branch `feat/tradingview-futures` ([PR #202](https://github.com/daggerok/gex/pull/202), not merged yet), after #202 is merged also on `main`.** GEX for the CME index futures options `/ES`, `/NQ`, `/YM`, `/RTY` (and the micros) from your own TradingView account with CME data:
-
-```bash
-git checkout feat/tradingview-futures && git pull
-bun run tv:session     # once: imports the TradingView session cookie from Chrome into ~/.config/gex/tradingview.env (mode 600)
-bun run tv:check       # must print "ok"
-bun run tv:futures     # ES NQ YM RTY, keeps running and rewrites api/futures/<ROOT>.json every minute (Ctrl+C stops)
-bun run start          # the app, then enter /ES (or ES1!)
-```
-
-- `bun run tv:futures --once` writes the files once and exits (`--once ES` only that root, `--micros` adds MES, MNQ, MYM, M2K). The files land in `api/futures/<ROOT>.json`, the app reads them for `/ES` and `ES1!`
-- The session file lives outside the repository, in your home folder, with mode 600. Never commit it, never paste its value anywhere (chat, issue, screenshot). Logging out of TradingView in the browser ends that session: log in again and rerun `bun run tv:session`
-- Planned: live updates without a reload (with auto-discovery on, re-read the futures file on every check; later the proxy pushes the updates to the page)
-- The details (publishing the files, troubleshooting) are in the README of that branch
 
 ## Ticker suggestions
 
@@ -248,13 +329,14 @@ Optional files outside the core app source:
 
 - `scripts/options-data.ts`: the fetcher (see [Updating the data](#updating-the-data)). Builds and refreshes `api/options/*.json`, attaches Cboe delayed **1st-order** greeks only (model greeks are UI-only), maintains `api/options/index.json` with `{ files, count, names, no_options, defaults }` and writes `api/charts/<SYM>.json`
 - `.github/workflows/*`: see [Automations](#automations)
-- `scripts/options-local-proxy.ts`: local **Bun** proxy (`bun run proxy`, see [Local proxy and auto-discovery](#local-proxy-and-auto-discovery)) serving:
+- `scripts/options-local-proxy.ts`: local **Bun** proxy (`bun run proxy`, see [Local proxy and auto-discovery](#local-proxy-and-tradingview-live-mode)) serving:
   - `/health`: what the app's auto-discovery asks
   - `/api/options`: Yahoo optionChain with crumb and cookie handling
   - `/api/chart`: Yahoo daily candles for the Chart tab
   - `/api/nasdaq`: NASDAQ option-chain relay
   - `/api/cboe`: CBOE delayed-options relay
   - `/api/search?provider=yahoo|nasdaq|cboe&q=...`: provider-native suggestions
+  - `/api/futures/status`, `/api/futures/live?root=ES`, `/api/futures/<ROOT>.json`: the TradingView live mode (`scripts/tv/live.ts`, `GEX_TV=0` turns it off)
 
 ## Automations
 
@@ -319,7 +401,8 @@ src/
   proxy-discovery.ts          # auto data source: proxy /health probe, CBOE -> YAHOO -> NASDAQ -> CACHE, source label
   greeks.ts                   # client-side Black-Scholes model greeks (single source of truth)
   gex.ts                      # GEX profile and key levels (pure functions)
-  vix-pricing.ts              # Black-76 pricing for futures-priced symbols (VIX, VXN)
+  vix-pricing.ts              # Black-76 pricing for futures-priced symbols (VIX, VXN) and the live futures greeks from mids
+  futures-live.ts             # TradingView live mode in the app: the proxy's stream applied in place
   use-gex-levels.ts           # levels computed once, shared by the GEX and Chart tabs
   custom-levels.ts            # custom chart levels: names, storage, platform helper
   use-custom-levels.ts        # shared store of the custom levels (Chart edits, GEX shows)
@@ -336,6 +419,7 @@ api/
   options/                    # one option-chain cache file per ticker, plus index.json
   charts/                     # one file of 1 year of daily bars per ticker
   history/                    # index.json plus one folder per month, in it one zip per earlier day (last state of the default tickers)
+  futures/                    # ES.json, NQ.json, YM.json, RTY.json of the TradingView live mode or bun run tv:futures, committed by hand and published
   All.txt, Indices.txt        # ticker list of the update workflow; cash index list (kept in sync with INDEX_DIVIDEND_YIELDS)
 scripts/
   options-data.ts             # the fetcher: Yahoo and Cboe -> api/options and api/charts
@@ -345,6 +429,7 @@ scripts/
   options-local-proxy.ts      # local Bun proxy: health, Yahoo, chart, NASDAQ, CBOE, search
   proxy-cors.ts               # the proxy's CORS allowlist and private network preflight answer
   check-ports.ts              # port pre-check of bun run app, proxy, all, start
+  tv/                         # TradingView futures options: tv:session, tv:check, tv:futures and the proxy's live mode (live.ts); on your computer, never in CI
 .github/workflows/
   ci.yaml                     # pull request checks
   update-data.yml             # data refresh of all tickers (weekly, also manual)

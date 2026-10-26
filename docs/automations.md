@@ -2,7 +2,7 @@
 
 Everything that runs by itself or with one command: the GitHub Actions workflows, the data fetcher, the archive and backup scripts, the local run commands and the tests. Back to the [README](../README.md)
 
-TradingView futures and live mode: see [PR #202](https://github.com/daggerok/gex/pull/202) (section added when it merges). The `tv:*` scripts of that branch run only on your computer with your session file `~/.config/gex/tradingview.env`, never in GitHub Actions (CI has no session)
+TradingView futures and live mode: [README, Local proxy and TradingView live mode](../README.md#local-proxy-and-tradingview-live-mode). The proxy's live mode and the `tv:*` scripts run only on your computer with your session file `~/.config/gex/tradingview.env`, never in GitHub Actions (CI has no session)
 
 ## Contents
 

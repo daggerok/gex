@@ -50,7 +50,7 @@ Without a running proxy the app uses this cache by itself; with one, choose Sett
 
 - Gives GEX, levels and the Board for the CME index futures options `/ES`, `/NQ`, `/YM`, `/RTY` (and the micros) from your own TradingView account with CME data, refreshed while it runs
 - Needs the local proxy running on your computer and a TradingView session imported once from Chrome into `~/.config/gex/tradingview.env` (mode 600, outside the repository, never committed or shared)
-- The commands (`bun run tv:session`, `tv:check`, `tv:futures`) live on the branch of [PR #202](https://github.com/daggerok/gex/pull/202), which is being finished; the full guide is its TradingView section, added to these docs when it merges
+- `bun run all` (or `bun run proxy`) runs the TradingView live mode: the page shows `LIVE TV hh:mm:ss` and updates in place every second or two; without the proxy `/ES` reads its file. Full guide: [README, Local proxy and TradingView live mode](../README.md#local-proxy-and-tradingview-live-mode)
 
 ## Where the data comes from
 
