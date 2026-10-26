@@ -35,8 +35,8 @@ export const ALL_LEVEL_KEYS: ToggleableLevelKey[] = ['maxNetGex', 'netGexPlus', 
  *  one click away in the Levels panel like every other level. */
 export const DEFAULT_OFF_LEVELS: ToggleableLevelKey[] = ['netGexPlus', 'netGexMinus', 'sumNetGexPlus', 'sumNetGexMinus', 'sigma'];
 
-/** Default ON selection: every level except DEFAULT_OFF_LEVELS (so Max / Min Net GEX, Gamma Flip,
- *  Max Pain and Spot). Reset restores it. */
+/** Default ON selection: every level except DEFAULT_OFF_LEVELS (so Max / Min Net GEX, Gamma Flip, Zero GEX,
+ *  Max Pain, Max AG and Spot). A first visit starts with it and Reset restores it. */
 export const DEFAULT_SELECTED_LEVELS: ToggleableLevelKey[] = ALL_LEVEL_KEYS.filter((k) => !DEFAULT_OFF_LEVELS.includes(k));
 
 /** i18n key for each level's sidebar/toggle-panel label. */
@@ -151,21 +151,57 @@ export function levelPanelOrder(levels: GexLevels | null, customLevels: readonly
     return [...own, ...sorted.map((key): PanelEntry => ({ key, builtin: key, custom: null, value: levelPanelValue(levels, key) }))];
 }
 
-// ---- the shared state: which built-in levels are on, and their colours ----
+// ---- the shared state: which built-in levels are on, and their colours (both remembered in the browser) ----
 
 export interface LevelPrefs {
     selected: ToggleableLevelKey[];
     colors: LevelColorSet;
 }
 
-let prefs: LevelPrefs = { selected: [...DEFAULT_SELECTED_LEVELS], colors: loadLevelColors() };
+/** localStorage key of the on/off state of the built-in levels: `{ [key]: boolean }` for every known level. */
+export const SELECTED_LEVELS_KEY = 'gex.selectedLevels.v1';
+
+/**
+ * The selection from a stored `{ [key]: boolean }` map, in ALL_LEVEL_KEYS order. Migration-safe: a level missing from
+ * the map (a visit before this key existed, or a level added later) takes its default (DEFAULT_SELECTED_LEVELS),
+ * unknown keys and non-boolean values are ignored, anything unreadable gives the defaults. Pure, for tests.
+ */
+export function parseSelectedLevels(raw: string | null): ToggleableLevelKey[] {
+    let saved: Record<string, unknown> = {};
+    try {
+        const parsed: unknown = raw ? JSON.parse(raw) : null;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) saved = parsed as Record<string, unknown>;
+    } catch { /* unreadable: defaults */ }
+    return ALL_LEVEL_KEYS.filter((k) => (typeof saved[k] === 'boolean' ? saved[k] === true : DEFAULT_SELECTED_LEVELS.includes(k)));
+}
+
+/** The stored selection, or the defaults when there is none (or storage is blocked). */
+export function loadSelectedLevels(): ToggleableLevelKey[] {
+    try {
+        return parseSelectedLevels(localStorage.getItem(SELECTED_LEVELS_KEY));
+    } catch {
+        return [...DEFAULT_SELECTED_LEVELS];
+    }
+}
+
+/** Remembers the on/off state of every known level (best-effort, like saveLevelColors). */
+export function saveSelectedLevels(selected: readonly ToggleableLevelKey[]): void {
+    const map: Record<string, boolean> = {};
+    for (const k of ALL_LEVEL_KEYS) map[k] = selected.includes(k);
+    try { localStorage.setItem(SELECTED_LEVELS_KEY, JSON.stringify(map)); } catch { /* ignore, the choice still holds for this page */ }
+}
+
+let prefs: LevelPrefs = { selected: loadSelectedLevels(), colors: loadLevelColors() };
 const listeners = new Set<() => void>();
 const publish = (next: LevelPrefs) => { prefs = next; listeners.forEach((l) => l()); };
 
 export const getLevelPrefs = (): LevelPrefs => prefs;
 
+/** Turns a level on or off and remembers the selection in the browser (SELECTED_LEVELS_KEY). */
 export function toggleLevel(key: ToggleableLevelKey): void {
-    publish({ ...prefs, selected: prefs.selected.includes(key) ? prefs.selected.filter((k) => k !== key) : [...prefs.selected, key] });
+    const selected = prefs.selected.includes(key) ? prefs.selected.filter((k) => k !== key) : [...prefs.selected, key];
+    saveSelectedLevels(selected);
+    publish({ ...prefs, selected });
 }
 
 /** Sets a level's colour and remembers it in the browser (the same key as before, 'gex.levelColors.v1'). */
@@ -175,9 +211,10 @@ export function setLevelColor(key: ToggleableLevelKey, color: string): void {
     publish({ ...prefs, colors });
 }
 
-/** Back to the default selection and the default colours. */
+/** Back to the default selection and the default colours (both remembered as such). */
 export function resetLevelPrefs(): void {
     saveLevelColors(DEFAULT_LEVEL_COLORS);
+    saveSelectedLevels(DEFAULT_SELECTED_LEVELS);
     publish({ selected: [...DEFAULT_SELECTED_LEVELS], colors: { ...DEFAULT_LEVEL_COLORS } });
     zeroGexDisplay.set(zeroGexDisplay.fallback);
     sigmaMode.set(sigmaMode.fallback);

@@ -51,6 +51,7 @@ Everything stays in this browser (`localStorage` and IndexedDB), nothing is sent
 | `gex.settings.v5` | the settings blob: `source` (`auto`, `static`, `cboe`, `yahoo`, `nasdaq`), `proxyAutoPoll`, `localProxyOptIn`, `proxyBase`, `language`, `theme`, `colorTheme`, `deskColumns`, `lastTicker`, `selectedExps`, `activeTab`, `gexMetrics`, `vixFuturesPricing` (no UI, off) and leftovers `tokens`, `secrets`, `proxyTemplate` of removed providers | Auto, off, off, `http://localhost:8787`, `en`, `system`, `gex`, see above, `AAPL`, none, `desk`, Net GEX and AG |
 | `gex.metricColors.v1` | colours of the metrics (Net GEX (+) and (-), AG, OI, volume, P/C) | built-in palette |
 | `gex.levelColors.v1` | colours of the built-in levels | built-in palette |
+| `gex.selectedLevels.v1` | which built-in levels are on: `{ "<level>": true/false }` for every level | Max Net GEX, Min Net GEX, Gamma Flip, Zero GEX, Max Pain, Max AG and Spot on; Net GEX+, Net GEX-, the two 75% Sum levels and Sigma off |
 | `gex.netGexView.v1` | the switch in the Net GEX chip: `net` or `split` (Abs GEX) | `net` |
 | `gex.zeroGexDisplay.v1` | the switch in the Zero GEX chip: `line` or `area` | `line` |
 | `gex.sigmaMode.v1` | the switch in the Sigma chip: `pct` or `stat` | `pct` |
@@ -63,9 +64,9 @@ Everything stays in this browser (`localStorage` and IndexedDB), nothing is sent
 | IndexedDB `gex-cache-db` | the query cache: every loaded chain, LRU, about 200 MB soft cap | empty |
 | IndexedDB `gex-backtest-db` | archived days and backups you opened, imported or created | empty |
 
-Not remembered on purpose: which built-in levels are on (every page load starts with Max Net GEX, Min Net GEX, Gamma Flip, Zero GEX, Max Pain, Max AG and Spot on; Net GEX+, Net GEX-, the two 75% Sum levels and Sigma off) and the collapsed or expanded Desk sections
+Not remembered on purpose: the collapsed or expanded Desk sections
 
-**Migration:** an unknown or removed value falls back to its default when the blob is read (`loadSettings`): an unknown tab -> `desk`, an unknown metric is dropped (none left -> Net GEX and AG), an old `providerId` of the removed provider menu is dropped so everyone starts on Auto, a removed Cloudflare Worker template falls back to the default. The old `gex.cache.*` keys of the localStorage query cache are deleted on load. `gex.chartZoom.v1` (one ticker) is read once into `gex.chartZoom.v2`
+**Migration:** an unknown or removed value falls back to its default when the blob is read (`loadSettings`): an unknown tab -> `desk`, an unknown metric is dropped (none left -> Net GEX and AG), an old `providerId` of the removed provider menu is dropped so everyone starts on Auto, a removed Cloudflare Worker template falls back to the default. The old `gex.cache.*` keys of the localStorage query cache are deleted on load. `gex.chartZoom.v1` (one ticker) is read once into `gex.chartZoom.v2`. `gex.selectedLevels.v1`: a level missing from the stored map (a browser from before the key existed, or a level added later) takes its default, unknown keys are ignored
 
 **First visit:** with no `gex.settings.v5` nothing is fetched until you load a ticker; on later visits the last ticker and its expirations load by themselves
 
