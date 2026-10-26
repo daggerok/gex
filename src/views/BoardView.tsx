@@ -2,11 +2,12 @@
 import * as React from 'react';
 import { useEffect, useRef } from 'react';
 import { centerRowInScroll, scrollRowToMiddle } from '../center-row';
+import { CupIcon } from '../components/CupIcon';
 import { HelpButton } from '../components/HelpButton';
 import { ScrollMarks } from '../components/ScrollMarks';
 import { ToolbarRow } from '../components/ToolbarRow';
 import { BOARD_COLUMNS, type Board, type BoardColumn, type BoardRow, type NetGexView } from '../gex';
-import { BOARD_PEAK_DOT } from '../gex-colors';
+import { BOARD_CUP } from '../gex-colors';
 import { LEVEL_LABEL_SEPARATOR, levelMarksByStrike, type LevelLabelItem } from '../level-labels';
 import { useI18n } from '../i18n';
 import { LEVEL_CHART_LABEL_KEY, levelLabelItems, sigmaMode, useLevelPrefs } from '../level-prefs';
@@ -20,9 +21,9 @@ import { fmt, fmtCompact, fmtInt, fmtSignedCompact } from '../utils';
 // ============================================================================
 // BOARD TAB (owner 2026-10-25) - one row per strike of the selected expirations: Net GEX, Abs GEX, notional delta, OI and
 // volume (total, calls, puts) and each strike's share of the Abs GEX. The numbers come from src/gex.ts computeBoard
-// through useGexLevels (the view only renders). A dot marks each column's peak, light blue in the dark theme and a darker blue in the
-// light one (gex-colors.ts BOARD_PEAK_DOT, owner 2026-10-25: no longer the value's sign colour), and tints its row by the sign of the
-// row's Net GEX; the runner-up of a column (computeBoard seconds) gets the same dot and, on an untinted row only, its own cell tinted exactly like a peak row (signTint); the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
+// through useGexLevels (the view only renders). A gold trophy cup marks each column's peak (components/CupIcon.tsx, colours
+// gex-colors.ts BOARD_CUP, owner 2026-10-26: replaced the blue dots), and its row is tinted by the sign of the
+// row's Net GEX; the runner-up of a column (computeBoard seconds) gets a silver cup and, on an untinted row only, its own cell tinted exactly like a peak row (signTint); the ATM row (strike nearest to spot) has the Desk's Spot tint and sits in the middle of the table on open
 // and whenever the ticker or the expiration selection changes (src/center-row.ts, like the Desk). The table looks like the
 // Desk (font, size, rows, header). The expirations and their OI shares are in the shared Expirations panel. Right of the
 // table's scrollbar a minimap strip (components/ScrollMarks.tsx, src/scroll-marks.ts) shows only what the table tints (owner
@@ -111,8 +112,9 @@ export const BoardView: React.FC<{
 }> = ({ symbol, board, selectedExps, levels, metrics, setMetrics, colorTheme, spotEstimated = false }) => {
     const { t: tr } = useI18n();
     const colors = useMetricColors();
-    // the peak and runner-up dots: one blue per theme, not the sign colours (owner 2026-10-25)
-    const dotColor = BOARD_PEAK_DOT[useDarkClass() ? 'dark' : 'light'];
+    // the peak and runner-up cups: gold and silver per theme, not the sign colours (owner 2026-10-26)
+    const theme = useDarkClass() ? 'dark' : 'light';
+    const cupColors = { gold: BOARD_CUP.gold[theme], silver: BOARD_CUP.silver[theme] };
     const { selected: selectedLevels, colors: levelColors } = useLevelPrefs();
     // the ATM row is tinted with the Spot level colour exactly like the Desk's (index.css `.od-atm`, --od-atm)
     const atmColor = levelColors.spot;
@@ -252,8 +254,12 @@ export const BoardView: React.FC<{
                                                 const cellBg = second && !rowTinted ? signTint(row.netGex, colors) : undefined;
                                                 return (
                                                     <td key={c.key} className="whitespace-nowrap px-2 py-[3px] text-right" style={cellBg ? { backgroundColor: cellBg } : undefined} data-board-peak={peak ? c.key : undefined} data-board-second={second ? c.key : undefined} data-board-col={c.key}>
-                                                        {(peak || second) && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: dotColor }} data-board-dot role="img" aria-label={tr(peak ? 'board.peak' : 'board.second')} />}
-                                                        {c.format(row)}
+                                                        {(peak || second) && (
+                                                            // gold cup = the column's peak, silver cup = its runner-up (owner 2026-10-26); the value stays
+                                                            // right-aligned, so its right edge is the same with or without a cup before it
+                                                            <CupIcon className="mr-1" color={peak ? cupColors.gold : cupColors.silver} label={tr(peak ? 'board.peak' : 'board.second')} data-board-cup={peak ? 'gold' : 'silver'} />
+                                                        )}
+                                                        <span data-board-value>{c.format(row)}</span>
                                                     </td>
                                                 );
                                             })}

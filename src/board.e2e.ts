@@ -3,16 +3,16 @@
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
 import { noProxy, startTestSite } from './e2e-site';
-import { BOARD_PEAK_DOT } from './gex-colors';
+import { BOARD_CUP } from './gex-colors';
 
 // ============================================================================
 // Browser check of the Board tab (src/views/BoardView.tsx): it opens with the ATM row (strike nearest to spot) in the
 // middle of the table and keeps it there when the expiration selection changes; it has no expirations panel of its own,
 // the shared one shows each expiration's OI share in a slot of fixed width; the table has the Desk's look and the very
-// same ATM tint (both themes); Net GEX has one or two peak dots, every other column
-// at most one; the page never scrolls (desktop and phone), only the table does; switching to the Board with every
+// same ATM tint (both themes); Net GEX has one or two peaks, every other column
+// at most one; a peak cell has a gold cup, a runner-up cell a silver one, rows keep their height and values stay right-aligned; the page never scrolls (desktop and phone), only the table does; switching to the Board with every
 // expiration selected stays fast; a runner-up cell has exactly a peak row's tint and never stacks a second background on a
-// tinted row; every peak and runner-up dot is the theme's blue token (gex-colors.ts BOARD_PEAK_DOT, not a sign colour).
+// tinted row; the cups are the theme's gold and silver tokens (gex-colors.ts BOARD_CUP, not a sign colour).
 // Run: `bun run test:e2e`.
 // ============================================================================
 
@@ -130,13 +130,13 @@ async function main(): Promise<void> {
             const count = (k: string) => peaks.filter((p) => p === k).length;
             assert.ok(count('netGex') >= 1 && count('netGex') <= 2, `${at}: Net GEX peaks ${count('netGex')}`);
             for (const k of ['absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare']) assert.ok(count(k) <= 1, `${at}: ${k} peaks ${count(k)}`);
-            // ---- runner-ups: the same counts, a dot, never on a peak's cell ----
+            // ---- runner-ups: the same counts, a silver cup, never on a peak's cell ----
             const seconds = await page.locator('[data-board-second]').evaluateAll((els) => els.map((e) => {
                 const row = e.closest('tr')!;
                 return {
                     k: e.getAttribute('data-board-second') ?? '',
                     bg: getComputedStyle(e).backgroundColor,
-                    dot: !!e.querySelector('[data-board-dot]'),
+                    cup: e.querySelector('[data-board-cup]')?.getAttribute('data-board-cup') ?? '',
                     peak: e.hasAttribute('data-board-peak'),
                     rowTinted: row.hasAttribute('data-board-tinted') || row.hasAttribute('data-board-atm'),
                     sign: row.getAttribute('data-board-sign') ?? '',
@@ -145,7 +145,55 @@ async function main(): Promise<void> {
             const secondCount = (k: string) => seconds.filter((s) => s.k === k).length;
             assert.ok(secondCount('netGex') <= 2, `${at}: Net GEX runner-ups ${secondCount('netGex')}`);
             for (const k of ['absGex', 'notionalDelta', 'totalOi', 'callOi', 'putOi', 'totalVolume', 'callVolume', 'putVolume', 'absGexShare']) assert.ok(secondCount(k) <= 1, `${at}: ${k} runner-ups ${secondCount(k)}`);
-            for (const s of seconds) assert.ok(s.dot && !s.peak, `${at}: runner-up ${s.k} has a dot and is not a peak`);
+            for (const s of seconds) assert.ok(s.cup === 'silver' && !s.peak, `${at}: runner-up ${s.k} has the silver cup and is not a peak`);
+            // ---- gold cup = the column's peak, silver cup = its runner-up (owner 2026-10-26); the row keeps its height and the
+            // value's right edge is the same in every row of a column, with or without a cup ----
+            const cupCells = await page.locator('[data-board-peak], [data-board-second]').evaluateAll((els) => els.map((e) => {
+                const cups = Array.from(e.querySelectorAll('[data-board-cup]'));
+                const cup = cups[0];
+                const value = e.querySelector('[data-board-value]')!.getBoundingClientRect();
+                return {
+                    col: e.getAttribute('data-board-col') ?? '',
+                    peak: e.hasAttribute('data-board-peak'),
+                    cups: cups.length,
+                    kind: cup?.getAttribute('data-board-cup') ?? '',
+                    role: cup?.getAttribute('role') ?? '',
+                    label: cup?.getAttribute('aria-label') ?? '',
+                    cupRight: cup?.getBoundingClientRect().right ?? 0,
+                    cupH: cup?.getBoundingClientRect().height ?? 0,
+                    font: parseFloat(getComputedStyle(e).fontSize),
+                    valueLeft: value.left,
+                };
+            }));
+            assert.ok(cupCells.some((c) => c.peak) && cupCells.some((c) => !c.peak), `${at}: peak and runner-up cells to compare`);
+            for (const c of cupCells) {
+                const kind = c.peak ? 'gold' : 'silver';
+                assert.equal(c.cups, 1, `${at}: ${c.col} ${kind} cell has one cup (${c.cups})`);
+                assert.equal(c.kind, kind, `${at}: ${c.col} ${c.peak ? 'peak' : 'runner-up'} has the ${kind} cup`);
+                assert.equal(c.role, 'img', `${at}: ${c.col} cup is an image`);
+                assert.equal(c.label, c.peak ? 'peak' : 'second', `${at}: ${c.col} cup is labelled ${c.peak ? 'peak' : 'second'}`);
+                assert.ok(Math.abs(c.cupH - c.font) < 0.5, `${at}: ${c.col} cup is the row's font size (${c.cupH} vs ${c.font})`);
+                assert.ok(c.cupRight < c.valueLeft, `${at}: ${c.col} cup sits before the value`);
+            }
+            const rowInfo = await page.locator('[data-board-row]').evaluateAll((els) => {
+                const heights = els.map((e) => ({ h: e.getBoundingClientRect().height, cup: !!e.querySelector('[data-board-cup]') }));
+                const edges: Record<string, number[]> = {};
+                for (const e of els) for (const td of Array.from(e.querySelectorAll('td[data-board-col]'))) {
+                    const v = td.querySelector('[data-board-value]');
+                    if (v) (edges[td.getAttribute('data-board-col') ?? ''] ??= []).push(v.getBoundingClientRect().right);
+                }
+                return { heights, edges };
+            });
+            const plainH = rowInfo.heights.filter((r) => !r.cup).map((r) => r.h);
+            const cupH = rowInfo.heights.filter((r) => r.cup).map((r) => r.h);
+            assert.ok(plainH.length > 0 && cupH.length > 0, `${at}: rows with and without a cup`);
+            const allH = plainH.concat(cupH);
+            assert.ok(Math.max(...allH) - Math.min(...allH) < 0.5, `${at}: a cup does not change the row height (plain ${Math.min(...plainH)}-${Math.max(...plainH)}, cup ${Math.min(...cupH)}-${Math.max(...cupH)})`);
+            for (const c of Array.from(new Set(cupCells.map((d) => d.col)))) {
+                const edges = rowInfo.edges[c] ?? [];
+                const spread = Math.max(...edges) - Math.min(...edges);
+                assert.ok(edges.length > 2 && spread < 0.5, `${at}: the values of ${c} share one right edge with or without a cup (spread ${spread})`);
+            }
             // ---- no double background: a runner-up on a tinted row (peak, ATM) has no background of its own; on an untinted
             // row it has exactly the peak row tint of its row's Net GEX sign (owner 2026-10-25, "runner-ups v2") ----
             const TRANSPARENT = 'rgba(0, 0, 0, 0)';
@@ -163,7 +211,7 @@ async function main(): Promise<void> {
             let compared = 0;
             for (const s of seconds) {
                 if (s.rowTinted) {
-                    assert.equal(s.bg, TRANSPARENT, `${at}: runner-up ${s.k} on a tinted row has only its dot`);
+                    assert.equal(s.bg, TRANSPARENT, `${at}: runner-up ${s.k} on a tinted row has only its cup`);
                 } else if (rowTint[s.sign]) {
                     assert.equal(s.bg, rowTint[s.sign], `${at}: runner-up ${s.k} has exactly the ${s.sign} peak row tint`);
                     compared++;
@@ -171,13 +219,15 @@ async function main(): Promise<void> {
                     assert.notEqual(s.bg, TRANSPARENT, `${at}: runner-up ${s.k} on an untinted row is tinted`);
                 }
             }
-            // ---- the dots: peaks and runner-ups alike, the theme's blue (owner 2026-10-25), whatever the value's sign ----
-            const want = BOARD_PEAK_DOT[scheme];
-            const rgbWant = `rgb(${parseInt(want.slice(1, 3), 16)}, ${parseInt(want.slice(3, 5), 16)}, ${parseInt(want.slice(5, 7), 16)})`;
+            // ---- the cups: gold on peaks, silver on runner-ups, the theme's tokens (owner 2026-10-26), whatever the value's sign ----
+            const rgbOf = (hex: string) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
             await page.waitForFunction((d: boolean) => document.documentElement.classList.contains('dark') === d, scheme === 'dark');
-            const dots = await page.locator('[data-board-dot]').evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
-            assert.ok(dots.length >= peaks.length && dots.length > 0, `${at}: a dot on every peak and runner-up (${dots.length})`);
-            assert.deepEqual(Array.from(new Set(dots)), [rgbWant], `${at}: every Board dot is the ${scheme} token ${want}`);
+            const cups = await page.locator('[data-board-cup]').evaluateAll((els) => els.map((e) => ({ kind: e.getAttribute('data-board-cup') ?? '', color: getComputedStyle(e).color })));
+            assert.ok(cups.length >= peaks.length && cups.length > 0, `${at}: a cup on every peak and runner-up (${cups.length})`);
+            for (const kind of ['gold', 'silver'] as const) {
+                const got = Array.from(new Set(cups.filter((c) => c.kind === kind).map((c) => c.color)));
+                assert.deepEqual(got, [rgbOf(BOARD_CUP[kind][scheme])], `${at}: every ${kind} cup is the ${scheme} token ${BOARD_CUP[kind][scheme]}`);
+            }
             console.log(`board e2e ${at}: ${seconds.length} runner-ups, ${seconds.filter((s) => s.rowTinted).length} on tinted rows, ${compared} compared with a peak row tint`);
 
             // ---- only the table scrolls, the footer stays in view ----
