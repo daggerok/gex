@@ -5,13 +5,14 @@ import { DEFAULT_GEX_METRICS, GEX_METRICS, netGexView, resetMetricColors, setMet
 import { accentOf } from '../theme';
 import type { Settings } from '../types';
 import { ChipSwitch, StableLabel } from './ChipSwitch';
+import { EdgeScrollRow } from './EdgeScrollRow';
 import { ToggleChip } from './ToggleChip';
 
 // ============================================================================
 // METRICS PANEL - the row of chips that turns the GEX metrics on and off and sets the colours of
 // their bars. One component for the GEX tab and the Chart tab, so the two look and behave the
 // same (the metrics selection is `gexMetrics` of main.tsx, the colours are in metric-prefs.ts).
-// Moved here from GexView.tsx.
+// Moved here from GexView.tsx. The chips scroll in an EdgeScrollRow (no scrollbar, fades, < / > buttons).
 // ============================================================================
 
 /** The same frame as the Levels panel next to it. */
@@ -39,7 +40,9 @@ export const MetricsPanel: React.FC<{
     return (
         <div className={BOX + ' ' + className} role="group" aria-label={tr('gex.metric.label')}>
             <span className="text-xs text-slate-400 whitespace-nowrap">{tr('gex.metric.label')}</span>
-            <div className="themed-scroll flex items-center gap-2 overflow-x-auto">
+            {/* No scrollbar: fades and < / > buttons on the side(s) with more chips, like the Levels and Expirations panels
+                (EdgeScrollRow, owner 2026-10-26) */}
+            <EdgeScrollRow scope="metrics" rowClassName="gap-2" prevLabel={tr('gex.metric.scrollPrev')} nextLabel={tr('gex.metric.scrollNext')}>
                 {GEX_METRICS.map((m) => {
                     const on = metrics.includes(m);
                     return (
@@ -77,7 +80,7 @@ export const MetricsPanel: React.FC<{
                         </ToggleChip>
                     );
                 })}
-            </div>
+            </EdgeScrollRow>
             <button type="button" onClick={reset} className={'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium ' + ax.chipIdle}>
                 {tr('gex.metric.reset')}
             </button>
