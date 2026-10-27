@@ -9,7 +9,8 @@ import { Tip } from './Tip';
 // (a CSS mask, so any panel background works) and a < / > button on that side (only while there is more that way) glides
 // the previous / next hidden chip into view (src/edge-scroll.ts). Trackpad and touch swipes scroll natively, a vertical
 // mouse wheel scrolls the row sideways. The buttons are overlays on the faded edges, so the panel keeps its size whether
-// they show or not. Used by the shared Expirations panel (ExpirationChips) and the Levels panel (LevelsPanel).
+// they show or not. Used by the shared Expirations panel (ExpirationChips), the Levels panel (LevelsPanel) and the
+// Metrics panel (MetricsPanel).
 // ============================================================================
 
 /** Width of the fade on a clipped side (px); a chip under it counts as hidden. */
