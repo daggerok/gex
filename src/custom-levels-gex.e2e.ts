@@ -9,7 +9,7 @@ import { noProxy, startTestSite } from './e2e-site';
 
 // The default name of a new level is Buyside above the current price and Sellside below it (then Buyside 2...): the same function
 // the app uses decides what to expect, the price comes from the label of the editor, the spot from the cache file
-const SPOT = JSON.parse(readFileSync(join(__dirname, '..', 'api', 'options', 'SPY.json'), 'utf8')).underlyingPrice as number;
+const SPOT = JSON.parse(readFileSync(join(__dirname, 'e2e-fixtures', 'options', 'SPY.json'), 'utf8')).underlyingPrice as number;
 const NAMES = { above: 'Buyside', below: 'Sellside', plain: 'Level' };
 const priceOfEditor = async (input: Locator) => Number(((await input.getAttribute('aria-label')) ?? '').match(/at ([\d.,]+)/)![1].replace(/,/g, ''));
 const expectedName = async (input: Locator, used: Array<{ name: string }>) => defaultLevelName(used, await priceOfEditor(input), SPOT, NAMES);
@@ -26,7 +26,7 @@ const expectedName = async (input: Locator, used: Array<{ name: string }>) => de
 const KEY = 'gex.customLevels.v1.SPY';
 const ABOVE: string[] = ['#34d399', '#10b981', '#6ee7b7'];
 const BELOW: string[] = ['#fb7185', '#f43f5e', '#fda4af'];
-const strikes = new Set<number>((JSON.parse(readFileSync(join(__dirname, '..', 'api', 'options', 'SPY.json'), 'utf8')).quotes as Array<{ strike: number }>).map((q) => q.strike));
+const strikes = new Set<number>((JSON.parse(readFileSync(join(__dirname, 'e2e-fixtures', 'options', 'SPY.json'), 'utf8')).quotes as Array<{ strike: number }>).map((q) => q.strike));
 const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 async function main(): Promise<void> {
