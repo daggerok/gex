@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     const browser = await chromium.launch({ args: ['--mute-audio'] });
     try {
         const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-        const qqq = JSON.parse(readFileSync(join(__dirname, '..', 'api', 'options', 'QQQ.json'), 'utf8')) as Record<string, unknown>;
+        const qqq = JSON.parse(readFileSync(join(__dirname, 'e2e-fixtures', 'options', 'QQQ.json'), 'utf8')) as Record<string, unknown>;
         await page.route('**/api/options/VIX.json', (route) => route.fulfill({ json: { ...qqq, symbol: 'VIX' } }));
         await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
         await page.goto(site.url);

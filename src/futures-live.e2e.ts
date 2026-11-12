@@ -22,7 +22,7 @@ const ROOT = join(__dirname, '..');
 type Q = { symbol: string; expiration: string; bid: number | null; ask: number | null; last: number | null; volume: number | null; openInterest: number | null };
 
 async function main(): Promise<void> {
-    const file = JSON.parse(readFileSync(join(ROOT, 'api', 'options', 'SPY.json'), 'utf8')) as { symbol: string; updated: string; quotes: Q[]; expirations: string[] };
+    const file = JSON.parse(readFileSync(join(ROOT, 'src', 'e2e-fixtures', 'options', 'SPY.json'), 'utf8')) as { symbol: string; updated: string; quotes: Q[]; expirations: string[] };
     file.symbol = 'YM';
     file.updated = '2026-10-25T21:40:00-04:00';
     // TradingView OI days: every third quote carries an older one -> its Desk OI cell names the day in a tooltip (G10)
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
 
         // TradingView hybrid: a stock loaded live through CBOE follows /api/tv/live once it delivers (15 min delayed label);
         // a status without data keeps LIVE CBOE
-        const spy = JSON.parse(readFileSync(join(ROOT, 'api', 'options', 'SPY.json'), 'utf8')) as typeof file;
+        const spy = JSON.parse(readFileSync(join(ROOT, 'src', 'e2e-fixtures', 'options', 'SPY.json'), 'utf8')) as typeof file;
         const page2 = await (await browser.newContext({ viewport: { width: 1400, height: 800 } })).newPage();
         await page2.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [SETTINGS_KEY, JSON.stringify({ proxyBase: proxy.base, lastTicker: 'SPY' })] as const);
         await page2.goto(site.url);
