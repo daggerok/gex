@@ -9,7 +9,7 @@ import { noProxy, startTestSite } from './e2e-site';
 
 // The default name of a new level is Buyside above the current price and Sellside below it (then Buyside 2...): the same function
 // the app uses decides what to expect, the price comes from the label of the editor, the spot from the cache file
-const SPOT = JSON.parse(readFileSync(join(__dirname, '..', 'api', 'options', 'SPY.json'), 'utf8')).underlyingPrice as number;
+const SPOT = JSON.parse(readFileSync(join(__dirname, 'e2e-fixtures', 'options', 'SPY.json'), 'utf8')).underlyingPrice as number;
 const NAMES = { above: 'Buyside', below: 'Sellside', plain: 'Level' };
 const priceOfEditor = async (input: Locator) => Number(((await input.getAttribute('aria-label')) ?? '').match(/at ([\d.,]+)/)![1].replace(/,/g, ''));
 const expectedName = async (input: Locator, used: Array<{ name: string }>) => defaultLevelName(used, await priceOfEditor(input), SPOT, NAMES);

@@ -14,7 +14,7 @@ import { noProxy, startTestSite } from './e2e-site';
 // ============================================================================
 
 const spotOf = (symbol: string): number =>
-    JSON.parse(readFileSync(join(__dirname, '..', 'api', 'options', `${symbol}.json`), 'utf8')).underlyingPrice as number;
+    JSON.parse(readFileSync(join(__dirname, 'e2e-fixtures', 'options', `${symbol}.json`), 'utf8')).underlyingPrice as number;
 
 async function main(): Promise<void> {
     const site = await startTestSite();

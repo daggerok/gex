@@ -70,7 +70,7 @@ async function main(): Promise<void> {
         const mode = (m: string) => page.locator(`[data-backup-mode="${m}"]`);
         assert.equal(await mode('preset').isChecked(), true, 'the preset of required tickers is the default');
         // the fetcher's default list, as the site's index.json carries it
-        const defaults = (JSON.parse(readFileSync(join(__dirname, '..', 'api', 'options', 'index.json'), 'utf8')) as { defaults: string[] }).defaults;
+        const defaults = (JSON.parse(readFileSync(join(__dirname, 'e2e-fixtures', 'options', 'index.json'), 'utf8')) as { defaults: string[] }).defaults;
         assert.ok((await page.locator('[role=dialog]').innerText()).includes(defaults.join(', ')), 'the preset lists its tickers');
         const tickers = page.locator('[data-backup-tickers]');
         await tickers.fill('SPY');

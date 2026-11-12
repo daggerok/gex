@@ -9,7 +9,7 @@ import { siteZipPath } from './backtest/entries';
 
 // ============================================================================
 // Helper of the browser (e2e) checks, `*.e2e.ts`: builds the app into a temp
-// folder, copies the tickers of the CACHE provider it needs (SPY and QQQ) and serves
+// folder, copies the frozen SPY and QQQ fixtures of src/e2e-fixtures (taken 2026-11-07 from api/, so a data refresh cannot break the checks) and serves
 // the result. Not a unit test file, `bun test` does not pick it up. Never
 // imported by src/ code.
 // ============================================================================
@@ -41,13 +41,13 @@ export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?:
     }
     for (const f of ['options/index.json', 'options/SPY.json', 'charts/SPY.json', 'options/QQQ.json', 'charts/QQQ.json']) {
         mkdirSync(join(dir, 'api', f.split('/')[0]), { recursive: true });
-        cpSync(join(ROOT, 'api', f), join(dir, 'api', f));
+        cpSync(join(ROOT, 'src', 'e2e-fixtures', f), join(dir, 'api', f));
     }
     if (opts.snapshots?.length) {
         const index: Record<string, string[]> = {};
         for (const snap of opts.snapshots) {
             const files = snap.tickers.map((symbol) => {
-                const file = JSON.parse(readFileSync(join(ROOT, 'api', 'options', `${symbol}.json`), 'utf8'));
+                const file = JSON.parse(readFileSync(join(ROOT, 'src', 'e2e-fixtures', 'options', `${symbol}.json`), 'utf8'));
                 file.underlyingPrice = snap.spot;
                 file.date = snap.id.slice(0, 10);
                 return { symbol, text: JSON.stringify(file) };
@@ -170,7 +170,7 @@ export function startFakeProxy(): FakeProxy {
     const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
     const enc = new TextEncoder();
     const cboeBody = (symbol: string): string | null => {
-        const file = join(ROOT, 'api', 'options', `${symbol}.json`);
+        const file = join(ROOT, 'src', 'e2e-fixtures', 'options', `${symbol}.json`);
         if (!existsSync(file)) return null;
         const j = JSON.parse(readFileSync(file, 'utf8'));
         const options = (j.quotes as Array<Record<string, unknown>>).map((q) => ({
