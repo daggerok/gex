@@ -90,6 +90,21 @@ export async function noProxy(page: Page): Promise<void> {
 }
 
 /**
+ * The moment the frozen fixtures of src/e2e-fixtures are looked at. The app drops expired expirations by the real clock,
+ * so a check that depends on WHICH expirations are left (ag-dots: a ring over a Net GEX bar) breaks as the fixtures age:
+ * it went red on 2026-11-26, 19 days after the fixtures were taken. This is the evening of the last green CI run.
+ */
+export const FIXTURE_NOW = '2026-11-11T20:00:00-05:00';
+
+/**
+ * Freezes `Date.now()` and `new Date()` of the page at FIXTURE_NOW (timers and animations keep running), call it before
+ * `page.goto`. For checks whose result depends on the calendar day; a check that needs the real day does not call it.
+ */
+export async function freezeClock(page: Page): Promise<void> {
+    await page.clock.setFixedTime(new Date(FIXTURE_NOW));
+}
+
+/**
  * `E2E_CPU_THROTTLE=<rate>` (e.g. 4-6) slows the page's CPU down by that factor (Chrome DevTools' CPU throttling), to
  * reproduce a slow CI runner locally: `E2E_CPU_THROTTLE=5 bun run test:e2e desk`. No-op without it. `noProxy` applies it,
  * so every check that uses the cache gets it.
