@@ -22,6 +22,7 @@ import {
   planJob,
   resolvePaths,
   tzOffsetMinutes,
+  unpushedCommits,
   zonedInstant,
 } from './data-local';
 
@@ -239,5 +240,58 @@ describe('migration from ~/Library (first version)', () => {
     expect(existsSync(old.state)).toBe(true);
     expect(existsSync(np.state)).toBe(false);
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe('unpushedCommits (the runner after a squash of main)', () => {
+  const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
+  const { mkdtempSync } = require('node:fs') as typeof import('node:fs');
+  const { tmpdir } = require('node:os') as typeof import('node:os');
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.com', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.com',
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+  };
+  const git = (cwd: string, ...args: string[]): string => {
+    const r = spawnSync('git', args, { cwd, encoding: 'utf8', env });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const commit = (cwd: string, text: string, subject: string) => {
+    writeFileSync(join(cwd, 'data.json'), text);
+    git(cwd, 'add', '-A');
+    git(cwd, 'commit', '-q', '-m', subject);
+  };
+
+  test('the old tip of a rewritten origin/main is pushed work, a commit made on top of it is not', () => {
+    const root = mkdtempSync(join(tmpdir(), 'gex-runner-'));
+    try {
+      const remote = join(root, 'remote.git');
+      const repo = join(root, 'repo');
+      git(root, 'init', '-q', '--bare', '-b', 'main', remote);
+      git(root, 'init', '-q', '-b', 'main', repo);
+      git(repo, 'remote', 'add', 'origin', remote);
+      commit(repo, '0', 'feat: code');
+      commit(repo, '1', 'chore(data): 1');
+      commit(repo, '2', 'chore(data): 2');
+      git(repo, 'push', '-q', 'origin', 'HEAD:main');
+      git(repo, 'fetch', '-q', 'origin', 'main');
+      expect(unpushedCommits(repo).out).toBe('0');
+
+      // somebody squashes the two data commits and force-pushes main
+      const squashed = git(repo, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD~2', '-m', 'chore(data): squash 2 data commits');
+      git(repo, 'push', '-q', '--force', 'origin', `${squashed}:refs/heads/main`);
+      git(repo, 'fetch', '-q', 'origin', 'main');
+      expect(git(repo, 'rev-list', '--count', 'origin/main..HEAD')).toBe('2'); // the old check would stop the runner here
+      expect(unpushedCommits(repo).out).toBe('0');
+
+      // a commit whose push failed is still reported
+      commit(repo, '3', 'chore(data): not pushed');
+      const left = unpushedCommits(repo);
+      expect(left.out).toBe('1');
+      expect(left.list).toContain('not pushed');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

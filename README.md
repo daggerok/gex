@@ -410,6 +410,7 @@ All of it in detail (steps, env, failure handling, durations, data sizes): [docs
 | `dependency-updates.yml` | manual | bumps every dependency, tests and builds, pushes to the branch | `package.json`, `bun.lock` | starts `github-pages.yml` |
 | `npm-check-updates.yml` | Sunday 10:00; manual | the same bump as a check only | nothing | no |
 
+- **Intensive mode (off by default):** `update-partial-data.yml` holds two schedule lines and exactly one is active. Uncomment the intensive one (`*/5 9-16 * * 1-5`) and comment the classic one: every run then also commits the refreshed `api/options` and `api/charts`, and `scripts/data-squash.ts` folds the data commits at the tip of `main` into one after `SQUASH_AFTER` of them (repository variable, default 60, `0` = never) and on every run from 16:30. This rewrites `main`, see [After a squash of main](#after-a-squash-of-main). Details and the measured timings: [docs/automations.md](docs/automations.md#intensive-mode)
 - **Schedules are best effort:** GitHub drops many scheduled runs and starts others up to hours late, so every run from 16:30 to 23:59 counts as final. Since 2026-10-26 GitHub keeps only rare schedules and the owner's Mac runs every hourly slot (`bun run data:setup`, [local data runner](docs/automations.md#local-data-runner-bun-run-data)). Market holidays are not skipped
 - **Hourly data is not committed:** each hourly run builds the site from its fresh files and deploys it; only the day's archive is committed. Every other deploy refreshes the default tickers first, so the site never goes back to older data
 - **Default tickers** (27, `DEFAULT_SYMBOLS` in `scripts/options-data.ts`): SPX NDX DJX RUT IWM SPY QQQ DIA NVDA AAPL MSFT AMZN GOOGL TSM GOOG META AVGO LLY MU WMT AMD JPM V BRK-B XOM ASML JNJ. They keep every expiration up to 42 days, the weeklies up to 92 days, the monthlies and quarter-ends up to a year; other tickers their nearest `MAX_EXPIRATIONS`
@@ -426,6 +427,36 @@ bun i -E            # install dependencies
 bun run all         # app together with the local proxy (see Run commands)
 bun run stop ; bun run start ; sleep 3 ; bun run ps ; bun run logs   # pm2 restart cycle (logs keeps following, Ctrl+C)
 ```
+
+### After a squash of main
+
+In the [intensive mode](docs/automations.md#intensive-mode) the data workflow replaces the data commits at the tip of `main` by one commit and force-pushes the branch. Only `chore(data):` commits at the tip are rewritten, the files stay the same and a code commit never changes its hash. Your clone still holds the old commits, so before you change anything bring it in line:
+
+```bash
+git fetch origin
+git status -sb          # "ahead N, behind 1" on main with no work of yours = main was squashed
+```
+
+On `main` with nothing of yours to keep (the `ahead` commits are the old data commits):
+
+```bash
+git switch main
+git reset --hard origin/main
+```
+
+On a feature branch (also one cut from the old `main`):
+
+```bash
+git fetch origin
+git rebase --fork-point origin/main   # replays only your commits, drops the old data commits
+git push --force-with-lease           # only if the branch was pushed before
+```
+
+- Never `git pull` with a merge and never plain `git rebase origin/main` here: both try to keep the old data commits and end in conflicts in `api/`. If you see such conflicts, `git rebase --abort` (or `git merge --abort`) and use the commands above
+- `--fork-point` reads the local history of `origin/main` (its reflog, kept 90 days). In a fresh clone or after a long break name your first commit yourself: `git rebase --onto origin/main <your first commit>^`
+- Start new work from the fresh tip: `git fetch origin && git switch -c <branch> origin/main`
+- Uncommitted changes: `git stash push -u` first, `git stash pop` after
+- The local data runner (`bun run data:setup`) follows a squash by itself
 
 ### Tests
 
@@ -483,6 +514,7 @@ scripts/
   options-data.ts             # the fetcher: Yahoo and Cboe -> api/options and api/charts
   history-archive.ts          # writes the day zip api/history/<month>/<day>.zip (last run of the day), prunes old days, keeps index.json in step with the disk
   backtest-backup.ts          # makes an on-demand backup zip (all data or chosen tickers)
+  data-squash.ts              # intensive mode: folds the data commits at the tip of main into one (force-with-lease)
   # src/backtest/: snapshot format, zip reading and writing in the browser, controller (the logic of the As of feature), store (IndexedDB)
   options-local-proxy.ts      # local Bun proxy: health, Yahoo, chart, NASDAQ, CBOE, search
   proxy-cors.ts               # the proxy's CORS allowlist and private network preflight answer

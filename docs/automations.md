@@ -66,10 +66,45 @@ The hourly refresh of the default tickers during the trading day
 - **Final run:** any run that starts at 16:30 ET or later (`final=true`). Several final runs a day are fine
 - **Env:** `MAX_EXPIRATIONS=15` and `KEEP_EXPIRATIONS=1` (they only matter for tickers outside the default list; the defaults keep their expirations by rule, see [Default tickers and their expirations](#default-tickers-and-their-expirations)), `CONCURRENCY=4`, `REQUEST_SLEEP=0.1`, and in the fetch step `HISTORY=1` only on a final run, `HISTORY_KEEP_DAYS` and `HISTORY_KEEP_BACKUP_DAYS` from the repository variables of the same names (default 14)
 - **Steps of job `update`:** window guard, checkout (depth 2), setup Bun, `bun scripts/options-data.ts` (no `TICKERS`: only the 27 defaults), an optional **Backtest backup** when the repository variable `BACKTEST_TICKERS` is set (`all` or a list such as `SPY NDX`, off by default: a backup of everything every hour adds tens of MB), `bun install -E && bun run build-github-pages`, upload the Pages artifact, **Commit the archive**
-- **What is committed:** never the refreshed `api/options` and `api/charts` files (owner's decision: about 23 MB of JSON an hour would bloat git). Staged are `api/history` (the day zip and its index on a final run, a backup when one was made) and on a final run `api/latest.json`. Message `chore(data): archive the trading day [skip ci]`. When `main` moved during the run (a merge, the weekly refresh), the commit is replayed on the new tip with `git cherry-pick -X theirs`, up to 3 attempts 5 s apart
+- **What is committed:** in the classic mode never the refreshed `api/options` and `api/charts` files (owner's decision: about 23 MB of JSON an hour would bloat git). Staged are `api/history` (the day zip and its index on a final run, a backup when one was made) and on a final run `api/latest.json`. Message `chore(data): archive the trading day [skip ci]`. When `main` moved during the run (a merge, the weekly refresh), the commit is replayed on the new tip with `git cherry-pick -X theirs`, up to 3 attempts 5 s apart
 - **Job `deploy`:** runs when `update` decided to run and was not cancelled (also when the commit step failed, the site was already built), deploys the artifact with `actions/deploy-pages`, concurrency group `pages`
 - **Duration:** about 30 s of fetching (27 tickers, every rule expiration, measured 2026-10-25), 1 to 1.5 min for the whole run including the deploy job
 - **When it fails:** a fetch step failure means Yahoo or Cboe answered badly for every ticker (single failed tickers only print `failed` and keep their old file, the run stays green). A failed **Commit the archive** after 3 attempts leaves the day without a zip until the next final run of the same day; if none follows, that day has no archive (the sources only give the current chain, a missed day cannot be fetched later). Rerun by hand from 16:30 ET on the same day to get the archive: `gh workflow run update-partial-data.yml -R daggerok/gex`
+
+### Intensive mode
+
+Off by default. The workflow file holds two schedule lines and exactly one is uncommented:
+
+```yaml
+    - cron: "45 9,16 * * 1-5" # CLASSIC
+    # - cron: "*/5 9-16 * * 1-5" # INTENSIVE
+      timezone: America/New_York
+```
+
+To switch, move the `#` from one line to the other and push. The job reads the cron text of the run: the classic text (`CLASSIC_SCHEDULE` in the job env, keep it equal to the classic line) is a classic run, any other cron is an intensive run. A manual run is intensive when its `intensive` box is ticked
+
+What an intensive run does on top of a classic one:
+
+- **Commits the data:** `api/options`, `api/charts` and `api/latest.json` are staged too, message `chore(data): refresh option chains [skip ci]`. One commit per run that changed something
+- **Squashes:** the step **Squash the data commits** runs `bun scripts/data-squash.ts`. It counts the `chore(data):` commits that sit one after another at the tip of `main` and replaces the whole run by one commit `chore(data): squash N data commits [skip ci]` when there are `SQUASH_AFTER` of them (repository variable, default 60, `0` = never) or the run is final (16:30 or later) and there are at least 2. The new commit has the same tree, so no file changes. The run stops at the first commit that is not a data commit, so code commits keep their hashes; data commits below a code commit stay as they are
+- **Safe push:** `git push --force-with-lease=main:<tip the job saw>`. When `main` moved meanwhile (a merge, the local runner) nothing is rewritten and the next run squashes. Clones follow with the steps of [README, After a squash of main](../README.md#after-a-squash-of-main); the local data runner does it by itself
+- **Tickers:** the 27 defaults, or the repository variable `INTENSIVE_TICKERS` when set (then the day archive of a final run holds only those)
+
+Measured on 2026-11-26 (a holiday, the request count is the same as on a trading day), 24 tickers (SPY SPX QQQ NDX DJX RUT and 18 stocks), `REQUEST_SLEEP=0.1`:
+
+| Setting | Fetch time |
+|---|---|
+| `CONCURRENCY=4` (the workflow) | 32 s |
+| `CONCURRENCY=8` | 30 s |
+| `CONCURRENCY=8 CBOE_MIN_INTERVAL=0.25` | 11 s |
+
+The fetch time is set by the 1 s pause between Cboe requests (`CBOE_MIN_INTERVAL`), not by the worker count. A whole run on GitHub is about 1.5 min (checkout 14 s, fetch 38 s, build 8 s, upload 7 s, commit 3 s, deploy job 20 s), so the site cannot be fresher than that; and GitHub starts scheduled runs late and drops some, so a `*/5` cron is not a run every 5 minutes (see [Schedules are best effort](#schedules-are-best-effort))
+
+Costs to know before switching it on:
+
+- **Rewritten history:** every squash changes the hashes at the tip of `main`; a clone that is not reset first runs into conflicts in `api/`
+- **Repository size on GitHub:** one data commit is about 3 MB packed, 78 runs a day are about 230 MB pushed a day. After a squash those objects are unreachable but GitHub deletes them only at its own garbage collection, so the size GitHub reports grows faster than a fresh clone does
+- **Requests:** about 80 runs a day against Yahoo and Cboe from GitHub addresses instead of 2; a rate limit fails single tickers (they keep their old file)
 
 ## Update options data (`update-data.yml`)
 
@@ -245,7 +280,7 @@ Advanced (part of setup or of every run, rarely needed by hand): `bun scripts/da
 1. A scheduled partial run first checks the New York window (the workflow's guard): weekdays from 8:40, final from 16:30; outside it the run is `skipped` (a slot launchd catches up on Saturday after the Mac slept)
 2. Lock `run.lock` with the pid: a run that finds a live lock is `skipped` (`locked by pid ...`); a lock whose process is gone is removed and the run goes on
 3. Offline (github.com or Yahoo cannot be resolved): `skipped`, nothing else happens
-4. The runner worktree (default `.worktrees/gex/data-runner` next to the checkout, a detached HEAD, never your own `gex/` checkout) is created when missing, re-linked when broken, then reset to the newest `origin/main` and its untracked `api/` files removed. When it holds a commit that is not on `origin/main` (a push failed twice earlier) the run stops (`failed`) and prints the two commands to push or drop it: data commits are never thrown away silently
+4. The runner worktree (default `.worktrees/gex/data-runner` next to the checkout, a detached HEAD, never your own `gex/` checkout; after a squash of `main` its old tip counts as pushed, `unpushedCommits`) is created when missing, re-linked when broken, then reset to the newest `origin/main` and its untracked `api/` files removed. When it holds a commit that is not on `origin/main` (a push failed twice earlier) the run stops (`failed`) and prints the two commands to push or drop it: data commits are never thrown away silently
 5. The fetcher runs with the workflow's settings (`bun scripts/options-data.ts`), output live in the terminal or in the log
 6. Commit of the job's paths (nothing changed -> no commit), push to `main`; a rejected push is retried once after `git rebase -X theirs origin/main` (the fresh data wins a conflict), a second failure marks the run `failed`
 7. The Pages deploy request (needs `gh auth login`; a failure is only a warning), the runner is reset to `origin/main`, the result goes to `state.json` (what `data:status` shows)
