@@ -2,7 +2,7 @@
 /// <reference types="bun" />
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright';
-import { noProxy, startTestSite } from './e2e-site';
+import { freezeClock, noProxy, startTestSite } from './e2e-site';
 import { AG_DOT_HOVER_RING } from './gex-colors';
 
 // ============================================================================
@@ -126,6 +126,7 @@ async function main(): Promise<void> {
             const hover = AG_DOT_HOVER_RING[scheme];
             const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme })).newPage();
             await noProxy(page); // no local proxy: the app uses the CACHE provider by itself
+            await freezeClock(page); // the fixtures are frozen, so is the day: the bars under the rings do not expire away
             await page.goto(site.url);
             const ticker = page.locator('input[role=combobox]');
             await ticker.fill('SPY');
@@ -172,7 +173,7 @@ async function main(): Promise<void> {
             await page.setViewportSize({ width: 1100, height: 800 });
             await page.waitForTimeout(800);
             const resized = await checkHoles(page, `${scheme} resized`, barFills);
-            // the rule must be seen over a bar too, counted over the three views: the committed cache data changes every day
+            // the rule must be seen over a bar too, counted over the three views (the data is the frozen fixture seen at FIXTURE_NOW)
             const overBars = full.overBars + zoomed.overBars + resized.overBars;
             assert.ok(overBars >= 1, `${scheme}: at least one checked ring sits on a Net GEX bar (full ${full.overBars}, zoomed ${zoomed.overBars}, resized ${resized.overBars})`);
             console.log(`ag-dots e2e ${scheme}: ${dots.length} rings ${line}, hover ring ${hover}; holes ok in ${full.rings} rings, zoomed ${zoomed.rings}, resized ${resized.rings} (${overBars} on bars), hovered`);
