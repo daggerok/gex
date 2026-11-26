@@ -24,6 +24,20 @@
 # here (repository variable BACKTEST_TICKERS) is committed by the run that made it. Any other deploy (a code push)
 # refreshes the default tickers before it builds, see github-pages.yml, so it never shows the older committed files.
 #
+# TWO MODES, chosen by the schedule line that is active (exactly one of the two `- cron:` lines in `on.schedule` below is
+# uncommented, the other stays a comment):
+#   CLASSIC   `45 9,16 * * 1-5`   everything described above: two runs a day, the refreshed data is not committed
+#   INTENSIVE any other cron, e.g. `*/5 9-16 * * 1-5`: a run every few minutes of the trading day. Each run also COMMITS the
+#             refreshed api/options and api/charts files (`chore(data): refresh option chains`), and scripts/data-squash.ts
+#             folds the data commits at the tip of main into ONE commit when there are SQUASH_AFTER of them (repository
+#             variable, default 60, 0 = never) and on every final run (16:30 or later). The squash force-pushes main with
+#             --force-with-lease; only data commits at the tip are rewritten, a code commit never changes its hash.
+#             README "After a squash of main" tells how a clone follows it. The repository variable INTENSIVE_TICKERS
+#             (space or comma separated) replaces the default ticker list in this mode only; empty = the default list.
+#             Measured 2026-11-26: 24 tickers fetch in 30 to 32 s (the 1 s pause between Cboe requests sets that time),
+#             a whole run with build and deploy is about 1.5 min, one data commit is about 3 MB packed.
+# A manual run is classic unless its `intensive` box is ticked.
+#
 # SPEED: the job is kept as short as possible, it is billed per started minute. The default 27 tickers with every
 # expiration of the rule take about 30 s with CONCURRENCY=4, build and deploy are two more short jobs, about 2-3 billed
 # minutes a run.
@@ -31,15 +45,23 @@
 name: Update partial options data
 
 on:
-  workflow_dispatch: {} # manual run, always refreshes
+  workflow_dispatch: # manual run, always refreshes
+    inputs:
+      intensive:
+        description: "Intensive mode: also commit the refreshed data and squash the data commits (see the header)"
+        type: boolean
+        default: false
   schedule:
     # Rare on purpose (owner, 2026-10-26): the owner's Mac runs every hourly slot (scripts/data-local.ts, launchd), GitHub
     # only a safety net after the open and a final run after the close, in the time zone below, summer and winter alike
-    - cron: "45 9,16 * * 1-5" # 9:45 and 16:45 (final: writes and commits the day zip)
+    # EXACTLY ONE of the two `- cron:` lines is active, the other stays commented. The job tells the mode from the cron text:
+    # CLASSIC_SCHEDULE (job env below) is the classic line, anything else is intensive.
+    - cron: "45 9,16 * * 1-5" # CLASSIC: 9:45 and 16:45 (final: writes and commits the day zip)
+    # - cron: "*/5 9-16 * * 1-5" # INTENSIVE: every 5 minutes 9:00 .. 16:55, commits the data and squashes (GitHub may start runs late or drop some)
       timezone: America/New_York
 
 permissions:
-  contents: write # the end-of-day archive and a backtest backup are committed
+  contents: write # the end-of-day archive and a backtest backup are committed; intensive mode: the data and the squash (force-push)
   pages: write # the deployment job
   id-token: write # the deployment job
 
@@ -55,6 +77,8 @@ jobs:
     outputs:
       run: ${{ steps.window.outputs.run }}
     env:
+      # The cron text of the classic schedule line above. A run started by any other cron is an intensive run.
+      CLASSIC_SCHEDULE: "45 9,16 * * 1-5"
       # The default tickers keep their expirations by rule (owner, 2026-10-25; scripts/options-data.ts
       # selectDefaultExpirations): every listed date up to 42 days (the dailies), Fridays up to 92 days, monthlies and
       # quarter-ends up to 1 year, no LEAPS. All of them are fetched again each hour (SPX 40, SPY and QQQ 20, a stock
@@ -70,6 +94,7 @@ jobs:
         id: window
         env:
           SCHEDULE: ${{ github.event.schedule }}
+          MANUAL_INTENSIVE: ${{ inputs.intensive }}
         run: |
           # Minutes since midnight in New York
           now=$(TZ=America/New_York date +%H:%M)
@@ -84,9 +109,14 @@ jobs:
           # final, the archive is idempotent (owner, 2026-10-25)
           final=false
           if [ "$mins" -ge 990 ]; then final=true; fi
-          echo "New York time $now, schedule '${SCHEDULE:-manual}' -> run=$run final=$final"
+          # the mode: a scheduled run is intensive when its cron is not the classic one, a manual run when its box is ticked
+          intensive=false
+          if [ -n "$SCHEDULE" ] && [ "$SCHEDULE" != "$CLASSIC_SCHEDULE" ]; then intensive=true; fi
+          if [ -z "$SCHEDULE" ] && [ "$MANUAL_INTENSIVE" = "true" ]; then intensive=true; fi
+          echo "New York time $now, schedule '${SCHEDULE:-manual}' -> run=$run final=$final intensive=$intensive"
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "final=$final" >> "$GITHUB_OUTPUT"
+          echo "intensive=$intensive" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         if: steps.window.outputs.run == 'true'
@@ -108,6 +138,8 @@ jobs:
           # rotation of the archive: daily zips and backups made on demand, days kept (repository variables override the 14)
           HISTORY_KEEP_DAYS: ${{ vars.HISTORY_KEEP_DAYS || '14' }}
           HISTORY_KEEP_BACKUP_DAYS: ${{ vars.HISTORY_KEEP_BACKUP_DAYS || '14' }}
+          # intensive mode only: the repository variable INTENSIVE_TICKERS replaces the default list (blank = the built-in list)
+          DEFAULT_TICKERS: ${{ steps.window.outputs.intensive == 'true' && vars.INTENSIVE_TICKERS || '' }}
         run: bun scripts/options-data.ts
 
       # Backtest backup of the data just fetched, only when the repository variable BACKTEST_TICKERS is set
@@ -142,21 +174,28 @@ jobs:
 
       # Commits only what must stay in git: the day's archive and api/latest.json (last run of the day), a backtest backup
       # (the run that made it). The refreshed api/options and api/charts files are NOT staged. The site is already built, so
-      # the working tree may be thrown away when a push has to be replayed.
+      # the working tree may be thrown away when a push has to be replayed. INTENSIVE mode stages the refreshed data too
+      # (api/options, api/charts, api/latest.json), so every run leaves one data commit; the next step folds them.
       - name: Commit the archive
         if: steps.window.outputs.run == 'true'
         env:
           FINAL: ${{ steps.window.outputs.final }}
+          INTENSIVE: ${{ steps.window.outputs.intensive }}
         run: |
           git config user.name  "Maksim Kostromin"
           git config user.email "daggerok@gmail.com"
           git add api/history || true
           if [ "$FINAL" = "true" ]; then git add api/latest.json || true; fi
+          message="chore(data): archive the trading day [skip ci]"
+          if [ "$INTENSIVE" = "true" ]; then
+            git add api/options api/charts api/latest.json || true
+            message="chore(data): refresh option chains [skip ci]"
+          fi
           if git diff --staged --quiet; then
             echo "Nothing to archive - nothing to commit."
             exit 0
           fi
-          git commit -m "chore(data): archive the trading day [skip ci]"
+          git commit -m "$message"
           git push && exit 0
           # main moved meanwhile (a code merge or the full refresh): replay this one commit on the new tip. The unstaged data
           # files are dropped by the reset, the deploy job already has the built site.
@@ -171,6 +210,19 @@ jobs:
             sleep 5
           done
           echo "Push failed after 3 attempts" && exit 1
+
+      # INTENSIVE mode only: fold the data commits at the tip of main into one when there are SQUASH_AFTER of them, and on
+      # every final run. It rewrites only `chore(data):` commits at the tip and pushes with --force-with-lease, so a commit
+      # that lands meanwhile is never lost (the squash is skipped and the next run does it).
+      - name: Squash the data commits
+        if: steps.window.outputs.run == 'true' && steps.window.outputs.intensive == 'true'
+        env:
+          SQUASH_AFTER: ${{ vars.SQUASH_AFTER || '60' }}
+          FINAL: ${{ steps.window.outputs.final }}
+        run: |
+          # the default shell has no pipefail, without it a failing script would be hidden by tee
+          set -o pipefail
+          bun scripts/data-squash.ts | tee -a "$GITHUB_STEP_SUMMARY"
 
   # Deploys the site the update job built. Shares the `pages` group with github-pages.yml, so a code deploy and this one never overlap.
   deploy:

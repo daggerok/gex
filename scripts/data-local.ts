@@ -415,6 +415,20 @@ export function migrateLegacy(p: Paths, legacy: ReturnType<typeof legacyPaths>, 
 // ---- Runner worktree -------------------------------------------------------------------------
 
 /**
+ * The commits of `repo`'s HEAD that were never on origin/main. A commit that WAS the tip of origin/main earlier (it is in
+ * the reflog of the remote branch) is not counted: after the intensive mode squashed the data commits of main
+ * (scripts/data-squash.ts force-pushes the branch) the runner still sits on the old tip, which is pushed work, not lost work.
+ */
+export function unpushedCommits(repo: string): { ok: boolean; out: string; list: string } {
+    const seen = git(repo, ["reflog", "show", "-n", "500", "--format=%H", "refs/remotes/origin/main"]);
+    const was = seen.ok ? Array.from(new Set(seen.out.split("\n").filter(Boolean))) : [];
+    const range = ["--ignore-missing", "HEAD", "--not", "origin/main", ...was];
+    const count = git(repo, ["rev-list", "--count", ...range]);
+    const list = count.ok && Number(count.out) > 0 ? git(repo, ["log", "--oneline", ...range]).out : "";
+    return { ok: count.ok, out: count.out, list };
+}
+
+/**
  * Creates or repairs the runner worktree and puts it on the newest origin/main. Throws with a readable message (and the next
  * step) when it holds commits that are not on origin/main: those are never thrown away.
  */
@@ -437,9 +451,9 @@ export function ensureRunner(p: Paths, log: (s: string) => void): void {
         log(`runner: repaired the worktree link of ${p.runner}`);
     }
     git(p.runner, ["fetch", "-q", "origin", "main"]);
-    const ahead = git(p.runner, ["rev-list", "--count", "origin/main..HEAD"]);
+    const ahead = unpushedCommits(p.runner);
     if (ahead.ok && Number(ahead.out) > 0) {
-        const list = git(p.runner, ["log", "--oneline", "origin/main..HEAD"]).out;
+        const list = ahead.list;
         throw new Error(
             `the runner holds ${ahead.out} commit(s) that are not on origin/main (a push failed earlier):\n${list}\n` +
                 `push them: git -C ${p.runner} push origin HEAD:main  (or drop them: git -C ${p.runner} reset --hard origin/main), then run again`,
