@@ -24,18 +24,18 @@ describe('rules', () => {
   });
 
   test('squash at the limit, or on a final run with 2 or more; never with SQUASH_AFTER=0', () => {
-    expect(squashDecision({ run: 59, after: 60, final: false }).squash).toBe(false);
-    expect(squashDecision({ run: 60, after: 60, final: false }).squash).toBe(true);
-    expect(squashDecision({ run: 75, after: 60, final: false }).squash).toBe(true);
+    expect(squashDecision({ run: 9, after: 10, final: false }).squash).toBe(false);
+    expect(squashDecision({ run: 10, after: 10, final: false }).squash).toBe(true);
+    expect(squashDecision({ run: 75, after: 10, final: false }).squash).toBe(true);
     expect(squashDecision({ run: 2, after: 60, final: true }).squash).toBe(true);
     expect(squashDecision({ run: 1, after: 60, final: true }).squash).toBe(false);
     expect(squashDecision({ run: 1, after: 1, final: false }).squash).toBe(false);
     expect(squashDecision({ run: 500, after: 0, final: true }).squash).toBe(false);
   });
 
-  test('SQUASH_AFTER: blank is 60, 0 is off, anything else must be a whole number', () => {
-    expect(parseSquashAfter(undefined)).toBe(60);
-    expect(parseSquashAfter('  ')).toBe(60);
+  test('SQUASH_AFTER: blank is 10, 0 is off, anything else must be a whole number', () => {
+    expect(parseSquashAfter(undefined)).toBe(10);
+    expect(parseSquashAfter('  ')).toBe(10);
     expect(parseSquashAfter('0')).toBe(0);
     expect(parseSquashAfter(' 25 ')).toBe(25);
     expect(() => parseSquashAfter('-1')).toThrow('SQUASH_AFTER');
