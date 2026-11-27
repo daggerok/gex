@@ -36,7 +36,7 @@
 #        ONE commit when there are SQUASH_AFTER of them one after another (repository variable, default 10, 0 = never)
 #        and on every final run (16:30 or later). The squash force-pushes main with --force-with-lease; only data commits
 #        at the tip are rewritten, a code commit never changes its hash. README "After a squash of main" tells how a clone
-#        follows it. The file api/Min.txt (one ticker per line) replaces the default ticker list
+#        follows it. The file api/Minimums.txt (one ticker per line) replaces the default ticker list
 #        in the intensive runs only; no ticker in it = the default list. Market holidays are not known: the chain runs on a weekday holiday too.
 #        Measured 2026-11-26: 24 tickers fetch in 30 to 32 s (the 1 s pause between Cboe requests sets that time),
 #        a whole run with build and deploy is about 1.5 min, one data commit is about 3 MB packed.
@@ -170,12 +170,12 @@ jobs:
           HISTORY_KEEP_BACKUP_DAYS: ${{ vars.HISTORY_KEEP_BACKUP_DAYS || '14' }}
           INTENSIVE_RUN: ${{ steps.window.outputs.intensive }}
         run: |
-          # an intensive run fetches the tickers of api/Min.txt (one per line, # starts a comment) instead of the built-in
+          # an intensive run fetches the tickers of api/Minimums.txt (one per line, # starts a comment) instead of the built-in
           # default list; a missing file or one with no ticker = the built-in list. Classic runs never read the file.
-          if [ "$INTENSIVE_RUN" = "true" ] && [ -f api/Min.txt ]; then
-            DEFAULT_TICKERS=$(sed 's/#.*//' api/Min.txt | tr -s '[:space:],' ' ')
+          if [ "$INTENSIVE_RUN" = "true" ] && [ -f api/Minimums.txt ]; then
+            DEFAULT_TICKERS=$(sed 's/#.*//' api/Minimums.txt | tr -s '[:space:],' ' ')
             export DEFAULT_TICKERS
-            echo "intensive run, tickers of api/Min.txt: ${DEFAULT_TICKERS:-none, the built-in list is used}"
+            echo "intensive run, tickers of api/Minimums.txt: ${DEFAULT_TICKERS:-none, the built-in list is used}"
           fi
           bun scripts/options-data.ts
 
