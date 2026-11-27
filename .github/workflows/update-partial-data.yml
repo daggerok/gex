@@ -24,19 +24,24 @@
 # here (repository variable BACKTEST_TICKERS) is committed by the run that made it. Any other deploy (a code push)
 # refreshes the default tickers before it builds, see github-pages.yml, so it never shows the older committed files.
 #
-# TWO MODES, chosen by the schedule line that is active (exactly one of the two `- cron:` lines in `on.schedule` below is
-# uncommented, the other stays a comment):
-#   CLASSIC   `45 9,16 * * 1-5`   everything described above: two runs a day, the refreshed data is not committed
-#   INTENSIVE any other cron, e.g. `*/5 9-16 * * 1-5`: a run every few minutes of the trading day. Each run also COMMITS the
-#             refreshed api/options and api/charts files (`chore(data): refresh option chains`), and scripts/data-squash.ts
-#             folds the data commits at the tip of main into ONE commit when there are SQUASH_AFTER of them (repository
-#             variable, default 60, 0 = never) and on every final run (16:30 or later). The squash force-pushes main with
-#             --force-with-lease; only data commits at the tip are rewritten, a code commit never changes its hash.
-#             README "After a squash of main" tells how a clone follows it. The repository variable INTENSIVE_TICKERS
-#             (space or comma separated) replaces the default ticker list in this mode only; empty = the default list.
-#             Measured 2026-11-26: 24 tickers fetch in 30 to 32 s (the 1 s pause between Cboe requests sets that time),
-#             a whole run with build and deploy is about 1.5 min, one data commit is about 3 MB packed.
-# A manual run is classic unless its `intensive` box is ticked.
+# INTENSIVE MODE (off by default), ONE switch: the line `INTENSIVE: "true"` in the env of job `update` below. It is a
+# comment by default; uncomment it and push to switch the mode on, comment it again (or write "false" or "") to switch it off.
+#   OFF  only the classic runs described above (9:45 and 16:45). The hourly starter slots end in a few seconds.
+#   ON   during the trading session (Mon-Fri 9:30 to 16:00 New York time) the workflow runs in a chain: the 9:30 slot starts
+#        it, and every run that ends well starts the next one (job `next`: waits INTENSIVE_PAUSE seconds, default 180, then
+#        `gh workflow run`), until 16:00. The other starter slots (10:30 .. 15:30) only restart a chain that broke: the
+#        concurrency group keeps one run going and one waiting, so there is never a second chain. The classic runs go on
+#        as before. Each run of the chain also COMMITS the refreshed api/options, api/charts and api/latest.json
+#        (`chore(data): refresh option chains`), and scripts/data-squash.ts folds the data commits at the tip of main into
+#        ONE commit when there are SQUASH_AFTER of them one after another (repository variable, default 10, 0 = never)
+#        and on every final run (16:30 or later). The squash force-pushes main with --force-with-lease; only data commits
+#        at the tip are rewritten, a code commit never changes its hash. README "After a squash of main" tells how a clone
+#        follows it. The repository variable INTENSIVE_TICKERS (space or comma separated) replaces the default ticker list
+#        in the chain only; empty = the default list. Market holidays are not known: the chain runs on a weekday holiday too.
+#        Measured 2026-11-26: 24 tickers fetch in 30 to 32 s (the 1 s pause between Cboe requests sets that time),
+#        a whole run with build and deploy is about 1.5 min, one data commit is about 3 MB packed.
+# A manual run with the `intensive` box ticked is ONE intensive run (commit and squash) at any time, whatever the switch
+# says; it continues as a chain only when the switch is on and the session is open.
 #
 # SPEED: the job is kept as short as possible, it is billed per started minute. The default 27 tickers with every
 # expiration of the rule take about 30 s with CONCURRENCY=4, build and deploy are two more short jobs, about 2-3 billed
@@ -48,20 +53,23 @@ on:
   workflow_dispatch: # manual run, always refreshes
     inputs:
       intensive:
-        description: "Intensive mode: also commit the refreshed data and squash the data commits (see the header)"
+        description: "One intensive run: also commit the refreshed data and squash the data commits (see the header)"
         type: boolean
         default: false
   schedule:
     # Rare on purpose (owner, 2026-10-26): the owner's Mac runs every hourly slot (scripts/data-local.ts, launchd), GitHub
     # only a safety net after the open and a final run after the close, in the time zone below, summer and winter alike
-    # EXACTLY ONE of the two `- cron:` lines is active, the other stays commented. The job tells the mode from the cron text:
-    # CLASSIC_SCHEDULE (job env below) is the classic line, anything else is intensive.
     - cron: "45 9,16 * * 1-5" # CLASSIC: 9:45 and 16:45 (final: writes and commits the day zip)
-    # - cron: "*/5 9-16 * * 1-5" # INTENSIVE: every 5 minutes 9:00 .. 16:55, commits the data and squashes (GitHub may start runs late or drop some)
+      timezone: America/New_York
+    # STARTER of the intensive chain: 9:30 starts it, 10:30 .. 15:30 restart it if it broke. With
+    # the switch INTENSIVE off (the default) or outside the session these runs stop at the first step. The job knows this line by its
+    # cron text: STARTER_SCHEDULE in the job env must stay equal to it.
+    - cron: "30 9-15 * * 1-5"
       timezone: America/New_York
 
 permissions:
   contents: write # the end-of-day archive and a backtest backup are committed; intensive mode: the data and the squash (force-push)
+  actions: write # intensive mode: job `next` starts the following run of the chain
   pages: write # the deployment job
   id-token: write # the deployment job
 
@@ -76,9 +84,12 @@ jobs:
     timeout-minutes: 20
     outputs:
       run: ${{ steps.window.outputs.run }}
+      chain: ${{ steps.window.outputs.chain }}
     env:
-      # The cron text of the classic schedule line above. A run started by any other cron is an intensive run.
-      CLASSIC_SCHEDULE: "45 9,16 * * 1-5"
+      # THE SWITCH of the intensive mode (see the header): uncommented with "true" = on; commented, "false" or "" = off
+      # INTENSIVE: "true"
+      # The cron text of the starter line above (the intensive chain). Keep the two equal.
+      STARTER_SCHEDULE: "30 9-15 * * 1-5"
       # The default tickers keep their expirations by rule (owner, 2026-10-25; scripts/options-data.ts
       # selectDefaultExpirations): every listed date up to 42 days (the dailies), Fridays up to 92 days, monthlies and
       # quarter-ends up to 1 year, no LEAPS. All of them are fetched again each hour (SPX 40, SPY and QQQ 20, a stock
@@ -98,6 +109,7 @@ jobs:
         run: |
           # Minutes since midnight in New York
           now=$(TZ=America/New_York date +%H:%M)
+          weekday=$(TZ=America/New_York date +%u) # 1 = Monday .. 7 = Sunday
           mins=$((10#${now%:*} * 60 + 10#${now#*:}))
           run=true
           if [ -n "$SCHEDULE" ]; then
@@ -109,14 +121,32 @@ jobs:
           # final, the archive is idempotent (owner, 2026-10-25)
           final=false
           if [ "$mins" -ge 990 ]; then final=true; fi
-          # the mode: a scheduled run is intensive when its cron is not the classic one, a manual run when its box is ticked
-          intensive=false
-          if [ -n "$SCHEDULE" ] && [ "$SCHEDULE" != "$CLASSIC_SCHEDULE" ]; then intensive=true; fi
+          # the intensive switch and the trading session (Mon-Fri 9:30 to 16:00)
+          enabled=false
+          # INTENSIVE comes from the job env (the switch); only "true" switches the mode on
+          case "$(printf '%s' "${INTENSIVE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in true) enabled=true ;; esac
+          open=false
+          if [ "$weekday" -le 5 ] && [ "$mins" -ge 570 ] && [ "$mins" -lt 960 ]; then open=true; fi
+          # chain: this run belongs to the intensive chain and starts the next run when it ends well
+          chain=false
+          if [ "$enabled" = "true" ] && [ "$open" = "true" ]; then chain=true; fi
+          # intensive: commit the refreshed data. The chain, or one manual run with the box ticked
+          intensive=$chain
           if [ -z "$SCHEDULE" ] && [ "$MANUAL_INTENSIVE" = "true" ]; then intensive=true; fi
-          echo "New York time $now, schedule '${SCHEDULE:-manual}' -> run=$run final=$final intensive=$intensive"
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-          echo "final=$final" >> "$GITHUB_OUTPUT"
-          echo "intensive=$intensive" >> "$GITHUB_OUTPUT"
+          # squash: whenever the switch is on (so the classic final run after the close folds what the chain left), and for
+          # the manual intensive run
+          squash=$enabled
+          if [ "$intensive" = "true" ]; then squash=true; fi
+          # a starter slot has nothing to do unless it starts or restarts the chain
+          if [ "$SCHEDULE" = "$STARTER_SCHEDULE" ] && [ "$chain" != "true" ]; then run=false; fi
+          echo "New York time $now (weekday $weekday), schedule '${SCHEDULE:-manual}', INTENSIVE=$enabled, session open=$open -> run=$run final=$final intensive=$intensive chain=$chain squash=$squash"
+          {
+            echo "run=$run"
+            echo "final=$final"
+            echo "intensive=$intensive"
+            echo "squash=$squash"
+            if [ "$run" = "true" ]; then echo "chain=$chain"; else echo "chain=false"; fi
+          } >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         if: steps.window.outputs.run == 'true'
@@ -211,18 +241,49 @@ jobs:
           done
           echo "Push failed after 3 attempts" && exit 1
 
-      # INTENSIVE mode only: fold the data commits at the tip of main into one when there are SQUASH_AFTER of them, and on
-      # every final run. It rewrites only `chore(data):` commits at the tip and pushes with --force-with-lease, so a commit
-      # that lands meanwhile is never lost (the squash is skipped and the next run does it).
+      # INTENSIVE switch on (or one manual intensive run): fold the data commits at the tip of main into one when there are
+      # SQUASH_AFTER of them one after another, and on every final run. It rewrites only `chore(data):` commits at the tip
+      # and pushes with --force-with-lease, so a commit that lands meanwhile is never lost (the squash is skipped and the
+      # next run does it).
       - name: Squash the data commits
-        if: steps.window.outputs.run == 'true' && steps.window.outputs.intensive == 'true'
+        if: steps.window.outputs.run == 'true' && steps.window.outputs.squash == 'true'
         env:
-          SQUASH_AFTER: ${{ vars.SQUASH_AFTER || '60' }}
+          SQUASH_AFTER: ${{ vars.SQUASH_AFTER || '10' }}
           FINAL: ${{ steps.window.outputs.final }}
         run: |
           # the default shell has no pipefail, without it a failing script would be hidden by tee
           set -o pipefail
           bun scripts/data-squash.ts | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The intensive chain: when this run ended well and the session is still open, wait INTENSIVE_PAUSE seconds and start the
+  # next run. It runs beside the deploy job, so the pause never delays the site. The new run waits in the `data-refresh`
+  # group until this one is over. A failed run does not continue the chain: the next starter slot restarts it.
+  next:
+    needs: update
+    if: ${{ needs.update.result == 'success' && needs.update.outputs.chain == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Start the next run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # seconds between the end of a run and the start of the next one (repository variable, default 180, 0 = at once)
+          PAUSE: ${{ vars.INTENSIVE_PAUSE || '180' }}
+        run: |
+          case "$PAUSE" in
+            ''|*[!0-9]*) echo "::error::INTENSIVE_PAUSE must be whole seconds, got '$PAUSE'"; exit 1 ;;
+          esac
+          if [ "$PAUSE" -gt 1800 ]; then echo "::error::INTENSIVE_PAUSE is at most 1800 seconds, got $PAUSE"; exit 1; fi
+          sleep "$PAUSE"
+          now=$(TZ=America/New_York date +%H:%M)
+          weekday=$(TZ=America/New_York date +%u)
+          mins=$((10#${now%:*} * 60 + 10#${now#*:}))
+          if [ "$weekday" -le 5 ] && [ "$mins" -ge 570 ] && [ "$mins" -lt 960 ]; then
+            gh workflow run update-partial-data.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+            echo "New York time $now: the next run of the chain is started" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "New York time $now: the session is over, the chain ends here" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
   # Deploys the site the update job built. Shares the `pages` group with github-pages.yml, so a code deploy and this one never overlap.
   deploy:
