@@ -94,7 +94,7 @@ The full table with defaults is in [Automations: environment variables](automati
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SQUASH_AFTER` | 60 | data commits (`chore(data):`) one after another at the tip that start a squash; `0` = off; not a whole number = error |
+| `SQUASH_AFTER` | 10 | data commits (`chore(data):`) one after another at the tip that start a squash; `0` = off; not a whole number = error |
 | `FINAL` | off | `true` = squash any run of 2 or more (the workflow passes its final flag, runs from 16:30) |
 | `SQUASH_BRANCH` | `GITHUB_REF_NAME`, else `main` | the branch |
 | `SQUASH_REMOTE` | `origin` | the remote |
@@ -139,9 +139,10 @@ The session lives in `~/.config/gex/tradingview.env` (mode 600, outside the repo
 | `BACKTEST_TICKERS` | repository variable | empty (off) | `all` or a list: the hourly workflow also makes a backup zip every run |
 | `HISTORY_KEEP_DAYS` | repository variable | 14 | days of daily zips kept |
 | `HISTORY_KEEP_BACKUP_DAYS` | repository variable | 14 | days of backup zips kept |
-| schedule line of `update-partial-data.yml` | the workflow file, `on.schedule` | classic `45 9,16 * * 1-5` | two `- cron:` lines, exactly one uncommented: the classic one, or the intensive one (`*/5 9-16 * * 1-5`) that commits the data on every run and squashes, see [Intensive mode](automations.md#intensive-mode) |
-| `SQUASH_AFTER` | repository variable (env of `scripts/data-squash.ts`) | 60 | intensive mode: data commits at the tip of `main` that start a squash; `0` = never squash |
-| `INTENSIVE_TICKERS` | repository variable | empty (the 27 defaults) | intensive mode: replaces the default ticker list (space or comma separated), passed to the fetcher as `DEFAULT_TICKERS` |
+| `INTENSIVE` | `update-partial-data.yml`, env of job `update` (a commented line) | off | the one switch of the [intensive mode](automations.md#intensive-mode): uncommented with `"true"` = on; commented, `"false"` or `""` = off |
+| `INTENSIVE_PAUSE` | repository variable | 180 | intensive mode: seconds between the end of a run and the start of the next one (0 to 1800) |
+| `SQUASH_AFTER` | repository variable (env of `scripts/data-squash.ts`) | 10 | intensive mode: data commits in a row at the tip of `main` that start a squash; `0` = never squash |
+| `INTENSIVE_TICKERS` | repository variable | empty (the 27 defaults) | intensive chain: replaces the default ticker list (space or comma separated), passed to the fetcher as `DEFAULT_TICKERS` |
 | fetch env of each workflow | the workflow files | see [Automations](automations.md#workflows-at-a-glance) | `MAX_EXPIRATIONS`, `KEEP_EXPIRATIONS`, `CONCURRENCY`, `REQUEST_SLEEP`, `MAX_FETCHES`, `ROTATE_STALE` |
 | `api/All.txt` | the repository | 356 tickers | the extra tickers of the weekly refresh |
 | `api/Indices.txt` | the repository | SPX, XSP, NDX, DJX, RUT | the supported cash indices (kept in sync with `INDEX_DIVIDEND_YIELDS`, checked by `src/greeks.test.ts`); no workflow reads it since 2026-10-26 |

@@ -61,7 +61,7 @@ GitHub drops many scheduled runs and starts others late. Observed in October 202
 
 The hourly refresh of the default tickers during the trading day
 
-- **Schedule:** `45 9,16 * * 1-5` in `America/New_York`: 9:45 (after the open) and 16:45 (final), Monday to Friday, since 2026-10-26 (before: every hour 8:45 to 16:45 plus 17:15, 18:15, 19:15; those slots now run on the owner's Mac, `bun run data:setup`). Market holidays are not skipped, a holiday run refreshes the last prices
+- **Schedule:** `45 9,16 * * 1-5` in `America/New_York` (plus the starter line `30 9-15 * * 1-5` of the [intensive mode](#intensive-mode), whose runs stop at the first step while the mode is off): 9:45 (after the open) and 16:45 (final), Monday to Friday, since 2026-10-26 (before: every hour 8:45 to 16:45 plus 17:15, 18:15, 19:15; those slots now run on the owner's Mac, `bun run data:setup`). Market holidays are not skipped, a holiday run refreshes the last prices
 - **Market window guard (first step):** a scheduled run that starts before 8:40 ET is skipped (`run=false`, the whole job takes about 8 s). There is no upper bound before midnight; a run GitHub starts after midnight is already the next day (or Saturday) and is skipped by the same check. A manual run always runs
 - **Final run:** any run that starts at 16:30 ET or later (`final=true`). Several final runs a day are fine
 - **Env:** `MAX_EXPIRATIONS=15` and `KEEP_EXPIRATIONS=1` (they only matter for tickers outside the default list; the defaults keep their expirations by rule, see [Default tickers and their expirations](#default-tickers-and-their-expirations)), `CONCURRENCY=4`, `REQUEST_SLEEP=0.1`, and in the fetch step `HISTORY=1` only on a final run, `HISTORY_KEEP_DAYS` and `HISTORY_KEEP_BACKUP_DAYS` from the repository variables of the same names (default 14)
@@ -73,22 +73,26 @@ The hourly refresh of the default tickers during the trading day
 
 ### Intensive mode
 
-Off by default. The workflow file holds two schedule lines and exactly one is uncommented:
+Off by default. One switch, a line in the env of job `update` of the workflow file:
 
 ```yaml
-    - cron: "45 9,16 * * 1-5" # CLASSIC
-    # - cron: "*/5 9-16 * * 1-5" # INTENSIVE
-      timezone: America/New_York
+    env:
+      # INTENSIVE: "true"
 ```
 
-To switch, move the `#` from one line to the other and push. The job reads the cron text of the run: the classic text (`CLASSIC_SCHEDULE` in the job env, keep it equal to the classic line) is a classic run, any other cron is an intensive run. A manual run is intensive when its `intensive` box is ticked
+Uncomment it and push to switch the mode on; comment it again (or write `"false"` or `""`) to switch it off. Off means exactly the classic behaviour above
 
-What an intensive run does on top of a classic one:
+With the switch on:
 
-- **Commits the data:** `api/options`, `api/charts` and `api/latest.json` are staged too, message `chore(data): refresh option chains [skip ci]`. One commit per run that changed something
-- **Squashes:** the step **Squash the data commits** runs `bun scripts/data-squash.ts`. It counts the `chore(data):` commits that sit one after another at the tip of `main` and replaces the whole run by one commit `chore(data): squash N data commits [skip ci]` when there are `SQUASH_AFTER` of them (repository variable, default 60, `0` = never) or the run is final (16:30 or later) and there are at least 2. The new commit has the same tree, so no file changes. The run stops at the first commit that is not a data commit, so code commits keep their hashes; data commits below a code commit stay as they are
+- **The chain:** during the session (Monday to Friday, 9:30 to 16:00 New York time) the workflow runs again and again. The starter schedule `30 9-15 * * 1-5` starts it at 9:30; every run that ends well starts the next one (job `next`: waits `INTENSIVE_PAUSE` seconds, repository variable, default 180, then `gh workflow run`, permission `actions: write`). At 16:00 the chain ends by itself. With the default pause a cycle is about 4.5 min, about 85 runs a day
+- **Restart:** a failed run does not start the next one. The starter slots 10:30 to 15:30 restart a broken chain; while the chain is alive they only take the waiting place of the `data-refresh` group (one run going, one waiting), so there is never a second chain. With the switch off, or outside the session, a starter run stops at its first step (a few seconds)
+- **Classic runs go on:** 9:45 and 16:45 as before; inside the session they are one more run of the chain
+- **Commits the data:** a run of the chain also stages `api/options`, `api/charts` and `api/latest.json`, message `chore(data): refresh option chains [skip ci]`. One commit per run that changed something
+- **Squashes:** the step **Squash the data commits** runs `bun scripts/data-squash.ts` on every run while the switch is on. It counts the `chore(data):` commits that sit one after another at the tip of `main` and replaces the whole run by one commit `chore(data): squash N data commits [skip ci]` when there are `SQUASH_AFTER` of them (repository variable, default 10, `0` = never) or the run is final (16:30 or later, so the classic 16:45 run folds what the chain left) and there are at least 2. The new commit has the same tree, so no file changes. The run stops at the first commit that is not a data commit, so code commits keep their hashes; data commits below a code commit stay as they are
 - **Safe push:** `git push --force-with-lease=main:<tip the job saw>`. When `main` moved meanwhile (a merge, the local runner) nothing is rewritten and the next run squashes. Clones follow with the steps of [README, After a squash of main](../README.md#after-a-squash-of-main); the local data runner does it by itself
-- **Tickers:** the 27 defaults, or the repository variable `INTENSIVE_TICKERS` when set (then the day archive of a final run holds only those)
+- **Tickers:** the 27 defaults, or the repository variable `INTENSIVE_TICKERS` when set
+- **Holidays** are not known: on a weekday holiday the chain runs too (the data does not change, so nothing is committed)
+- **One manual intensive run:** `gh workflow run update-partial-data.yml -f intensive=true` commits and squashes once at any time, whatever the switch says; it continues as a chain only when the switch is on and the session is open
 
 Measured on 2026-11-26 (a holiday, the request count is the same as on a trading day), 24 tickers (SPY SPX QQQ NDX DJX RUT and 18 stocks), `REQUEST_SLEEP=0.1`:
 
@@ -98,13 +102,13 @@ Measured on 2026-11-26 (a holiday, the request count is the same as on a trading
 | `CONCURRENCY=8` | 30 s |
 | `CONCURRENCY=8 CBOE_MIN_INTERVAL=0.25` | 11 s |
 
-The fetch time is set by the 1 s pause between Cboe requests (`CBOE_MIN_INTERVAL`), not by the worker count. A whole run on GitHub is about 1.5 min (checkout 14 s, fetch 38 s, build 8 s, upload 7 s, commit 3 s, deploy job 20 s), so the site cannot be fresher than that; and GitHub starts scheduled runs late and drops some, so a `*/5` cron is not a run every 5 minutes (see [Schedules are best effort](#schedules-are-best-effort))
+The fetch time is set by the 1 s pause between Cboe requests (`CBOE_MIN_INTERVAL`), not by the worker count. A whole run on GitHub is about 1.5 min (checkout 14 s, fetch 38 s, build 8 s, upload 7 s, commit 3 s, deploy job 20 s), so the site cannot be fresher than that. GitHub starts scheduled runs late and drops some (see [Schedules are best effort](#schedules-are-best-effort)), which is why the chain starts its own next run and the schedule only starts and restarts it
 
 Costs to know before switching it on:
 
 - **Rewritten history:** every squash changes the hashes at the tip of `main`; a clone that is not reset first runs into conflicts in `api/`
-- **Repository size on GitHub:** one data commit is about 3 MB packed, 78 runs a day are about 230 MB pushed a day. After a squash those objects are unreachable but GitHub deletes them only at its own garbage collection, so the size GitHub reports grows faster than a fresh clone does
-- **Requests:** about 80 runs a day against Yahoo and Cboe from GitHub addresses instead of 2; a rate limit fails single tickers (they keep their old file)
+- **Repository size on GitHub:** one data commit is about 3 MB packed, 85 runs a day are about 250 MB pushed a day. After a squash those objects are unreachable but GitHub deletes them only at its own garbage collection, so the size GitHub reports grows faster than a fresh clone does
+- **Requests:** about 85 runs a day against Yahoo and Cboe from GitHub addresses instead of 2 (raise `INTENSIVE_PAUSE` when tickers start to fail); a rate limit fails single tickers (they keep their old file)
 
 ## Update options data (`update-data.yml`)
 

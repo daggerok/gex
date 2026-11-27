@@ -6,14 +6,14 @@
  * GEX - squash of the data commits at the tip of main (Bun TypeScript)
  * =============================================================================
  *
- * The intensive mode of update-partial-data.yml commits the refreshed data on every run (every few minutes of a trading
- * day). This script keeps the history readable: it counts the DATA commits that sit one after another at the tip of the
+ * The intensive mode of update-partial-data.yml (repository variable INTENSIVE) commits the refreshed data on every run
+ * of its chain (every few minutes of a trading day). This script keeps the history readable: it counts the DATA commits that sit one after another at the tip of the
  * branch (subject starts with `chore(data):`) and, when there are enough of them, replaces that whole run by ONE commit
  * with the same tree. Nothing else is rewritten: the run stops at the first commit that is not a data commit, so a code
  * commit never changes its hash, and the files are byte for byte the same before and after.
  *
  * WHEN IT SQUASHES
- *   - the run has SQUASH_AFTER commits or more (default 60), at any time of the day
+ *   - the run has SQUASH_AFTER commits or more (default 10), at any time of the day
  *   - FINAL=true (a run after the market close) and the run has at least 2 commits
  *
  * HOW (safe by construction)
@@ -30,7 +30,7 @@
  *   DRY_RUN=1 bun scripts/data-squash.ts       # print the decision, push nothing
  *
  * TUNABLES (env; in CI they come from the repository variables of the same names)
- *   SQUASH_AFTER   default 60   data commits at the tip that start a squash; 0 = never squash (also not on a final run)
+ *   SQUASH_AFTER   default 10   data commits at the tip that start a squash; 0 = never squash (also not on a final run)
  *   FINAL          default off  true = squash any run of 2 or more (the workflow passes its final flag)
  *   SQUASH_BRANCH  default GITHUB_REF_NAME, else main
  *   SQUASH_REMOTE  default origin
@@ -70,10 +70,10 @@ export function squashDecision(r: SquashRule): { squash: boolean; why: string } 
     return { squash: false, why: `${r.run} data commits at the tip, below the limit of ${r.after}` };
 }
 
-/** SQUASH_AFTER: a whole number >= 0; blank = 60. Anything else is an error, never a silent default. */
+/** SQUASH_AFTER: a whole number >= 0; blank = 10. Anything else is an error, never a silent default. */
 export function parseSquashAfter(raw: string | undefined): number {
     const text = (raw ?? "").trim();
-    if (text === "") return 60;
+    if (text === "") return 10;
     if (!/^\d+$/.test(text)) throw new Error(`SQUASH_AFTER must be a whole number >= 0 (0 = off), got '${raw}'`);
     return Number(text);
 }
