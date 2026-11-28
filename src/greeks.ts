@@ -34,7 +34,7 @@ export const SPX_DIVIDEND_YIELD = 0.011;
 // OEX is NOT here: its listed chain is effectively dead (~50 contracts of total
 // OI, zero IV on Cboe, 4 sparse expirations on Yahoo). Do NOT add VIX
 // (different, futures-based pricing model).
-// Keep in sync with api/Indices.yml and SUPPORTED_INDEX_SYMBOLS in
+// Keep in sync with SUPPORTED_INDEX_SYMBOLS in
 // scripts/options-*-proxy.*.
 export const INDEX_DIVIDEND_YIELDS: Readonly<Record<string, number>> = {
     SPX: SPX_DIVIDEND_YIELD, // S&P 500

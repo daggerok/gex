@@ -1354,10 +1354,9 @@ describe('hand-maintained ticker lists', () => {
   // api/All.txt feeds TICKERS of the weekly full run (no script writes it). Real tickers are plain Yahoo/Cboe symbols such
   // as SPY, BRK.B, BRK-B or ^VIX; exchange-prefixed TradingView names (NYSE:TTE) are junk: no provider knows them
   const PLAIN_TICKER = /^[A-Z0-9.^-]+$/;
-  for (const file of ['api/All.txt', 'api/Indices.yml']) {
+  for (const file of ['api/All.txt']) {
     test(`${file}: every line is a plain ticker, none listed twice`, () => {
-      // the txt list is one ticker per line; the yml list is a `tickers:` list (its `- ` marks and # comments are dropped)
-      const lines = readFileSync(join(root, file), 'utf8').split('\n').map((l) => l.replace(/#.*/, '').replace(/^\s*-\s*/, '').trim()).filter((l) => l !== '' && l !== 'tickers:');
+      const lines = readFileSync(join(root, file), 'utf8').split('\n').map((l) => l.trim()).filter((l) => l !== '');
       expect(lines.length).toBeGreaterThan(0);
       expect(lines.filter((l) => !PLAIN_TICKER.test(l))).toEqual([]);
       expect(lines.filter((l, i) => lines.indexOf(l) !== i)).toEqual([]);

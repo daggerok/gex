@@ -71,11 +71,6 @@ describe('index symbols', () => {
     expect(INDEX_SYMBOLS.has('OEX')).toBe(false);
   });
 
-  test('api/Indices.yml matches INDEX_SYMBOLS', () => {
-    const lines = (Bun.YAML.parse(read('api/Indices.yml')) as { tickers: string[] }).tickers.slice().sort();
-    expect(lines).toEqual(Array.from(INDEX_SYMBOLS).sort());
-  });
-
   test('the local proxy mirrors INDEX_SYMBOLS in SUPPORTED_INDEX_SYMBOLS', () => {
     const expected = Array.from(INDEX_SYMBOLS).sort();
     expect(proxyIndexSymbols(read('scripts/options-local-proxy.ts'))).toEqual(expected);
