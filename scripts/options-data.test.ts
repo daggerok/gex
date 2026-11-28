@@ -240,7 +240,7 @@ describe('which tickers a run covers (default list, DEFAULT_TICKERS, TICKERS, al
     expect(() => readTickersFile(join(dir, 'List'))).toThrow(/tickers:/);
   });
 
-  test('the repository list api/Minimums.yaml is readable and holds real names', () => {
+  test('the repository list api/Minimums.yml is readable and holds real names', () => {
     const list = readTickersFile(join(__dirname, '..', 'api', 'Minimums'));
     expect(list.length).toBeGreaterThan(0);
     for (const t of list) expect(t).toMatch(/^[A-Z][A-Z0-9-]*$/);
@@ -1354,9 +1354,10 @@ describe('hand-maintained ticker lists', () => {
   // api/All.txt feeds TICKERS of the weekly full run (no script writes it). Real tickers are plain Yahoo/Cboe symbols such
   // as SPY, BRK.B, BRK-B or ^VIX; exchange-prefixed TradingView names (NYSE:TTE) are junk: no provider knows them
   const PLAIN_TICKER = /^[A-Z0-9.^-]+$/;
-  for (const file of ['api/All.txt', 'api/Indices.txt']) {
+  for (const file of ['api/All.txt', 'api/Indices.yml']) {
     test(`${file}: every line is a plain ticker, none listed twice`, () => {
-      const lines = readFileSync(join(root, file), 'utf8').split('\n').map((l) => l.trim()).filter((l) => l !== '');
+      // the txt list is one ticker per line; the yml list is a `tickers:` list (its `- ` marks and # comments are dropped)
+      const lines = readFileSync(join(root, file), 'utf8').split('\n').map((l) => l.replace(/#.*/, '').replace(/^\s*-\s*/, '').trim()).filter((l) => l !== '' && l !== 'tickers:');
       expect(lines.length).toBeGreaterThan(0);
       expect(lines.filter((l) => !PLAIN_TICKER.test(l))).toEqual([]);
       expect(lines.filter((l, i) => lines.indexOf(l) !== i)).toEqual([]);

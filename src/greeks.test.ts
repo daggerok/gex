@@ -71,8 +71,8 @@ describe('index symbols', () => {
     expect(INDEX_SYMBOLS.has('OEX')).toBe(false);
   });
 
-  test('api/Indices.txt matches INDEX_SYMBOLS', () => {
-    const lines = read('api/Indices.txt').split('\n').map((l) => l.trim()).filter(Boolean).sort();
+  test('api/Indices.yml matches INDEX_SYMBOLS', () => {
+    const lines = (Bun.YAML.parse(read('api/Indices.yml')) as { tickers: string[] }).tickers.slice().sort();
     expect(lines).toEqual(Array.from(INDEX_SYMBOLS).sort());
   });
 
