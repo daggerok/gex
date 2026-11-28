@@ -165,7 +165,7 @@
  *   DRY_RUN            default 0         1 = print the work queue (phases, rotation pick) and stop, nothing fetched or written
  *   DEFAULT_TICKERS    default ""        replaces the built-in default list (space or comma separated); blank = built-in list
  *   DEFAULT_TICKERS_FILE default ""      a YAML file with a `tickers:` list that replaces the built-in default list (with or without
- *                                        .yaml / .yml; no file or an empty list = built-in list); DEFAULT_TICKERS wins over it
+ *                                        .yml / .yaml; no file or an empty list = built-in list); DEFAULT_TICKERS wins over it
  *   TICKERS / TICKER   default ""        tickers ADDED on top of the default list (also with `all`); never replaces it
  * =============================================================================
  */
@@ -1410,14 +1410,14 @@ function defaultSymbolSet(): Set<string> {
 }
 
 /**
- * Tickers of a YAML list file such as api/Minimums.yaml: a top-level `tickers:` list, any letter case, `#` comments.
- * `path` may come with or without its extension: `.yaml` is tried first, then `.yml`. No file, an empty file or an empty list
+ * Tickers of a YAML list file such as api/Minimums.yml: a top-level `tickers:` list, any letter case, `#` comments.
+ * `path` may come with or without its extension: `.yml` is tried first, then `.yaml`. No file, an empty file or an empty list
  * give []. Anything else that is not a list of names is an error, never a silent default (a bare `true` or `123` in YAML is not a
  * text: write such a ticker in quotes).
  */
 export function readTickersFile(path: string): string[] {
     const base = path.replace(/\.ya?ml$/i, "");
-    const file = [`${base}.yaml`, `${base}.yml`].find((f) => existsSync(f));
+    const file = [`${base}.yml`, `${base}.yaml`].find((f) => existsSync(f));
     if (!file) return [];
     const doc = Bun.YAML.parse(readFileSync(file, "utf8")) as unknown;
     if (doc == null) return [];

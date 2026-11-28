@@ -1,0 +1,8 @@
+# The cash indices the app prices as indices, each with its own dividend yield (src/greeks.ts INDEX_DIVIDEND_YIELDS;
+# src/greeks.test.ts fails when the two differ). No workflow reads this file. Order: as in api/Minimums.yml.
+tickers:
+- SPX
+- XSP
+- NDX
+- RUT
+- DJX
