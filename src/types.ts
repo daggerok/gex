@@ -443,7 +443,7 @@ export interface GexLevels {
      */
     sumNetGexMinus: number | null;
     maxPain: number | null;
-    /** "Max AG": the strike with the largest absolute gamma exposure (src/gex.ts findMaxAbsGamma). Shown only while the AG metric is on. */
+    /** "Max AG": the strike with the largest absolute gamma exposure (src/gex.ts findMaxAbsGamma). Its chip and its chart line only while the AG metric is on, its row of the Levels table always. */
     maxAbsGamma: number | null;
     /**
      * "Zero GEX" (src/gex.ts findZeroGex): the owner's own method, NOT the Gamma Flip and not a published standard. From the

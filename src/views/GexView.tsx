@@ -1137,12 +1137,13 @@ export const GexView: React.FC<GexViewProps> = ({
         { key: 'sumNetGexPlus', label: levelLabel('sumNetGexPlus'), value: levels?.sumNetGexPlus ?? null, optional: true },
         { key: 'sumNetGexMinus', label: levelLabel('sumNetGexMinus'), value: levels?.sumNetGexMinus ?? null, optional: true },
         { key: 'maxPain', label: levelLabel('maxPain'), value: levels?.maxPain ?? null },
-        // Max AG exists only while the AG metric is on (a null optional level is left out of the tables)
-        { key: 'maxAbsGamma', label: levelLabel('maxAbsGamma'), value: metrics.includes('absoluteGamma') ? levels?.maxAbsGamma ?? null : null, optional: true },
-        // Sigma: one row per strike of the chosen mode ("Sigma +1σ"), only while the Sigma level is on (off by default)
-        ...(selectedLevels.includes('sigma') ? sigmaLines(levels, sigmaView).map((l) => ({
+        // The tables show every level whatever is switched on (owner, 2026-11-27): the Metrics and Levels chips choose what
+        // the CHART draws, never which rows the tables have. So Max AG is here with the AG metric off too
+        { key: 'maxAbsGamma', label: levelLabel('maxAbsGamma'), value: levels?.maxAbsGamma ?? null, optional: true },
+        // Sigma: one row per strike of the chosen mode ("Sigma +1σ"), with the Sigma level chip off too
+        ...sigmaLines(levels, sigmaView).map((l) => ({
             key: 'sigma' as const, id: l.key, label: `${levelLabel('sigma')} ${l.level.side > 0 ? '+' : '−'}${l.text}`, value: l.strike, optional: true,
-        })) : []),
+        })),
     ];
 
     // Values panel open/closed: per-viewer convenience, remembered in localStorage
