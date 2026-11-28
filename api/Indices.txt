@@ -1,5 +1,5 @@
 SPX
 XSP
 NDX
-DJX
 RUT
+DJX
