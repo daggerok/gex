@@ -1,0 +1,35 @@
+# Tickers of the intensive data runs (update-partial-data.yml). Comment a line out with # to skip that ticker.
+# No ticker here (or no file) = the built-in default list of scripts/options-data.ts. Classic runs never read this file.
+# Any letter case works. A ticker that YAML reads as something else (true, false, null, a number) goes in quotes.
+# Index and its fund, most liquid first. Measured 2026-11-27 on the cached chains (open interest in contracts, notional in $bn):
+#   S&P 500       SPX 15.9M, 11597   SPY 8.2M, 594
+#   Nasdaq 100    QQQ 7.7M, 501      NDX 0.15M, 388
+#   Russell 2000  IWM 6.2M, 169      RUT 0.6M, 166
+#   Dow Jones     DIA 0.37M, 19      DJX 0.04M, 2 (too thin to read its GEX, off)
+tickers:
+- SPX
+- SPY
+- QQQ
+- NDX
+- IWM
+- RUT
+- DIA
+#- DJX
+#- NVDA
+#- AAPL
+#- MSFT
+#- GOOG
+#- GOOGL
+#- META
+#- AMZN
+#- AVGO
+#- JPM
+#- LLY
+#- MU
+#- AMD
+#- WMT
+#- V
+#- XOM
+#- JNJ
+#- TSM
+#- ASML

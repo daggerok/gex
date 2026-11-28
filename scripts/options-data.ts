@@ -164,6 +164,8 @@
  *   ROTATE_STALE       default 0         with a fixed list: also refresh the N oldest other cached tickers, +N write budget (t19)
  *   DRY_RUN            default 0         1 = print the work queue (phases, rotation pick) and stop, nothing fetched or written
  *   DEFAULT_TICKERS    default ""        replaces the built-in default list (space or comma separated); blank = built-in list
+ *   DEFAULT_TICKERS_FILE default ""      a YAML file with a `tickers:` list that replaces the built-in default list (with or without
+ *                                        .yaml / .yml; no file or an empty list = built-in list); DEFAULT_TICKERS wins over it
  *   TICKERS / TICKER   default ""        tickers ADDED on top of the default list (also with `all`); never replaces it
  * =============================================================================
  */
@@ -1407,10 +1409,37 @@ function defaultSymbolSet(): Set<string> {
     return new Set(defaultSymbols().map((s) => canonical(s)));
 }
 
-/** The default list of this run: the DEFAULT_TICKERS env replaces DEFAULT_SYMBOLS when it is set and not blank. Every run fetches it. */
+/**
+ * Tickers of a YAML list file such as api/Minimums.yaml: a top-level `tickers:` list, any letter case, `#` comments.
+ * `path` may come with or without its extension: `.yaml` is tried first, then `.yml`. No file, an empty file or an empty list
+ * give []. Anything else that is not a list of names is an error, never a silent default (a bare `true` or `123` in YAML is not a
+ * text: write such a ticker in quotes).
+ */
+export function readTickersFile(path: string): string[] {
+    const base = path.replace(/\.ya?ml$/i, "");
+    const file = [`${base}.yaml`, `${base}.yml`].find((f) => existsSync(f));
+    if (!file) return [];
+    const doc = Bun.YAML.parse(readFileSync(file, "utf8")) as unknown;
+    if (doc == null) return [];
+    if (typeof doc !== "object" || Array.isArray(doc)) throw new Error(`${file}: expected a top-level 'tickers:' list`);
+    const list = (doc as { tickers?: unknown }).tickers;
+    if (list == null) return [];
+    if (!Array.isArray(list)) throw new Error(`${file}: 'tickers' must be a list`);
+    const bad = list.find((t) => typeof t !== "string");
+    if (bad !== undefined) throw new Error(`${file}: every ticker must be a text, got ${JSON.stringify(bad)} (write it in quotes)`);
+    return parseTickerList((list as string[]).join(" "));
+}
+
+/**
+ * The default list of this run. The DEFAULT_TICKERS env replaces DEFAULT_SYMBOLS when it is set and not blank; else the
+ * tickers of the DEFAULT_TICKERS_FILE (readTickersFile) when it has any; else DEFAULT_SYMBOLS. Every run fetches it.
+ */
 export function defaultSymbols(env: Record<string, string | undefined> = process.env): string[] {
     const replaced = parseTickerList(env.DEFAULT_TICKERS);
-    return replaced.length ? replaced : [...DEFAULT_SYMBOLS];
+    if (replaced.length) return replaced;
+    const file = (env.DEFAULT_TICKERS_FILE ?? "").trim();
+    const listed = file ? readTickersFile(file) : [];
+    return listed.length ? listed : [...DEFAULT_SYMBOLS];
 }
 
 /**
@@ -1422,7 +1451,7 @@ export function universeRequest(env: Record<string, string | undefined> = proces
     const extra = extraTickers(env);
     const fixed = dedupe([...defaults, ...extra]);
     const discover = wantsAll(argv);
-    const defaultsWhat = parseTickerList(env.DEFAULT_TICKERS).length ? "DEFAULT_TICKERS" : "default set";
+    const defaultsWhat = parseTickerList(env.DEFAULT_TICKERS).length ? "DEFAULT_TICKERS" : defaults.join(" ") !== DEFAULT_SYMBOLS.join(" ") ? "DEFAULT_TICKERS_FILE" : "default set";
     const added = fixed.length - defaults.length;
     const source = `${defaultsWhat} (${defaults.length})${added ? ` + ${added} from TICKERS` : ""}${discover ? " + auto-universe (all)" : ""}`;
     return { fixed, discover, source };
@@ -1873,6 +1902,7 @@ export function outputConfigEntries(
         ["SYMBOL_ALIASES", env.SYMBOL_ALIASES ?? ""],
         ["TIMEZONE", env.TIMEZONE ?? "America/New_York"],
         ["DEFAULT_TICKERS", env.DEFAULT_TICKERS ?? ""],
+        ["DEFAULT_TICKERS_FILE", env.DEFAULT_TICKERS_FILE ?? ""],
         ["TICKERS", env.TICKERS ?? env.TICKER ?? ""],
         ["VERBOSE", String(isVerbose(env))],
     ];

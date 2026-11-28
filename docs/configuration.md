@@ -142,7 +142,7 @@ The session lives in `~/.config/gex/tradingview.env` (mode 600, outside the repo
 | `INTENSIVE` | `update-partial-data.yml`, env of job `update` (a commented line) | off | the one switch of the [intensive mode](automations.md#intensive-mode): uncommented with `"true"` = on; commented, `"false"` or `""` = off |
 | `INTENSIVE_PAUSE` | repository variable | 180 | intensive mode: seconds between the end of a run and the start of the next one (0 to 1800) |
 | `SQUASH_AFTER` | repository variable (env of `scripts/data-squash.ts`) | 10 | intensive mode: data commits in a row at the tip of `main` that start a squash; `0` = never squash |
-| `api/Minimums.txt` | the repository | the owner's short list | intensive runs only: replaces the default ticker list (one per line, `#` starts a comment), passed to the fetcher as `DEFAULT_TICKERS`; no ticker or no file = the 27 defaults |
+| `api/Minimums.yaml` | the repository | the owner's short list | intensive runs only: replaces the default ticker list (a YAML `tickers:` list, `.yml` works too, `#` comments a line out), read by the fetcher through `DEFAULT_TICKERS_FILE=api/Minimums`; no ticker or no file = the 27 defaults |
 | fetch env of each workflow | the workflow files | see [Automations](automations.md#workflows-at-a-glance) | `MAX_EXPIRATIONS`, `KEEP_EXPIRATIONS`, `CONCURRENCY`, `REQUEST_SLEEP`, `MAX_FETCHES`, `ROTATE_STALE` |
 | `api/All.txt` | the repository | 356 tickers | the extra tickers of the weekly refresh |
 | `api/Indices.txt` | the repository | SPX, XSP, NDX, DJX, RUT | the supported cash indices (kept in sync with `INDEX_DIVIDEND_YIELDS`, checked by `src/greeks.test.ts`); no workflow reads it since 2026-10-26 |

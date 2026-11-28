@@ -510,7 +510,7 @@ api/
   history/                    # index.json plus one folder per month, in it one zip per earlier day (last state of the default tickers)
   futures/                    # ES.json, NQ.json, YM.json, RTY.json of the TradingView live mode or bun run tv:futures, committed by hand and published
   All.txt, Indices.txt        # ticker list of the update workflow; cash index list (kept in sync with INDEX_DIVIDEND_YIELDS)
-  Minimums.txt                # tickers of the intensive data runs (one per line; empty = the defaults)
+  Minimums.yaml               # tickers of the intensive data runs (a YAML list; empty = the defaults)
 scripts/
   options-data.ts             # the fetcher: Yahoo and Cboe -> api/options and api/charts
   history-archive.ts          # writes the day zip api/history/<month>/<day>.zip (last run of the day), prunes old days, keeps index.json in step with the disk
