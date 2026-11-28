@@ -27,7 +27,7 @@ export interface ActiveSnapshot {
 
 export interface BacktestState {
     entries: HistoryEntry[];
-    /** date of the newest cache file, from api/latest.json (null when unknown) */
+    /** date of the newest cache file, from api/cache.json (null when unknown) */
     latestDate: string | null;
     active: ActiveSnapshot | null;
     /** a snapshot is being opened (a site zip is being fetched) */
@@ -51,7 +51,7 @@ export interface ImportReport {
 export interface BacktestController {
     getState(): BacktestState;
     subscribe(listener: () => void): () => void;
-    /** Reads api/history/index.json, api/latest.json and what the browser holds. Never throws (a missing site index is an empty list). */
+    /** Reads api/history/index.json, api/cache.json and what the browser holds. Never throws (a missing site index is an empty list). */
     refresh(): Promise<void>;
     /** Opens a snapshot (null = back to live). A snapshot that cannot be opened sets `error` and keeps the previous mode. */
     select(id: string | null): Promise<void>;
@@ -102,7 +102,7 @@ export function createBacktestController(deps: { store: BacktestStore; site: Sit
         async refresh() {
             const [index, latest] = await Promise.all([
                 site.json('api/history/index.json').catch(() => null),
-                site.json('api/latest.json').catch(() => null),
+                site.json('api/cache.json').catch(() => null),
             ]);
             siteIndex = parseSiteIndex(index);
             set({ latestDate: parseLatest(latest) });

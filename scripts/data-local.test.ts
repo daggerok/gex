@@ -119,7 +119,7 @@ describe('lock', () => {
 describe('jobs mirror their workflows', () => {
   const base = { dryRun: false, tickers: [] as string[], allTxt: 'AAPL\nMSFT\n\nNVDA\n', env: {} };
 
-  test('partial: the hourly env, the archive and latest.json committed only on a final run, a Pages deploy every run', () => {
+  test('partial: the hourly env, the archive and cache.json committed only on a final run, a Pages deploy every run', () => {
     const intraday = planJob('partial', { ...base, final: false });
     expect(intraday.env).toEqual({ MAX_EXPIRATIONS: '15', KEEP_EXPIRATIONS: '1', CONCURRENCY: '4', REQUEST_SLEEP: '0.1', HISTORY: '0', HISTORY_KEEP_DAYS: '14', HISTORY_KEEP_BACKUP_DAYS: '14' });
     expect(intraday.commit).toEqual([]);
@@ -127,7 +127,7 @@ describe('jobs mirror their workflows', () => {
     const final = planJob('partial', { ...base, final: true, env: { HISTORY_KEEP_DAYS: '30' } });
     expect(final.env.HISTORY).toBe('1');
     expect(final.env.HISTORY_KEEP_DAYS).toBe('30');
-    expect(final.commit).toEqual(['api/history', 'api/latest.json']);
+    expect(final.commit).toEqual(['api/history', 'api/cache.json']);
     expect(final.message).toBe('chore(data): archive the trading day [skip ci]');
   });
 

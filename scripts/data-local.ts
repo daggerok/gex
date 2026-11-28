@@ -22,7 +22,7 @@
  *
  * JOBS (the same work as the workflows):
  *   partial  update-partial-data.yml: the default tickers; from 16:30 New York time a FINAL run that writes and commits the
- *            day zip (api/history) and api/latest.json; every run then asks GitHub for a Pages deploy (the deploy refreshes
+ *            day zip (api/history) and api/cache.json; every run then asks GitHub for a Pages deploy (the deploy refreshes
  *            the default tickers itself, the hourly JSON is never committed). Scheduled by launchd at the old New York slots
  *   weekly   update-data.yml: defaults + api/All.txt + ROTATE_STALE=500, commits api/, starts the Pages deploy. Manual here
  *            (GitHub runs it on Saturday)
@@ -494,7 +494,7 @@ export function planJob(job: Job, o: { final: boolean; dryRun: boolean; tickers:
                 HISTORY_KEEP_BACKUP_DAYS: keep("HISTORY_KEEP_BACKUP_DAYS"),
                 ...dry,
             },
-            commit: o.final ? ["api/history", "api/latest.json"] : [],
+            commit: o.final ? ["api/history", "api/cache.json"] : [],
             message: "chore(data): archive the trading day [skip ci]",
             deploy: "always",
         };
@@ -730,7 +730,7 @@ function status(p: Paths): void {
         console.log(`  ${"".padEnd(8)} ${last}`);
     });
     const commitDir = existsSync(p.runner) ? p.runner : p.checkout;
-    const c = git(commitDir, ["log", "-1", "--format=%h %ci %s", "origin/main", "--", "api/history", "api/latest.json", "api/options", "api/charts"]);
+    const c = git(commitDir, ["log", "-1", "--format=%h %ci %s", "origin/main", "--", "api/history", "api/cache.json", "api/options", "api/charts"]);
     console.log(`last data  ${c.ok && c.out ? c.out : "unknown"} (origin/main as of the last fetch)`);
     const lock = lockDecision(readText(p.lock), pidAlive);
     console.log(

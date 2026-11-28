@@ -7,7 +7,7 @@ on:
     # site with the next deploy of a data run or a code change
     paths-ignore:
       - "api/history/**"
-      - "api/latest.json"
+      - "api/cache.json"
   workflow_dispatch:
 
 permissions:
