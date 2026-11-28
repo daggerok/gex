@@ -145,7 +145,6 @@ The session lives in `~/.config/gex/tradingview.env` (mode 600, outside the repo
 | `api/Minimums.yml` | the repository | the owner's short list | intensive runs only: replaces the default ticker list (a YAML `tickers:` list, `.yaml` works too, `#` comments a line out), read by the fetcher through `DEFAULT_TICKERS_FILE=api/Minimums`; no ticker or no file = the 27 defaults |
 | fetch env of each workflow | the workflow files | see [Automations](automations.md#workflows-at-a-glance) | `MAX_EXPIRATIONS`, `KEEP_EXPIRATIONS`, `CONCURRENCY`, `REQUEST_SLEEP`, `MAX_FETCHES`, `ROTATE_STALE` |
 | `api/All.txt` | the repository | 356 tickers | the extra tickers of the weekly refresh |
-| `api/Indices.yml` | the repository | SPX, XSP, NDX, DJX, RUT | the supported cash indices (kept in sync with `INDEX_DIVIDEND_YIELDS`, checked by `src/greeks.test.ts`); no workflow reads it since 2026-10-26 |
 | Pages | Settings -> Pages | GitHub Actions | the site is deployed by the workflows |
 | Workflow permissions | Settings -> Actions -> General | Read and write | the data workflows commit |
 
