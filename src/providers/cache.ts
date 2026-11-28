@@ -27,7 +27,9 @@ export async function fetchStaticJson(url: string, signal?: AbortSignal, label?:
     const name = label ?? url;
     let res: Response;
     try {
-        res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
+        // no-cache: the browser asks the server every time (a conditional request, 304 when the file did not change) instead
+        // of reusing its copy for the 10 minutes GitHub Pages allows, so a refreshed file is read as soon as it is published
+        res = await fetch(url, { headers: { Accept: 'application/json' }, signal, cache: 'no-cache' });
     } catch (e: any) {
         if (e?.name === 'AbortError') throw e;
         throw new UiError('error.cache.network', { url });

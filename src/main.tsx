@@ -833,6 +833,7 @@ import { isLoopbackHost, sourceChain, sourceLabel, type SourceProviderId, usePro
 import { futuresFile, loadDefaultTickers } from './providers/cache';
 import { loadExpiration, loadMeta } from './providers/loader';
 import { applyLiveChain, nyTime, subscribedProgress, useTvLive } from './futures-live';
+import { CACHE_REFRESH_MS, isNewerCacheFile } from './cache-refresh';
 import { clearAll, clearCacheData, clearSettingsStore, freshDefaultSettings, hasPersistedSettings, loadSettings, saveSettings } from './settings-store';
 import { accentOf, useThemeController } from './theme';
 import type { ChainMeta, OptionQuote, Settings, TickerSuggestion } from './types';
@@ -1216,6 +1217,54 @@ const App: React.FC = () => {
             }
         })();
     }, liveKind, liveFuturesSymbol ? selectedExps : undefined);
+
+    // ---- Auto refresh from the published cache (src/cache-refresh.ts): while a ticker served by CACHE is open (not a backtest,
+    // not a live futures stream), the page asks for its file again every CACHE_REFRESH_MS and when the tab becomes visible.
+    // An unchanged file changes nothing on screen. A newer one goes the way of a live update: into the CACHE provider's
+    // memory, then the meta, so the selected expirations reload in place (tabs, selection, zoom and scroll stay).
+    const cacheRefreshSymbol = !asOf && meta && servedBy === 'static' && !liveSymbol ? meta.symbol : null;
+    const shownUpdatedRef = useRef<string | null>(null);
+    shownUpdatedRef.current = meta?.updated ?? null;
+    useEffect(() => {
+        if (!cacheRefreshSymbol) return undefined;
+        const symbol = cacheRefreshSymbol;
+        const ac = new AbortController();
+        let busy = false;
+        const run = async () => {
+            if (busy || document.visibilityState !== 'visible' || metaAbort.current || liveApplying.current) return;
+            busy = true;
+            try {
+                const p = providerById('static');
+                const fresh = await p.fetchAll!(symbol, ctxFor(settings, p, ac.signal));
+                if (ac.signal.aborted || metaAbort.current || loadedSymbolRef.current !== symbol) return;
+                if (!isNewerCacheFile(shownUpdatedRef.current, fresh.updated)) return;
+                const m = await applyLiveChain(fresh, settings.vixFuturesPricing, 'static');
+                if (ac.signal.aborted || metaAbort.current || loadedSymbolRef.current !== m.symbol || !m.expirations.length) return;
+                const picked = pickExpirations(selectedExpsRef.current, m.expirations);
+                if (picked.join(',') !== selectedExpsRef.current.join(',')) {
+                    setSelectedExps(picked);
+                    patchSettings({ selectedExps: picked });
+                }
+                setMeta(m);
+                setChartRefresh((n) => n + 1); // the Chart tab reads its candles file again and swaps it in when it arrives
+                dbg('cache auto refresh: newer file applied', { symbol, updated: m.updated });
+            } catch (e: unknown) {
+                if (!ac.signal.aborted) dbg('cache auto refresh failed (the shown data stays)', String(e));
+            } finally {
+                busy = false;
+            }
+        };
+        const timer = window.setInterval(() => { void run(); }, CACHE_REFRESH_MS);
+        const onVisible = () => { if (document.visibilityState === 'visible') void run(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            ac.abort();
+            window.clearInterval(timer);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+        // settings and patchSettings are read at call time; a new symbol or source restarts the timer
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cacheRefreshSymbol]);
 
     // Entering, changing or leaving a backtest reloads a ticker from the new source. Opening a snapshot picks the ticker: the
     // only one of a single-ticker backup; with two or more, the stored last ticker when the snapshot has it, else the first one
