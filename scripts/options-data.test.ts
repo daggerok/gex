@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /// <reference types="node" />
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -68,6 +68,7 @@ import {
   symbolVariants,
   extraTickers,
   defaultSymbols,
+  readTickersFile,
   fetchTicker,
   YahooRateLimitError,
   universeRequest,
@@ -203,6 +204,46 @@ describe('which tickers a run covers (default list, DEFAULT_TICKERS, TICKERS, al
     expect(r.fixed).toEqual([...DEFAULT_SYMBOLS, 'PLTR', 'HOOD']);
     expect(r.discover).toBe(false);
     expect(r.source).toBe(`default set (${DEFAULT_SYMBOLS.length}) + 2 from TICKERS`);
+  });
+
+  test('DEFAULT_TICKERS_FILE: a YAML tickers list replaces the default list, .yaml or .yml, comments skipped', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tickers-'));
+    writeFileSync(join(dir, 'A.yaml'), '# head\ntickers:\n- spy\n- SPX # tail comment\n#- NVDA\n- brk.b\n- spy\n');
+    writeFileSync(join(dir, 'B.yml'), 'tickers:\n  - qqq\n');
+    writeFileSync(join(dir, 'Empty.yaml'), '# nothing\ntickers:\n#- NVDA\n');
+    writeFileSync(join(dir, 'Blank.yaml'), '# only a comment\n');
+    expect(readTickersFile(join(dir, 'A'))).toEqual(['SPY', 'SPX', 'BRK-B']);
+    expect(readTickersFile(join(dir, 'A.yaml'))).toEqual(['SPY', 'SPX', 'BRK-B']);
+    expect(readTickersFile(join(dir, 'A.yml'))).toEqual(['SPY', 'SPX', 'BRK-B']); // the other extension is found too
+    expect(readTickersFile(join(dir, 'B'))).toEqual(['QQQ']);
+    expect(readTickersFile(join(dir, 'Empty'))).toEqual([]);
+    expect(readTickersFile(join(dir, 'Blank'))).toEqual([]);
+    expect(readTickersFile(join(dir, 'Missing'))).toEqual([]);
+    expect(defaultSymbols({ DEFAULT_TICKERS_FILE: join(dir, 'A') })).toEqual(['SPY', 'SPX', 'BRK-B']);
+    expect(defaultSymbols({ DEFAULT_TICKERS_FILE: join(dir, 'Empty') })).toEqual([...DEFAULT_SYMBOLS]);
+    expect(defaultSymbols({ DEFAULT_TICKERS_FILE: join(dir, 'Missing') })).toEqual([...DEFAULT_SYMBOLS]);
+    expect(defaultSymbols({ DEFAULT_TICKERS: 'IWM', DEFAULT_TICKERS_FILE: join(dir, 'A') })).toEqual(['IWM']); // the env list wins
+    expect(universeRequest({ DEFAULT_TICKERS_FILE: join(dir, 'B') }, []).source).toBe('DEFAULT_TICKERS_FILE (1)');
+  });
+
+  test('DEFAULT_TICKERS_FILE: a file that is not a list of names is an error, never a silent default', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tickers-'));
+    writeFileSync(join(dir, 'Bool.yaml'), 'tickers:\n- SPY\n- true\n');
+    writeFileSync(join(dir, 'Num.yaml'), 'tickers:\n- 123\n');
+    writeFileSync(join(dir, 'Quoted.yaml'), 'tickers:\n- "true"\n- "ON"\n');
+    writeFileSync(join(dir, 'Text.yaml'), 'tickers: SPY QQQ\n');
+    writeFileSync(join(dir, 'List.yaml'), '- SPY\n');
+    expect(() => readTickersFile(join(dir, 'Bool'))).toThrow(/quotes/);
+    expect(() => readTickersFile(join(dir, 'Num'))).toThrow(/quotes/);
+    expect(readTickersFile(join(dir, 'Quoted'))).toEqual(['TRUE', 'ON']);
+    expect(() => readTickersFile(join(dir, 'Text'))).toThrow(/must be a list/);
+    expect(() => readTickersFile(join(dir, 'List'))).toThrow(/tickers:/);
+  });
+
+  test('the repository list api/Minimums.yaml is readable and holds real names', () => {
+    const list = readTickersFile(join(__dirname, '..', 'api', 'Minimums'));
+    expect(list.length).toBeGreaterThan(0);
+    for (const t of list) expect(t).toMatch(/^[A-Z][A-Z0-9-]*$/);
   });
 
   test('DEFAULT_TICKERS replaces the default list, TICKERS still adds to it, a blank DEFAULT_TICKERS keeps the built-in list', () => {

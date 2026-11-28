@@ -1,0 +1,28 @@
+# Tickers of the intensive data runs (update-partial-data.yml). Comment a line out with # to skip that ticker.
+# No ticker here (or no file) = the built-in default list of scripts/options-data.ts. Classic runs never read this file.
+# Any letter case works. A ticker that YAML reads as something else (true, false, null, a number) goes in quotes.
+tickers:
+- SPY
+- SPX
+- QQQ
+- NDX
+- DJX
+- RUT
+#- NVDA
+#- AAPL
+#- MSFT
+#- GOOG
+#- GOOGL
+#- META
+#- AMZN
+#- AVGO
+#- JPM
+#- LLY
+#- MU
+#- AMD
+#- WMT
+#- V
+#- XOM
+#- JNJ
+#- TSM
+#- ASML

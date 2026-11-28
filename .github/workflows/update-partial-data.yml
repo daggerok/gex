@@ -36,7 +36,7 @@
 #        ONE commit when there are SQUASH_AFTER of them one after another (repository variable, default 10, 0 = never)
 #        and on every final run (16:30 or later). The squash force-pushes main with --force-with-lease; only data commits
 #        at the tip are rewritten, a code commit never changes its hash. README "After a squash of main" tells how a clone
-#        follows it. The file api/Minimums.txt (one ticker per line) replaces the default ticker list
+#        follows it. The file api/Minimums.yaml (a `tickers:` list) replaces the default ticker list
 #        in the intensive runs only; no ticker in it = the default list. Market holidays are not known: the chain runs on a weekday holiday too.
 #        Measured 2026-11-26: 24 tickers fetch in 30 to 32 s (the 1 s pause between Cboe requests sets that time),
 #        a whole run with build and deploy is about 1.5 min, one data commit is about 3 MB packed.
@@ -168,16 +168,10 @@ jobs:
           # rotation of the archive: daily zips and backups made on demand, days kept (repository variables override the 14)
           HISTORY_KEEP_DAYS: ${{ vars.HISTORY_KEEP_DAYS || '14' }}
           HISTORY_KEEP_BACKUP_DAYS: ${{ vars.HISTORY_KEEP_BACKUP_DAYS || '14' }}
-          INTENSIVE_RUN: ${{ steps.window.outputs.intensive }}
-        run: |
-          # an intensive run fetches the tickers of api/Minimums.txt (one per line, # starts a comment) instead of the built-in
-          # default list; a missing file or one with no ticker = the built-in list. Classic runs never read the file.
-          if [ "$INTENSIVE_RUN" = "true" ] && [ -f api/Minimums.txt ]; then
-            DEFAULT_TICKERS=$(sed 's/#.*//' api/Minimums.txt | tr -s '[:space:],' ' ')
-            export DEFAULT_TICKERS
-            echo "intensive run, tickers of api/Minimums.txt: ${DEFAULT_TICKERS:-none, the built-in list is used}"
-          fi
-          bun scripts/options-data.ts
+          # an intensive run fetches the tickers of api/Minimums.yaml (or .yml: a `tickers:` list, lines commented with # are
+          # skipped) instead of the built-in default list; no file or an empty list = the built-in list. Classic runs never read it.
+          DEFAULT_TICKERS_FILE: ${{ steps.window.outputs.intensive == 'true' && 'api/Minimums' || '' }}
+        run: bun scripts/options-data.ts
 
       # Backtest backup of the data just fetched, only when the repository variable BACKTEST_TICKERS is set
       # (Settings, Secrets and variables, Actions, Variables): `all` for every available ticker or a list such as
