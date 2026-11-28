@@ -10,7 +10,7 @@ import { noProxy, startTestSite } from './e2e-site';
 // chart shows the new mode, and the choice comes back after a reload.
 //  - Net GEX metric: "Net GEX" <-> "Abs GEX" (call GEX up, put GEX down), legend "Net GEX (+)" <-> "Abs GEX (+)"
 //  - Zero GEX level: line <-> area (a band over the two strikes of the zone on the GEX chart)
-//  - Sigma level: off by default (no lines, no table rows), % <-> statistical sigma, label "Sigma %" <-> "Sigma σ"
+//  - Sigma level: off by default (no lines; the table rows are always there), % <-> statistical sigma, label "Sigma %" <-> "Sigma σ"
 // Run: `bun run test:e2e`.
 // ============================================================================
 
@@ -107,7 +107,7 @@ async function main(): Promise<void> {
             const sigmaRows = () => page.evaluate(() => Array.from(document.querySelectorAll('aside span')).filter((s) => /^Sigma [+−]\dσ$/.test(s.textContent?.trim() ?? '')).length);
             const sigmaLines = page.locator('.recharts-reference-line line[stroke="#64748b"]');
             assert.equal(await schip.getAttribute('aria-pressed'), 'false', 'Sigma is off by default');
-            assert.equal(await sigmaRows(), 0, 'no Sigma rows in the Levels table while it is off');
+            assert.equal(await sigmaRows(), 6, 'the Levels table has its six Sigma rows while the chip is off too');
             assert.equal(await sigmaLines.count(), 0, 'no Sigma lines on the GEX chart while it is off');
             await schip.scrollIntoViewIfNeeded();
             await schip.click();

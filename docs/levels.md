@@ -52,6 +52,8 @@ Abs GEX / AG(strike) = |call GEX| + |put GEX|
 
 ## Levels
 
+The Levels and Values tables of the GEX tab always list every level with a price (Max AG and the six Sigma rows too): the chips choose what the chart draws, never the rows of the tables.
+
 On by default: Max Net GEX, Min Net GEX, Gamma Flip, Zero GEX, Max Pain, Max AG (only while the AG metric is on) and Spot. Off by default: Net GEX+, Net GEX-, 75% Sum Net GEX+ and -, Sigma. Ties always go to the lower strike
 
 | Level | Rule | Source |
