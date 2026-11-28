@@ -45,7 +45,11 @@ async function main(): Promise<void> {
         // ---- GEX tab ----
         await page.getByRole('button', { name: 'GEX' }).first().click();
         await page.waitForTimeout(2500);
+        // at this width the sidebar tables sit above the chart: bring the chart into view, a touch outside the window hits nothing
+        await page.locator('.recharts-wrapper').first().evaluate((el) => el.scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(300);
         const box = (await page.locator('.recharts-wrapper').first().boundingBox())!;
+        assert.ok(box.y >= 0 && box.y + box.height * 0.45 < 900, `the press point of the GEX chart is inside the window (chart top ${Math.round(box.y)})`);
         const at = { x: box.x + box.width * 0.5, y: box.y + box.height * 0.45 };
 
         await longPress(at, 120); // a tap
