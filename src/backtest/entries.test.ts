@@ -51,7 +51,7 @@ describe('liveLabel and parseLatest', () => {
     expect(liveLabel({ liveReachable: false, latestDate: '2026-10-09' })).toEqual({ kind: 'latest', date: '2026-10-09' });
   });
 
-  test('api/latest.json: only a real date counts', () => {
+  test('api/cache.json: only a real date counts', () => {
     expect(parseLatest({ version: 1, date: '2026-10-09' })).toBe('2026-10-09');
     for (const j of [null, {}, { date: 5 }, { date: '10/09/2026' }]) expect(parseLatest(j)).toBeNull();
   });

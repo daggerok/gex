@@ -18,7 +18,7 @@
 # the fresh files into its own checkout, builds the site from them and deploys it to GitHub Pages straight from this
 # workflow (the `deploy` job), so the site is fresh every hour and git history does not grow by about 2 MB per run.
 # Only a FINAL run (any run that starts from 16:30 to 23:59 New York time, owner's decision 2026-10-25) commits: the day's
-# archive zip api/history/<YYYY-MM>/<day>.zip (the last state of the day, kept for 14 days) and api/latest.json. Several final
+# archive zip api/history/<YYYY-MM>/<day>.zip (the last state of the day, kept for 14 days) and api/cache.json. Several final
 # runs a day are fine: the archive is idempotent, a ticker whose data did not change keeps its zip entry (only the
 # `updated` stamp differs), so a later final run commits only what really changed after the close. A backtest backup made
 # here (repository variable BACKTEST_TICKERS) is committed by the run that made it. Any other deploy (a code push)
@@ -31,7 +31,7 @@
 #        it, and every run that ends well starts the next one (job `next`: waits INTENSIVE_PAUSE seconds, default 180, then
 #        `gh workflow run`), until 16:00. The other starter slots (10:30 .. 15:30) only restart a chain that broke: the
 #        concurrency group keeps one run going and one waiting, so there is never a second chain. The classic runs go on
-#        as before. Each run of the chain also COMMITS the refreshed api/options, api/charts and api/latest.json
+#        as before. Each run of the chain also COMMITS the refreshed api/options, api/charts and api/cache.json
 #        (`chore(data): refresh option chains`), and scripts/data-squash.ts folds the data commits at the tip of main into
 #        ONE commit when there are SQUASH_AFTER of them one after another (repository variable, default 10, 0 = never)
 #        and on every final run (16:30 or later). The squash force-pushes main with --force-with-lease; only data commits
@@ -203,10 +203,10 @@ jobs:
         with:
           path: ./dist
 
-      # Commits only what must stay in git: the day's archive and api/latest.json (last run of the day), a backtest backup
+      # Commits only what must stay in git: the day's archive and api/cache.json (last run of the day), a backtest backup
       # (the run that made it). The refreshed api/options and api/charts files are NOT staged. The site is already built, so
       # the working tree may be thrown away when a push has to be replayed. INTENSIVE mode stages the refreshed data too
-      # (api/options, api/charts, api/latest.json), so every run leaves one data commit; the next step folds them.
+      # (api/options, api/charts, api/cache.json), so every run leaves one data commit; the next step folds them.
       - name: Commit the archive
         if: steps.window.outputs.run == 'true'
         env:
@@ -216,10 +216,10 @@ jobs:
           git config user.name  "Maksim Kostromin"
           git config user.email "daggerok@gmail.com"
           git add api/history || true
-          if [ "$FINAL" = "true" ]; then git add api/latest.json || true; fi
+          if [ "$FINAL" = "true" ]; then git add api/cache.json || true; fi
           message="chore(data): archive the trading day [skip ci]"
           if [ "$INTENSIVE" = "true" ]; then
-            git add api/options api/charts api/latest.json || true
+            git add api/options api/charts api/cache.json || true
             message="chore(data): refresh option chains [skip ci]"
           fi
           if git diff --staged --quiet; then

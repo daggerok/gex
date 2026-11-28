@@ -1234,14 +1234,14 @@ describe('fileDay', () => {
 });
 
 describe('writeLatest', () => {
-  test('writes api/latest.json with the date only, again with the same date changes nothing, a bad date writes nothing', () => {
+  test('writes api/cache.json with the date only, again with the same date changes nothing, a bad date writes nothing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'latest-'));
     expect(writeLatest(dir, '2026-10-09')).toBe(true);
-    expect(JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8'))).toEqual({ version: 1, date: '2026-10-09' });
+    expect(JSON.parse(readFileSync(join(dir, 'cache.json'), 'utf8'))).toEqual({ version: 1, date: '2026-10-09' });
     expect(writeLatest(dir, '2026-10-09')).toBe(false);
     expect(writeLatest(dir, '2026-10-10')).toBe(true);
     expect(writeLatest(dir, 'yesterday')).toBe(false);
-    expect(JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8')).date).toBe('2026-10-10');
+    expect(JSON.parse(readFileSync(join(dir, 'cache.json'), 'utf8')).date).toBe('2026-10-10');
   });
 });
 

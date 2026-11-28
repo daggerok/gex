@@ -28,7 +28,7 @@ export interface TestSnapshot {
     spot: number;
 }
 
-/** `snapshots` become `api/history/<month>/<id>.zip` plus `api/history/index.json`, and `api/latest.json` gets `latest`. */
+/** `snapshots` become `api/history/<month>/<id>.zip` plus `api/history/index.json`, and `api/cache.json` gets `latest`. */
 export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?: string; futures?: Record<string, string> } = {}): Promise<TestSite> {
     const dir = mkdtempSync(join(tmpdir(), 'gex-e2e-'));
     // `bun run test:e2e` (src/e2e-run.ts) builds the app ONCE and hands the folder over, every check copies it (it adds its own
@@ -59,7 +59,7 @@ export async function startTestSite(opts: { snapshots?: TestSnapshot[]; latest?:
         }
         writeFileSync(join(dir, 'api', 'history', 'index.json'), JSON.stringify({ version: 1, snapshots: index }));
     }
-    if (opts.latest) writeFileSync(join(dir, 'api', 'latest.json'), JSON.stringify({ version: 1, date: opts.latest }));
+    if (opts.latest) writeFileSync(join(dir, 'api', 'cache.json'), JSON.stringify({ version: 1, date: opts.latest }));
     // futures files (api/futures/<ROOT>.json, as tv:futures writes them), by root
     for (const [root, text] of Object.entries(opts.futures ?? {})) {
         mkdirSync(join(dir, 'api', 'futures'), { recursive: true });

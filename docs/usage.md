@@ -105,7 +105,7 @@ Your own named levels on the GEX and Chart tabs, stored per symbol in the browse
 
 One selector in the top bar for every tab
 
-- Grey = not a backtest: "As of today" while a live provider answers, otherwise "As of <date>" (the newest cache day, `api/latest.json`). So a grey "As of 2026-10-23" means the page found no live source (see the source label's tooltip for why), not that a past day is selected
+- Grey = not a backtest: "As of today" while a live provider answers, otherwise "As of <date>" (the newest cache day, `api/cache.json`). So a grey "As of 2026-10-23" means the page found no live source (see the source label's tooltip for why), not that a past day is selected
 - Pick an archived day or a backup (those on the site from `api/history/index.json`, plus those held in this browser): an amber "Backtest: as of ..." banner shows, and every tab reads that snapshot (chain, spot, expirations, levels, model greeks valued at that time, Chart candles cut after that day). Live providers are off, also with the local proxy running; a ticker that is not in the snapshot shows an error. The source label says `ARCHIVE <day>`; a click on it or **Back to latest** in the banner returns. The selection is not remembered: every page load starts at today
 - **Import zip:** a day zip, a backup or a bundle, read in the browser, nothing is uploaded
 - **Create backup:** the default tickers (default), the current ticker, all available data or chosen tickers; Enter downloads `<id>.zip`, the same format the CI backup makes plus your custom levels (`custom-levels.json`), and keeps it in the browser. The last choice is remembered

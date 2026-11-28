@@ -56,14 +56,14 @@ export function mergeEntries(site: ReadonlyMap<string, readonly string[]>, local
 
 /**
  * The text of the grey, informational item of the selector: "today" while a live provider is reachable, otherwise the date of
- * the latest cache file (`api/latest.json`) so the user knows how old what they see is.
+ * the latest cache file (`api/cache.json`) so the user knows how old what they see is.
  */
 export function liveLabel(opts: { liveReachable: boolean; latestDate: string | null }): { kind: 'today' | 'latest'; date: string | null } {
     if (opts.liveReachable) return { kind: 'today', date: null };
     return { kind: 'latest', date: opts.latestDate };
 }
 
-/** Parses `api/latest.json` (`{ version: 1, date }`), null when it is missing or malformed. */
+/** Parses `api/cache.json` (`{ version: 1, date }`), null when it is missing or malformed. */
 export function parseLatest(json: unknown): string | null {
     const date = (json as { version?: unknown; date?: unknown } | null)?.date;
     return typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;

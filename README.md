@@ -404,7 +404,7 @@ All of it in detail (steps, env, failure handling, durations, data sizes): [docs
 |---|---|---|---|---|
 | `ci.yaml` | every pull request | unit tests, fetcher bundle, both builds, browser tests (jobs `build` and `e2e`), 2.5 to 3.5 min | nothing | no |
 | `github-pages.yml` | push to `main` (not archive-only pushes), manual, started by the data and dependency workflows | refreshes the 27 default tickers, builds with `/gex/`, deploys, 1 to 2 min | nothing | yes |
-| `update-partial-data.yml` | Mon-Fri 9:45 and 16:45 (the other hourly slots run on the owner's Mac, `bun run data:setup`); manual | refreshes the 27 default tickers, builds and deploys, 1 to 1.5 min | final runs (from 16:30): the day zip and `api/latest.json`; a backup when `BACKTEST_TICKERS` is set | yes |
+| `update-partial-data.yml` | Mon-Fri 9:45 and 16:45 (the other hourly slots run on the owner's Mac, `bun run data:setup`); manual | refreshes the 27 default tickers, builds and deploys, 1 to 1.5 min | final runs (from 16:30): the day zip and `api/cache.json`; a backup when `BACKTEST_TICKERS` is set | yes |
 | `update-data.yml` | Saturday 10:00; manual | the defaults plus `api/All.txt`, the 500 oldest other files (`ROTATE_STALE`), 9 to 14 min | `api/` | starts `github-pages.yml` |
 | `backtest-backup.yml` | Saturday 12:00; manual | optional fresh fetch, one backup zip | the zip | no |
 | `dependency-updates.yml` | manual | bumps every dependency, tests and builds, pushes to the branch | `package.json`, `bun.lock` | starts `github-pages.yml` |

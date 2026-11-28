@@ -50,7 +50,7 @@ async function main(): Promise<void> {
 
         // ---- live: grey, informational, "As of <date of the latest cache file>" ----
         assert.equal(await page.locator('[data-asof-select]').getAttribute('data-asof-select'), 'live');
-        assert.equal((await selector.innerText()).replace('▾', '').trim(), 'As of 2026-09-30', 'grey text is the date of api/latest.json');
+        assert.equal((await selector.innerText()).replace('▾', '').trim(), 'As of 2026-09-30', 'grey text is the date of api/cache.json');
         assert.equal(await banner.count(), 0, 'no banner while live');
         await openMenu();
         assert.equal(await option('2026-09-29').count(), 1);

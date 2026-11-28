@@ -12,7 +12,7 @@ const chain = (symbol: string, spot = 100): ChainResult => ({ symbol, underlying
 const zip = (id: string, symbols: string[], levels: string | null = null) =>
   buildBackupZip(id, symbols.map((s) => ({ symbol: s, text: chainToCacheFile(chain(s), new Date('2026-10-09T19:42:00Z')) })), levels);
 
-/** A fake site: index.json, latest.json and the zips by path; counts the zip downloads. */
+/** A fake site: index.json, cache.json and the zips by path; counts the zip downloads. */
 async function fakeSite(snapshots: Record<string, string[]>, extra: Record<string, unknown> = {}) {
   const bytes = new Map<string, Uint8Array>();
   for (const [id, tickers] of Object.entries(snapshots)) bytes.set(siteZipPath(id), await zip(id, tickers));
@@ -20,7 +20,7 @@ async function fakeSite(snapshots: Record<string, string[]>, extra: Record<strin
   const reader: SiteReader = {
     async json(path) {
       if (path === 'api/history/index.json') return { version: 1, snapshots };
-      if (path === 'api/latest.json') return { version: 1, date: '2026-10-09' };
+      if (path === 'api/cache.json') return { version: 1, date: '2026-10-09' };
       if (path in extra) return extra[path];
       throw new Error('404');
     },

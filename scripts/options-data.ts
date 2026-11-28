@@ -736,13 +736,13 @@ export function archiveHistory(opts: { optionsDir: string; historyDir: string; s
 }
 
 /**
- * api/latest.json, `{ "version": 1, "date": "YYYY-MM-DD" }`: the trading day of the newest data in the cache. The app shows it as
+ * api/cache.json, `{ "version": 1, "date": "YYYY-MM-DD" }`: the trading day of the newest data in the cache. The app shows it as
  * "As of <date>" in the selector when no live provider is reachable. Only the date, so it changes at most once a day. Returns
  * true when the file was written.
  */
 export function writeLatest(apiDir: string, date: string): boolean {
     if (!DAY_RE.test(date)) return false;
-    const path = join(apiDir, "latest.json");
+    const path = join(apiDir, "cache.json");
     const text = JSON.stringify({ version: 1, date }) + "\n";
     try {
         if (readFileSync(path, "utf8") === text) return false;
